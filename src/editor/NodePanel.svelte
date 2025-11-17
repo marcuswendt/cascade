@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { nodeLibraries, getAllNodes, getNodesByLibraryAndCategory, type NodeTemplate } from './nodeTemplates';
+  import Icon from './Icon.svelte';
   
   export let libraryId: string | null = null;
   export let categoryId: string | null = null;
@@ -87,7 +88,9 @@
             on:click={() => handleLibraryClick(library.id)}
             on:mouseenter={() => handleLibraryClick(library.id)}
           >
-            <span class="icon">{library.icon}</span>
+            <span class="icon">
+              <Icon name={library.icon} size={16} />
+            </span>
             <span class="label">{library.label}</span>
           </button>
         {/each}
@@ -99,7 +102,9 @@
           class="custom-node-button"
           on:click={handleCustomNodeClick}
         >
-          <span class="icon">⚡</span>
+          <span class="icon">
+            <Icon name="Zap" size={16} />
+          </span>
           <span class="label">Custom</span>
         </button>
       </div>
@@ -133,7 +138,9 @@
               on:click={() => handleNodeClick(node)}
               title={node.description}
             >
-              <span class="node-icon">{node.icon}</span>
+              <span class="node-icon">
+                <Icon name={node.icon} size={16} />
+              </span>
               <span class="node-name">{node.name}</span>
             </button>
           {/each}
@@ -305,6 +312,17 @@
     font-size: 16px;
     line-height: 1;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+  }
+  
+  .custom-node-button .icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
   }
   
   .library-item .label,

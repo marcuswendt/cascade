@@ -1,6 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import type { Graph } from '@/core/Graph';
+  import Icon from './Icon.svelte';
+  import { Waves, ChevronDown, FileText, FolderOpen, Save, Copy, Package, Info } from 'lucide-svelte';
 
   export let graph: Graph;
   export let documentName: string = 'Untitled';
@@ -92,8 +94,12 @@
     on:click={toggleMenu}
     title="Document menu"
   >
-    <span class="logo">🌊</span>
-    <span class="chevron" class:open={menuOpen}>▼</span>
+    <span class="logo">
+      <Waves size={20} />
+    </span>
+    <span class="chevron" class:open={menuOpen}>
+      <ChevronDown size={10} />
+    </span>
   </button>
   
   {#if isEditingName}
@@ -120,22 +126,30 @@
     <div class="menu-dropdown">
       <div class="menu-section">
         <button class="menu-item" on:click={() => handleMenuAction('new')}>
-          <span class="icon">📄</span>
+          <span class="icon">
+            <FileText size={16} />
+          </span>
           <span class="label">New</span>
           <span class="shortcut">⌘N</span>
         </button>
         <button class="menu-item" on:click={() => handleMenuAction('open')}>
-          <span class="icon">📂</span>
+          <span class="icon">
+            <FolderOpen size={16} />
+          </span>
           <span class="label">Open</span>
           <span class="shortcut">⌘O</span>
         </button>
         <button class="menu-item" on:click={() => handleMenuAction('save')}>
-          <span class="icon">💾</span>
+          <span class="icon">
+            <Save size={16} />
+          </span>
           <span class="label">Save</span>
           <span class="shortcut">⌘S</span>
         </button>
         <button class="menu-item" on:click={() => handleMenuAction('saveAs')}>
-          <span class="icon">💾</span>
+          <span class="icon">
+            <Save size={16} />
+          </span>
           <span class="label">Save As...</span>
           <span class="shortcut">⌘⇧S</span>
         </button>
@@ -145,12 +159,16 @@
 
       <div class="menu-section">
         <button class="menu-item" on:click={() => handleMenuAction('duplicate')}>
-          <span class="icon">📋</span>
+          <span class="icon">
+            <Copy size={16} />
+          </span>
           <span class="label">Duplicate</span>
           <span class="shortcut">⌘D</span>
         </button>
         <button class="menu-item" on:click={() => handleMenuAction('export')}>
-          <span class="icon">📦</span>
+          <span class="icon">
+            <Package size={16} />
+          </span>
           <span class="label">Export HTML</span>
           <span class="shortcut">⌘E</span>
         </button>
@@ -160,7 +178,9 @@
 
       <div class="menu-section">
         <button class="menu-item" on:click={() => handleMenuAction('about')}>
-          <span class="icon">ℹ️</span>
+          <span class="icon">
+            <Info size={16} />
+          </span>
           <span class="label">About Cascade</span>
         </button>
       </div>
@@ -204,6 +224,9 @@
   .logo {
     font-size: 20px;
     line-height: 1;
+    display: flex;
+    align-items: center;
+    color: #fff;
   }
 
   .chevron {
@@ -211,6 +234,8 @@
     color: #aaa;
     transition: transform 0.2s ease;
     line-height: 1;
+    display: flex;
+    align-items: center;
   }
 
   .chevron.open {
@@ -313,6 +338,10 @@
     line-height: 1;
     width: 20px;
     text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
   }
 
   .menu-item .label {

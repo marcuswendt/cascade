@@ -1,6 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { getAvailableLibraries } from './nodeTemplates';
+  import Icon from './Icon.svelte';
+  import { MoveUpLeft, Hand } from 'lucide-svelte';
   
   export let activeLibrary: string | null = null;
   
@@ -10,8 +12,8 @@
   $: libraries = getAvailableLibraries();
   
   const tools = [
-    { id: 'select', label: 'Select', icon: '↖', hotkey: 'V' },
-    { id: 'hand', label: 'Hand', icon: '✋', hotkey: 'H' }
+    { id: 'select', label: 'Select', icon: 'MoveUpLeft', hotkey: 'V', component: MoveUpLeft },
+    { id: 'hand', label: 'Hand', icon: 'Hand', hotkey: 'H', component: Hand }
   ];
   
   let activeTool = 'select';
@@ -39,7 +41,9 @@
         on:click={() => handleToolClick(tool.id)}
         title="{tool.label} ({tool.hotkey})"
       >
-        <span class="icon">{tool.icon}</span>
+        <span class="icon">
+          <svelte:component this={tool.component} size={18} />
+        </span>
         <span class="label">{tool.label}</span>
       </button>
     {/each}
@@ -55,7 +59,9 @@
         on:click={() => handleLibraryClick(library.id)}
         title={library.label}
       >
-        <span class="icon">{library.icon}</span>
+        <span class="icon">
+          <Icon name={library.icon} size={18} />
+        </span>
         <span class="label">{library.label}</span>
       </button>
     {/each}

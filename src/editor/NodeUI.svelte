@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import type { Node } from '@/core/Node';
   import { getNodeIcon } from './nodeTemplates';
+  import Icon from './Icon.svelte';
   
   export let node: Node;
   export let selected = false;
@@ -107,7 +108,9 @@
       </div>
       
       <div class="body">
-        <span class="node-icon">{nodeIcon}</span>
+        <span class="node-icon">
+          <Icon name={nodeIcon} size={12} strokeWidth={2} />
+        </span>
       </div>
       
       <!-- Output ports (bottom) -->
@@ -247,6 +250,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    color: #fff;
   }
   
   .label {

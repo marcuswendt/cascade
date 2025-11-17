@@ -23,39 +23,39 @@ export const nodeLibraries: Library[] = [
   {
     id: 'core',
     label: 'Core',
-    icon: '⚙️',
+    icon: 'Settings',
     categories: [
       {
         id: 'math',
         label: 'Math',
         nodes: [
-          { name: 'Add', icon: '➕', description: 'Add two numbers', type: 'Add' },
-          { name: 'Multiply', icon: '✖️', description: 'Multiply two numbers', type: 'Multiply' },
-          { name: 'Sine', icon: '📐', description: 'Sine function', type: 'Sine' },
-          { name: 'Clamp', icon: '📏', description: 'Clamp value', type: 'Clamp' }
+          { name: 'Add', icon: 'Plus', description: 'Add two numbers', type: 'Add' },
+          { name: 'Multiply', icon: 'X', description: 'Multiply two numbers', type: 'Multiply' },
+          { name: 'Sine', icon: 'Triangle', description: 'Sine function', type: 'Sine' },
+          { name: 'Clamp', icon: 'Ruler', description: 'Clamp value', type: 'Clamp' }
         ]
       },
       {
         id: 'time',
         label: 'Time',
         nodes: [
-          { name: 'Timer', icon: '⏱️', description: 'Animation timer', type: 'Timer' }
+          { name: 'Timer', icon: 'Timer', description: 'Animation timer', type: 'Timer' }
         ]
       },
       {
         id: 'input',
         label: 'Input',
         nodes: [
-          { name: 'Mouse', icon: '🖱️', description: 'Mouse input', type: 'Mouse' },
-          { name: 'Keyboard', icon: '⌨️', description: 'Keyboard input', type: 'Keyboard' }
+          { name: 'Mouse', icon: 'MousePointer2', description: 'Mouse input', type: 'Mouse' },
+          { name: 'Keyboard', icon: 'Keyboard', description: 'Keyboard input', type: 'Keyboard' }
         ]
       },
       {
         id: 'output',
         label: 'Output',
         nodes: [
-          { name: 'Viewer', icon: '👁️', description: 'Display output', type: 'Viewer' },
-          { name: 'Export', icon: '💾', description: 'Export image', type: 'Export' }
+          { name: 'Viewer', icon: 'Eye', description: 'Display output', type: 'Viewer' },
+          { name: 'Export', icon: 'Save', description: 'Export image', type: 'Export' }
         ]
       }
     ]
@@ -63,22 +63,22 @@ export const nodeLibraries: Library[] = [
   {
     id: 'lens',
     label: 'Lens',
-    icon: '🎨',
+    icon: 'Palette',
     categories: [
       {
         id: 'filters',
         label: 'Filters',
         nodes: [
-          { name: 'Blur', icon: '🌫️', description: 'Gaussian blur', type: 'Blur' },
-          { name: 'Brightness', icon: '☀️', description: 'Adjust brightness', type: 'Brightness' },
-          { name: 'Contrast', icon: '🎚️', description: 'Adjust contrast', type: 'Contrast' }
+          { name: 'Blur', icon: 'Droplets', description: 'Gaussian blur', type: 'Blur' },
+          { name: 'Brightness', icon: 'Sun', description: 'Adjust brightness', type: 'Brightness' },
+          { name: 'Contrast', icon: 'Sliders', description: 'Adjust contrast', type: 'Contrast' }
         ]
       },
       {
         id: 'import',
         label: 'Import',
         nodes: [
-          { name: 'Image Loader', icon: '📸', description: 'Load images from assets', type: 'ImageLoader' }
+          { name: 'Image Loader', icon: 'Camera', description: 'Load images from assets', type: 'ImageLoader' }
         ]
       }
     ]
@@ -86,7 +86,7 @@ export const nodeLibraries: Library[] = [
   {
     id: 'echo',
     label: 'Echo',
-    icon: '🔊',
+    icon: 'Volume2',
     categories: [
       {
         id: 'audio',
@@ -98,13 +98,13 @@ export const nodeLibraries: Library[] = [
   {
     id: 'custom',
     label: 'Custom',
-    icon: '⚡',
+    icon: 'Zap',
     categories: [
       {
         id: 'user',
         label: 'User',
         nodes: [
-          { name: 'Custom Node', icon: '⚡', description: 'Create custom node', type: 'Custom' }
+          { name: 'Custom Node', icon: 'Zap', description: 'Create custom node', type: 'Custom' }
         ]
       }
     ]
@@ -151,6 +151,6 @@ export function getNodeIcon(nodeType: string): string {
       }
     }
   }
-  return '⚙️'; // Default icon if not found
+  return 'Settings'; // Default icon if not found
 }
 

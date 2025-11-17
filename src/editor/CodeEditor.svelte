@@ -4,6 +4,8 @@
   import type { Node } from '@/core/Node';
   import PackageSearch from './PackageSearch.svelte';
   import type { PackageManager } from '@/core/PackageManager';
+  import Icon from './Icon.svelte';
+  import { Clock, Check, XCircle } from 'lucide-svelte';
   
   export let node: Node;
   export let packageManager: PackageManager | null = null;
@@ -230,11 +232,14 @@ node.onReady = () => {
       {#if status === 'editing'}
         Editing... (Shift+Enter to compile)
       {:else if status === 'compiling'}
-        ⏳ Compiling...
+        <Clock size={14} style="display: inline-block; vertical-align: middle; margin-right: 4px;" />
+        Compiling...
       {:else if status === 'success'}
-        ✅ Success!
+        <Check size={14} style="display: inline-block; vertical-align: middle; margin-right: 4px;" />
+        Success!
       {:else if status === 'error'}
-        ❌ {errorMessage}
+        <XCircle size={14} style="display: inline-block; vertical-align: middle; margin-right: 4px;" />
+        {errorMessage}
       {/if}
     </div>
     <button on:click={onClose} class="close-button">×</button>
@@ -244,7 +249,8 @@ node.onReady = () => {
   
   <div class="footer">
     <button class="package-button" on:click={() => packageSearchOpen = true} title="Search NPM packages (⌘K)">
-      📦 Packages
+      <Icon name="Package" size={14} style="display: inline-block; vertical-align: middle; margin-right: 6px;" />
+      Packages
     </button>
     <div class="footer-right">
       <button on:click={compileNode} disabled={!editor || isDestroyed}>
