@@ -1,0 +1,464 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import Canvas from './editor/Canvas.svelte';
+  import BottomToolbar from './editor/BottomToolbar.svelte';
+  import NodePanel from './editor/NodePanel.svelte';
+  import Inspector from './editor/Inspector.svelte';
+  import ExportDialog from './editor/ExportDialog.svelte';
+  import DocumentPanel from './editor/DocumentPanel.svelte';
+  import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
+  import { Graph } from '@/core/Graph';
+  import type { Node } from '@/core/Node';
+  
+  let presentationMode = false;
+  let showDocumentPanel = true;
+  let activeLibrary: string | null = null;
+  let activeCategory: string | null = null;
+  let selectedNode: Node | null = null;
+  let nodePanelPosition = { x: 0, y: 0 };
+  let activeTool = 'select';
+  let mousePosition = { x: 0, y: 0 };
+  let exportDialogOpen = false;
+  let graph: Graph | undefined = undefined;
+  let documentName = 'Untitled';
+  let currentFilePath: string | null = null;
+  
+  function togglePresentationMode() {
+    presentationMode = !presentationMode;
+    showDocumentPanel = !presentationMode; // Hide document panel in presentation mode
+    if (presentationMode) {
+      activeLibrary = null;
+      activeCategory = null;
+    }
+  }
+  
+  function handleLibraryToggle(libraryId: string | null) {
+    activeLibrary = libraryId;
+    activeCategory = null; // Reset category when library changes
+    if (libraryId) {
+      nodePanelPosition = { x: 0, y: 64 };
+    }
+  }
+  
+  function handleCategorySelect(e: CustomEvent<{ libraryId: string; categoryId: string }>) {
+    activeLibrary = e.detail.libraryId;
+    activeCategory = e.detail.categoryId;
+  }
+  
+  function handleLibrarySelect(e: CustomEvent<{ libraryId: string }>) {
+    activeLibrary = e.detail.libraryId;
+    activeCategory = null;
+  }
+  
+  function handleToolChange(tool: string) {
+    activeTool = tool;
+  }
+  
+  let canvasRef: any = null;
+  
+  function handleAddNode(e: CustomEvent<{ type: string; libraryId: string | null; categoryId: string | null }>) {
+    if (canvasRef) {
+      canvasRef.handleAddNode({ type: e.detail.type, category: e.detail.categoryId });
+    }
+    activeLibrary = null;
+    activeCategory = null;
+  }
+  
+  function handleNodeSelect(node: Node | null) {
+    selectedNode = node;
+  }
+
+  function handleDocumentAction(action: string) {
+    switch (action) {
+      case 'new':
+        handleNewProject();
+        break;
+      case 'open':
+        handleOpenProject();
+        break;
+      case 'save':
+        handleSave();
+        break;
+      case 'saveAs':
+        handleSaveAs();
+        break;
+      case 'duplicate':
+        handleDuplicate();
+        break;
+      case 'export':
+        exportDialogOpen = true;
+        break;
+      case 'about':
+        // TODO: Show about dialog
+        alert('Cascade - Visual Programming Framework\nVersion 1.0.0');
+        break;
+    }
+  }
+
+  function handleNewProject() {
+    if (confirm('Create a new project? Unsaved changes will be lost.')) {
+      if (graph) {
+        graph = new Graph();
+        documentName = 'Untitled';
+        currentFilePath = null;
+        updateWindowTitle();
+        // Re-initialize with default nodes
+        if (canvasRef) {
+          canvasRef.initializeDefaultNodes();
+          // Center canvas on nodes after a short delay to ensure nodes are rendered
+          setTimeout(() => {
+            if (canvasRef) {
+              canvasRef.centerOnNodes();
+            }
+          }, 100);
+        }
+      }
+    }
+  }
+
+  async function handleOpenProject() {
+    try {
+      const file = await triggerFileInput('.json');
+      if (!file) return;
+
+      const json = await loadGraphFromFile(file);
+      if (graph) {
+        // Clear existing graph
+        graph.nodes.forEach(node => {
+          if (node.onDestroy) {
+            node.onDestroy();
+          }
+        });
+        
+        // Load new graph
+        graph = Graph.fromJSON(json);
+        documentName = removeExtension(file.name);
+        currentFilePath = file.name;
+        updateWindowTitle();
+        
+        // Execute all nodes to initialize them
+        graph.nodes.forEach(async (node) => {
+          if (node.code) {
+            try {
+              // Wrap code in async function to support top-level await (same as CodeEditor)
+              const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
+              const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
+              node.setFunction(nodeFunction);
+              await node.execute();
+            } catch (err) {
+              console.warn('Failed to execute node ' + node.id + ':', err);
+            }
+          }
+        });
+        
+        // Center canvas on nodes after loading
+        setTimeout(() => {
+          if (canvasRef) {
+            canvasRef.centerOnNodes();
+          }
+        }, 100);
+      }
+    } catch (error) {
+      alert('Failed to open project: ' + (error as Error).message);
+    }
+  }
+
+  function handleSave() {
+    if (!graph) return;
+    
+    if (currentFilePath) {
+      saveGraph(graph, currentFilePath);
+    } else {
+      handleSaveAs();
+    }
+  }
+
+  function handleSaveAs() {
+    if (!graph) return;
+    
+    const filename = documentName + '.cascade.json';
+    saveGraph(graph, filename);
+    currentFilePath = filename;
+  }
+
+  function handleDuplicate() {
+    if (!graph) return;
+    
+    // Create a copy of the current graph
+    const json = graph.toJSON();
+    const newGraph = Graph.fromJSON(json);
+    
+    // Offset all nodes slightly
+    newGraph.nodes.forEach(node => {
+      node.position.x += 50;
+      node.position.y += 50;
+    });
+    
+    graph = newGraph;
+    documentName = documentName + ' Copy';
+    currentFilePath = null;
+    updateWindowTitle();
+    
+    // Execute all nodes to initialize them
+    newGraph.nodes.forEach(node => {
+      if (node.code) {
+        try {
+          const nodeFunction = new Function('node', 'graph', node.code);
+          node.setFunction(nodeFunction);
+          node.execute();
+        } catch (err) {
+          console.warn('Failed to execute node ' + node.id + ':', err);
+        }
+      }
+    });
+    
+    // Center canvas on nodes after duplicating
+    setTimeout(() => {
+      if (canvasRef) {
+        canvasRef.centerOnNodes();
+      }
+    }, 100);
+  }
+
+  function updateWindowTitle() {
+    if (typeof document !== 'undefined') {
+      document.title = `${documentName} - Cascade`;
+    }
+  }
+
+  // Update window title when document name changes
+  $: if (documentName) {
+    updateWindowTitle();
+  }
+
+  // Set initial window title
+  onMount(() => {
+    updateWindowTitle();
+    // Keyboard shortcuts
+    function handleKeyDown(e: KeyboardEvent) {
+      // Presentation mode toggle (⌘. or Ctrl.)
+      if ((e.metaKey || e.ctrlKey) && e.key === '.') {
+        e.preventDefault();
+        togglePresentationMode();
+      }
+      
+      // Tool shortcuts
+      if (e.key === 'v' || e.key === 'V') {
+        if (!e.metaKey && !e.ctrlKey) {
+          activeTool = 'select';
+        }
+      }
+      if (e.key === 'h' || e.key === 'H') {
+        if (!e.metaKey && !e.ctrlKey) {
+          activeTool = 'hand';
+        }
+      }
+      
+      // Open node panel with Tab
+      if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        // Only if not typing in an input field
+        const target = e.target as HTMLElement;
+        if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          if (activeLibrary || activeCategory) {
+            activeLibrary = null;
+            activeCategory = null;
+          } else {
+            // Center on screen when opening with Tab
+            mousePosition = { 
+              x: window.innerWidth / 2, 
+              y: window.innerHeight / 2 
+            };
+            // Open with first available library
+            activeLibrary = 'core';
+          }
+        }
+      }
+      
+      // Close node panel with Escape
+      if (e.key === 'Escape' && (activeLibrary || activeCategory)) {
+        activeLibrary = null;
+        activeCategory = null;
+      }
+      
+      // Additional keyboard shortcuts
+      // ⌘B - Toggle bottom toolbar visibility (via presentation mode)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+        e.preventDefault();
+        // Toggle presentation mode which hides toolbar
+        togglePresentationMode();
+      }
+      
+      // ⌘/ - Toggle node panel (same as Tab)
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        e.preventDefault();
+        const target = e.target as HTMLElement;
+        if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+          if (activeLibrary || activeCategory) {
+            activeLibrary = null;
+            activeCategory = null;
+          } else {
+            mousePosition = { 
+              x: window.innerWidth / 2, 
+              y: window.innerHeight / 2 
+            };
+            activeLibrary = 'core';
+          }
+        }
+      }
+      
+      // ⌘; - Toggle inspector
+      if ((e.metaKey || e.ctrlKey) && e.key === ';') {
+        e.preventDefault();
+        if (selectedNode) {
+          selectedNode = null;
+        } else if (selectedNode === null) {
+          // Would need to get last selected node, but for now just close
+          selectedNode = null;
+        }
+      }
+
+      // ⌘E - Export project
+      if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
+        e.preventDefault();
+        exportDialogOpen = true;
+      }
+
+      // ⌘N - New project
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+        e.preventDefault();
+        handleNewProject();
+      }
+
+      // ⌘O - Open project
+      if ((e.metaKey || e.ctrlKey) && e.key === 'o') {
+        e.preventDefault();
+        handleOpenProject();
+      }
+
+      // ⌘S - Save project
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleSaveAs();
+        } else {
+          handleSave();
+        }
+      }
+
+      // ⌘D - Duplicate (when not in input)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          handleDuplicate();
+        }
+      }
+    }
+    
+    window.addEventListener('keydown', handleKeyDown);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  });
+</script>
+
+<div class="app" class:presentation-mode={presentationMode}>
+  {#if graph && showDocumentPanel}
+    <DocumentPanel
+      {graph}
+      bind:documentName={documentName}
+      on:action={(e) => handleDocumentAction(e.detail)}
+      on:nameChange={(e) => {
+        documentName = e.detail;
+        updateWindowTitle();
+      }}
+    />
+  {/if}
+
+  {#if !presentationMode}
+    <BottomToolbar
+      {activeLibrary}
+      on:libraryToggle={(e) => handleLibraryToggle(e.detail)}
+      on:toolChange={(e) => handleToolChange(e.detail)}
+    />
+  {/if}
+  
+  <Canvas
+    bind:this={canvasRef}
+    {activeTool}
+    bind:selectedNode={selectedNode}
+    bind:graph={graph}
+    on:nodeSelect={(e) => handleNodeSelect(e.detail.node)}
+    on:openNodePanel={(e) => {
+      // Get mouse position from event or use center of screen
+      if (e.detail?.x && e.detail?.y) {
+        mousePosition = { x: e.detail.x, y: e.detail.y };
+      } else {
+        mousePosition = { 
+          x: window.innerWidth / 2, 
+          y: window.innerHeight / 2 
+        };
+      }
+      // Open with first available library
+      activeLibrary = activeLibrary ? null : 'core';
+      activeCategory = null;
+    }}
+  />
+  
+  {#if activeLibrary || activeCategory}
+    <NodePanel
+      libraryId={activeLibrary}
+      categoryId={activeCategory}
+      position={nodePanelPosition}
+      centerPosition={mousePosition}
+      on:addNode={handleAddNode}
+      on:selectCategory={handleCategorySelect}
+      on:selectLibrary={handleLibrarySelect}
+      on:close={() => {
+        activeLibrary = null;
+        activeCategory = null;
+      }}
+    />
+  {/if}
+  
+  {#if selectedNode && (!presentationMode || presentationMode)}
+    <Inspector
+      node={selectedNode}
+      position="right"
+    />
+  {/if}
+
+  {#if graph}
+    <ExportDialog
+      {graph}
+      bind:open={exportDialogOpen}
+      on:close={() => exportDialogOpen = false}
+    />
+  {/if}
+</div>
+
+<style>
+  :global(body) {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow: hidden;
+  }
+  
+  .app {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  
+  
+  .app.presentation-mode :global(.canvas) {
+    width: 100%;
+    height: 100vh;
+  }
+</style>
+

@@ -1,0 +1,83 @@
+{
+  "version": "1.0.0",
+  "nodes": [
+    {
+      "id": "timer_1",
+      "type": "Timer",
+      "name": "Timer",
+      "code": "const trigger = node.in('trigger', null, { type: 'trigger' });\nconst interval = node.in('interval', 1000);\nconst output = node.out('tick');\n\nlet timerId = null;\n\nif (trigger) {\n  trigger.onTrigger = () => {\n    if (timerId) clearInterval(timerId);\n    timerId = setInterval(() => {\n      output.trigger({ time: Date.now() });\n    }, interval.value || 1000);\n  };\n}\n\nnode.onDestroy = () => {\n  if (timerId) clearInterval(timerId);\n};\n",
+      "position": { "x": 100, "y": 100 },
+      "comment": "",
+      "inputs": [
+        {
+          "id": "timer_1_in_trigger",
+          "name": "trigger",
+          "portType": "trigger",
+          "dataType": "trigger",
+          "value": null,
+          "defaultValue": null
+        },
+        {
+          "id": "timer_1_in_interval",
+          "name": "interval",
+          "portType": "param",
+          "dataType": "number",
+          "value": 1000,
+          "defaultValue": 1000
+        }
+      ],
+      "outputs": [
+        {
+          "id": "timer_1_out_tick",
+          "name": "tick",
+          "portType": "trigger",
+          "dataType": "trigger",
+          "value": null
+        }
+      ]
+    },
+    {
+      "id": "viewer_1",
+      "type": "Viewer",
+      "name": "Viewer",
+      "code": "const input = node.in('input', null);\nconst output = node.out('output');\n\nif (input && input.value !== null) {\n  output.setValue(input.value);\n  console.log('[Viewer]', input.value);\n}\n",
+      "position": { "x": 400, "y": 100 },
+      "comment": "",
+      "inputs": [
+        {
+          "id": "viewer_1_in_input",
+          "name": "input",
+          "portType": "param",
+          "dataType": "any",
+          "value": null,
+          "defaultValue": null
+        }
+      ],
+      "outputs": [
+        {
+          "id": "viewer_1_out_output",
+          "name": "output",
+          "portType": "param",
+          "dataType": "any",
+          "value": null
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn_1",
+      "from": {
+        "nodeId": "timer_1",
+        "portId": "timer_1_out_tick"
+      },
+      "to": {
+        "nodeId": "viewer_1",
+        "portId": "viewer_1_in_input"
+      },
+      "type": "trigger"
+    }
+  ],
+  "packages": []
+}
+
