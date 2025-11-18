@@ -141,7 +141,7 @@ cascade/
 
 ### Save Project
 - **⌘S** or click the document name → Save
-- Projects are saved as `.cascade.json` files
+- Projects are saved as `.cascade` files
 
 ### Export to HTML
 - **⌘E** or click the document name → Export HTML
@@ -169,6 +169,81 @@ npm run check
 ```bash
 npm run preview
 ```
+
+## 💻 Command Line Interface
+
+Cascade includes a CLI tool for running graphs from the command line, perfect for automation, CI/CD, and headless execution.
+
+### Building the CLI
+
+First, build the CLI:
+
+```bash
+npm run build:cli
+```
+
+This compiles the TypeScript CLI code to `dist/cli/`.
+
+### Installing the CLI
+
+After building, you can install it locally:
+
+```bash
+npm link
+```
+
+This makes the `cascade` command available globally on your system.
+
+### Running Graphs
+
+Once installed, you can run graphs from the command line:
+
+```bash
+# Run a graph file
+cascade run graphs/examples/hello-world.cascade
+
+# Validate a graph without executing
+cascade validate graphs/examples/hello-world.cascade
+
+# Run with verbose output
+cascade run graph.cascade --verbose
+
+# Run from a specific entry node
+cascade run graph.cascade --entry-node node_1234567890_abc123
+
+# Show help
+cascade --help
+
+# Show version
+cascade --version
+```
+
+### CLI Options
+
+- `run <graph-file>` - Execute a graph file
+- `validate <graph-file>` - Validate a graph file without executing
+- `--entry-node <id>` - Execute from a specific entry node
+- `--verbose, -v` - Show verbose output
+- `--help, -h` - Show help message
+- `--version` - Show version
+
+### Direct Execution (Without Installation)
+
+You can also run the CLI directly without installing:
+
+```bash
+node dist/cli/index.js run graphs/examples/hello-world.cascade
+```
+
+### What the CLI Does
+
+The CLI will:
+1. **Load** the graph JSON file
+2. **Validate** the graph (checks for cycles, invalid connections, orphaned nodes)
+3. **Execute** the graph using topological sort for proper ordering
+4. **Report** any errors or warnings with clear messages
+
+The CLI uses the same execution engine as the editor, ensuring consistent behavior between visual editing and command-line execution.
 
 ## 📚 Documentation
 

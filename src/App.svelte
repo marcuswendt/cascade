@@ -5,8 +5,9 @@
   import ExportDialog from './editor/ExportDialog.svelte';
   import DocumentPanel from './editor/DocumentPanel.svelte';
   import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
-  import { Graph } from '@/core/Graph';
-  import type { Node } from '@/core/Node';
+  import { Graph } from '@/core/engine/Graph';
+  import type { Node } from '@/core/engine/Node';
+  import { GraphEditorAdapter } from './editor/GraphEditorAdapter';
   
   let presentationMode = false;
   let showDocumentPanel = true;
@@ -112,9 +113,17 @@
   }
 
   function handleNewProject() {
-    if (confirm('Create a new project? Unsaved changes will be lost.')) {
-      if (graph) {
-        graph = new Graph();
+    if (graph && confirm('Create a new project? Unsaved changes will be lost.')) {
+      // User confirmed, proceed with new project
+    } else if (!graph) {
+      // No existing graph, just create new one
+    } else {
+      // User cancelled
+      return;
+    }
+    
+    const adapter = GraphEditorAdapter.create();
+    graph = adapter.getGraph();
         documentName = 'Untitled';
         currentFilePath = null;
         updateWindowTitle();
@@ -127,33 +136,34 @@
               windowManagerRef.centerOnNodes();
             }
           }, 100);
-        }
-      }
     }
   }
 
   async function handleOpenProject() {
     try {
-      const file = await triggerFileInput('.json');
+      const file = await triggerFileInput('.cascade');
       if (!file) return;
 
       const json = await loadGraphFromFile(file);
+      
+      // Clear existing graph if it exists
       if (graph) {
-        // Clear existing graph
         graph.nodes.forEach(node => {
           if (node.onDestroy) {
             node.onDestroy();
           }
         });
+      }
         
         // Load new graph
-        graph = Graph.fromJSON(json);
+      const adapter = GraphEditorAdapter.fromJSON(json);
+      graph = adapter.getGraph();
         documentName = removeExtension(file.name);
         currentFilePath = file.name;
         updateWindowTitle();
         
         // Execute all nodes to initialize them
-        graph.nodes.forEach(async (node) => {
+        for (const node of graph.nodes) {
           if (node.code) {
             try {
               // Wrap code in async function to support top-level await (same as CodeEditor)
@@ -165,7 +175,10 @@
               console.warn('Failed to execute node ' + node.id + ':', err);
             }
           }
-        });
+        }
+        
+        // Restore connections now that ports exist
+        graph.restoreConnections();
         
         // Center canvas on nodes after loading
         setTimeout(() => {
@@ -173,7 +186,6 @@
             windowManagerRef.centerOnNodes();
           }
         }, 100);
-      }
     } catch (error) {
       alert('Failed to open project: ' + (error as Error).message);
     }
@@ -192,7 +204,7 @@
   function handleSaveAs() {
     if (!graph) return;
     
-    const filename = documentName + '.cascade.json';
+    const filename = documentName + '.cascade';
     saveGraph(graph, filename);
     currentFilePath = filename;
   }
@@ -202,7 +214,8 @@
     
     // Create a copy of the current graph
     const json = graph.toJSON();
-    const newGraph = Graph.fromJSON(json);
+    const adapter = GraphEditorAdapter.fromJSON(json);
+    const newGraph = adapter.getGraph();
     
     // Offset all nodes slightly
     newGraph.nodes.forEach(node => {
@@ -535,7 +548,7 @@
 </script>
 
 <div class="app" class:presentation-mode={presentationMode}>
-  {#if graph && showDocumentPanel}
+  {#if showDocumentPanel}
     <DocumentPanel
       {graph}
       bind:documentName={documentName}

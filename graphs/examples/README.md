@@ -7,11 +7,11 @@ This directory contains example Cascade projects to help you get started.
 1. Open Cascade
 2. Press **⌘O** (or **Ctrl+O**) to open a project
 3. Navigate to `graphs/examples/`
-4. Select an example file (`.cascade.json`)
+4. Select an example file (`.cascade`)
 
 ## Available Examples
 
-### hello-world.cascade.json
+### hello-world.cascade
 A simple example connecting a Timer node to a Viewer node.
 
 **What it does:**
@@ -25,7 +25,7 @@ A simple example connecting a Timer node to a Viewer node.
 3. Modify the interval value
 4. See the changes in real-time
 
-### counter.cascade.json
+### counter.cascade
 A counter that increments on each timer tick.
 
 **What it does:**
@@ -44,7 +44,7 @@ A counter that increments on each timer tick.
 
 1. Create a new project in Cascade
 2. Build your graph
-3. Save it as `.cascade.json` in this directory
+3. Save it as `.cascade` in this directory
 4. Share it with others!
 
 ## Tips

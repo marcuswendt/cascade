@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import * as monaco from 'monaco-editor';
-  import type { Node } from '@/core/Node';
+  import type { Node } from '@/core/engine/Node';
   import PackageSearch from './PackageSearch.svelte';
-  import type { PackageManager } from '@/core/PackageManager';
+  import type { PackageManager } from '@/core/engine/PackageManager';
   import Icon from './Icon.svelte';
   import { Clock, Check, XCircle } from 'lucide-svelte';
   import { getLensNodeTemplate } from '@/nodes/lens';

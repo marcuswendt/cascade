@@ -2,12 +2,12 @@
  * File system utilities for saving and loading graphs
  */
 
-import type { Graph } from '@/core/Graph';
+import type { Graph } from '@/core/engine/Graph';
 
 /**
  * Save graph as JSON file
  */
-export function saveGraph(graph: Graph, filename: string = 'graph.cascade.json') {
+export function saveGraph(graph: Graph, filename: string = 'graph.cascade') {
   const json = graph.toJSON();
   const jsonString = JSON.stringify(json, null, 2);
   const blob = new Blob([jsonString], { type: 'application/json' });
@@ -43,7 +43,7 @@ export function loadGraphFromFile(file: File): Promise<any> {
 /**
  * Trigger file input dialog
  */
-export function triggerFileInput(accept: string = '.json'): Promise<File | null> {
+export function triggerFileInput(accept: string = '.cascade'): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';

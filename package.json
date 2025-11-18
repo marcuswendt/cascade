@@ -2,9 +2,13 @@
   "name": "cascade",
   "version": "0.1.0",
   "type": "module",
+  "bin": {
+    "cascade": "./dist/cli/index.js"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:cli": "tsc --project tsconfig.cli.json",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { Node } from '@/core/Node';
+  import type { Node } from '@/core/engine/Node';
   import Icon from './Icon.svelte';
   
   interface Tab {

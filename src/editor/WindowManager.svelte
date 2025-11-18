@@ -9,8 +9,8 @@
   import BottomToolbar from './BottomToolbar.svelte';
   import Tabs from './Tabs.svelte';
   import CodeEditor from './CodeEditor.svelte';
-  import type { Graph } from '@/core/Graph';
-  import type { Node } from '@/core/Node';
+  import type { Graph } from '@/core/engine/Graph';
+  import type { Node } from '@/core/engine/Node';
   
   import { createEventDispatcher } from 'svelte';
   

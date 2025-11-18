@@ -1,7 +1,8 @@
-import { Node } from './Node';
-import { AssetManager } from './AssetManager';
-import { PackageManager } from './PackageManager';
-import type { Connection } from '@/types/node.types';
+import { Node } from './Node.js';
+import { AssetManager } from './AssetManager.js';
+import { PackageManager } from './PackageManager.js';
+import { GraphValidator, type ValidationResult } from './GraphValidator.js';
+import type { Connection } from '../../types/node.types.js';
 
 export interface CanvasAnnotation {
   id: string;
@@ -29,6 +30,8 @@ export interface CanvasAnnotation {
   containedElements?: string[];
 }
 
+export type ExecutionState = 'idle' | 'running' | 'paused' | 'stopped';
+
 export class Graph {
   nodes: Node[] = [];
   connections: Connection[] = [];
@@ -36,17 +39,20 @@ export class Graph {
   annotations: CanvasAnnotation[] = [];
   packageManager: PackageManager;
   assetManager: AssetManager;
-  sceneContainer: HTMLElement;
   
   // Execution Control (v1.2)
   cookingNodes: Set<Node> = new Set();
   multiCookMode: boolean = false;
   
-  constructor() {
-    this.sceneContainer = document.createElement('div');
-    this.sceneContainer.id = 'cascade-scene';
-    this.assetManager = new AssetManager();
-    this.packageManager = new PackageManager();
+  // Execution state
+  executionState: ExecutionState = 'idle';
+  private executionQueue: Node[] = [];
+  // Shared visited set for executeUpstream calls during active execution
+  private activeExecutionVisited: Set<string> | null = null;
+  
+  constructor(assetManager?: AssetManager, packageManager?: PackageManager) {
+    this.assetManager = assetManager || new AssetManager();
+    this.packageManager = packageManager || new PackageManager();
   }
   
   /**
@@ -106,7 +112,35 @@ export class Graph {
     return this.nodes.find(n => n.id === nodeId) || null;
   }
   
+  /**
+   * Validate a connection before creating it
+   */
+  validateConnection(fromPort: any, toPort: any): { valid: boolean; error?: string } {
+    const fromNodeId = fromPort.id.split('_out_')[0];
+    const toNodeId = toPort.id.split('_in_')[0];
+    
+    const error = GraphValidator.validateConnection(
+      this,
+      fromNodeId,
+      toNodeId,
+      fromPort.id,
+      toPort.id
+    );
+    
+    if (error) {
+      return { valid: false, error: error.message };
+    }
+    
+    return { valid: true };
+  }
+  
   connect(fromPort: any, toPort: any): Connection {
+    // Validate connection first
+    const validation = this.validateConnection(fromPort, toPort);
+    if (!validation.valid) {
+      throw new Error(`Invalid connection: ${validation.error}`);
+    }
+    
     // Use a counter to ensure unique IDs even if connections are created in the same millisecond
     const connection: Connection = {
       id: `conn_${Date.now()}_${++this.connectionIdCounter}`,
@@ -173,39 +207,174 @@ export class Graph {
     }
   }
   
+  /**
+   * Validate the entire graph
+   */
+  validate(): ValidationResult {
+    return GraphValidator.validateGraph(this);
+  }
+  
+  /**
+   * Execute graph using topological sort for proper ordering
+   */
   async execute(entryNode?: Node) {
-    if (entryNode) {
-      await this.executeUpstream(entryNode);
-    } else {
-      // Execute all nodes with no input connections
-      const promises: Promise<void>[] = [];
-      this.nodes.forEach(node => {
-        if (node.inputs.every(p => p.connections.length === 0)) {
-          promises.push(this.executeUpstream(node));
+    if (this.executionState === 'running') {
+      console.warn('Graph execution already in progress');
+      return;
+    }
+
+    this.executionState = 'running';
+    // Initialize shared visited set for executeUpstream calls during this execution
+    this.activeExecutionVisited = new Set();
+    
+    try {
+      if (entryNode) {
+        // Execute from specific entry point
+        await this.executeFromEntry(entryNode);
+      } else {
+        // Execute all entry points (nodes with no input connections)
+        const entryPoints = this.nodes.filter(
+          node => node.inputs.every(p => p.connections.length === 0)
+        );
+        
+        if (entryPoints.length === 0) {
+          console.warn('No entry points found in graph');
+          return;
         }
-      });
-      await Promise.all(promises);
+        
+        // Execute all entry points in parallel
+        await Promise.all(entryPoints.map(node => this.executeFromEntry(node)));
+      }
+    } finally {
+      this.executionState = 'idle';
+      // Clear shared visited set when execution completes
+      this.activeExecutionVisited = null;
     }
   }
   
-  async executeUpstream(node: Node) {
-    // Execute all upstream nodes first
-    const upstreamPromises: Promise<void>[] = [];
-    node.inputs.forEach(input => {
-      input.connections.forEach(conn => {
-        const upstreamNode = this.getNode(conn.from.nodeId);
-        if (upstreamNode) {
-          upstreamPromises.push(this.executeUpstream(upstreamNode));
+  /**
+   * Execute upstream nodes for a given node, handling execution state internally.
+   * This method is safe to call from within node callbacks and will automatically
+   * handle cases where graph execution is already in progress.
+   * 
+   * @param node The node whose upstream dependencies should be executed
+   */
+  async executeUpstream(node: Node): Promise<void> {
+    // If execution is already in progress, execute nodes directly
+    // to avoid conflicts with the global execution state
+    if (this.executionState === 'running') {
+      // Use shared visited set for this execution context to prevent duplicate work
+      // and infinite recursion in cycles
+      if (!this.activeExecutionVisited) {
+        this.activeExecutionVisited = new Set();
+      }
+      
+      // Prevent infinite recursion in case of cycles
+      if (this.activeExecutionVisited.has(node.id)) {
+        return;
+      }
+      this.activeExecutionVisited.add(node.id);
+
+      // Execute upstream nodes directly when already in execution context
+      const upstreamPromises: Promise<void>[] = [];
+      for (const input of node.inputs) {
+        for (const conn of input.connections) {
+          const upstreamNode = this.getNode(conn.from.nodeId);
+          if (upstreamNode) {
+            // Recursively execute upstream nodes first (with cycle detection)
+            upstreamPromises.push(this.executeUpstream(upstreamNode));
+          }
         }
-      });
+      }
+      // Wait for all upstream nodes, then execute this node
+      await Promise.all(upstreamPromises);
+      await node.execute();
+    } else {
+      // Use full execute() method for proper topological sort when not in execution context
+      try {
+        await this.execute(node);
+      } catch (err) {
+        // Handle cycle detection errors gracefully
+        console.warn(`Failed to execute upstream for node ${node.name}:`, err);
+      }
+    }
+  }
+
+  /**
+   * Execute from a specific entry node using topological sort
+   */
+  private async executeFromEntry(entryNode: Node) {
+    // Build dependency graph starting from entry node
+    const nodesToExecute = new Set<Node>();
+    const visited = new Set<string>();
+    
+    const collectDownstream = (node: Node) => {
+      if (visited.has(node.id)) return;
+      visited.add(node.id);
+      nodesToExecute.add(node);
+      
+      // Collect all downstream nodes
+      for (const output of node.outputs) {
+        for (const conn of output.connections) {
+          const downstreamNode = this.getNode(conn.to.nodeId);
+          if (downstreamNode) {
+            collectDownstream(downstreamNode);
+          }
+        }
+      }
+    };
+    
+    collectDownstream(entryNode);
+    
+    // Create a subgraph with only these nodes for topological sort
+    const subgraph = new Graph(this.assetManager, this.packageManager);
+    subgraph.nodes = Array.from(nodesToExecute);
+    subgraph.connections = this.connections.filter(conn => {
+      const fromNode = this.getNode(conn.from.nodeId);
+      const toNode = this.getNode(conn.to.nodeId);
+      return fromNode && toNode && nodesToExecute.has(fromNode) && nodesToExecute.has(toNode);
     });
     
-    // Wait for all upstream nodes to finish, then execute this node
-    await Promise.all(upstreamPromises);
-    await node.execute();
+    // Get topological order
+    const sortedNodeIds = GraphValidator.topologicalSort(subgraph);
+    
+    // Execute nodes in topological order
+    // Nodes at the same level can execute in parallel
+    const executed = new Set<string>();
+    
+    for (const nodeId of sortedNodeIds) {
+      const node = this.getNode(nodeId);
+      if (!node) continue;
+      
+      // Wait for all upstream nodes to complete
+      const upstreamPromises: Promise<void>[] = [];
+      for (const input of node.inputs) {
+        for (const conn of input.connections) {
+          const upstreamNode = this.getNode(conn.from.nodeId);
+          if (upstreamNode && !executed.has(upstreamNode.id)) {
+            // This shouldn't happen with proper topological sort, but safety check
+            upstreamPromises.push(
+              new Promise(resolve => {
+                const checkInterval = setInterval(() => {
+                  if (executed.has(upstreamNode.id)) {
+                    clearInterval(checkInterval);
+                    resolve();
+                  }
+                }, 10);
+              })
+            );
+          }
+        }
+      }
+      
+      await Promise.all(upstreamPromises);
+      await node.execute();
+      executed.add(nodeId);
+    }
   }
   
   stop() {
+    this.executionState = 'stopped';
     // Stop all execution (for future use with timers/intervals)
     this.nodes.forEach(node => {
       if (node.onDestroy) {
@@ -223,6 +392,8 @@ export class Graph {
     });
     this.cookingNodes.clear();
     this.multiCookMode = false;
+    this.executionState = 'idle';
+    this.executionQueue = [];
   }
   
   // Behavior Control (v1.2)
@@ -323,8 +494,8 @@ export class Graph {
     };
   }
 
-  static fromJSON(json: any): Graph {
-    const graph = new Graph();
+  static fromJSON(json: any, assetManager?: AssetManager, packageManager?: PackageManager): Graph {
+    const graph = new Graph(assetManager, packageManager);
     
     // Load packages if specified (for future use)
     if (json.packages && Array.isArray(json.packages)) {
@@ -378,25 +549,75 @@ export class Graph {
       }
     });
     
-    // Restore connections
-    json.connections.forEach((connData: any) => {
-      const fromNode = graph.getNode(connData.from.nodeId);
-      const toNode = graph.getNode(connData.to.nodeId);
-      if (fromNode && toNode) {
-        const fromPort = fromNode.outputs.find(p => p.id === connData.from.portId);
-        const toPort = toNode.inputs.find(p => p.id === connData.to.portId);
-        if (fromPort && toPort) {
-          graph.connect(fromPort, toPort);
-        }
-      }
-    });
+    // Restore connections (ports may not exist yet if nodes haven't executed)
+    // Connections will be fully validated after nodes execute
+    const connectionsToRestore = json.connections || [];
     
     // Restore annotations
     if (json.annotations && Array.isArray(json.annotations)) {
       graph.annotations = json.annotations;
     }
     
+    // Store connections to restore after nodes execute (for CLI/headless environments)
+    // In browser, connections are restored here but may fail silently if ports don't exist yet
+    (graph as any)._connectionsToRestore = connectionsToRestore;
+    
+    // Try to restore connections now (will work if nodes were already executed)
+    // If ports don't exist, they'll be restored later when restoreConnections() is called
+    connectionsToRestore.forEach((connData: any) => {
+      const fromNode = graph.getNode(connData.from.nodeId);
+      const toNode = graph.getNode(connData.to.nodeId);
+      if (fromNode && toNode) {
+        const fromPort = fromNode.outputs.find(p => p.id === connData.from.portId);
+        const toPort = toNode.inputs.find(p => p.id === connData.to.portId);
+        if (fromPort && toPort) {
+          try {
+            graph.connect(fromPort, toPort);
+          } catch (err) {
+            // Connection failed - will be retried after nodes execute
+          }
+        }
+      }
+    });
+    
     return graph;
+  }
+  
+  /**
+   * Restore connections that were stored during fromJSON
+   * Call this after nodes have been executed to ensure ports exist
+   */
+  restoreConnections(): void {
+    const connectionsToRestore = (this as any)._connectionsToRestore || [];
+    if (connectionsToRestore.length === 0) return;
+    
+    connectionsToRestore.forEach((connData: any) => {
+      const fromNode = this.getNode(connData.from.nodeId);
+      const toNode = this.getNode(connData.to.nodeId);
+      if (fromNode && toNode) {
+        const fromPort = fromNode.outputs.find(p => p.id === connData.from.portId);
+        const toPort = toNode.inputs.find(p => p.id === connData.to.portId);
+        if (fromPort && toPort) {
+          // Check if connection already exists
+          const exists = this.connections.some(c => 
+            c.from.nodeId === connData.from.nodeId &&
+            c.from.portId === connData.from.portId &&
+            c.to.nodeId === connData.to.nodeId &&
+            c.to.portId === connData.to.portId
+          );
+          if (!exists) {
+            try {
+              this.connect(fromPort, toPort);
+            } catch (err) {
+              // Connection validation failed - skip it
+            }
+          }
+        }
+      }
+    });
+    
+    // Clean up
+    delete (this as any)._connectionsToRestore;
   }
 }
 

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { Node } from '@/core/Node';
+  import type { Node } from '@/core/engine/Node';
   import type { InputPort, Prop } from '@/types/node.types';
-  import type { Graph, CanvasAnnotation } from '@/core/Graph';
+  import type { Graph, CanvasAnnotation } from '@/core/engine/Graph';
   import { inferPropControlType } from '@/utils/propUtils';
   import NumberInput from './components/NumberInput.svelte';
   import VectorInput from './components/VectorInput.svelte';

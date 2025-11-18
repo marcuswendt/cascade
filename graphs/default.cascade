@@ -1,0 +1,137 @@
+{
+  "version": "0.1",
+  "metadata": {
+    "name": "Default Cascade Graph",
+    "created": "2024-01-01T00:00:00.000Z",
+    "modified": "2024-01-01T00:00:00.000Z"
+  },
+  "packages": [],
+  "assets": {
+    "manifest": []
+  },
+  "nodes": [
+    {
+      "id": "node_timer_default",
+      "name": "Timer1",
+      "type": "Timer",
+      "code": "const tick = node.out('tick', 'trigger');\nconst time = node.out('time');\n\nlet frame = 0;\nsetInterval(() => {\n  time.setValue(frame++);\n  tick.trigger({ frame });\n}, 1000 / 60);",
+      "position": { "x": 0, "y": 100 },
+      "comment": "",
+      "props": {},
+      "bypassed": false,
+      "cooking": false
+    },
+    {
+      "id": "node_color_default",
+      "name": "Color1",
+      "type": "Color",
+      "code": "// Color node - creates a solid color canvas\nnode.defineProp('color', {\n  value: '#87CEEB',\n  type: 'color',\n  displayName: 'Color'\n});\n\nnode.defineProp('resolution', {\n  value: [512, 512],\n  params: {\n    min: [1, 1],\n    max: [4096, 4096],\n    integer: true\n  },\n  displayName: 'Resolution'\n});\n\nconst output = node.out('image');\n\nfunction render() {\n  const [width, height] = node.props.resolution.value;\n  const canvas = document.createElement('canvas');\n  canvas.width = width;\n  canvas.height = height;\n  const ctx = canvas.getContext('2d');\n  if (ctx) {\n    ctx.fillStyle = node.props.color.value;\n    ctx.fillRect(0, 0, width, height);\n  }\n  output.setValue(canvas);\n  node.preview = canvas;\n}\n\n// Watch for prop changes\nnode.watchProp('color', render);\nnode.watchProp('resolution', render);\n\n// Initial render\nnode.onReady = () => {\n  render();\n};",
+      "position": { "x": 200, "y": 250 },
+      "comment": "",
+      "props": {
+        "color": "#87CEEB",
+        "resolution": [512, 512]
+      },
+      "bypassed": false,
+      "cooking": false
+    },
+    {
+      "id": "node_checkers_default",
+      "name": "Checkers1",
+      "type": "Checkers",
+      "code": "// Checkers node - generates a checkerboard pattern\nnode.defineProp('color1', {\n  value: '#ffffff',\n  type: 'color',\n  displayName: 'Color 1',\n  onChange: render\n});\n\nnode.defineProp('color2', {\n  value: '#000000',\n  type: 'color',\n  displayName: 'Color 2',\n  onChange: render\n});\n\nnode.defineProp('mode', {\n  value: 'size',\n  params: {\n    options: [\n      { value: 'size', label: 'Size' },\n      { value: 'divisions', label: 'Divisions' }\n    ]\n  },\n  displayName: 'Mode',\n  onChange: render\n});\n\nnode.defineProp('size', {\n  value: 32,\n  params: {\n    min: 1,\n    max: 512,\n    step: 0.1\n  },\n  displayName: 'Size',\n  hidden: () => node.props.mode.value !== 'size',\n  onChange: render\n});\n\nnode.defineProp('divisions', {\n  value: 16,\n  params: {\n    min: 1,\n    max: 512,\n    step: 1,\n    integer: true\n  },\n  displayName: 'Divisions',\n  hidden: () => node.props.mode.value !== 'divisions',\n  onChange: render\n});\n\nnode.defineProp('resolution', {\n  value: [512, 512],\n  params: {\n    min: [1, 1],\n    max: [4096, 4096],\n    integer: true\n  },\n  displayName: 'Resolution',\n  onChange: render\n});\n\nconst output = node.out('image');\n\nfunction render() {\n  const [width, height] = node.props.resolution.value;\n  const mode = node.props.mode.value;\n  const color1 = node.props.color1.value;\n  const color2 = node.props.color2.value;\n  \n  // Calculate checker size based on mode\n  let checkerSize;\n  if (mode === 'size') {\n    checkerSize = node.props.size.value;\n  } else {\n    // divisions mode: divide width by divisions\n    checkerSize = width / node.props.divisions.value;\n  }\n  \n  const canvas = document.createElement('canvas');\n  canvas.width = width;\n  canvas.height = height;\n  const ctx = canvas.getContext('2d');\n  \n  if (!ctx) return;\n  \n  // Draw checkerboard pattern\n  for (let y = 0; y < height; y += checkerSize) {\n    for (let x = 0; x < width; x += checkerSize) {\n      const isEven = Math.floor(x / checkerSize) + Math.floor(y / checkerSize);\n      ctx.fillStyle = isEven % 2 === 0 ? color1 : color2;\n      ctx.fillRect(x, y, checkerSize, checkerSize);\n    }\n  }\n  \n  output.setValue(canvas);\n  node.preview = canvas;\n}\n\nnode.onReady = () => {\n  render();\n};",
+      "position": { "x": -200, "y": 400 },
+      "comment": "",
+      "props": {
+        "color1": "#ffffff",
+        "color2": "#000000",
+        "mode": "size",
+        "size": 32,
+        "divisions": 16,
+        "resolution": [512, 512]
+      },
+      "bypassed": false,
+      "cooking": false
+    },
+    {
+      "id": "node_composite_default",
+      "name": "Composite1",
+      "type": "Composite",
+      "code": "// Composite node - blends two images together\nconst image1 = node.in('image1', null);\nconst image2 = node.in('image2', null);\n\nnode.defineProp('blendMode', {\n  value: 'multiply',\n  params: {\n    options: [\n      { value: 'normal', label: 'Normal' },\n      { value: 'multiply', label: 'Multiply' },\n      { value: 'screen', label: 'Screen' },\n      { value: 'overlay', label: 'Overlay' },\n      { value: 'darken', label: 'Darken' },\n      { value: 'lighten', label: 'Lighten' },\n      { value: 'color-dodge', label: 'Color Dodge' },\n      { value: 'color-burn', label: 'Color Burn' },\n      { value: 'hard-light', label: 'Hard Light' },\n      { value: 'soft-light', label: 'Soft Light' },\n      { value: 'difference', label: 'Difference' },\n      { value: 'exclusion', label: 'Exclusion' },\n      { value: 'add', label: 'Add' },\n      { value: 'subtract', label: 'Subtract' },\n      { value: 'divide', label: 'Divide' },\n      { value: 'pin-light', label: 'Pin Light' },\n      { value: 'vivid-light', label: 'Vivid Light' },\n      { value: 'linear-dodge', label: 'Linear Dodge' },\n      { value: 'linear-burn', label: 'Linear Burn' }\n    ]\n  },\n  displayName: 'Blend Mode',\n  onChange: () => {\n    render().catch(err => {\n      console.error('Composite render error in blendMode onChange:', err);\n    });\n  }\n});\n\nnode.defineProp('opacity', {\n  value: 1.0,\n  params: {\n    min: 0.0,\n    max: 1.0,\n    step: 0.01\n  },\n  displayName: 'Opacity',\n  onChange: () => {\n    render().catch(err => {\n      console.error('Composite render error in opacity onChange:', err);\n    });\n  }\n});\n\nconst output = node.out('image');\n\nfunction getImageSize(img) {\n  if (img instanceof HTMLCanvasElement) {\n    return { width: img.width, height: img.height };\n  } else if (img instanceof HTMLImageElement) {\n    return { width: img.naturalWidth || img.width, height: img.naturalHeight || img.height };\n  }\n  return { width: 0, height: 0 };\n}\n\nfunction getImageData(img, targetWidth, targetHeight) {\n  const tempCanvas = document.createElement('canvas');\n  tempCanvas.width = targetWidth;\n  tempCanvas.height = targetHeight;\n  const tempCtx = tempCanvas.getContext('2d');\n  if (!tempCtx) return null;\n  \n  // Get source dimensions\n  let srcWidth, srcHeight;\n  if (img instanceof HTMLCanvasElement) {\n    srcWidth = img.width;\n    srcHeight = img.height;\n  } else if (img instanceof HTMLImageElement) {\n    srcWidth = img.naturalWidth || img.width;\n    srcHeight = img.naturalHeight || img.height;\n  } else {\n    return null;\n  }\n  \n  // Draw and scale image to target size\n  tempCtx.drawImage(img, 0, 0, srcWidth, srcHeight, 0, 0, targetWidth, targetHeight);\n  return tempCtx.getImageData(0, 0, targetWidth, targetHeight);\n}\n\nfunction blendPixels(base, blend, mode, opacity) {\n  const result = new Uint8ClampedArray(base.length);\n  \n  for (let i = 0; i < base.length; i += 4) {\n    const r1 = base[i] / 255;\n    const g1 = base[i + 1] / 255;\n    const b1 = base[i + 2] / 255;\n    const a1 = base[i + 3] / 255;\n    \n    const r2 = blend[i] / 255;\n    const g2 = blend[i + 1] / 255;\n    const b2 = blend[i + 2] / 255;\n    const a2 = blend[i + 3] / 255;\n    \n    let r, g, b;\n    \n    switch (mode) {\n      case 'normal':\n        r = r2;\n        g = g2;\n        b = b2;\n        break;\n      case 'multiply':\n        r = r1 * r2;\n        g = g1 * g2;\n        b = b1 * b2;\n        break;\n      case 'screen':\n        r = 1 - (1 - r1) * (1 - r2);\n        g = 1 - (1 - g1) * (1 - g2);\n        b = 1 - (1 - b1) * (1 - b2);\n        break;\n      case 'overlay':\n        r = r1 < 0.5 ? 2 * r1 * r2 : 1 - 2 * (1 - r1) * (1 - r2);\n        g = g1 < 0.5 ? 2 * g1 * g2 : 1 - 2 * (1 - g1) * (1 - g2);\n        b = b1 < 0.5 ? 2 * b1 * b2 : 1 - 2 * (1 - b1) * (1 - b2);\n        break;\n      case 'darken':\n        r = Math.min(r1, r2);\n        g = Math.min(g1, g2);\n        b = Math.min(b1, b2);\n        break;\n      case 'lighten':\n        r = Math.max(r1, r2);\n        g = Math.max(g1, g2);\n        b = Math.max(b1, b2);\n        break;\n      default:\n        r = r2;\n        g = g2;\n        b = b2;\n    }\n    \n    // Apply opacity\n    const finalR = r1 + (r - r1) * opacity * a2;\n    const finalG = g1 + (g - g1) * opacity * a2;\n    const finalB = b1 + (b - b1) * opacity * a2;\n    const finalA = a1 + (a2 - a1) * opacity;\n    \n    result[i] = Math.round(finalR * 255);\n    result[i + 1] = Math.round(finalG * 255);\n    result[i + 2] = Math.round(finalB * 255);\n    result[i + 3] = Math.round(finalA * 255);\n  }\n  \n  return result;\n}\n\nasync function render() {\n  if (!image1.value || !image2.value) {\n    return;\n  }\n  \n  const img1 = image1.value;\n  const img2 = image2.value;\n  \n  // Use image1 resolution\n  const { width, height } = getImageSize(img1);\n  \n  if (width === 0 || height === 0) {\n    return;\n  }\n  \n  const canvas = document.createElement('canvas');\n  canvas.width = width;\n  canvas.height = height;\n  const ctx = canvas.getContext('2d');\n  \n  if (!ctx) return;\n  \n  const blendMode = node.props.blendMode.value;\n  const opacity = node.props.opacity.value;\n  \n  // Draw first image\n  ctx.drawImage(img1, 0, 0, width, height);\n  \n  // Set blend mode and draw second image\n  ctx.globalCompositeOperation = blendMode;\n  ctx.globalAlpha = opacity;\n  ctx.drawImage(img2, 0, 0, width, height);\n  \n  // Reset\n  ctx.globalCompositeOperation = 'source-over';\n  ctx.globalAlpha = 1.0;\n  \n  output.setValue(canvas);\n  node.preview = canvas;\n}\n\n// Watch for input changes\nimage1.onChange = () => {\n  render().catch(err => {\n    console.error('Composite render error in image1 onChange:', err);\n  });\n};\nimage2.onChange = () => {\n  render().catch(err => {\n    console.error('Composite render error in image2 onChange:', err);\n  });\n};\n\n// Initial render attempt\nnode.onReady = () => {\n  render().catch(err => {\n    console.error('Composite render error in onReady:', err);\n  });\n};",
+      "position": { "x": 0, "y": 550 },
+      "comment": "",
+      "props": {
+        "blendMode": "multiply",
+        "opacity": 1.0
+      },
+      "bypassed": false,
+      "cooking": true
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn_checkers_to_composite_image1",
+      "from": {
+        "nodeId": "node_checkers_default",
+        "portId": "node_checkers_default_out_image"
+      },
+      "to": {
+        "nodeId": "node_composite_default",
+        "portId": "node_composite_default_in_image1"
+      },
+      "type": "param"
+    },
+    {
+      "id": "conn_color_to_composite_image2",
+      "from": {
+        "nodeId": "node_color_default",
+        "portId": "node_color_default_out_image"
+      },
+      "to": {
+        "nodeId": "node_composite_default",
+        "portId": "node_composite_default_in_image2"
+      },
+      "type": "param"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "ann_headline_default",
+      "type": "text",
+      "content": "Hello World",
+      "position": { "x": -200, "y": -200 },
+      "size": { "width": 540, "height": 60 },
+      "style": {
+        "fontSize": 32,
+        "fontWeight": "700",
+        "fontStyle": "normal",
+        "textAlign": "left",
+        "color": "#ffffff",
+        "padding": 0,
+        "borderRadius": 0
+      }
+    },
+    {
+      "id": "ann_copy_default",
+      "type": "text",
+      "content": "Cascade is a visual programming framework designed for creative coders who want to build interactive experiences without sacrificing the power of code. Every node is just a TypeScript function, fully inspectable and editable. The visual graph and code are equal partners, not abstractions of each other. This allows you to work visually when it makes sense, and dive into code when you need precision and control.",
+      "position": { "x": -200, "y": -100 },
+      "size": { "width": 540, "height": 200 },
+      "style": {
+        "fontSize": 14,
+        "fontWeight": "normal",
+        "fontStyle": "normal",
+        "textAlign": "left",
+        "color": "#ffffff",
+        "padding": 0,
+        "borderRadius": 0
+      }
+    }
+  ],
+  "execution": {
+    "entryPoints": ["node_timer_default"],
+    "cookingNodes": ["node_composite_default"],
+    "autoStart": false
+  }
+}
+

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount, tick, createEventDispatcher } from 'svelte';
-  import { Graph, type CanvasAnnotation } from '@/core/Graph';
+  import { Graph, type CanvasAnnotation } from '@/core/engine/Graph';
   import NodeUI from './NodeUI.svelte';
-  import type { Node } from '@/core/Node';
+  import type { Node } from '@/core/engine/Node';
   import type { Connection } from '@/types/node.types';
   import { marked } from 'marked';
   import { getLensNodeTemplate } from '@/nodes/lens';
@@ -275,7 +275,7 @@ node.onReady = () => {
         graph.connections = [...graph.connections];
         
         // Execute Composite node and its upstream dependencies to ensure outputs are ready
-        await graph.executeUpstream(compositeNode);
+        await graph.execute(compositeNode);
       } catch (err) {
         console.error('Failed to initialize nodes:', err);
       }

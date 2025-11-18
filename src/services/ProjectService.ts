@@ -1,4 +1,4 @@
-import type { Graph } from '@/core/Graph';
+import type { Graph } from '@/core/engine/Graph';
 
 export interface Project {
   id: string;

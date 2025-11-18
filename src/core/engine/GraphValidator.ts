@@ -1,6 +1,6 @@
-import type { Graph } from './Graph';
-import type { Node } from './Node';
-import type { Connection } from '@/types/node.types';
+import type { Graph } from './Graph.js';
+import type { Node } from './Node.js';
+import type { Connection } from '../../types/node.types.js';
 
 export interface ValidationError {
   type: 'cycle' | 'invalid_connection' | 'orphaned_node' | 'invalid_entry_point';
@@ -272,13 +272,20 @@ export class GraphValidator {
     }
 
     // Check for orphaned nodes (nodes with no connections)
+    // Entry point nodes (nodes with no input connections) are not considered orphaned
     const connectedNodes = new Set<string>();
     for (const conn of graph.connections) {
       connectedNodes.add(conn.from.nodeId);
       connectedNodes.add(conn.to.nodeId);
     }
 
-    const orphanedNodes = graph.nodes.filter(n => !connectedNodes.has(n.id));
+    const orphanedNodes = graph.nodes.filter(n => {
+      // A node is orphaned if it has no connections AND is not an entry point
+      const hasNoConnections = !connectedNodes.has(n.id);
+      const isEntryPoint = n.inputs.every(p => p.connections.length === 0);
+      return hasNoConnections && !isEntryPoint;
+    });
+    
     if (orphanedNodes.length > 0) {
       warnings.push({
         type: 'orphaned_node',

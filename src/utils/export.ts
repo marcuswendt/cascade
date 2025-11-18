@@ -1,6 +1,6 @@
-import type { Graph } from '@/core/Graph';
-import type { Node } from '@/core/Node';
-import type { Asset } from '@/core/AssetManager';
+import type { Graph } from '@/core/engine/Graph';
+import type { Node } from '@/core/engine/Node';
+import type { Asset } from '@/core/engine/AssetManager';
 
 export interface ExportOptions {
   embedAssets?: boolean; // Embed assets as base64 (default: true for single HTML)

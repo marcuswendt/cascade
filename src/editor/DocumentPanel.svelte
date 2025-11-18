@@ -1,10 +1,10 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
-  import type { Graph } from '@/core/Graph';
+  import type { Graph } from '@/core/engine/Graph';
   import Icon from './Icon.svelte';
   import { Waves, ChevronDown, FileText, FolderOpen, Save, Copy, Package, Info } from 'lucide-svelte';
 
-  export let graph: Graph;
+  export let graph: Graph | undefined = undefined;
   export let documentName: string = 'Untitled';
 
   const dispatch = createEventDispatcher();

@@ -1,6 +1,5 @@
-import type { NodeContext, InputPort, OutputPort, PortOptions, PortType, Connection, Prop } from '@/types/node.types';
-import type { Graph } from './Graph';
-import { incrementPropUpdateCounter } from '@/editor/stores/propUpdateStore';
+import type { NodeContext, InputPort, OutputPort, PortOptions, PortType, Connection, Prop } from '../../types/node.types.js';
+import type { Graph } from './Graph.js';
 
 export class Node implements NodeContext {
   id: string;
@@ -163,8 +162,7 @@ export class Node implements NodeContext {
       // For arrays, always create a new array reference to ensure reactivity
       const newValue = Array.isArray(value) ? [...value] : value;
       
-      // CRITICAL: Recreate the prop object to ensure Svelte detects the change
-      // Svelte's reactivity is based on object reference changes, not property mutations
+      // Recreate the prop object to ensure reactivity
       this.props[name] = {
         ...this.props[name],
         value: newValue
@@ -191,12 +189,11 @@ export class Node implements NodeContext {
         });
       }
       
-      // Also recreate the entire props object to ensure Inspector reactivity
+      // Also recreate the entire props object to ensure reactivity
       this.props = { ...this.props };
       
-      // Notify the prop update store to trigger Inspector reactivity
-      // This is a workaround for Svelte not detecting nested object changes
-      incrementPropUpdateCounter(this.id);
+      // Note: UI-specific reactivity triggers (like Svelte stores) should be handled
+      // in the editor layer, not in the core engine
       
       this.markDirty();
     }
@@ -299,8 +296,19 @@ export class Node implements NodeContext {
         if (this.onReady) {
           try {
             this.onReady();
-          } catch (err) {
-            console.error(`Error in onReady callback for node ${this.name}:`, err);
+          } catch (err: any) {
+            // In Node.js environment, browser API errors are expected for browser-only nodes
+            // Only log if it's not a browser API error
+            const errMsg = err?.message || String(err);
+            const isBrowserAPIError = 
+              errMsg.includes('document is not defined') ||
+              errMsg.includes('window is not defined') ||
+              errMsg.includes('HTMLCanvasElement') ||
+              errMsg.includes('HTMLImageElement');
+            
+            if (!isBrowserAPIError) {
+              console.error(`Error in onReady callback for node ${this.name}:`, err);
+            }
           }
         }
       } catch (err) {
