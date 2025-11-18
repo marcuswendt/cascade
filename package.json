@@ -1,6 +1,6 @@
 {
   "name": "cascade",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "lucide-svelte": "^0.554.0",
+    "marked": "^17.0.0",
     "monaco-editor": "^0.44.0",
     "svelte": "^4.0.0"
   },
@@ -23,5 +24,3 @@
     "vite-plugin-monaco-editor": "^1.1.0"
   }
 }
-
-

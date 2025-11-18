@@ -16,6 +16,11 @@
   let activeCategory: string | null = null;
   let selectedNode: Node | null = null;
   let selectedAnnotation: string | null = null;
+  let inspectorWasVisible = false;
+  
+  $: inspectorIsVisible = selectedNode !== null || selectedAnnotation !== null;
+  $: shouldSkipAnimation = inspectorWasVisible && inspectorIsVisible;
+  $: inspectorWasVisible = inspectorIsVisible;
   let nodePanelPosition = { x: 0, y: 0 };
   let activeTool = 'select';
   let mousePosition = { x: 0, y: 0 };
@@ -547,6 +552,7 @@
     <Inspector
       node={selectedNode}
       position="right"
+      skipAnimation={shouldSkipAnimation}
     />
   {/if}
   
@@ -557,6 +563,7 @@
         annotation={annotation}
         graph={graph}
         position="right"
+        skipAnimation={shouldSkipAnimation}
       />
     {/if}
   {/if}

@@ -482,3 +482,102 @@ export function downloadFile(content: string, filename: string, mimeType: string
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Export graph as folder structure (HTML + assets)
+ */
+export async function exportFolder(graph: Graph, projectName: string = 'Cascade Project'): Promise<void> {
+  // Get all assets from asset manager
+  const assets = graph.assetManager.list();
+  
+  // Compile graph
+  const compiledGraph = compileGraph(graph);
+  
+  // Generate runtime
+  const runtime = getMinimalRuntime();
+  
+  // Create HTML file
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${projectName}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #0a0a0a;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    #cascade-root {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="cascade-root"></div>
+  
+  <script src="./runtime.js"></script>
+  <script src="./graph.js"></script>
+  <script>
+    // Start execution
+    Cascade.run(graphData, document.getElementById('cascade-root'));
+  </script>
+</body>
+</html>`;
+  
+  // Create runtime.js
+  const runtimeJs = `// Minimal Cascade Runtime
+${runtime}`;
+  
+  // Create graph.js
+  const graphJs = `// Compiled graph
+${compiledGraph}`;
+  
+  // Create assets manifest
+  const assetsManifest = JSON.stringify(assets.map(asset => ({
+    id: asset.id,
+    path: asset.path,
+    type: asset.type,
+    size: asset.size
+  })), null, 2);
+  
+  // Download files as ZIP would require a library, so we'll download them individually
+  // For now, we'll create a simple approach: download the main files
+  // In a real implementation, you'd use JSZip or similar
+  
+  // Download HTML
+  downloadFile(html, 'index.html', 'text/html');
+  
+  // Download runtime.js
+  setTimeout(() => {
+    downloadFile(runtimeJs, 'runtime.js', 'application/javascript');
+  }, 100);
+  
+  // Download graph.js
+  setTimeout(() => {
+    downloadFile(graphJs, 'graph.js', 'application/javascript');
+  }, 200);
+  
+  // Download assets manifest
+  setTimeout(() => {
+    downloadFile(assetsManifest, 'assets.json', 'application/json');
+  }, 300);
+  
+  // Note: Individual asset files would need to be downloaded separately
+  // or packaged in a ZIP. For now, we provide the manifest.
+  console.log('Folder export initiated. Download the files and organize them in a folder structure:');
+  console.log('- index.html');
+  console.log('- runtime.js');
+  console.log('- graph.js');
+  console.log('- assets.json');
+  console.log('- assets/ (create this folder and add your asset files)');
+}
+

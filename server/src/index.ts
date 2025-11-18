@@ -21,7 +21,7 @@ app.use('/api/projects', assetsRouter);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', version: '1.3.0' });
+  res.json({ status: 'ok', version: '0.1' });
 });
 
 // Create HTTP server

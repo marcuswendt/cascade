@@ -8,6 +8,7 @@
   export let annotation: CanvasAnnotation | null = null;
   export let graph: Graph | null = null;
   export let position: 'right' | 'left' = 'right';
+  export let skipAnimation: boolean = false;
   
   $: inputs = node?.inputs || [];
   $: paramInputs = inputs.filter(p => p.portType === 'param' && !(p.options?.hidden));
@@ -86,18 +87,6 @@
     });
     const finalValue = option && typeof option === 'object' && 'value' in option ? option.value : selectedValue;
     handlePropChange([key, prop], finalValue);
-  }
-  
-  function handleBypassToggle() {
-    if (node) {
-      node.setBypassed(!node.bypassed);
-    }
-  }
-  
-  function handleCookToggle() {
-    if (node) {
-      node.setCooking(!node.cooking);
-    }
   }
   
   function renderPropControl([key, prop]: [string, Prop]): { key: string; prop: Prop; controlType: ReturnType<typeof inferPropControlType>; displayName: string; folder: string | undefined } | null {
@@ -251,7 +240,7 @@
 </script>
 
 {#if annotation && annotation.type === 'text'}
-  <div class="inspector" class:left={position === 'left'}>
+  <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation}>
     <div class="header">
       <h3>Text</h3>
       <div class="header-actions">
@@ -521,7 +510,7 @@
     </div>
   </div>
 {:else if node}
-  <div class="inspector" class:left={position === 'left'}>
+  <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation}>
     <div class="header">
       <h3>{node.name}</h3>
       {#if node.error}
@@ -530,28 +519,6 @@
     </div>
     
     <div class="content">
-      <!-- Behavior Toggles -->
-      <div class="behavior-toggles">
-        <button
-          class="toggle-button"
-          class:active={node.bypassed}
-          on:click={handleBypassToggle}
-          title="Bypass (B)"
-        >
-          <span class="toggle-indicator bypass"></span>
-          Bypass
-        </button>
-        <button
-          class="toggle-button"
-          class:active={node.cooking}
-          on:click={handleCookToggle}
-          title="Cook (C)"
-        >
-          <span class="toggle-indicator cook"></span>
-          Cook
-        </button>
-      </div>
-      
       <!-- Props -->
       {#if propControls.length > 0}
         {#each Object.entries(groupedProps) as entry}
@@ -775,12 +742,20 @@
     animation: slideIn 0.2s ease;
   }
   
+  .inspector.no-animation {
+    animation: none;
+  }
+  
   .inspector.left {
     left: 0;
     right: auto;
     border-left: none;
     border-right: 1px solid rgba(255, 255, 255, 0.1);
     animation: slideInLeft 0.2s ease;
+  }
+  
+  .inspector.left.no-animation {
+    animation: none;
   }
   
   @keyframes slideIn {

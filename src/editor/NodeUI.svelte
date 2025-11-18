@@ -275,15 +275,16 @@
   
   .body {
     width: 80px;
-    height: 20px;
+    height: 36px;
     background: #2a2a2a;
     border-radius: 5px;
     border: 1px solid var(--node-border-color, #444);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 2px;
-    gap: 2px;
+    padding: 0;
+    gap: 0;
+    margin: 0;
   }
   
   .node.selected .body {
@@ -306,10 +307,10 @@
   
   .node-button {
     width: 16px;
-    height: 16px;
-    border: 1px solid #555;
+    height: 36px;
+    border: 0px solid #555;
     background: #1a1a1a;
-    border-radius: 3px;
+    border-radius: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -318,6 +319,16 @@
     margin: 0;
     flex-shrink: 0;
     transition: all 0.1s ease;
+  }
+  
+  .bypass-button {
+    border-radius: 5px 0 0 5px;
+    border-right: none;
+  }
+  
+  .cook-button {
+    border-radius: 0 5px 5px 0;
+    border-left: none;
   }
   
   .node-button:hover {

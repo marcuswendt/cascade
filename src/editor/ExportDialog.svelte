@@ -1,16 +1,17 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { exportSingleHTML, downloadFile } from '@/utils/export';
+  import { exportSingleHTML, exportFolder, downloadFile } from '@/utils/export';
   import type { Graph } from '@/core/Graph';
 
   export let graph: Graph;
   export let open = false;
 
   const dispatch = createEventDispatcher();
-
+  
   let projectName = 'Cascade Project';
   let isExporting = false;
   let exportError: string | null = null;
+  let exportFormat: 'html' | 'folder' = 'html';
 
   async function handleExport() {
     if (!graph || isExporting) return;
@@ -19,9 +20,13 @@
     exportError = null;
 
     try {
-      const html = await exportSingleHTML(graph, projectName);
-      const filename = `${projectName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.html`;
-      downloadFile(html, filename, 'text/html');
+      if (exportFormat === 'html') {
+        const html = await exportSingleHTML(graph, projectName);
+        const filename = `${projectName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.html`;
+        downloadFile(html, filename, 'text/html');
+      } else {
+        await exportFolder(graph, projectName);
+      }
       
       // Close dialog after successful export
       setTimeout(() => {
@@ -70,14 +75,39 @@
           />
         </div>
 
+        <div class="form-group">
+          <label for="export-format">Export Format</label>
+          <select
+            id="export-format"
+            bind:value={exportFormat}
+            disabled={isExporting}
+          >
+            <option value="html">Single HTML File (all assets embedded)</option>
+            <option value="folder">Folder Structure (separate files)</option>
+          </select>
+        </div>
+
         <div class="info">
-          <p>This will export your project as a standalone HTML file with all assets embedded.</p>
-          <ul>
-            <li>✅ All nodes and connections</li>
-            <li>✅ All node code</li>
-            <li>✅ All assets (embedded as base64)</li>
-            <li>✅ Minimal runtime (~50KB)</li>
-          </ul>
+          {#if exportFormat === 'html'}
+            <p>This will export your project as a standalone HTML file with all assets embedded.</p>
+            <ul>
+              <li>✅ All nodes and connections</li>
+              <li>✅ All node code</li>
+              <li>✅ All assets (embedded as base64)</li>
+              <li>✅ Minimal runtime (~50KB)</li>
+              <li>✅ Single file - easy to share</li>
+            </ul>
+          {:else}
+            <p>This will export your project as a folder structure with separate files.</p>
+            <ul>
+              <li>✅ index.html - Main HTML file</li>
+              <li>✅ runtime.js - Cascade runtime</li>
+              <li>✅ graph.js - Compiled graph</li>
+              <li>✅ assets.json - Asset manifest</li>
+              <li>✅ assets/ - Asset files folder</li>
+              <li>⚠️ You'll need to manually organize asset files</li>
+            </ul>
+          {/if}
         </div>
 
         {#if exportError}
@@ -95,7 +125,7 @@
           {#if isExporting}
             Exporting...
           {:else}
-            Export HTML
+            Export {exportFormat === 'html' ? 'HTML' : 'Folder'}
           {/if}
         </button>
       </div>
@@ -221,9 +251,27 @@
     border-color: #4a9eff;
   }
 
-  .form-group input:disabled {
+  .form-group input:disabled,
+  .form-group select:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+  
+  .form-group select {
+    width: 100%;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: #fff;
+    font-size: 14px;
+    box-sizing: border-box;
+    cursor: pointer;
+  }
+  
+  .form-group select:focus {
+    outline: none;
+    border-color: #4a9eff;
   }
 
   .info {

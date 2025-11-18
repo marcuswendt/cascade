@@ -4,6 +4,13 @@
   import NodeUI from './NodeUI.svelte';
   import CodeEditor from './CodeEditor.svelte';
   import type { Node } from '@/core/Node';
+  import { marked } from 'marked';
+  
+  // Configure marked for safe rendering
+  marked.setOptions({
+    breaks: true,
+    gfm: true
+  });
   
   const dispatch = createEventDispatcher();
   
@@ -1017,11 +1024,11 @@ const output = node.out('output');
     selectedNodes = [selectedNode.id];
   }
 
-  // Function to center canvas on all nodes
-  export function centerOnNodes() {
-    if (!canvas || graph.nodes.length === 0) return;
+  // Helper function to calculate the center of all nodes and annotations
+  function getNodesCenter(): { x: number; y: number } | null {
+    if (graph.nodes.length === 0 && graph.annotations.length === 0) return null;
 
-    // Calculate bounding box of all nodes
+    // Calculate bounding box of all nodes and annotations
     // Approximate node size: 120px width, 80px height (can be adjusted)
     const nodeWidth = 120;
     const nodeHeight = 80;
@@ -1031,6 +1038,7 @@ const output = node.out('output');
     let maxX = -Infinity;
     let maxY = -Infinity;
 
+    // Include nodes in bounding box
     graph.nodes.forEach(node => {
       minX = Math.min(minX, node.position.x);
       minY = Math.min(minY, node.position.y);
@@ -1038,14 +1046,121 @@ const output = node.out('output');
       maxY = Math.max(maxY, node.position.y + nodeHeight);
     });
 
+    // Include annotations in bounding box
+    graph.annotations.forEach(annotation => {
+      if (annotation.type === 'line') {
+        // Line: use position and endPosition
+        const startX = annotation.position.x;
+        const startY = annotation.position.y;
+        const endX = annotation.endPosition?.x ?? annotation.position.x;
+        const endY = annotation.endPosition?.y ?? annotation.position.y;
+        minX = Math.min(minX, startX, endX);
+        minY = Math.min(minY, startY, endY);
+        maxX = Math.max(maxX, startX, endX);
+        maxY = Math.max(maxY, startY, endY);
+      } else if (annotation.type === 'polyline') {
+        // Polyline: use all points
+        if (annotation.points && annotation.points.length > 0) {
+          annotation.points.forEach(point => {
+            minX = Math.min(minX, point.x);
+            minY = Math.min(minY, point.y);
+            maxX = Math.max(maxX, point.x);
+            maxY = Math.max(maxY, point.y);
+          });
+        } else {
+          // Fallback to position if no points
+          minX = Math.min(minX, annotation.position.x);
+          minY = Math.min(minY, annotation.position.y);
+          maxX = Math.max(maxX, annotation.position.x);
+          maxY = Math.max(maxY, annotation.position.y);
+        }
+      } else {
+        // text, image, group: use position and size
+        const width = annotation.size?.width || (annotation.type === 'text' ? 540 : annotation.type === 'image' ? 200 : 300);
+        const height = annotation.size?.height || (annotation.type === 'text' ? 60 : annotation.type === 'image' ? 150 : 200);
+        minX = Math.min(minX, annotation.position.x);
+        minY = Math.min(minY, annotation.position.y);
+        maxX = Math.max(maxX, annotation.position.x + width);
+        maxY = Math.max(maxY, annotation.position.y + height);
+      }
+    });
+
+    // If no content found, return null
+    if (minX === Infinity) return null;
+
     // Calculate center of bounding box
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
+    
+    return { x: centerX, y: centerY };
+  }
+
+  // Function to center canvas on all nodes and annotations
+  export function centerOnNodes() {
+    if (!canvas || (graph.nodes.length === 0 && graph.annotations.length === 0)) return;
+
+    const center = getNodesCenter();
+    if (!center) return;
+    
+    const centerX = center.x;
+    const centerY = center.y;
 
     // Get viewport dimensions
     const rect = canvas.getBoundingClientRect();
     const viewportWidth = rect.width;
     const viewportHeight = rect.height;
+
+    // Calculate bounding box of all nodes and annotations
+    const nodeWidth = 120;
+    const nodeHeight = 80;
+    
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    // Include nodes in bounding box
+    graph.nodes.forEach(node => {
+      minX = Math.min(minX, node.position.x);
+      minY = Math.min(minY, node.position.y);
+      maxX = Math.max(maxX, node.position.x + nodeWidth);
+      maxY = Math.max(maxY, node.position.y + nodeHeight);
+    });
+
+    // Include annotations in bounding box
+    graph.annotations.forEach(annotation => {
+      if (annotation.type === 'line') {
+        const startX = annotation.position.x;
+        const startY = annotation.position.y;
+        const endX = annotation.endPosition?.x ?? annotation.position.x;
+        const endY = annotation.endPosition?.y ?? annotation.position.y;
+        minX = Math.min(minX, startX, endX);
+        minY = Math.min(minY, startY, endY);
+        maxX = Math.max(maxX, startX, endX);
+        maxY = Math.max(maxY, startY, endY);
+      } else if (annotation.type === 'polyline') {
+        if (annotation.points && annotation.points.length > 0) {
+          annotation.points.forEach(point => {
+            minX = Math.min(minX, point.x);
+            minY = Math.min(minY, point.y);
+            maxX = Math.max(maxX, point.x);
+            maxY = Math.max(maxY, point.y);
+          });
+        } else {
+          minX = Math.min(minX, annotation.position.x);
+          minY = Math.min(minY, annotation.position.y);
+          maxX = Math.max(maxX, annotation.position.x);
+          maxY = Math.max(maxY, annotation.position.y);
+        }
+      } else {
+        const width = annotation.size?.width || (annotation.type === 'text' ? 540 : annotation.type === 'image' ? 200 : 300);
+        const height = annotation.size?.height || (annotation.type === 'text' ? 60 : annotation.type === 'image' ? 150 : 200);
+        minX = Math.min(minX, annotation.position.x);
+        minY = Math.min(minY, annotation.position.y);
+        maxX = Math.max(maxX, annotation.position.x + width);
+        maxY = Math.max(maxY, annotation.position.y + height);
+      }
+    });
 
     // Calculate bounding box dimensions
     const bboxWidth = maxX - minX;
@@ -1056,7 +1171,7 @@ const output = node.out('output');
     const paddedWidth = bboxWidth * (1 + padding * 2);
     const paddedHeight = bboxHeight * (1 + padding * 2);
 
-    // Calculate zoom to fit all nodes with padding
+    // Calculate zoom to fit all content with padding
     const zoomX = viewportWidth / paddedWidth;
     const zoomY = viewportHeight / paddedHeight;
     const newZoom = Math.min(zoomX, zoomY, 1); // Don't zoom in more than 1x
@@ -1064,18 +1179,18 @@ const output = node.out('output');
     // Set zoom
     transform.zoom = newZoom;
 
-    // Calculate pan to center the nodes
+    // Calculate pan to center the content
     // Center of viewport in canvas coordinates
     const viewportCenterX = viewportWidth / 2;
     const viewportCenterY = viewportHeight / 2;
 
-    // Position of node center in screen coordinates at current zoom
-    const nodeCenterScreenX = centerX * newZoom;
-    const nodeCenterScreenY = centerY * newZoom;
+    // Position of content center in screen coordinates at current zoom
+    const contentCenterScreenX = centerX * newZoom;
+    const contentCenterScreenY = centerY * newZoom;
 
     // Calculate pan to center
-    transform.x = viewportCenterX - nodeCenterScreenX;
-    transform.y = viewportCenterY - nodeCenterScreenY;
+    transform.x = viewportCenterX - contentCenterScreenX;
+    transform.y = viewportCenterY - contentCenterScreenY;
 
     // Trigger reactivity
     transform = transform;
@@ -1210,7 +1325,19 @@ const output = node.out('output');
     // Calculate zoom delta from vertical scroll, with horizontal scroll as fallback
     const zoomDelta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
     const delta = zoomDelta * -0.005;
-    transform.zoom = Math.max(0.1, Math.min(2, transform.zoom + delta));
+    const oldZoom = transform.zoom;
+    const newZoom = Math.max(0.1, Math.min(2, oldZoom + delta));
+    
+    // Zoom from the center of all nodes
+    const center = getNodesCenter();
+    if (center) {
+      // Calculate how much to adjust transform to keep the center point fixed
+      // Formula: newTransform.x = oldTransform.x + centerX * (oldZoom - newZoom)
+      transform.x = transform.x + center.x * (oldZoom - newZoom);
+      transform.y = transform.y + center.y * (oldZoom - newZoom);
+    }
+    
+    transform.zoom = newZoom;
     transform = transform;
   }
   
@@ -1325,20 +1452,39 @@ const output = node.out('output');
     // ⌘+ / ⌘- - Zoom in/out
     if ((e.metaKey || e.ctrlKey) && (e.key === '+' || e.key === '=')) {
       e.preventDefault();
-      transform.zoom = Math.min(2, transform.zoom + 0.1);
+      const oldZoom = transform.zoom;
+      const newZoom = Math.min(2, oldZoom + 0.1);
+      
+      // Zoom from the center of all nodes
+      const center = getNodesCenter();
+      if (center) {
+        transform.x = transform.x + center.x * (oldZoom - newZoom);
+        transform.y = transform.y + center.y * (oldZoom - newZoom);
+      }
+      
+      transform.zoom = newZoom;
       transform = transform;
     }
     if ((e.metaKey || e.ctrlKey) && e.key === '-') {
       e.preventDefault();
-      transform.zoom = Math.max(0.1, transform.zoom - 0.1);
+      const oldZoom = transform.zoom;
+      const newZoom = Math.max(0.1, oldZoom - 0.1);
+      
+      // Zoom from the center of all nodes
+      const center = getNodesCenter();
+      if (center) {
+        transform.x = transform.x + center.x * (oldZoom - newZoom);
+        transform.y = transform.y + center.y * (oldZoom - newZoom);
+      }
+      
+      transform.zoom = newZoom;
       transform = transform;
     }
     
-    // ⌘0 - Reset zoom to 100%
+    // ⌘0 - Zoom out to fit all nodes and annotations
     if ((e.metaKey || e.ctrlKey) && e.key === '0') {
       e.preventDefault();
-      transform.zoom = 1;
-      transform = transform;
+      centerOnNodes();
     }
     
     // Escape - Deselect annotations or exit editing mode
@@ -1589,7 +1735,7 @@ const output = node.out('output');
               placeholder="Enter text..."
             ></textarea>
           {:else}
-            <div class="annotation-content">{annotation.content || ''}</div>
+            <div class="annotation-content">{@html marked.parse(annotation.content || '')}</div>
           {/if}
         </div>
       {:else if annotation.type === 'image'}
@@ -2018,7 +2164,80 @@ const output = node.out('output');
   .annotation-content {
     word-wrap: break-word;
     overflow-wrap: break-word;
-    white-space: pre-wrap;
+    line-height: 1.6;
+  }
+  
+  .annotation-content :global(h1) {
+    font-size: 1.8em;
+    font-weight: bold;
+    margin: 0.5em 0;
+  }
+  
+  .annotation-content :global(h2) {
+    font-size: 1.5em;
+    font-weight: bold;
+    margin: 0.4em 0;
+  }
+  
+  .annotation-content :global(h3) {
+    font-size: 1.2em;
+    font-weight: bold;
+    margin: 0.3em 0;
+  }
+  
+  .annotation-content :global(p) {
+    margin: 0.5em 0;
+  }
+  
+  .annotation-content :global(ul),
+  .annotation-content :global(ol) {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+  }
+  
+  .annotation-content :global(li) {
+    margin: 0.2em 0;
+  }
+  
+  .annotation-content :global(code) {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+  }
+  
+  .annotation-content :global(pre) {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 8px;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 0.5em 0;
+  }
+  
+  .annotation-content :global(pre code) {
+    background: none;
+    padding: 0;
+  }
+  
+  .annotation-content :global(strong) {
+    font-weight: bold;
+  }
+  
+  .annotation-content :global(em) {
+    font-style: italic;
+  }
+  
+  .annotation-content :global(a) {
+    color: #4a9eff;
+    text-decoration: underline;
+  }
+  
+  .annotation-content :global(blockquote) {
+    border-left: 3px solid #4a9eff;
+    padding-left: 1em;
+    margin: 0.5em 0;
+    opacity: 0.8;
   }
   
   .annotation-line,

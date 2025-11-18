@@ -97,7 +97,7 @@ router.post('/', async (req, res) => {
     
     // Create empty graph
     const emptyGraph = {
-      version: '1.3.0',
+      version: '0.1',
       metadata,
       nodes: [],
       connections: [],

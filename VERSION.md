@@ -1,11 +1,11 @@
 # Cascade Version Information
 
-## Current Version: 1.0.0
+## Current Version: 0.1
 
-**Release Date**: December 2024  
-**Status**: Production Ready
+**Release Date**: November 18, 2025  
+**Status**: Development / Beta
 
-### What's New in 1.0.0
+### What's New in 0.1
 
 - Complete visual programming framework
 - Live code editing with Monaco Editor

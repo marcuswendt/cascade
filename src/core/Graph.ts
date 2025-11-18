@@ -237,7 +237,7 @@ export class Graph {
     const cookingNodeIds = Array.from(this.cookingNodes).map(n => n.id);
     
     return {
-      version: '1.3.0',
+      version: '0.1',
       metadata: {
         name: 'Cascade Graph',
         created: new Date().toISOString(),

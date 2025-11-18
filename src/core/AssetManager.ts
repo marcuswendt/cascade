@@ -116,6 +116,27 @@ export class AssetManager {
   removeAsset(path: string) {
     this.cache.delete(path);
   }
+  
+  /**
+   * Reload an asset from its path (useful for hot reload)
+   */
+  async reloadAsset(path: string): Promise<Asset> {
+    // Remove from cache first
+    this.cache.delete(path);
+    // Reload
+    return this.load(path);
+  }
+  
+  /**
+   * Reload all cached assets (useful for hot reload)
+   */
+  async reloadAll(): Promise<void> {
+    const paths = Array.from(this.cache.keys());
+    this.cache.clear();
+    await Promise.all(paths.map(path => this.load(path).catch(err => {
+      console.warn(`Failed to reload asset ${path}:`, err);
+    })));
+  }
 
   list(): Asset[] {
     return Array.from(this.cache.values());
