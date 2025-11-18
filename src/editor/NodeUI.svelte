@@ -19,6 +19,24 @@
   $: outputs = node.outputs;
   
   let isDragging = false;
+  let tooltip: { text: string; x: number; y: number; type: 'input' | 'output' } | null = null;
+  
+  function showPortTooltip(e: MouseEvent, portName: string, portType: 'input' | 'output') {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    
+    tooltip = {
+      text: portName,
+      x: rect.left + rect.width / 2,
+      y: portType === 'input' 
+        ? rect.bottom + 4
+        : rect.top - 4,
+      type: portType
+    };
+  }
+  
+  function hidePortTooltip() {
+    tooltip = null;
+  }
   
   function handlePortClick(portId: string, portType: 'input' | 'output', e: MouseEvent) {
     dispatch('portClick', {
@@ -124,6 +142,8 @@
             tabindex="0"
             on:click={(e) => handlePortClick(port.id, 'input', e)}
             on:keydown={(e) => handleKeyDown(port.id, 'input', e)}
+            on:mouseenter={(e) => showPortTooltip(e, port.name, 'input')}
+            on:mouseleave={hidePortTooltip}
             data-node-id={node.id}
             data-port-id={port.id}
             data-port-type="input"
@@ -171,6 +191,8 @@
             tabindex="0"
             on:click={(e) => handlePortClick(port.id, 'output', e)}
             on:keydown={(e) => handleKeyDown(port.id, 'output', e)}
+            on:mouseenter={(e) => showPortTooltip(e, port.name, 'output')}
+            on:mouseleave={hidePortTooltip}
             data-node-id={node.id}
             data-port-id={port.id}
             data-port-type="output"
@@ -194,6 +216,18 @@
     <div class="error-message">{node.error?.message}</div>
   {/if}
 </div>
+
+<!-- Port tooltip -->
+{#if tooltip}
+  <div 
+    class="port-tooltip port-tooltip-{tooltip.type}"
+    style="left: {tooltip.x}px; top: {tooltip.y}px;"
+    role="tooltip"
+  >
+    {tooltip.text}
+  </div>
+{/if}
+
 
 <style>
   .node {
@@ -426,6 +460,27 @@
     50% {
       opacity: 0.5;
     }
+  }
+  
+  .port-tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    z-index: 10000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  
+  .port-tooltip-input {
+    transform: translate(-50%, 0);
+  }
+  
+  .port-tooltip-output {
+    transform: translate(-50%, -100%);
   }
 </style>
 

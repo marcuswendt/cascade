@@ -1,9 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import Canvas from './editor/Canvas.svelte';
-  import BottomToolbar from './editor/BottomToolbar.svelte';
+  import WindowManager from './editor/WindowManager.svelte';
   import NodePanel from './editor/NodePanel.svelte';
-  import Inspector from './editor/Inspector.svelte';
   import ExportDialog from './editor/ExportDialog.svelte';
   import DocumentPanel from './editor/DocumentPanel.svelte';
   import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
@@ -61,10 +59,11 @@
   }
   
   let canvasRef: any = null;
+  let windowManagerRef: any = null;
   
   function handleAddNode(e: CustomEvent<{ type: string; libraryId: string | null; categoryId: string | null }>) {
-    if (canvasRef) {
-      canvasRef.handleAddNode({ type: e.detail.type, category: e.detail.categoryId });
+    if (windowManagerRef && windowManagerRef.addNode) {
+      windowManagerRef.addNode({ type: e.detail.type, category: e.detail.categoryId });
     }
     activeLibrary = null;
     activeCategory = null;
@@ -119,12 +118,12 @@
         currentFilePath = null;
         updateWindowTitle();
         // Re-initialize with default nodes
-        if (canvasRef) {
-          canvasRef.initializeDefaultNodes();
+        if (windowManagerRef && windowManagerRef.initializeDefaultNodes) {
+          windowManagerRef.initializeDefaultNodes();
           // Center canvas on nodes after a short delay to ensure nodes are rendered
           setTimeout(() => {
-            if (canvasRef) {
-              canvasRef.centerOnNodes();
+            if (windowManagerRef && windowManagerRef.centerOnNodes) {
+              windowManagerRef.centerOnNodes();
             }
           }, 100);
         }
@@ -169,8 +168,8 @@
         
         // Center canvas on nodes after loading
         setTimeout(() => {
-          if (canvasRef) {
-            canvasRef.centerOnNodes();
+          if (windowManagerRef && windowManagerRef.centerOnNodes) {
+            windowManagerRef.centerOnNodes();
           }
         }, 100);
       }
@@ -230,15 +229,19 @@
     
     // Center canvas on nodes after duplicating
     setTimeout(() => {
-      if (canvasRef) {
-        canvasRef.centerOnNodes();
+      if (windowManagerRef && windowManagerRef.centerOnNodes) {
+        windowManagerRef.centerOnNodes();
       }
     }, 100);
   }
 
   function updateWindowTitle() {
     if (typeof document !== 'undefined') {
-      document.title = `${documentName} - Cascade`;
+      if (documentName && documentName !== 'Untitled') {
+        document.title = `Cascade - ${documentName}`;
+      } else {
+        document.title = 'Cascade';
+      }
     }
   }
 
@@ -261,14 +264,11 @@
       // Tool shortcuts
       const toolTarget = e.target as HTMLElement;
       if (toolTarget.tagName !== 'INPUT' && toolTarget.tagName !== 'TEXTAREA') {
-        if (e.key === 'v' || e.key === 'V') {
-          if (!e.metaKey && !e.ctrlKey) {
-            activeTool = 'select';
-          }
-        }
-        if (e.key === 'h' || e.key === 'H') {
-          if (!e.metaKey && !e.ctrlKey && !e.altKey) {
-            activeTool = 'hand';
+        // H - Center canvas on home position (same as cmd-0)
+        if ((e.key === 'h' || e.key === 'H') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          if (windowManagerRef && windowManagerRef.centerOnNodes) {
+            windowManagerRef.centerOnNodes();
           }
         }
         
@@ -471,8 +471,8 @@
         const target = e.target as HTMLElement;
         if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
           e.preventDefault();
-          if (canvasRef) {
-            canvasRef.centerOnNodes();
+          if (windowManagerRef && windowManagerRef.centerOnNodes) {
+            windowManagerRef.centerOnNodes();
           }
         }
       }
@@ -499,23 +499,18 @@
     />
   {/if}
 
-  {#if !presentationMode}
-    <BottomToolbar
-      {activeLibrary}
-      bind:activeTool={activeTool}
-      on:libraryToggle={(e) => handleLibraryToggle(e.detail)}
-      on:toolChange={(e) => handleToolChange(e.detail)}
-    />
-  {/if}
-  
-  <Canvas
-    bind:this={canvasRef}
+  <WindowManager
+    bind:this={windowManagerRef}
+    {graph}
+    {selectedNode}
+    {selectedAnnotation}
     {activeTool}
-    bind:selectedNode={selectedNode}
-    bind:selectedAnnotation={selectedAnnotation}
-    bind:graph={graph}
+    bind:activeLibrary={activeLibrary}
+    {presentationMode}
     on:nodeSelect={(e) => handleNodeSelect(e.detail.node)}
     on:annotationSelect={(e) => handleAnnotationSelect(e)}
+    on:libraryToggle={(e) => handleLibraryToggle(e.detail)}
+    on:toolChange={(e) => handleToolChange(e.detail)}
     on:openNodePanel={(e) => {
       // Get mouse position from event or use center of screen
       if (e.detail?.x && e.detail?.y) {
@@ -547,26 +542,6 @@
       }}
     />
   {/if}
-  
-  {#if selectedNode && (!presentationMode || presentationMode)}
-    <Inspector
-      node={selectedNode}
-      position="right"
-      skipAnimation={shouldSkipAnimation}
-    />
-  {/if}
-  
-  {#if selectedAnnotation && graph && (!presentationMode || presentationMode)}
-    {@const annotation = graph.getAnnotation(selectedAnnotation)}
-    {#if annotation}
-      <Inspector
-        annotation={annotation}
-        graph={graph}
-        position="right"
-        skipAnimation={shouldSkipAnimation}
-      />
-    {/if}
-  {/if}
 
   {#if graph}
     <ExportDialog
@@ -594,7 +569,7 @@
   }
   
   
-  .app.presentation-mode :global(.canvas) {
+  .app.presentation-mode :global(.window-manager) {
     width: 100%;
     height: 100vh;
   }

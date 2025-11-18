@@ -33,6 +33,9 @@ export class Node implements NodeContext {
   private nodeFunction?: Function;
   private graph: Graph;
   
+  // Track ports that are called during compilation to clean up unused ones
+  private portsUsedDuringCompilation: Set<string> = new Set();
+  
   constructor(id: string, type: string, graph: Graph) {
     this.id = id;
     this.type = type;
@@ -45,6 +48,27 @@ export class Node implements NodeContext {
   in<T>(name: string, defaultValue?: T, options: PortOptions = {}): InputPort<T> {
     const portType = name === 'trigger' ? 'trigger' : 'param';
     
+    // Check if port with this name already exists
+    const existingPort = this.inputs.find(p => p.name === name);
+    if (existingPort) {
+      // Mark as used during compilation
+      this.portsUsedDuringCompilation.add(`input_${name}`);
+      // Update options if changed
+      if (options.type) {
+        existingPort.dataType = options.type;
+      }
+      if (defaultValue !== undefined && existingPort.defaultValue !== defaultValue) {
+        existingPort.defaultValue = defaultValue as T;
+        if (existingPort.value === undefined || existingPort.value === existingPort.defaultValue) {
+          existingPort.value = defaultValue as T;
+        }
+      }
+      // Merge options
+      Object.assign(existingPort.options, options);
+      return existingPort as InputPort<T>;
+    }
+    
+    // Create new port
     const port: InputPort<T> = {
       id: `${this.id}_in_${name}`,
       name,
@@ -57,10 +81,24 @@ export class Node implements NodeContext {
     };
     
     this.inputs.push(port as InputPort);
+    this.portsUsedDuringCompilation.add(`input_${name}`);
     return port;
   }
   
   out<T>(name: string, portType: PortType = 'param'): OutputPort<T> {
+    // Check if port with this name already exists
+    const existingPort = this.outputs.find(p => p.name === name);
+    if (existingPort) {
+      // Mark as used during compilation
+      this.portsUsedDuringCompilation.add(`output_${name}`);
+      // Update portType if changed
+      if (existingPort.portType !== portType) {
+        existingPort.portType = portType;
+      }
+      return existingPort as OutputPort<T>;
+    }
+    
+    // Create new port
     const port: OutputPort<T> = {
       id: `${this.id}_out_${name}`,
       name,
@@ -101,6 +139,7 @@ export class Node implements NodeContext {
     };
     
     this.outputs.push(port as OutputPort);
+    this.portsUsedDuringCompilation.add(`output_${name}`);
     return port;
   }
   
@@ -257,14 +296,14 @@ export class Node implements NodeContext {
   
   restoreState(state: any) {
     state.inputs?.forEach((saved: any) => {
-      const port = this.inputs.find(p => p.id === saved.id);
+      const port = this.inputs.find(p => p.id === saved.id || p.name === saved.name);
       if (port) {
         port.value = saved.value;
       }
     });
     
     state.outputs?.forEach((saved: any) => {
-      const port = this.outputs.find(p => p.id === saved.id);
+      const port = this.outputs.find(p => p.id === saved.id || p.name === saved.name);
       if (port) {
         port.value = saved.value;
       }
@@ -286,6 +325,43 @@ export class Node implements NodeContext {
     if (state.cooking !== undefined) {
       this.setCooking(state.cooking);
     }
+  }
+  
+  // Clean up ports that were not used during compilation
+  cleanupUnusedPorts() {
+    const usedPorts = this.portsUsedDuringCompilation;
+    
+    // Remove unused input ports and disconnect them
+    this.inputs = this.inputs.filter(port => {
+      const isUsed = usedPorts.has(`input_${port.name}`);
+      if (!isUsed) {
+        // Disconnect all connections from this port
+        port.connections.forEach(conn => {
+          this.graph.disconnect(conn.id);
+        });
+      }
+      return isUsed;
+    });
+    
+    // Remove unused output ports and disconnect them
+    this.outputs = this.outputs.filter(port => {
+      const isUsed = usedPorts.has(`output_${port.name}`);
+      if (!isUsed) {
+        // Disconnect all connections from this port
+        port.connections.forEach(conn => {
+          this.graph.disconnect(conn.id);
+        });
+      }
+      return isUsed;
+    });
+    
+    // Clear the tracking set for next compilation
+    this.portsUsedDuringCompilation.clear();
+  }
+  
+  // Reset port tracking at the start of compilation
+  resetPortTracking() {
+    this.portsUsedDuringCompilation.clear();
   }
   
   toJSON() {

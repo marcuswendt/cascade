@@ -10,6 +10,7 @@
   export let node: Node;
   export let packageManager: PackageManager | null = null;
   export let onClose: () => void;
+  export let showCloseButton: boolean = true; // For tab mode, we might hide the close button
   
   let container: HTMLDivElement;
   let editor: monaco.editor.IStandaloneCodeEditor | null = null;
@@ -121,6 +122,9 @@
         }
       }
       
+      // Reset port tracking before compilation
+      node.resetPortTracking();
+      
       // Compile new function
       // Wrap code in async function to support top-level await
       // The function should return a promise that resolves when the async code completes
@@ -131,8 +135,11 @@
       node.code = code;
       node.setFunction(nodeFunction);
       
-      // Execute to initialize
+      // Execute to initialize (this will track which ports are used)
       await node.execute();
+      
+      // Clean up ports that are no longer in the code
+      node.cleanupUnusedPorts();
       
       // Restore state
       node.restoreState(oldState);
@@ -151,11 +158,7 @@
       status = 'success';
       errorMessage = '';
       
-      setTimeout(() => {
-        if (status === 'success' && !isDestroyed) {
-          onClose();
-        }
-      }, 1000);
+      // Don't auto-close when using tabs - let the user keep editing
       
     } catch (error: any) {
       if (isDestroyed) return;
@@ -225,9 +228,8 @@ node.onReady = () => {
   }
 </script>
 
-<div class="editor-modal">
+<div class="editor-container-wrapper">
   <div class="header">
-    <h3>Edit: {node.name}</h3>
     <div class="status status-{status}">
       {#if status === 'editing'}
         Editing... (Shift+Enter to compile)
@@ -242,7 +244,6 @@ node.onReady = () => {
         {errorMessage}
       {/if}
     </div>
-    <button on:click={onClose} class="close-button">×</button>
   </div>
   
   <div class="editor-container" bind:this={container}></div>
@@ -256,9 +257,11 @@ node.onReady = () => {
       <button on:click={compileNode} disabled={!editor || isDestroyed}>
         Compile (Shift+Enter)
       </button>
-      <button on:click={onClose}>
-        Close (Esc)
-      </button>
+      {#if showCloseButton}
+        <button on:click={onClose}>
+          Close (Esc)
+        </button>
+      {/if}
     </div>
   </div>
 </div>
@@ -273,6 +276,15 @@ node.onReady = () => {
 {/if}
 
 <style>
+  .editor-container-wrapper {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    background: #1e1e1e;
+    overflow: hidden;
+  }
+  
   .editor-modal {
     position: fixed;
     top: 50%;

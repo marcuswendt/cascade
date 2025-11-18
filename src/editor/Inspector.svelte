@@ -241,30 +241,6 @@
 
 {#if annotation && annotation.type === 'text'}
   <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation}>
-    <div class="header">
-      <h3>Text</h3>
-      <div class="header-actions">
-        <button class="icon-button" title="Link" aria-label="Link">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M6.5 9.5C6.5 10.8807 7.61929 12 9 12H11C12.3807 12 13.5 10.8807 13.5 9.5C13.5 8.11929 12.3807 7 11 7H9M9.5 7C8.11929 7 7 5.88071 7 4.5C7 3.11929 8.11929 2 9.5 2H11.5C12.8807 2 14 3.11929 14 4.5C14 5.88071 12.8807 7 11.5 7M5 8H11" stroke-linecap="round"/>
-          </svg>
-        </button>
-        <button class="icon-button" title="Component" aria-label="Component">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M3 3H13V13H3V3Z" stroke-linejoin="round"/>
-            <path d="M6 3V13M10 3V13M3 6H13M3 10H13" stroke-linecap="round"/>
-          </svg>
-        </button>
-        <button class="icon-button" title="More options" aria-label="More options">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <circle cx="8" cy="3" r="1.5"/>
-            <circle cx="8" cy="8" r="1.5"/>
-            <circle cx="8" cy="13" r="1.5"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-    
     <div class="content">
       <!-- Content -->
       <div class="section">
@@ -511,14 +487,12 @@
   </div>
 {:else if node}
   <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation}>
-    <div class="header">
-      <h3>{node.name}</h3>
-      {#if node.error}
-        <span class="error-badge">Error</span>
-      {/if}
-    </div>
-    
     <div class="content">
+      {#if node.error}
+        <div class="error-badge-container">
+          <span class="error-badge">Error</span>
+        </div>
+      {/if}
       <!-- Props -->
       {#if propControls.length > 0}
         {#each Object.entries(groupedProps) as entry}
@@ -728,93 +702,19 @@
 
 <style>
   .inspector {
-    position: fixed;
-    top: 0;
-    right: 0;
-    width: 300px;
-    height: 100vh;
+    position: relative;
+    width: 100%;
+    height: 100%;
     background: rgba(20, 20, 20, 0.95);
     backdrop-filter: blur(10px);
-    border-left: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
     flex-direction: column;
-    z-index: 150;
-    animation: slideIn 0.2s ease;
+    overflow: hidden;
   }
   
-  .inspector.no-animation {
-    animation: none;
-  }
-  
-  .inspector.left {
-    left: 0;
-    right: auto;
-    border-left: none;
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
-    animation: slideInLeft 0.2s ease;
-  }
-  
-  .inspector.left.no-animation {
-    animation: none;
-  }
-  
-  @keyframes slideIn {
-    from {
-      transform: translateX(100%);
-    }
-    to {
-      transform: translateX(0);
-    }
-  }
-  
-  @keyframes slideInLeft {
-    from {
-      transform: translateX(-100%);
-    }
-    to {
-      transform: translateX(0);
-    }
-  }
-  
-  .header {
+  .error-badge-container {
     padding: 12px 16px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  
-  .header h3 {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 600;
-    color: #fff;
-  }
-  
-  .header-actions {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-  }
-  
-  .icon-button {
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    color: #aaa;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s ease;
-  }
-  
-  .icon-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
   }
   
   .error-badge {

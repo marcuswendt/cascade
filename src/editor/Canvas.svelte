@@ -2,7 +2,6 @@
   import { onMount, tick, createEventDispatcher } from 'svelte';
   import { Graph } from '@/core/Graph';
   import NodeUI from './NodeUI.svelte';
-  import CodeEditor from './CodeEditor.svelte';
   import type { Node } from '@/core/Node';
   import { marked } from 'marked';
   
@@ -25,6 +24,8 @@
   let spacePressed = false;
   let isSelecting = false;
   let selectionStart: { x: number; y: number } | null = null;
+  let selectionStartScreen: { x: number; y: number } | null = null;
+  let selectionScreenPos: { x: number; y: number } | null = null;
   
   // Connection state
   let connectingFrom: { nodeId: string; portId: string; portType: 'input' | 'output' } | null = null;
@@ -39,8 +40,7 @@
   let isWheelPanning = false;
   let pointerPanStart: { x: number; y: number; pointers: Map<number, { x: number; y: number }> } | null = null;
   
-  // Code editor state
-  let editingNode: Node | null = null;
+  // Code editor state - removed, now handled by WindowManager tabs
   
   // Function to initialize default nodes
   export function initializeDefaultNodes() {
@@ -57,6 +57,7 @@
     // Add default nodes
     const timer = graph.addNode('Timer', { x: 100, y: 100 });
     const viewer = graph.addNode('Viewer', { x: 400, y: 100 });
+    viewer.setCooking(true); // Enable cooking on Viewer node
     
     // Add default annotations
     const headlineAnnotation: any = {
@@ -188,7 +189,12 @@ const output = node.out('output');
           x: (e.clientX - rect.left - transform.x) / transform.zoom,
           y: (e.clientY - rect.top - transform.y) / transform.zoom
         };
+        selectionStartScreen = {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        };
         mousePosition = { ...selectionStart };
+        selectionScreenPos = { ...selectionStartScreen };
         isSelecting = true;
         // Clear current selection when starting new selection
         if (!e.shiftKey) {
@@ -260,9 +266,15 @@ const output = node.out('output');
     // Update selection rectangle
     if (isSelecting && selectionStart) {
       const rect = canvas.getBoundingClientRect();
+      // Store both canvas coordinates (for selection logic) and screen coordinates (for rendering)
       const currentX = (e.clientX - rect.left - transform.x) / transform.zoom;
       const currentY = (e.clientY - rect.top - transform.y) / transform.zoom;
       mousePosition = { x: currentX, y: currentY };
+      // Also store screen coordinates for the selection rectangle rendering
+      selectionScreenPos = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
     }
     
     // Handle node dragging
@@ -460,6 +472,8 @@ const output = node.out('output');
       
       isSelecting = false;
       selectionStart = null;
+      selectionStartScreen = null;
+      selectionScreenPos = null;
     }
   }
   
@@ -514,13 +528,8 @@ const output = node.out('output');
   }
   
   function handleNodeEdit(e: CustomEvent<{ node: Node }>) {
-    editingNode = e.detail.node;
-  }
-  
-  function handleEditorClose() {
-    editingNode = null;
-    // Force reactivity update to show any port changes
-    graph.nodes = [...graph.nodes];
+    // Dispatch event to parent (WindowManager) to open tab
+    dispatch('nodeEdit', { node: e.detail.node });
   }
   
   function handleNodeClick(nodeId: string, detail: { event: MouseEvent }) {
@@ -1603,16 +1612,16 @@ const output = node.out('output');
   on:keydown={handleCanvasKeyDown}
 >
   <!-- Selection rectangle -->
-  {#if isSelecting && selectionStart}
-    {@const rect = {
-      x: Math.min(selectionStart.x, mousePosition.x),
-      y: Math.min(selectionStart.y, mousePosition.y),
-      width: Math.abs(mousePosition.x - selectionStart.x),
-      height: Math.abs(mousePosition.y - selectionStart.y)
+  {#if isSelecting && selectionStart && selectionStartScreen && selectionScreenPos}
+    {@const screenRect = {
+      x: Math.min(selectionStartScreen.x, selectionScreenPos.x),
+      y: Math.min(selectionStartScreen.y, selectionScreenPos.y),
+      width: Math.abs(selectionScreenPos.x - selectionStartScreen.x),
+      height: Math.abs(selectionScreenPos.y - selectionStartScreen.y)
     }}
     <div
       class="selection-rectangle"
-      style="left: {rect.x}px; top: {rect.y}px; width: {rect.width}px; height: {rect.height}px; transform: translate({transform.x}px, {transform.y}px) scale({transform.zoom})"
+      style="left: {screenRect.x}px; top: {screenRect.y}px; width: {screenRect.width}px; height: {screenRect.height}px;"
     ></div>
   {/if}
   
@@ -1956,21 +1965,14 @@ const output = node.out('output');
     {/each}
   </div>
   
-  <!-- Code Editor Modal -->
-  {#if editingNode}
-    <CodeEditor 
-      node={editingNode}
-      packageManager={graph.packageManager}
-      onClose={handleEditorClose}
-    />
-  {/if}
+  <!-- Code Editor is now handled by WindowManager tabs -->
 </div>
 
 <style>
   .canvas {
     position: relative;
     width: 100%;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
     background: #0a0a0a;
     cursor: default;
