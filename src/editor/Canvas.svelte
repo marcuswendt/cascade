@@ -501,7 +501,30 @@ node.onReady = () => {
           const draggedAnnotationData = draggingMultiple.annotations.find(a => a.annotationId === draggingAnnotation!.annotationId);
           if (!draggedAnnotationData) {
             // Fallback to single drag if annotation not found in draggingMultiple
-            annotation.position = { x: newX, y: newY };
+            const deltaX = newX - annotation.position.x;
+            const deltaY = newY - annotation.position.y;
+            
+            // Handle line and polyline annotations specially
+            if (annotation.type === 'line') {
+              annotation.position = { x: newX, y: newY };
+              if (annotation.endPosition) {
+                annotation.endPosition = {
+                  x: annotation.endPosition.x + deltaX,
+                  y: annotation.endPosition.y + deltaY
+                };
+              }
+            } else if (annotation.type === 'polyline') {
+              annotation.position = { x: newX, y: newY };
+              if (annotation.points) {
+                annotation.points = annotation.points.map(p => ({
+                  x: p.x + deltaX,
+                  y: p.y + deltaY
+                }));
+              }
+            } else {
+              annotation.position = { x: newX, y: newY };
+            }
+            
             graph.annotations = [...graph.annotations];
             return;
           }
@@ -520,12 +543,52 @@ node.onReady = () => {
           draggingMultiple.annotations.forEach(({ annotationId, startPos }) => {
             const ann = graph.getAnnotation(annotationId);
             if (ann) {
+              // Store original endPosition/points before updating position
+              const originalEndPosition = ann.type === 'line' && ann.endPosition ? { ...ann.endPosition } : null;
+              const originalPoints = ann.type === 'polyline' && ann.points ? ann.points.map(p => ({ ...p })) : null;
+              
+              // Update position
               ann.position = { x: startPos.x + deltaX, y: startPos.y + deltaY };
+              
+              // Handle line and polyline annotations specially
+              if (ann.type === 'line' && originalEndPosition) {
+                ann.endPosition = {
+                  x: originalEndPosition.x + deltaX,
+                  y: originalEndPosition.y + deltaY
+                };
+              } else if (ann.type === 'polyline' && originalPoints) {
+                ann.points = originalPoints.map(p => ({
+                  x: p.x + deltaX,
+                  y: p.y + deltaY
+                }));
+              }
             }
           });
         } else {
           // Single annotation drag
-          annotation.position = { x: newX, y: newY };
+          const deltaX = newX - annotation.position.x;
+          const deltaY = newY - annotation.position.y;
+          
+          // Handle line and polyline annotations specially
+          if (annotation.type === 'line') {
+            annotation.position = { x: newX, y: newY };
+            if (annotation.endPosition) {
+              annotation.endPosition = {
+                x: annotation.endPosition.x + deltaX,
+                y: annotation.endPosition.y + deltaY
+              };
+            }
+          } else if (annotation.type === 'polyline') {
+            annotation.position = { x: newX, y: newY };
+            if (annotation.points) {
+              annotation.points = annotation.points.map(p => ({
+                x: p.x + deltaX,
+                y: p.y + deltaY
+              }));
+            }
+          } else {
+            annotation.position = { x: newX, y: newY };
+          }
         }
         
         graph.annotations = [...graph.annotations];
@@ -2343,7 +2406,8 @@ node.onReady = () => {
             y: node.position.y + 50
           });
           newNode.code = node.code;
-          newNode.name = node.name;
+          // Generate unique name based on the original node's name
+          newNode.name = graph.generateUniqueNodeName(node.name);
           newNode.comment = node.comment;
           newNodes.push(newNode);
         });
@@ -2741,6 +2805,7 @@ node.onReady = () => {
           tabindex="0"
           style="position: absolute; left: 0; top: 0; pointer-events: none;"
           on:click={(e) => handleAnnotationClick(annotation.id, e)}
+          on:mousedown={(e) => handleAnnotationMouseDown(annotation.id, e)}
           on:keydown={(e) => handleAnnotationKeyDown(annotation.id, e)}
         >
           <line
@@ -2770,6 +2835,7 @@ node.onReady = () => {
             tabindex="0"
             style="position: absolute; left: 0; top: 0; pointer-events: none;"
             on:click={(e) => handleAnnotationClick(annotation.id, e)}
+            on:mousedown={(e) => handleAnnotationMouseDown(annotation.id, e)}
             on:keydown={(e) => handleAnnotationKeyDown(annotation.id, e)}
           >
             <path

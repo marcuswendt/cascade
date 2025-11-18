@@ -21,6 +21,9 @@
   
   let isDragging = false;
   let tooltip: { text: string; x: number; y: number; type: 'input' | 'output' } | null = null;
+  let isEditingName = false;
+  let nameInput: HTMLInputElement;
+  let tempName = node.name;
   
   function showPortTooltip(e: MouseEvent, portName: string, portType: 'input' | 'output') {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -61,8 +64,10 @@
   }
   
   function handleMouseDown(e: MouseEvent) {
-    // Don't dispatch if clicking on a port
-    if ((e.target as HTMLElement).closest('.port')) {
+    // Don't dispatch if clicking on a port or name input
+    if ((e.target as HTMLElement).closest('.port') || 
+        (e.target as HTMLElement).closest('.node-name-input') ||
+        (e.target as HTMLElement).closest('.node-name')) {
       return;
     }
     
@@ -111,6 +116,58 @@
     e.stopPropagation();
     e.preventDefault();
     dispatch('cookToggle', { nodeId: node.id, event: e });
+  }
+  
+  function startEditingName(e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    isEditingName = true;
+    tempName = node.name;
+    // Focus and select the input after it's rendered
+    setTimeout(() => {
+      nameInput?.focus();
+      nameInput?.select();
+    }, 0);
+  }
+  
+  function saveName() {
+    if (tempName.trim()) {
+      const actualName = node.rename(tempName.trim());
+      tempName = actualName;
+    } else {
+      tempName = node.name; // Revert if empty
+    }
+    isEditingName = false;
+  }
+  
+  function cancelEdit() {
+    tempName = node.name;
+    isEditingName = false;
+  }
+  
+  function handleNameKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      saveName();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      cancelEdit();
+    }
+  }
+  
+  function handleNameKeyDownSpan(e: KeyboardEvent) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      startEditingName(e as any);
+    }
+  }
+  
+  // Update tempName when node.name changes externally
+  $: if (node.name && !isEditingName) {
+    tempName = node.name;
   }
 </script>
 
@@ -211,7 +268,29 @@
     </div>
     
     <div class="label">
-      <span class="node-name">{node.name}</span>
+      {#if isEditingName}
+        <input
+          type="text"
+          class="node-name-input"
+          bind:this={nameInput}
+          bind:value={tempName}
+          on:blur={saveName}
+          on:keydown={handleNameKeyDown}
+          on:click|stopPropagation
+          on:mousedown|stopPropagation
+        />
+      {:else}
+        <span 
+          class="node-name"
+          role="button"
+          tabindex="0"
+          on:click={startEditingName}
+          on:keydown={handleNameKeyDownSpan}
+          title="Click to rename (Enter or Space)"
+        >
+          {node.name}
+        </span>
+      {/if}
     </div>
   </div>
   
@@ -407,6 +486,31 @@
   
   .node-name {
     font-weight: 500;
+    cursor: text;
+    user-select: none;
+  }
+  
+  .node-name:hover {
+    opacity: 0.8;
+  }
+  
+  .node-name-input {
+    background: #1a1a1a;
+    border: 1px solid #4a9eff;
+    border-radius: 3px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 4px;
+    outline: none;
+    min-width: 60px;
+    width: auto;
+    font-family: inherit;
+  }
+  
+  .node-name-input:focus {
+    border-color: #4a9eff;
+    box-shadow: 0 0 0 1px #4a9eff;
   }
   
   

@@ -49,10 +49,35 @@ export class Graph {
     this.packageManager = new PackageManager();
   }
   
+  /**
+   * Generates a unique node name based on a base name.
+   * Always appends a number starting from 1 (e.g., "Checkers1", "Checkers2").
+   * @param baseName The base name to use (typically the node type)
+   * @param excludeNodeId Optional node ID to exclude from uniqueness check (useful when renaming)
+   * @returns A unique node name
+   */
+  generateUniqueNodeName(baseName: string, excludeNodeId?: string): string {
+    // Always use numbered versions starting from 1
+    let counter = 1;
+    let candidateName = `${baseName}${counter}`;
+    
+    // Find the first available numbered name
+    while (this.nodes.some(
+      node => node.name === candidateName && (!excludeNodeId || node.id !== excludeNodeId)
+    )) {
+      counter++;
+      candidateName = `${baseName}${counter}`;
+    }
+    
+    return candidateName;
+  }
+  
   addNode(type: string, position: { x: number; y: number }): Node {
     const id = `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const node = new Node(id, type, this);
     node.position = position;
+    // Generate unique name automatically
+    node.name = this.generateUniqueNodeName(type);
     this.nodes.push(node);
     return node;
   }
@@ -311,7 +336,10 @@ export class Graph {
     json.nodes.forEach((nodeData: any) => {
       const node = graph.addNode(nodeData.type, nodeData.position || { x: 0, y: 0 });
       node.id = nodeData.id;
-      node.name = nodeData.name || nodeData.type;
+      // Generate unique name, using the saved name as base if available
+      // Exclude this node from uniqueness check since it's already in the graph
+      const baseName = nodeData.name || nodeData.type;
+      node.name = graph.generateUniqueNodeName(baseName, node.id);
       node.code = nodeData.code || '';
       node.comment = nodeData.comment || '';
       

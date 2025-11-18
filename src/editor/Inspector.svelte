@@ -281,10 +281,55 @@
     }
   }
   
+  function handleAnnotationEndPositionXInput(e: Event) {
+    const value = parseFloat((e.target as HTMLInputElement).value);
+    if (!isNaN(value) && annotation && graph) {
+      const index = graph.annotations.findIndex(a => a.id === annotation.id);
+      if (index >= 0) {
+        graph.annotations = [
+          ...graph.annotations.slice(0, index),
+          { ...graph.annotations[index], endPosition: { ...(annotation.endPosition || annotation.position), x: value } },
+          ...graph.annotations.slice(index + 1)
+        ];
+        if (annotation.endPosition) {
+          annotation.endPosition.x = value;
+        } else {
+          annotation.endPosition = { ...annotation.position, x: value };
+        }
+      }
+    }
+  }
+  
+  function handleAnnotationEndPositionYInput(e: Event) {
+    const value = parseFloat((e.target as HTMLInputElement).value);
+    if (!isNaN(value) && annotation && graph) {
+      const index = graph.annotations.findIndex(a => a.id === annotation.id);
+      if (index >= 0) {
+        graph.annotations = [
+          ...graph.annotations.slice(0, index),
+          { ...graph.annotations[index], endPosition: { ...(annotation.endPosition || annotation.position), y: value } },
+          ...graph.annotations.slice(index + 1)
+        ];
+        if (annotation.endPosition) {
+          annotation.endPosition.y = value;
+        } else {
+          annotation.endPosition = { ...annotation.position, y: value };
+        }
+      }
+    }
+  }
+  
   function handleAnnotationColorHexInput(e: Event) {
     const value = (e.target as HTMLInputElement).value;
     if (/^#[0-9A-Fa-f]{6}$/.test(value)) {
       handleAnnotationStyleChange('color', value);
+    }
+  }
+  
+  function handleAnnotationStrokeColorHexInput(e: Event) {
+    const value = (e.target as HTMLInputElement).value;
+    if (/^#[0-9A-Fa-f]{6}$/.test(value)) {
+      handleAnnotationStyleChange('strokeColor', value);
     }
   }
 </script>
@@ -532,6 +577,179 @@
             </div>
           </div>
         {/if}
+      </div>
+    </div>
+  </div>
+{:else if annotation && annotation.type === 'line'}
+  <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation}>
+    <div class="content">
+      <!-- Position -->
+      <div class="section">
+        <div class="section-header">
+          <span class="section-title">Position</span>
+        </div>
+        <div class="position-grid">
+          <div class="position-input-group">
+            <label class="position-label" for="annotation-x">X</label>
+            <input
+              id="annotation-x"
+              type="number"
+              class="position-input"
+              value={Math.round(annotation.position.x)}
+              on:input={handleAnnotationPositionXInput}
+            />
+          </div>
+          <div class="position-input-group">
+            <label class="position-label" for="annotation-y">Y</label>
+            <input
+              id="annotation-y"
+              type="number"
+              class="position-input"
+              value={Math.round(annotation.position.y)}
+              on:input={handleAnnotationPositionYInput}
+            />
+          </div>
+        </div>
+      </div>
+      
+      <!-- End Position -->
+      <div class="section">
+        <div class="section-header">
+          <span class="section-title">End Position</span>
+        </div>
+        <div class="position-grid">
+          <div class="position-input-group">
+            <label class="position-label" for="annotation-end-x">X</label>
+            <input
+              id="annotation-end-x"
+              type="number"
+              class="position-input"
+              value={Math.round(annotation.endPosition?.x || annotation.position.x)}
+              on:input={handleAnnotationEndPositionXInput}
+            />
+          </div>
+          <div class="position-input-group">
+            <label class="position-label" for="annotation-end-y">Y</label>
+            <input
+              id="annotation-end-y"
+              type="number"
+              class="position-input"
+              value={Math.round(annotation.endPosition?.y || annotation.position.y)}
+              on:input={handleAnnotationEndPositionYInput}
+            />
+          </div>
+        </div>
+      </div>
+      
+      <!-- Stroke -->
+      <div class="section">
+        <div class="section-header">
+          <span class="section-title">Stroke</span>
+        </div>
+        <div class="fill-controls">
+          <input
+            id="annotation-stroke-color"
+            type="color"
+            class="color-picker"
+            value={annotation.style?.strokeColor || '#ffffff'}
+            on:input={(e) => handleAnnotationStyleColorInput('strokeColor', e)}
+          />
+          <input
+            id="annotation-stroke-color-hex"
+            type="text"
+            class="color-hex-input"
+            value={(annotation.style?.strokeColor || '#ffffff').toUpperCase()}
+            on:input={handleAnnotationStrokeColorHexInput}
+            placeholder="#FFFFFF"
+          />
+        </div>
+        <div class="appearance-row" style="margin-top: 8px;">
+          <div class="appearance-input-group">
+            <label class="appearance-label" for="annotation-stroke-width">Width</label>
+            <input
+              id="annotation-stroke-width"
+              type="number"
+              class="appearance-number-input"
+              min="1"
+              max="20"
+              step="1"
+              value={annotation.style?.strokeWidth || 2}
+              on:input={(e) => handleAnnotationStyleNumberInput('strokeWidth', e)}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{:else if annotation && annotation.type === 'polyline'}
+  <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation}>
+    <div class="content">
+      <!-- Position -->
+      <div class="section">
+        <div class="section-header">
+          <span class="section-title">Position</span>
+        </div>
+        <div class="position-grid">
+          <div class="position-input-group">
+            <label class="position-label" for="annotation-x">X</label>
+            <input
+              id="annotation-x"
+              type="number"
+              class="position-input"
+              value={Math.round(annotation.position.x)}
+              on:input={handleAnnotationPositionXInput}
+            />
+          </div>
+          <div class="position-input-group">
+            <label class="position-label" for="annotation-y">Y</label>
+            <input
+              id="annotation-y"
+              type="number"
+              class="position-input"
+              value={Math.round(annotation.position.y)}
+              on:input={handleAnnotationPositionYInput}
+            />
+          </div>
+        </div>
+      </div>
+      
+      <!-- Stroke -->
+      <div class="section">
+        <div class="section-header">
+          <span class="section-title">Stroke</span>
+        </div>
+        <div class="fill-controls">
+          <input
+            id="annotation-stroke-color"
+            type="color"
+            class="color-picker"
+            value={annotation.style?.strokeColor || '#ffffff'}
+            on:input={(e) => handleAnnotationStyleColorInput('strokeColor', e)}
+          />
+          <input
+            id="annotation-stroke-color-hex"
+            type="text"
+            class="color-hex-input"
+            value={(annotation.style?.strokeColor || '#ffffff').toUpperCase()}
+            on:input={handleAnnotationStrokeColorHexInput}
+            placeholder="#FFFFFF"
+          />
+        </div>
+        <div class="appearance-row" style="margin-top: 8px;">
+          <div class="appearance-input-group">
+            <label class="appearance-label" for="annotation-stroke-width">Width</label>
+            <input
+              id="annotation-stroke-width"
+              type="number"
+              class="appearance-number-input"
+              min="1"
+              max="20"
+              step="1"
+              value={annotation.style?.strokeWidth || 2}
+              on:input={(e) => handleAnnotationStyleNumberInput('strokeWidth', e)}
+            />
+          </div>
+        </div>
       </div>
     </div>
   </div>

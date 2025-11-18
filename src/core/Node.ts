@@ -258,6 +258,25 @@ export class Node implements NodeContext {
     this.isDirty = true;
   }
   
+  /**
+   * Renames the node, ensuring the new name is unique.
+   * If the requested name is not unique, generates a unique variant.
+   * @param newName The desired new name
+   * @returns The actual name that was set (may differ if original wasn't unique)
+   */
+  rename(newName: string): string {
+    if (!newName || !newName.trim()) {
+      return this.name; // Don't allow empty names
+    }
+    
+    const trimmedName = newName.trim();
+    // Use the graph's unique name generator, excluding this node from the check
+    const uniqueName = this.graph.generateUniqueNodeName(trimmedName, this.id);
+    this.name = uniqueName;
+    this.markDirty();
+    return uniqueName;
+  }
+  
   async execute() {
     if (this.nodeFunction) {
       // If node hasn't been executed yet, always run the function at least once
