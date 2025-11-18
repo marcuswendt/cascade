@@ -205,9 +205,6 @@
     }
   }
   
-  // Watch for preview updates
-  let previewObserver: MutationObserver | null = null;
-  
   onMount(() => {
     // Periodically check for preview updates (since preview might be updated asynchronously)
     const interval = setInterval(() => {
@@ -224,9 +221,6 @@
     
     return () => {
       clearInterval(interval);
-      if (previewObserver) {
-        previewObserver.disconnect();
-      }
     };
   });
 </script>

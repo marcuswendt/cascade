@@ -1,6 +1,13 @@
 import type { Prop, PropControlType } from '@/types/node.types';
 
 /**
+ * Check if a number is an integer
+ */
+function isInteger(value: number): boolean {
+  return Number.isInteger(value);
+}
+
+/**
  * Infer the control type from a prop's value and parameters
  */
 export function inferPropControlType(prop: Prop): PropControlType {
@@ -11,14 +18,15 @@ export function inferPropControlType(prop: Prop): PropControlType {
   
   const value = prop.value;
   const params = prop.params;
+  const isInt = params?.integer === true || (params?.step === 1 && typeof value === 'number' && isInteger(value));
   
   // Check value type
   if (typeof value === 'number') {
     // If min/max are set, use slider
     if (params?.min !== undefined && params?.max !== undefined) {
-      return 'slider';
+      return isInt ? 'int' : 'slider';
     }
-    return 'number';
+    return isInt ? 'int' : 'number';
   }
   
   if (typeof value === 'string') {
@@ -46,11 +54,26 @@ export function inferPropControlType(prop: Prop): PropControlType {
   }
   
   if (Array.isArray(value)) {
-    // Check if it's a range (2-element array with min/max)
-    if (value.length === 2 && params?.min !== undefined && params?.max !== undefined) {
+    // Check if it's a range (2-element array with min/max as single numbers, not arrays)
+    if (value.length === 2 && 
+        params?.min !== undefined && 
+        params?.max !== undefined &&
+        typeof params.min === 'number' && 
+        typeof params.max === 'number') {
       return 'range';
     }
-    // Otherwise it's a vector
+    // Determine vector type based on length and integer mode
+    // Check if all values are integers (for arrays of numbers)
+    const allIntegers = value.length > 0 && value.every(v => typeof v === 'number' && isInteger(v));
+    // If integer is explicitly set, or step is 1, or all values are integers and look like resolution values (positive, reasonable range)
+    const looksLikeResolution = allIntegers && value.every(v => v >= 1 && v <= 8192) && params?.min !== undefined && params?.max !== undefined;
+    const arrayIsInt = params?.integer === true || (params?.step === 1 && allIntegers) || looksLikeResolution;
+    if (value.length === 2) {
+      return arrayIsInt ? 'vec2i' : 'vec2';
+    } else if (value.length === 3) {
+      return arrayIsInt ? 'vec3i' : 'vec3';
+    }
+    // Otherwise it's a generic vector
     return 'vector';
   }
   

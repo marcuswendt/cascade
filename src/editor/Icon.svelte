@@ -38,10 +38,14 @@
     Hand: icons.Hand,
     Waves: icons.Waves,
     ChevronDown: icons.ChevronDown,
+    ChevronRight: icons.ChevronRight,
     View: icons.Eye,
     SlidersHorizontal: icons.SlidersHorizontal,
     GitGraph: icons.GitBranch,
-    Logs: icons.Terminal
+    Logs: icons.Terminal,
+    Network: icons.Network,
+    Workflow: icons.Workflow,
+    ScrollText: icons.ScrollText
   };
   
   $: IconComponent = iconMap[name] || icons.Settings;

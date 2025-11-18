@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { nodeLibraries, getAllNodes, getNodesByLibraryAndCategory, type NodeTemplate } from './nodeTemplates';
+  import { nodeLibraries, getAllNodes, getNodesByLibraryAndCategory, type NodeTemplate, type Category } from './nodeTemplates';
   import Icon from './Icon.svelte';
   
   import { onMount } from 'svelte';
@@ -23,6 +23,7 @@
   let selectedCategoryIndex = -1;
   let selectedNodeIndex = -1;
   let navigationMode: 'library' | 'category' | 'node' = 'library';
+  let hoveredLibraryId: string | null | undefined = undefined; // undefined = no hover, null = "All", string = library id
   
   // Calculate position relative to Graph window, centered on cursor, clamped to screen
   function calculatePosition() {
@@ -38,9 +39,8 @@
     const graphWindow = document.querySelector('[data-window-id="graph"]');
     if (!graphWindow) {
       // Fallback to viewport positioning centered on cursor
-      const panelRect = panelElement.getBoundingClientRect();
-      const panelWidth = panelRect.width || 400;
-      const panelHeight = panelRect.height || 500;
+      const panelWidth = 100;
+      const panelHeight = 400;
       calculatedPosition = {
         x: centerPosition.x - (panelWidth / 2),
         y: centerPosition.y - (panelHeight / 2)
@@ -53,8 +53,8 @@
     
     // Wait for panel to be measured, then recalculate
     const panelRect = panelElement.getBoundingClientRect();
-    const panelWidth = panelRect.width || 400;
-    const panelHeight = panelRect.height || 500;
+      const panelWidth = panelRect.width || 100;
+      const panelHeight = panelRect.height || 400;
     
     // Calculate centered position on cursor (relative to Graph window)
     // centerPosition is in viewport coordinates
@@ -99,30 +99,91 @@
       }
     };
     window.addEventListener('resize', handleResize);
+    
+    // Handle click outside to close menu
+    const handleDocumentClick = (e: MouseEvent) => {
+      if (libraryId || categoryId) {
+        const target = e.target as HTMLElement;
+        // Check if click is outside all menu columns
+        const menuColumns = document.querySelectorAll('.menu-column');
+        let clickedInside = false;
+        menuColumns.forEach(column => {
+          if (column.contains(target)) {
+            clickedInside = true;
+          }
+        });
+        if (!clickedInside) {
+          handleClose();
+        }
+      }
+    };
+    
+    // Use capture phase to catch clicks before they bubble
+    document.addEventListener('mousedown', handleDocumentClick, true);
+    
     return () => {
       window.removeEventListener('resize', handleResize);
+      document.removeEventListener('mousedown', handleDocumentClick, true);
     };
   });
   
   // Get current library and category
-  $: currentLibrary = libraryId ? nodeLibraries.find(lib => lib.id === libraryId) : null;
+  $: currentLibrary = libraryId && libraryId !== 'all' ? nodeLibraries.find(lib => lib.id === libraryId) : null;
   $: currentCategory = currentLibrary && categoryId 
     ? currentLibrary.categories.find(cat => cat.id === categoryId) 
     : null;
   
+  // Get all nodes from a library (flattened from all categories)
+  function getNodesFromLibrary(libId: string): NodeTemplate[] {
+    const library = nodeLibraries.find(lib => lib.id === libId);
+    if (!library) return [];
+    const all: NodeTemplate[] = [];
+    library.categories.forEach(category => {
+      all.push(...category.nodes);
+    });
+    return all;
+  }
+  
+  // Get nodes for the hovered library (for submenu)
+  $: hoveredNodes = hoveredLibraryId === null
+    ? getAllNodes().sort((a, b) => a.name.localeCompare(b.name))
+    : hoveredLibraryId !== undefined
+      ? getNodesFromLibrary(hoveredLibraryId).sort((a, b) => a.name.localeCompare(b.name))
+      : [];
+  
   // Get nodes based on context
   $: nodes = searchQuery
-    ? getAllNodes().filter(n => 
-        n.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        n.description.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : categoryId && libraryId
-      ? getNodesByLibraryAndCategory(libraryId, categoryId)
-      : [];
+    ? getAllNodes()
+        .filter(n => 
+          n.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          n.description.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+        .sort((a, b) => a.name.localeCompare(b.name))
+    : libraryId === 'all' || (libraryId === null && !categoryId)
+      ? getAllNodes().sort((a, b) => a.name.localeCompare(b.name))
+      : libraryId && !categoryId
+        ? getNodesFromLibrary(libraryId).sort((a, b) => a.name.localeCompare(b.name))
+        : categoryId && libraryId
+          ? getNodesByLibraryAndCategory(libraryId, categoryId).sort((a, b) => a.name.localeCompare(b.name))
+          : [];
   
   // Get available libraries and categories for navigation
   $: availableLibraries = nodeLibraries.filter(lib => lib.categories.some(cat => cat.nodes.length > 0) && lib.id !== 'custom');
-  $: availableCategories = currentLibrary ? currentLibrary.categories.filter(cat => cat.nodes.length > 0) : [];
+  // Filter categories: show only categories with multiple nodes, single-entry categories are flattened
+  $: availableCategories = currentLibrary ? currentLibrary.categories.filter(cat => cat.nodes.length > 1) : [];
+  // Get direct nodes from single-entry categories (to be shown when library is selected)
+  $: directNodes = currentLibrary && !categoryId && !searchQuery
+    ? currentLibrary.categories
+        .filter(cat => cat.nodes.length === 1)
+        .map(cat => ({ ...cat.nodes[0], categoryId: cat.id }))
+    : [];
+  // Combined list of all items in the categories column (categories + direct nodes)
+  $: categoryColumnItems = currentLibrary && !categoryId && !searchQuery
+    ? [
+        ...availableCategories.map(cat => ({ type: 'category', data: cat })),
+        ...directNodes.map(node => ({ type: 'node', data: node }))
+      ]
+    : [];
   
   // Initialize navigation when panel opens
   $: if (libraryId || categoryId) {
@@ -138,20 +199,32 @@
         selectedNodeIndex = -1;
       }
     } else {
-      if (libraryId && selectedLibraryIndex === -1) {
-        selectedLibraryIndex = availableLibraries.findIndex(lib => lib.id === libraryId);
-        if (selectedLibraryIndex === -1) selectedLibraryIndex = 0;
-        navigationMode = categoryId ? 'node' : 'library';
+      // Always start in library mode to show libraries list
+      if (selectedLibraryIndex === -1) {
+        if (libraryId && libraryId !== 'all') {
+          selectedLibraryIndex = availableLibraries.findIndex(lib => lib.id === libraryId);
+          if (selectedLibraryIndex === -1) selectedLibraryIndex = 0;
+        } else {
+          selectedLibraryIndex = 0;
+        }
+        // Start in library mode - user must click to see nodes
+        navigationMode = 'library';
       }
       if (categoryId && currentLibrary && selectedCategoryIndex === -1) {
         selectedCategoryIndex = availableCategories.findIndex(cat => cat.id === categoryId);
         if (selectedCategoryIndex === -1) selectedCategoryIndex = 0;
         if (categoryId) navigationMode = 'node';
       }
-      if (selectedNodeIndex === -1 && nodes.length > 0 && navigationMode === 'node') {
+      // Update category index for the combined categories column
+      if (selectedCategoryIndex === -1 && categoryColumnItems.length > 0 && navigationMode === 'category' && !categoryId) {
+        selectedCategoryIndex = 0;
+      } else if (navigationMode === 'category' && selectedCategoryIndex >= categoryColumnItems.length) {
+        selectedCategoryIndex = Math.max(0, categoryColumnItems.length - 1);
+      }
+      // Update node index for the nodes column (when a category is selected)
+      if (selectedNodeIndex === -1 && nodes.length > 0 && navigationMode === 'node' && categoryId) {
         selectedNodeIndex = 0;
-      } else if (navigationMode === 'node' && selectedNodeIndex >= nodes.length) {
-        // Clamp node index if it's out of bounds
+      } else if (navigationMode === 'node' && selectedNodeIndex >= nodes.length && categoryId) {
         selectedNodeIndex = Math.max(0, nodes.length - 1);
       }
     }
@@ -168,18 +241,18 @@
   // Scroll selected item into view
   $: if (navigationMode === 'library' && selectedLibraryIndex >= 0) {
     setTimeout(() => {
-      const librariesColumn = panelElement?.querySelector('.libraries-column');
-      const selectedButton = librariesColumn?.children[selectedLibraryIndex] as HTMLElement;
+      const mainColumn = panelElement?.querySelector('.main-column .column-content');
+      const selectedButton = mainColumn?.children[selectedLibraryIndex + 1] as HTMLElement; // +1 for search bar
       if (selectedButton) {
         selectedButton.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
     }, 0);
   }
   
-  $: if (navigationMode === 'category' && selectedCategoryIndex >= 0) {
+  $: if (navigationMode === 'category' && selectedCategoryIndex >= 0 && !categoryId) {
     setTimeout(() => {
-      const categoriesColumn = panelElement?.querySelector('.categories-column');
-      const selectedButton = categoriesColumn?.children[selectedCategoryIndex] as HTMLElement;
+      const mainColumn = panelElement?.querySelector('.main-column .column-content');
+      const selectedButton = mainColumn?.children[selectedCategoryIndex] as HTMLElement;
       if (selectedButton) {
         selectedButton.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
@@ -188,16 +261,27 @@
   
   $: if (navigationMode === 'node' && selectedNodeIndex >= 0) {
     setTimeout(() => {
-      const nodesColumn = panelElement?.querySelector('.nodes-column');
-      const selectedButton = nodesColumn?.children[selectedNodeIndex] as HTMLElement;
-      if (selectedButton) {
-        selectedButton.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      const nodesColumn = document.querySelector('.nodes-column .column-content');
+      if (!nodesColumn) {
+        // Fallback to main column if searching
+        const mainColumn = panelElement?.querySelector('.main-column .column-content');
+        const selectedButton = mainColumn?.children[selectedNodeIndex] as HTMLElement;
+        if (selectedButton) {
+          selectedButton.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      } else {
+        const selectedButton = nodesColumn.children[selectedNodeIndex] as HTMLElement;
+        if (selectedButton) {
+          selectedButton.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
       }
     }, 0);
   }
   
-  function handleNodeClick(node: NodeTemplate) {
-    dispatch('addNode', { type: node.type, libraryId, categoryId });
+  function handleNodeClick(node: NodeTemplate & { categoryId?: string }) {
+    // Use the categoryId from direct nodes if available, otherwise use the current categoryId
+    const nodeCategoryId = node.categoryId || categoryId;
+    dispatch('addNode', { type: node.type, libraryId, categoryId: nodeCategoryId });
   }
   
   function handleCategoryClick(libId: string, catId: string) {
@@ -205,7 +289,14 @@
   }
   
   function handleLibraryClick(libId: string) {
-    dispatch('selectLibrary', { libraryId: libId });
+    if (libId === 'all') {
+      // Show all nodes from all libraries
+      dispatch('selectLibrary', { libraryId: null });
+      navigationMode = 'node';
+    } else {
+      dispatch('selectLibrary', { libraryId: libId });
+      navigationMode = 'node';
+    }
   }
   
   function handleCustomNodeClick() {
@@ -215,6 +306,16 @@
   
   function handleClose() {
     dispatch('close');
+  }
+  
+  
+  // Helper functions for type casting in templates
+  function getCategory(item: { type: string; data: any }): Category {
+    return item.data as Category;
+  }
+  
+  function getNode(item: { type: string; data: any }): NodeTemplate & { categoryId?: string } {
+    return item.data as NodeTemplate & { categoryId?: string };
   }
   
   function handleKeyDown(e: KeyboardEvent) {
@@ -260,8 +361,16 @@
         return;
       }
       if (navigationMode === 'category' && libraryId) {
-        navigationMode = 'library';
-        selectedCategoryIndex = -1;
+        if (categoryId) {
+          // Go back from nodes column to categories column
+          navigationMode = 'category';
+          selectedNodeIndex = -1;
+          categoryId = null;
+        } else {
+          // Go back from categories column to library column
+          navigationMode = 'library';
+          selectedCategoryIndex = -1;
+        }
       } else if (navigationMode === 'node' && categoryId) {
         navigationMode = 'category';
         selectedNodeIndex = -1;
@@ -271,12 +380,24 @@
         // In search mode, right arrow does nothing
         return;
       }
-      if (navigationMode === 'library' && libraryId && availableCategories.length > 0) {
-        navigationMode = 'category';
-        if (selectedCategoryIndex === -1) selectedCategoryIndex = 0;
-      } else if (navigationMode === 'category' && categoryId && nodes.length > 0) {
-        navigationMode = 'node';
-        if (selectedNodeIndex === -1) selectedNodeIndex = 0;
+      if (navigationMode === 'library' && libraryId) {
+        if (availableCategories.length > 0 || directNodes.length > 0) {
+          navigationMode = 'category';
+          if (selectedCategoryIndex === -1) selectedCategoryIndex = 0;
+        }
+      } else if (navigationMode === 'category' && !categoryId) {
+        // In categories column, check if selected item is a category (not a direct node)
+        if (selectedCategoryIndex >= 0 && selectedCategoryIndex < categoryColumnItems.length) {
+          const item = categoryColumnItems[selectedCategoryIndex];
+          if (item.type === 'category' && 'id' in item.data) {
+            // Select the category to show its nodes
+            if (libraryId && 'id' in item.data) {
+              handleCategoryClick(libraryId, item.data.id);
+            }
+            navigationMode = 'node';
+            if (selectedNodeIndex === -1) selectedNodeIndex = 0;
+          }
+        }
       }
     } else if (e.key === 'ArrowUp') {
       if (searchQuery) {
@@ -289,9 +410,18 @@
           handleLibraryClick(availableLibraries[selectedLibraryIndex].id);
         }
       } else if (navigationMode === 'category') {
-        selectedCategoryIndex = Math.max(0, selectedCategoryIndex - 1);
-        if (selectedCategoryIndex >= 0 && selectedCategoryIndex < availableCategories.length && libraryId) {
-          handleCategoryClick(libraryId, availableCategories[selectedCategoryIndex].id);
+        if (categoryId) {
+          // Navigating within a selected category's nodes
+          selectedNodeIndex = Math.max(0, selectedNodeIndex - 1);
+        } else {
+          // Navigating within the categories column (categories + direct nodes)
+          selectedCategoryIndex = Math.max(0, selectedCategoryIndex - 1);
+          if (selectedCategoryIndex >= 0 && selectedCategoryIndex < categoryColumnItems.length && libraryId) {
+            const item = categoryColumnItems[selectedCategoryIndex];
+            if (item.type === 'category' && 'id' in item.data) {
+              handleCategoryClick(libraryId, item.data.id);
+            }
+          }
         }
       } else if (navigationMode === 'node') {
         selectedNodeIndex = Math.max(0, selectedNodeIndex - 1);
@@ -307,9 +437,18 @@
           handleLibraryClick(availableLibraries[selectedLibraryIndex].id);
         }
       } else if (navigationMode === 'category') {
-        selectedCategoryIndex = Math.min(availableCategories.length - 1, selectedCategoryIndex + 1);
-        if (selectedCategoryIndex >= 0 && selectedCategoryIndex < availableCategories.length && libraryId) {
-          handleCategoryClick(libraryId, availableCategories[selectedCategoryIndex].id);
+        if (categoryId) {
+          // Navigating within a selected category's nodes
+          selectedNodeIndex = Math.min(nodes.length - 1, selectedNodeIndex + 1);
+        } else {
+          // Navigating within the categories column (categories + direct nodes)
+          selectedCategoryIndex = Math.min(categoryColumnItems.length - 1, selectedCategoryIndex + 1);
+          if (selectedCategoryIndex >= 0 && selectedCategoryIndex < categoryColumnItems.length && libraryId) {
+            const item = categoryColumnItems[selectedCategoryIndex];
+            if (item.type === 'category' && 'id' in item.data) {
+              handleCategoryClick(libraryId, item.data.id);
+            }
+          }
         }
       } else if (navigationMode === 'node') {
         selectedNodeIndex = Math.min(nodes.length - 1, selectedNodeIndex + 1);
@@ -320,15 +459,26 @@
         if (navigationMode === 'node' && selectedNodeIndex >= 0 && selectedNodeIndex < nodes.length) {
           handleNodeClick(nodes[selectedNodeIndex]);
         }
-      } else if (navigationMode === 'node' && selectedNodeIndex >= 0 && selectedNodeIndex < nodes.length) {
-        handleNodeClick(nodes[selectedNodeIndex]);
-      } else if (navigationMode === 'category' && selectedCategoryIndex >= 0 && selectedCategoryIndex < availableCategories.length && libraryId) {
-        handleCategoryClick(libraryId, availableCategories[selectedCategoryIndex].id);
-        navigationMode = 'node';
-        selectedNodeIndex = 0;
+      } else if (navigationMode === 'node' && categoryId) {
+        if (selectedNodeIndex >= 0 && selectedNodeIndex < nodes.length) {
+          handleNodeClick(nodes[selectedNodeIndex]);
+        }
+      } else if (navigationMode === 'category' && !categoryId) {
+        // In categories column, handle both categories and direct nodes
+        if (selectedCategoryIndex >= 0 && selectedCategoryIndex < categoryColumnItems.length && libraryId) {
+          const item = categoryColumnItems[selectedCategoryIndex];
+          if (item.type === 'category' && 'id' in item.data) {
+            handleCategoryClick(libraryId, item.data.id);
+            navigationMode = 'node';
+            selectedNodeIndex = 0;
+          } else if (item.type === 'node') {
+            // Direct node - create it immediately
+            handleNodeClick(getNode(item));
+          }
+        }
       } else if (navigationMode === 'library' && selectedLibraryIndex >= 0 && selectedLibraryIndex < availableLibraries.length) {
         handleLibraryClick(availableLibraries[selectedLibraryIndex].id);
-        if (availableCategories.length > 0) {
+        if (availableCategories.length > 0 || directNodes.length > 0) {
           navigationMode = 'category';
           selectedCategoryIndex = 0;
         }
@@ -354,15 +504,25 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeyDown} capture={true} />
+<svelte:window on:keydown={handleKeyDown} />
 
 {#if libraryId || categoryId}
+  <!-- Main column with libraries -->
   <div 
-    class="node-panel" 
+    class="menu-column main-column" 
     bind:this={panelElement} 
     style="left: {calculatedPosition.x}px; top: {calculatedPosition.y}px"
     tabindex="-1"
     on:keydown={handleKeyDown}
+    on:mouseleave|self={(e) => {
+      // Only close if not moving to a submenu
+      setTimeout(() => {
+        const activeHover = document.querySelector('.menu-column:hover');
+        if (!activeHover) {
+          handleClose();
+        }
+      }, 100);
+    }}
   >
     <div class="search">
       <input
@@ -374,125 +534,152 @@
       />
     </div>
     
-    <div class="panel-content">
-      <!-- Libraries column (left) -->
-      <div class="libraries-column">
-        {#each availableLibraries as library, index}
-          <button
-            class="library-item"
-            class:active={libraryId === library.id}
-            class:keyboard-selected={navigationMode === 'library' && selectedLibraryIndex === index}
-            on:click={() => {
-              selectedLibraryIndex = index;
-              handleLibraryClick(library.id);
-            }}
-            on:mouseenter={() => {
-              selectedLibraryIndex = index;
-              handleLibraryClick(library.id);
-            }}
-          >
-            <span class="icon">
-              <Icon name={library.icon} size={16} />
-            </span>
-            <span class="label">{library.label}</span>
-          </button>
-        {/each}
-        
-        <div class="hr-divider"></div>
-        
-        <!-- Custom Node button at bottom -->
+    {#if searchQuery}
+      <!-- Show search results -->
+      {#each nodes as node, index}
         <button
-          class="custom-node-button"
-          on:click={handleCustomNodeClick}
+          class="node-item"
+          class:keyboard-selected={navigationMode === 'node' && selectedNodeIndex === index}
+          on:click={() => {
+            selectedNodeIndex = index;
+            handleNodeClick(node);
+          }}
+          on:mouseenter={() => {
+            selectedNodeIndex = index;
+          }}
+          title={node.description}
         >
-          <span class="icon">
-            <Icon name="Zap" size={16} />
+          <span class="node-icon">
+            <Icon name={node.icon} size={16} />
           </span>
-          <span class="label">Custom</span>
+          <span class="node-name">{node.name}</span>
         </button>
-      </div>
+      {/each}
       
-      <!-- Categories column (middle) - only show if library is selected -->
-      {#if currentLibrary && !searchQuery}
-        <div class="divider"></div>
-        <div class="categories-column">
-          {#each availableCategories as category, index}
-            <button
-              class="category-item"
-              class:active={categoryId === category.id}
-              class:keyboard-selected={navigationMode === 'category' && selectedCategoryIndex === index}
-              on:click={() => {
-                selectedCategoryIndex = index;
-                handleCategoryClick(currentLibrary.id, category.id);
-              }}
-              on:mouseenter={() => {
-                selectedCategoryIndex = index;
-                handleCategoryClick(currentLibrary.id, category.id);
-              }}
-            >
-              <span class="label">{category.label}</span>
-            </button>
-          {/each}
+      {#if nodes.length === 0}
+        <div class="empty-state">
+          No nodes found
         </div>
       {/if}
+    {:else}
+      <!-- Libraries list -->
+      {#each availableLibraries as library, index}
+        <button
+          class="library-item"
+          class:active={hoveredLibraryId === library.id}
+          class:keyboard-selected={navigationMode === 'library' && selectedLibraryIndex === index}
+          on:click={() => {
+            selectedLibraryIndex = index;
+            handleLibraryClick(library.id);
+          }}
+          on:mouseenter={() => {
+            selectedLibraryIndex = index;
+            hoveredLibraryId = library.id;
+          }}
+        >
+          <span class="label">{library.label}</span>
+          <span class="arrow-icon">
+            <Icon name="ChevronRight" size={12} />
+          </span>
+        </button>
+      {/each}
       
-      <!-- Nodes column (right) - only show if category is selected or search is active -->
-      {#if (categoryId && currentCategory) || searchQuery}
-        {#if currentLibrary && !searchQuery}
-          <div class="divider"></div>
-        {/if}
-        <div class="nodes-column">
-          {#each nodes as node, index}
-            <button
-              class="node-item"
-              class:keyboard-selected={navigationMode === 'node' && selectedNodeIndex === index}
-              on:click={() => {
-                selectedNodeIndex = index;
-                handleNodeClick(node);
-              }}
-              on:mouseenter={() => {
-                selectedNodeIndex = index;
-              }}
-              title={node.description}
-            >
-              <span class="node-icon">
-                <Icon name={node.icon} size={16} />
-              </span>
-              <span class="node-name">{node.name}</span>
-            </button>
-          {/each}
-          
-          {#if nodes.length === 0}
-            <div class="empty-state">
-              {#if searchQuery}
-                No nodes found matching "{searchQuery}"
-              {:else}
-                No nodes in this category
-              {/if}
-            </div>
-          {/if}
-        </div>
-      {/if}
-    </div>
+      <!-- All nodes option -->
+      <button
+        class="library-item"
+        class:active={hoveredLibraryId === null}
+        class:keyboard-selected={navigationMode === 'library' && selectedLibraryIndex === availableLibraries.length}
+        on:click={() => {
+          selectedLibraryIndex = availableLibraries.length;
+          handleLibraryClick('all');
+        }}
+        on:mouseenter={() => {
+          selectedLibraryIndex = availableLibraries.length;
+          hoveredLibraryId = null;
+        }}
+      >
+        <span class="label">All</span>
+        <span class="arrow-icon">
+          <Icon name="ChevronRight" size={12} />
+        </span>
+      </button>
+      
+      <!-- Custom button -->
+      <button
+        class="library-item custom-button"
+        on:click={handleCustomNodeClick}
+      >
+        <span class="label">Custom</span>
+      </button>
+    {/if}
   </div>
+  
+  <!-- Nodes submenu column (appears when library is hovered) -->
+  {#if !searchQuery && hoveredLibraryId !== undefined && hoveredNodes.length > 0}
+    <div 
+      class="menu-column submenu-column"
+      style="left: {calculatedPosition.x + 108}px; top: {calculatedPosition.y}px"
+      on:mouseenter={() => {
+        // Keep submenu open when hovering over it
+      }}
+      on:mouseleave|self={() => {
+        // Close submenu when leaving it
+        setTimeout(() => {
+          const activeHover = document.querySelector('.menu-column:hover');
+          if (!activeHover) {
+            hoveredLibraryId = undefined;
+          }
+        }, 50);
+      }}
+    >
+      {#each hoveredNodes as node, index}
+        <button
+          class="node-item"
+          class:keyboard-selected={navigationMode === 'node' && selectedNodeIndex === index}
+          on:click={() => {
+            selectedNodeIndex = index;
+            handleNodeClick(node);
+          }}
+          on:mouseenter={() => {
+            selectedNodeIndex = index;
+          }}
+          title={node.description}
+        >
+          <span class="node-icon">
+            <Icon name={node.icon} size={16} />
+          </span>
+          <span class="node-name">{node.name}</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
 {/if}
 
 <style>
-  .node-panel {
+  
+  .menu-column {
     position: fixed;
-    width: auto;
-    min-width: 320px;
-    max-width: 800px;
-    max-height: 500px;
-    background: rgba(30, 30, 30, 0.98);
-    backdrop-filter: blur(20px);
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    width: 100px;
+    max-height: 400px;
     display: flex;
     flex-direction: column;
+    overflow-y: auto;
+    background: rgba(30, 30, 30, 0.98);
+    backdrop-filter: blur(20px);
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
     z-index: 200;
+    padding: 2px;
     animation: fadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .main-column {
+    z-index: 201;
+  }
+  
+  .submenu-column {
+    z-index: 200;
   }
   
   @keyframes fadeIn {
@@ -507,147 +694,85 @@
   }
   
   .search {
-    padding: 8px;
+    padding: 4px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    flex-shrink: 0;
+    margin-bottom: 2px;
   }
   
   .search-input {
     width: 100%;
-    padding: 6px 10px;
-    background: rgba(0, 0, 0, 0.3);
+    padding: 2px 4px;
+    background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
+    border-radius: 2px;
     color: #fff;
-    font-size: 13px;
+    font-size: 11px;
     box-sizing: border-box;
   }
   
   .search-input:focus {
     outline: none;
     border-color: #4a9eff;
+    background: rgba(255, 255, 255, 0.08);
   }
   
-  .panel-content {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-    min-height: 300px;
-  }
   
-  .custom-node-button {
+  
+  .library-item .arrow-icon {
+    opacity: 0.5;
+    margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 6px 10px;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.1s ease;
-    text-align: left;
-    width: 100%;
-    margin-top: 4px;
   }
   
-  .custom-node-button:hover {
-    background: rgba(66, 133, 244, 0.15);
+  .library-item.active .arrow-icon {
+    opacity: 0.8;
   }
   
-  .custom-node-button .icon {
-    font-size: 16px;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  
-  .custom-node-button .label {
-    font-size: 13px;
-    font-weight: 500;
-    color: #fff;
-    flex: 1;
-  }
-  
-  .hr-divider {
-    height: 1px;
-    background: rgba(255, 255, 255, 0.1);
-    margin: 8px 0;
-  }
-  
-  .libraries-column,
-  .categories-column,
-  .nodes-column {
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-    padding: 4px;
-    min-width: 120px;
-  }
-  
-  .libraries-column {
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  
-  .categories-column {
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  
-  .divider {
-    width: 1px;
-    background: rgba(255, 255, 255, 0.1);
-  }
   
   .library-item,
-  .category-item,
   .node-item {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 6px 10px;
+    gap: 4px;
+    padding: 2px 4px;
     background: transparent;
     border: none;
-    border-radius: 4px;
+    border-radius: 2px;
     cursor: pointer;
     transition: all 0.1s ease;
     text-align: left;
     width: 100%;
+    font-size: 11px;
+    min-height: 18px;
   }
   
   .library-item:hover,
-  .category-item:hover,
   .node-item:hover {
     background: rgba(66, 133, 244, 0.15);
   }
   
-  .library-item.active,
-  .category-item.active {
+  .library-item.active {
     background: rgba(66, 133, 244, 0.25);
     color: #4a9eff;
   }
   
   .library-item.keyboard-selected,
-  .category-item.keyboard-selected,
   .node-item.keyboard-selected {
     background: rgba(66, 133, 244, 0.3);
     outline: 2px solid #4a9eff;
     outline-offset: -2px;
   }
   
-  .library-item.keyboard-selected.active,
-  .category-item.keyboard-selected.active {
+  .library-item.keyboard-selected.active {
     background: rgba(66, 133, 244, 0.35);
   }
   
-  .library-item .icon,
   .node-item .node-icon {
-    font-size: 16px;
+    font-size: 12px;
     line-height: 1;
     flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-  }
-  
-  .custom-node-button .icon {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -655,16 +780,18 @@
   }
   
   .library-item .label,
-  .category-item .label,
   .node-item .node-name {
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 400;
     color: #fff;
     flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   
-  .category-item .label {
-    font-weight: 500;
+  .custom-button {
+    margin-top: 0;
   }
   
   .empty-state {

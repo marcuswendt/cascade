@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount, tick, createEventDispatcher } from 'svelte';
-  import { Graph } from '@/core/Graph';
+  import { Graph, type CanvasAnnotation } from '@/core/Graph';
   import NodeUI from './NodeUI.svelte';
   import type { Node } from '@/core/Node';
   import { marked } from 'marked';
   import { getLensNodeTemplate } from '@/nodes/lens';
+  import { getPortColor } from '@/utils/portColors';
   
   // Configure marked for safe rendering
   marked.setOptions({
@@ -68,6 +69,7 @@
   }
   let isPanning = false;
   let selectedNodes: string[] = [];
+  let selectedAnnotations: string[] = [];
   let spacePressed = false;
   let isSelecting = false;
   let selectionStart: { x: number; y: number } | null = null;
@@ -82,6 +84,11 @@
   
   // Node dragging state
   let draggingNode: { nodeId: string; offset: { x: number; y: number } } | null = null;
+  let draggingMultiple: { 
+    nodes: Array<{ nodeId: string; startPos: { x: number; y: number } }>;
+    annotations: Array<{ annotationId: string; startPos: { x: number; y: number } }>;
+    offset: { x: number; y: number };
+  } | null = null;
   
   // Two-finger panning state
   let touchPanStart: { x: number; y: number; touches: TouchList } | null = null;
@@ -102,20 +109,21 @@
     graph.connections = [];
     graph.annotations = [];
     
-    // Add default nodes - create a node tree on the left
-    // Position nodes to the left of annotations (which start at x: 50)
-    const timer = graph.addNode('Timer', { x: -300, y: 100 });
-    const colorNode = graph.addNode('Color', { x: -300, y: 250 });
-    const viewer = graph.addNode('Viewer', { x: -300, y: 400 });
-    viewer.setCooking(true); // Enable cooking on Viewer node
-    colorNode.setCooking(true); // Enable cooking on Color node
+    // Add default nodes - arranged similar to the image
+    // Timer at top center, Color below and to the right, Checkers below and to the left, Composite at bottom center
+    const timer = graph.addNode('Timer', { x: 0, y: 100 });
+    const colorNode = graph.addNode('Color', { x: 200, y: 250 });
+    const checkersNode = graph.addNode('Checkers', { x: -200, y: 400 });
+    const compositeNode = graph.addNode('Composite', { x: 0, y: 550 });
+    // Only set cook flag on Composite node
+    compositeNode.setCooking(true);
     
-    // Add default annotations (positioned to the right of nodes)
+    // Add default annotations
     const headlineAnnotation: any = {
       id: `ann_headline_${Date.now()}`,
       type: 'text',
       content: 'Hello World',
-      position: { x: 50, y: 50 },
+      position: { x: -200, y: -200 },
       size: { width: 540, height: 60 },
       style: {
         fontSize: 32,
@@ -132,7 +140,7 @@
       id: `ann_copy_${Date.now()}`,
       type: 'text',
       content: 'Cascade is a visual programming framework designed for creative coders who want to build interactive experiences without sacrificing the power of code. Every node is just a TypeScript function, fully inspectable and editable. The visual graph and code are equal partners, not abstractions of each other. This allows you to work visually when it makes sense, and dive into code when you need precision and control.',
-      position: { x: 50, y: 150 },
+      position: { x: -200, y: -100 },
       size: { width: 540, height: 200 },
       style: {
         fontSize: 14,
@@ -150,7 +158,7 @@
     graph.annotations = [...graph.annotations];
     
     // Initialize timer node
-    tick().then(() => {
+    tick().then(async () => {
       timer.code = `
 const tick = node.out('tick', 'trigger');
 const time = node.out('time');
@@ -162,14 +170,7 @@ setInterval(() => {
 }, 1000 / 60);
       `;
       
-      viewer.code = `
-const input = node.in('input', null);
-const output = node.out('output');
-      `;
-      
       colorNode.code = `// Color node - creates a solid color canvas
-const trigger = node.in('trigger', null, { type: 'trigger' });
-
 node.defineProp('color', {
   value: '#ffffff',
   type: 'color',
@@ -180,7 +181,8 @@ node.defineProp('resolution', {
   value: [512, 512],
   params: {
     min: [1, 1],
-    max: [4096, 4096]
+    max: [4096, 4096],
+    integer: true
   },
   displayName: 'Resolution'
 });
@@ -199,13 +201,6 @@ function render() {
   }
   output.setValue(canvas);
   node.preview = canvas;
-}
-
-// Handle trigger
-if (trigger) {
-  trigger.onTrigger = () => {
-    render();
-  };
 }
 
 // Watch for prop changes
@@ -227,28 +222,47 @@ node.onReady = () => {
         colorNode.setFunction(colorFunction);
         colorNode.execute();
         
-        const viewerFunction = new Function('node', 'graph', viewer.code);
-        viewer.setFunction(viewerFunction);
-        viewer.execute();
+        // Get Checkers and Composite node templates
+        const checkersCode = getDefaultNodeCode('Checkers');
+        const compositeCode = getDefaultNodeCode('Composite');
+        
+        if (checkersCode) {
+          checkersNode.code = checkersCode;
+          const checkersFunction = new Function('node', 'graph', `return (async function(node, graph) {\n${checkersCode}\n})(node, graph);`);
+          checkersNode.setFunction(checkersFunction);
+          await checkersNode.execute();
+        }
+        
+        if (compositeCode) {
+          compositeNode.code = compositeCode;
+          const compositeFunction = new Function('node', 'graph', `return (async function(node, graph) {\n${compositeCode}\n})(node, graph);`);
+          compositeNode.setFunction(compositeFunction);
+          await compositeNode.execute();
+        }
         
         timer.inputs = [...timer.inputs];
         timer.outputs = [...timer.outputs];
         colorNode.inputs = [...colorNode.inputs];
         colorNode.outputs = [...colorNode.outputs];
-        viewer.inputs = [...viewer.inputs];
-        viewer.outputs = [...viewer.outputs];
+        checkersNode.inputs = [...checkersNode.inputs];
+        checkersNode.outputs = [...checkersNode.outputs];
+        compositeNode.inputs = [...compositeNode.inputs];
+        compositeNode.outputs = [...compositeNode.outputs];
         
-        // Connect nodes: Timer -> Color -> Viewer
-        const timerTickPort = timer.outputs.find(p => p.name === 'tick');
-        const colorTriggerPort = colorNode.inputs.find(p => p.name === 'trigger');
-        const colorImagePort = colorNode.outputs.find(p => p.name === 'image');
-        const viewerInputPort = viewer.inputs.find(p => p.name === 'input');
+        // Connect Checkers output to Composite image1 input
+        const checkersImagePort = checkersNode.outputs.find(p => p.name === 'image');
+        const compositeImage1Port = compositeNode.inputs.find(p => p.name === 'image1');
         
-        if (timerTickPort && colorTriggerPort) {
-          graph.connect(timerTickPort, colorTriggerPort);
+        if (checkersImagePort && compositeImage1Port) {
+          graph.connect(checkersImagePort, compositeImage1Port);
         }
-        if (colorImagePort && viewerInputPort) {
-          graph.connect(colorImagePort, viewerInputPort);
+        
+        // Connect Color output to Composite image2 input
+        const colorImagePort = colorNode.outputs.find(p => p.name === 'image');
+        const compositeImage2Port = compositeNode.inputs.find(p => p.name === 'image2');
+        
+        if (colorImagePort && compositeImage2Port) {
+          graph.connect(colorImagePort, compositeImage2Port);
         }
         
         graph.connections = [...graph.connections];
@@ -272,7 +286,10 @@ node.onReady = () => {
   
   // Reactive statement to ensure nodes array changes are detected
   $: nodes = graph.nodes;
-  $: connections = graph.connections;
+  // Filter out duplicate connections by ID to prevent Svelte key errors
+  $: connections = graph.connections.filter((conn, index, self) => 
+    self.findIndex(c => c.id === conn.id) === index
+  );
   $: annotations = graph.annotations;
   
   // Force reactivity when node ports change
@@ -280,6 +297,13 @@ node.onReady = () => {
     id: n.id, 
     inputs: n.inputs.length, 
     outputs: n.outputs.length 
+  }));
+  
+  // Track node positions to force connection re-renders when nodes move
+  $: nodePositions = nodes.map(n => ({ 
+    id: n.id, 
+    x: n.position.x, 
+    y: n.position.y 
   }));
   
   function handleMouseDown(e: MouseEvent) {
@@ -311,6 +335,7 @@ node.onReady = () => {
         // Clear current selection when starting new selection
         if (!e.shiftKey) {
           selectedNodes = [];
+          selectedAnnotations = [];
           selectedNode = null;
           selectedAnnotation = null;
           dispatch('nodeSelect', { node: null });
@@ -391,7 +416,7 @@ node.onReady = () => {
       };
     }
     
-    // Handle node dragging
+    // Handle node dragging (single or multiple)
     if (draggingNode) {
       const node = graph.getNode(draggingNode.nodeId);
       if (node) {
@@ -399,13 +424,45 @@ node.onReady = () => {
         const newX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom - draggingNode.offset.x;
         const newY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom - draggingNode.offset.y;
         
-        node.position = { x: newX, y: newY };
+        // If multiple nodes or annotations are selected, move all of them
+        if ((selectedNodes.length > 1 || selectedAnnotations.length > 0) && draggingMultiple && draggingNode) {
+          const draggedNodeData = draggingMultiple.nodes.find(n => n.nodeId === draggingNode!.nodeId);
+          if (!draggedNodeData) {
+            // Fallback to single drag if node not found in draggingMultiple
+            node.position = { x: newX, y: newY };
+            graph.nodes = [...graph.nodes];
+            return;
+          }
+          const deltaX = newX - draggedNodeData.startPos.x;
+          const deltaY = newY - draggedNodeData.startPos.y;
+          
+          // Move all selected nodes
+          draggingMultiple.nodes.forEach(({ nodeId, startPos }) => {
+            const n = graph.getNode(nodeId);
+            if (n) {
+              n.position = { x: startPos.x + deltaX, y: startPos.y + deltaY };
+            }
+          });
+          
+          // Move all selected annotations
+          draggingMultiple.annotations.forEach(({ annotationId, startPos }) => {
+            const ann = graph.getAnnotation(annotationId);
+            if (ann) {
+              ann.position = { x: startPos.x + deltaX, y: startPos.y + deltaY };
+            }
+          });
+        } else {
+          // Single node drag
+          node.position = { x: newX, y: newY };
+        }
+        
         // Force reactivity
         graph.nodes = [...graph.nodes];
+        graph.annotations = [...graph.annotations];
       }
     }
     
-    // Handle annotation dragging
+    // Handle annotation dragging (single or multiple)
     if (draggingAnnotation && !resizingAnnotation) {
       const annotation = graph.getAnnotation(draggingAnnotation.annotationId);
       if (annotation) {
@@ -413,8 +470,40 @@ node.onReady = () => {
         const newX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom - draggingAnnotation.offset.x;
         const newY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom - draggingAnnotation.offset.y;
         
-        annotation.position = { x: newX, y: newY };
+        // If multiple annotations or nodes are selected, move all of them
+        if ((selectedAnnotations.length > 1 || selectedNodes.length > 0) && draggingMultiple && draggingAnnotation) {
+          const draggedAnnotationData = draggingMultiple.annotations.find(a => a.annotationId === draggingAnnotation!.annotationId);
+          if (!draggedAnnotationData) {
+            // Fallback to single drag if annotation not found in draggingMultiple
+            annotation.position = { x: newX, y: newY };
+            graph.annotations = [...graph.annotations];
+            return;
+          }
+          const deltaX = newX - draggedAnnotationData.startPos.x;
+          const deltaY = newY - draggedAnnotationData.startPos.y;
+          
+          // Move all selected nodes
+          draggingMultiple.nodes.forEach(({ nodeId, startPos }) => {
+            const n = graph.getNode(nodeId);
+            if (n) {
+              n.position = { x: startPos.x + deltaX, y: startPos.y + deltaY };
+            }
+          });
+          
+          // Move all selected annotations
+          draggingMultiple.annotations.forEach(({ annotationId, startPos }) => {
+            const ann = graph.getAnnotation(annotationId);
+            if (ann) {
+              ann.position = { x: startPos.x + deltaX, y: startPos.y + deltaY };
+            }
+          });
+        } else {
+          // Single annotation drag
+          annotation.position = { x: newX, y: newY };
+        }
+        
         graph.annotations = [...graph.annotations];
+        graph.nodes = [...graph.nodes];
       }
     }
     
@@ -512,9 +601,22 @@ node.onReady = () => {
       isPanning = false;
     }
     
+    // Cancel connection if not completed (clicked outside a port)
+    if (connectingFrom && e.button === 0) {
+      // Check if we're over a port element
+      const target = e.target as HTMLElement;
+      const portElement = target.closest('.port');
+      if (!portElement) {
+        // Not over a port, cancel connection
+        connectingFrom = null;
+        connectingPosition = null;
+      }
+    }
+    
     // Stop dragging
     draggingNode = null;
     draggingAnnotation = null;
+    draggingMultiple = null;
     resizingAnnotation = null;
     
     // Finish line drawing
@@ -631,15 +733,19 @@ node.onReady = () => {
           }
         });
         annotationsInSelection.forEach(annotationId => {
-          // For annotations, we can only have one selected at a time, so replace
-          if (annotationsInSelection.length > 0) {
-            selectedAnnotation = annotationsInSelection[0];
-            dispatch('annotationSelect', { annotationId: selectedAnnotation });
+          if (!selectedAnnotations.includes(annotationId)) {
+            selectedAnnotations.push(annotationId);
           }
         });
+        // Update single selectedAnnotation for backward compatibility
+        if (annotationsInSelection.length > 0) {
+          selectedAnnotation = annotationsInSelection[0];
+          dispatch('annotationSelect', { annotationId: selectedAnnotation });
+        }
       } else {
         // Replace selection
         selectedNodes = nodesInSelection;
+        selectedAnnotations = annotationsInSelection;
         if (annotationsInSelection.length > 0) {
           selectedAnnotation = annotationsInSelection[0];
           dispatch('annotationSelect', { annotationId: selectedAnnotation });
@@ -720,6 +826,22 @@ node.onReady = () => {
     };
     
     draggingNode = { nodeId, offset };
+    
+    // If multiple items are selected, prepare to drag all of them
+    if (selectedNodes.length > 1 || selectedAnnotations.length > 0) {
+      draggingMultiple = {
+        nodes: selectedNodes.map(id => {
+          const n = graph.getNode(id);
+          return { nodeId: id, startPos: n ? { ...n.position } : { x: 0, y: 0 } };
+        }),
+        annotations: selectedAnnotations.map(id => {
+          const ann = graph.getAnnotation(id);
+          return { annotationId: id, startPos: ann ? { ...ann.position } : { x: 0, y: 0 } };
+        }),
+        offset
+      };
+    }
+    
     e.stopPropagation();
   }
   
@@ -814,6 +936,11 @@ node.onReady = () => {
     }
   }
   
+  function handleCanvasKeyUp(e: KeyboardEvent) {
+    // Handler for keyboard accessibility - required when using tabindex on non-interactive element
+    // Canvas receives keyboard events for accessibility
+  }
+  
   function handleCanvasClick(e: MouseEvent) {
     // Don't create annotation if clicking on existing annotation
     if ((e.target as HTMLElement).closest('.annotation')) {
@@ -824,6 +951,7 @@ node.onReady = () => {
     // (the click event fires after mouseup, so we need to check if we just completed a selection)
     if (activeTool === 'select' && !(e.target as HTMLElement).closest('.node') && !justCompletedSelection) {
       selectedNodes = [];
+      selectedAnnotations = [];
       selectedNode = null;
       selectedAnnotation = null;
       editingAnnotation = null;
@@ -932,10 +1060,21 @@ node.onReady = () => {
   function handleAnnotationClick(annotationId: string, e: MouseEvent) {
     e.stopPropagation();
     if (activeTool === 'select' && !editingAnnotation) {
+      if (e.shiftKey) {
+        // Multi-select
+        if (selectedAnnotations.includes(annotationId)) {
+          selectedAnnotations = selectedAnnotations.filter(id => id !== annotationId);
+        } else {
+          selectedAnnotations = [...selectedAnnotations, annotationId];
+        }
+      } else {
+        // Single select
+        selectedAnnotations = [annotationId];
+        selectedNodes = [];
+        selectedNode = null;
+      }
       selectedAnnotation = annotationId;
       dispatch('annotationSelect', { annotationId });
-      selectedNode = null;
-      selectedNodes = [];
     }
   }
   
@@ -949,10 +1088,20 @@ node.onReady = () => {
       
       const annotation = graph.getAnnotation(annotationId);
       if (annotation) {
+        // Update selection if not already selected
+        if (!selectedAnnotations.includes(annotationId)) {
+          if (e.shiftKey) {
+            // Add to selection
+            selectedAnnotations = [...selectedAnnotations, annotationId];
+          } else {
+            // Replace selection
+            selectedAnnotations = [annotationId];
+            selectedNodes = [];
+            selectedNode = null;
+          }
+        }
         selectedAnnotation = annotationId;
         dispatch('annotationSelect', { annotationId });
-        selectedNode = null;
-        selectedNodes = [];
         
         const rect = canvas.getBoundingClientRect();
         const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
@@ -964,6 +1113,21 @@ node.onReady = () => {
         };
         
         draggingAnnotation = { annotationId, offset };
+        
+        // If multiple items are selected, prepare to drag all of them
+        if (selectedNodes.length > 0 || selectedAnnotations.length > 1) {
+          draggingMultiple = {
+            nodes: selectedNodes.map(id => {
+              const n = graph.getNode(id);
+              return { nodeId: id, startPos: n ? { ...n.position } : { x: 0, y: 0 } };
+            }),
+            annotations: selectedAnnotations.map(id => {
+              const ann = graph.getAnnotation(id);
+              return { annotationId: id, startPos: ann ? { ...ann.position } : { x: 0, y: 0 } };
+            }),
+            offset
+          };
+        }
       }
     }
   }
@@ -1072,6 +1236,7 @@ node.onReady = () => {
     if (selectedAnnotation === annotationId) {
       selectedAnnotation = null;
     }
+    selectedAnnotations = selectedAnnotations.filter(id => id !== annotationId);
     if (editingAnnotation === annotationId) {
       editingAnnotation = null;
     }
@@ -1097,8 +1262,15 @@ node.onReady = () => {
       });
     }
     
-    // Collect selected annotation
-    if (selectedAnnotation) {
+    // Collect selected annotations
+    if (selectedAnnotations.length > 0) {
+      selectedAnnotations.forEach(annotationId => {
+        const annotation = graph.getAnnotation(annotationId);
+        if (annotation) {
+          annotationsToCut.push(annotation);
+        }
+      });
+    } else if (selectedAnnotation) {
       const annotation = graph.getAnnotation(selectedAnnotation);
       if (annotation) {
         annotationsToCut.push(annotation);
@@ -1147,6 +1319,7 @@ node.onReady = () => {
       
       // Clear selection
       selectedNodes = [];
+      selectedAnnotations = [];
       selectedNode = null;
       selectedAnnotation = null;
       dispatch('nodeSelect', { node: null });
@@ -1614,25 +1787,29 @@ node.onReady = () => {
       
       if (portIndex === -1) return null;
       
-      // Vertical layout: compact nodes (60x20px)
+      // Vertical layout: nodes with body 80x36px
       // Input ports at top, output ports at bottom
       // Ports are arranged horizontally with 4px gap
       const portSpacing = 16; // 12px port + 4px gap
       const portOffset = portIndex * portSpacing;
-      const portDotSize = 8;
-      const nodeWidth = 60;
-      const nodeHeight = 20;
-      const portRowHeight = 12;
+      const nodeWidth = 80; // Body width from NodeUI.svelte
+      const nodeBodyHeight = 36; // Body height from NodeUI.svelte
+      const portRowHeight = 12; // Port row height from NodeUI.svelte
       
-      // Node structure: port row (12px) -> body (20px) -> port row (12px) -> label
+      // Node structure: port row (12px) -> body (36px) -> port row (12px) -> label
       // Input ports are in the top port row
       // Output ports are in the bottom port row
       const centerX = node.position.x + nodeWidth / 2;
       const inputY = node.position.y + portRowHeight / 2;
-      const outputY = node.position.y + portRowHeight + nodeHeight + portRowHeight / 2;
+      const outputY = node.position.y + portRowHeight + nodeBodyHeight + portRowHeight / 2;
+      
+      // Calculate port X position: center of node, then offset by port index
+      const totalPortWidth = (portType === 'input' ? node.inputs.length : node.outputs.length) * portSpacing;
+      const startX = centerX - totalPortWidth / 2 + portSpacing / 2;
+      const portX = startX + portIndex * portSpacing;
       
       return {
-        x: centerX - (portType === 'input' ? nodeWidth / 2 : -nodeWidth / 2) + portOffset - (portType === 'input' ? (node.inputs.length - 1) * portSpacing / 2 : (node.outputs.length - 1) * portSpacing / 2),
+        x: portX,
         y: portType === 'input' ? inputY : outputY
       };
     }
@@ -1657,6 +1834,33 @@ node.onReady = () => {
       x: (rect.left + rect.width / 2 - canvasRect.left - internalTransform.x) / internalTransform.zoom,
       y: (rect.top + rect.height / 2 - canvasRect.top - internalTransform.y) / internalTransform.zoom
     };
+  }
+  
+  function handlePortMouseDown(nodeId: string, portId: string, portType: 'input' | 'output', e: MouseEvent) {
+    e.stopPropagation();
+    
+    const node = graph.getNode(nodeId);
+    if (!node) return;
+    
+    const port = portType === 'output' 
+      ? node.outputs.find(p => p.id === portId)
+      : node.inputs.find(p => p.id === portId);
+    
+    if (!port) return;
+    
+    // Start connection (only from output ports on mousedown)
+    if (portType === 'output' && !connectingFrom) {
+      const pos = getPortPosition(nodeId, portId, portType);
+      if (pos) {
+        connectingFrom = { nodeId, portId, portType };
+        connectingPosition = pos;
+        const rect = canvas.getBoundingClientRect();
+        mousePosition = {
+          x: (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom,
+          y: (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom
+        };
+      }
+    }
   }
   
   function handlePortClick(nodeId: string, portId: string, portType: 'input' | 'output', e: MouseEvent) {
@@ -1692,7 +1896,7 @@ node.onReady = () => {
       connectingFrom = null;
       connectingPosition = null;
     } else {
-      // Start connection (only from output ports)
+      // Fallback: Start connection on click if mousedown didn't work
       if (portType === 'output') {
         const pos = getPortPosition(nodeId, portId, portType);
         if (pos) {
@@ -1888,10 +2092,11 @@ node.onReady = () => {
         if (editingAnnotation) {
           // Exit editing mode
           editingAnnotation = null;
-        } else if (selectedAnnotation) {
+        } else if (selectedAnnotation || selectedAnnotations.length > 0) {
           // Deselect annotation
           e.preventDefault();
           selectedAnnotation = null;
+          selectedAnnotations = [];
           dispatch('annotationSelect', { annotationId: null });
         }
       }
@@ -1910,6 +2115,11 @@ node.onReady = () => {
           selectedNode = null;
           graph.nodes = [...graph.nodes];
           dispatch('nodeSelect', { node: null });
+        } else if (selectedAnnotations.length > 0) {
+          e.preventDefault();
+          selectedAnnotations.forEach(annotationId => {
+            handleAnnotationDelete(annotationId);
+          });
         } else if (selectedAnnotation) {
           e.preventDefault();
           handleAnnotationDelete(selectedAnnotation);
@@ -1978,6 +2188,8 @@ node.onReady = () => {
   });
 </script>
 
+<!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+<!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
 <div 
   class="canvas"
   role="application"
@@ -2004,6 +2216,7 @@ node.onReady = () => {
   on:dragover={handleDragOver}
   on:drop={handleDrop}
   on:keydown={handleCanvasKeyDown}
+  on:keyup={handleCanvasKeyUp}
 >
   <!-- Selection rectangle -->
   {#if isSelecting && selectionStart && selectionStartScreen && selectionScreenPos}
@@ -2037,16 +2250,21 @@ node.onReady = () => {
   >
     <!-- Existing connections -->
     {#each connections as conn (conn.id)}
+      {@const fromNodePos = nodePositions.find(np => np.id === conn.from.nodeId)}
+      {@const toNodePos = nodePositions.find(np => np.id === conn.to.nodeId)}
       {@const fromPos = getPortPosition(conn.from.nodeId, conn.from.portId, 'output')}
       {@const toPos = getPortPosition(conn.to.nodeId, conn.to.portId, 'input')}
       {#if fromPos && toPos}
+        {@const fromNode = graph.getNode(conn.from.nodeId)}
+        {@const fromPort = fromNode?.outputs.find(p => p.id === conn.from.portId)}
+        {@const connectionColor = fromPort ? getPortColor(fromPort) : '#888'}
         {@const midY = (fromPos.y + toPos.y) / 2}
         {@const curveOffset = Math.abs(toPos.y - fromPos.y) * 0.5}
         {@const isTrigger = conn.type === 'trigger'}
         <path
           d="M {fromPos.x} {fromPos.y} C {fromPos.x} {fromPos.y + curveOffset} {toPos.x} {toPos.y - curveOffset} {toPos.x} {toPos.y}"
           fill="none"
-          stroke="#888"
+          stroke={connectionColor}
           stroke-width="2"
           stroke-dasharray={isTrigger ? "3 3" : "none"}
           class="connection"
@@ -2058,9 +2276,11 @@ node.onReady = () => {
     <!-- Connection preview (while dragging) -->
     {#if connectingFrom && connectingPosition}
       {@const from = connectingFrom}
+      {@const fromNode = graph.getNode(from.nodeId)}
+      {@const fromPort = from.portType === 'output' ? fromNode?.outputs.find(p => p.id === from.portId) : fromNode?.inputs.find(p => p.id === from.portId)}
+      {@const previewColor = fromPort ? getPortColor(fromPort) : '#888'}
       {@const curveOffset = Math.abs(mousePosition.y - connectingPosition.y) * 0.5}
       {@const isTrigger = from.portType === 'output' && (() => {
-        const fromNode = graph.getNode(from.nodeId);
         if (!fromNode) return false;
         const port = fromNode.outputs.find(p => p.id === from.portId);
         return port?.portType === 'trigger';
@@ -2068,7 +2288,7 @@ node.onReady = () => {
       <path
         d="M {connectingPosition.x} {connectingPosition.y} C {connectingPosition.x} {connectingPosition.y + curveOffset} {mousePosition.x} {mousePosition.y - curveOffset} {mousePosition.x} {mousePosition.y}"
         fill="none"
-        stroke="#888"
+        stroke={previewColor}
         stroke-width="2"
         stroke-dasharray={isTrigger ? "3 3" : "4 4"}
         class="connection-preview"
@@ -2083,7 +2303,7 @@ node.onReady = () => {
   >
     {#each annotations as annotation (annotation.id)}
       {@const isEditing = editingAnnotation === annotation.id}
-      {@const isSelected = selectedAnnotation === annotation.id}
+      {@const isSelected = selectedAnnotations.includes(annotation.id) || selectedAnnotation === annotation.id}
       
       {#if annotation.type === 'text'}
         {@const style = annotation.style || {}}
@@ -2350,6 +2570,7 @@ node.onReady = () => {
         {node}
         selected={selectedNodes.includes(node.id)}
         on:portClick={(e) => handlePortClick(e.detail.nodeId, e.detail.portId, e.detail.portType, e.detail.event)}
+        on:portMouseDown={(e) => handlePortMouseDown(e.detail.nodeId, e.detail.portId, e.detail.portType, e.detail.event)}
         on:nodeMouseDown={(e) => handleNodeMouseDown(e.detail.nodeId, e.detail.event)}
         on:click={(e) => handleNodeClick(node.id, e.detail)}
         on:edit={handleNodeEdit}
@@ -2404,6 +2625,8 @@ node.onReady = () => {
     height: 100%;
     pointer-events: none;
     transform-origin: top left;
+    z-index: 10;
+    overflow: visible;
   }
   
   .connection {
@@ -2425,6 +2648,7 @@ node.onReady = () => {
     top: 0;
     left: 0;
     transform-origin: top left;
+    z-index: 5;
   }
   
   .annotations-container {
@@ -2433,6 +2657,7 @@ node.onReady = () => {
     left: 0;
     transform-origin: top left;
     pointer-events: none;
+    z-index: 15;
   }
   
   .annotation {

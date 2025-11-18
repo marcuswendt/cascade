@@ -672,6 +672,7 @@
     <!-- Graph Window (Left) -->
     <Window
       title="Graph"
+      icon="Workflow"
       windowId="graph"
       minimized={graphMinimized}
       showTabs={graphTabsCount > 0}
@@ -880,6 +881,7 @@
       <!-- Log Window (Bottom) -->
       <Window
         title="Log"
+        icon="Logs"
         windowId="log"
         minimized={logMinimized}
         showTabs={logTabsCount > 0}

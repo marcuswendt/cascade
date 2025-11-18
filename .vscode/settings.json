@@ -1,0 +1,6 @@
+{
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "svelte.plugin.svelte.typescript.diagnostics.enable": true,
+  "svelte.plugin.svelte.typescript.tsconfig": "./tsconfig.json"
+}

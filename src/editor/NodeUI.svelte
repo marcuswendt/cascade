@@ -3,6 +3,7 @@
   import type { Node } from '@/core/Node';
   import { getNodeIcon } from './nodeTemplates';
   import Icon from './Icon.svelte';
+  import { getPortColor } from '@/utils/portColors';
   
   export let node: Node;
   export let selected = false;
@@ -40,6 +41,18 @@
   
   function handlePortClick(portId: string, portType: 'input' | 'output', e: MouseEvent) {
     dispatch('portClick', {
+      nodeId: node.id,
+      portId,
+      portType,
+      event: e
+    });
+  }
+  
+  function handlePortMouseDown(portId: string, portType: 'input' | 'output', e: MouseEvent) {
+    // Only handle left mouse button
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    dispatch('portMouseDown', {
       nodeId: node.id,
       portId,
       portType,
@@ -126,11 +139,13 @@
       <!-- Input ports (top) -->
       <div class="port-row inputs">
         {#each inputs as port}
+          {@const portColor = getPortColor(port)}
           <div 
             class="port port-{port.portType}"
             role="button"
             tabindex="0"
             on:click={(e) => handlePortClick(port.id, 'input', e)}
+            on:mousedown={(e) => handlePortMouseDown(port.id, 'input', e)}
             on:keydown={(e) => handleKeyDown(port.id, 'input', e)}
             on:mouseenter={(e) => showPortTooltip(e, port.name, 'input')}
             on:mouseleave={hidePortTooltip}
@@ -138,7 +153,7 @@
             data-port-id={port.id}
             data-port-type="input"
           >
-            <span class="port-dot"></span>
+            <span class="port-dot" style="background-color: {portColor};"></span>
           </div>
         {/each}
       </div>
@@ -175,11 +190,13 @@
       <!-- Output ports (bottom) -->
       <div class="port-row outputs">
         {#each outputs as port}
+          {@const portColor = getPortColor(port)}
           <div 
             class="port port-{port.portType}"
             role="button"
             tabindex="0"
             on:click={(e) => handlePortClick(port.id, 'output', e)}
+            on:mousedown={(e) => handlePortMouseDown(port.id, 'output', e)}
             on:keydown={(e) => handleKeyDown(port.id, 'output', e)}
             on:mouseenter={(e) => showPortTooltip(e, port.name, 'output')}
             on:mouseleave={hidePortTooltip}
@@ -187,7 +204,7 @@
             data-port-id={port.id}
             data-port-type="output"
           >
-            <span class="port-dot"></span>
+            <span class="port-dot" style="background-color: {portColor};"></span>
           </div>
         {/each}
       </div>
@@ -285,16 +302,8 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #888;
     flex-shrink: 0;
-  }
-  
-  .port-trigger .port-dot {
-    background: #fff;
-  }
-  
-  .port-param .port-dot {
-    background: #888;
+    /* Color is set via inline style based on port dataType */
   }
   
   .body {

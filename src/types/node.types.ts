@@ -1,6 +1,6 @@
 export type PortType = 'trigger' | 'param';
 export type DataType = 'number' | 'string' | 'boolean' | 'color' | 'asset' | 'array' | 'object' | 'any';
-export type PropControlType = 'number' | 'slider' | 'text' | 'textarea' | 'color' | 'image' | 'boolean' | 'select' | 'vector' | 'range' | 'button' | 'folder' | 'group';
+export type PropControlType = 'number' | 'int' | 'slider' | 'text' | 'textarea' | 'color' | 'image' | 'boolean' | 'select' | 'vector' | 'vec2' | 'vec3' | 'vec2i' | 'vec3i' | 'range' | 'button' | 'folder' | 'group';
 
 export interface PortOptions {
   type?: DataType;
@@ -101,6 +101,7 @@ export interface Prop<T = any> {
     options?: Array<T | { value: T; label: string }>;
     accept?: string;  // For file inputs
     locked?: boolean; // For vector inputs
+    integer?: boolean; // Explicit integer mode
   };
   
   // Callbacks

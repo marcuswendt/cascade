@@ -22,6 +22,7 @@
   let nodePanelPosition = { x: 0, y: 0 };
   let activeTool = 'select';
   let mousePosition = { x: 0, y: 0 };
+  let globalMousePosition = { x: 0, y: 0 }; // Track mouse position globally
   let exportDialogOpen = false;
   let graph: Graph | undefined = undefined;
   let documentName = 'Untitled';
@@ -253,6 +254,13 @@
   // Set initial window title
   onMount(() => {
     updateWindowTitle();
+    
+    // Track global mouse position
+    function handleMouseMove(e: MouseEvent) {
+      globalMousePosition = { x: e.clientX, y: e.clientY };
+    }
+    window.addEventListener('mousemove', handleMouseMove);
+    
     // Keyboard shortcuts
     function handleKeyDown(e: KeyboardEvent) {
       // Presentation mode toggle (⌘. or Ctrl.)
@@ -317,11 +325,33 @@
             activeLibrary = null;
             activeCategory = null;
           } else {
-            // Center on screen when opening with Tab
-            mousePosition = { 
-              x: window.innerWidth / 2, 
-              y: window.innerHeight / 2 
-            };
+            // Get graph window element and check if mouse is inside it
+            const graphWindow = document.querySelector('[data-window-id="graph"]') as HTMLElement;
+            if (graphWindow) {
+              const rect = graphWindow.getBoundingClientRect();
+              // Check if current mouse position is inside graph window
+              if (
+                globalMousePosition.x >= rect.left &&
+                globalMousePosition.x <= rect.right &&
+                globalMousePosition.y >= rect.top &&
+                globalMousePosition.y <= rect.bottom
+              ) {
+                // Mouse is inside graph window - use mouse position
+                mousePosition = { ...globalMousePosition };
+              } else {
+                // Mouse is outside - use center of graph window
+                mousePosition = {
+                  x: rect.left + rect.width / 2,
+                  y: rect.top + rect.height / 2
+                };
+              }
+            } else {
+              // No graph window found - use center of screen
+              mousePosition = {
+                x: window.innerWidth / 2,
+                y: window.innerHeight / 2
+              };
+            }
             // Open with first available library
             activeLibrary = 'core';
           }
@@ -499,6 +529,7 @@
     
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('mousemove', handleMouseMove);
     };
   });
 </script>

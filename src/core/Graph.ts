@@ -32,6 +32,7 @@ export interface CanvasAnnotation {
 export class Graph {
   nodes: Node[] = [];
   connections: Connection[] = [];
+  private connectionIdCounter: number = 0;
   annotations: CanvasAnnotation[] = [];
   packageManager: PackageManager;
   assetManager: AssetManager;
@@ -81,8 +82,9 @@ export class Graph {
   }
   
   connect(fromPort: any, toPort: any): Connection {
+    // Use a counter to ensure unique IDs even if connections are created in the same millisecond
     const connection: Connection = {
-      id: `conn_${Date.now()}`,
+      id: `conn_${Date.now()}_${++this.connectionIdCounter}`,
       from: { 
         nodeId: fromPort.id.split('_out_')[0], 
         portId: fromPort.id 
@@ -93,6 +95,19 @@ export class Graph {
       },
       type: fromPort.portType
     };
+    
+    // Check for duplicates before adding
+    const existing = this.connections.find(c => 
+      c.from.nodeId === connection.from.nodeId &&
+      c.from.portId === connection.from.portId &&
+      c.to.nodeId === connection.to.nodeId &&
+      c.to.portId === connection.to.portId
+    );
+    
+    if (existing) {
+      // Return existing connection instead of creating duplicate
+      return existing;
+    }
     
     this.connections.push(connection);
     fromPort.connections.push(connection);

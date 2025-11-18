@@ -1,5 +1,6 @@
 import type { NodeContext, InputPort, OutputPort, PortOptions, PortType, Connection, Prop } from '@/types/node.types';
 import type { Graph } from './Graph';
+import { incrementPropUpdateCounter } from '@/editor/stores/propUpdateStore';
 
 export class Node implements NodeContext {
   id: string;
@@ -24,6 +25,9 @@ export class Node implements NodeContext {
   // Behavior Toggles (v1.2)
   bypassed: boolean = false;
   cooking: boolean = false;
+  
+  // Track if node function has been executed at least once
+  private hasExecuted: boolean = false;
   bypassOpacity: number = 1.0;
   cookAnimation: boolean = false;
   
@@ -156,7 +160,15 @@ export class Node implements NodeContext {
   
   updateProp(name: string, value: any): void {
     if (this.props[name]) {
-      this.props[name].value = value;
+      // For arrays, always create a new array reference to ensure reactivity
+      const newValue = Array.isArray(value) ? [...value] : value;
+      
+      // CRITICAL: Recreate the prop object to ensure Svelte detects the change
+      // Svelte's reactivity is based on object reference changes, not property mutations
+      this.props[name] = {
+        ...this.props[name],
+        value: newValue
+      };
       
       // Call onChange callback
       if (this.props[name].onChange) {
@@ -172,12 +184,19 @@ export class Node implements NodeContext {
       if (watchers) {
         watchers.forEach(callback => {
           try {
-            callback(value, this.props[name]);
+            callback(newValue, this.props[name]);
           } catch (err) {
             console.error(`Error in prop watcher for ${name}:`, err);
           }
         });
       }
+      
+      // Also recreate the entire props object to ensure Inspector reactivity
+      this.props = { ...this.props };
+      
+      // Notify the prop update store to trigger Inspector reactivity
+      // This is a workaround for Svelte not detecting nested object changes
+      incrementPropUpdateCounter(this.id);
       
       this.markDirty();
     }
@@ -240,16 +259,31 @@ export class Node implements NodeContext {
   }
   
   async execute() {
-    // Check if should execute
-    if (!this.shouldExecute()) {
-      this.executeBypass();
-      return;
-    }
-    
     if (this.nodeFunction) {
+      // If node hasn't been executed yet, always run the function at least once
+      // to set up props, ports, and onReady callback, even if bypassed
+      const needsInitialization = !this.hasExecuted;
+      
+      // Check if should execute
+      if (!this.shouldExecute() && !needsInitialization) {
+        this.executeBypass();
+        return;
+      }
+      
       try {
         await this.nodeFunction(this, this.graph);
         this.error = null;
+        this.hasExecuted = true;
+        
+        // Call onReady callback after node function has been set up
+        // This allows nodes to perform initial setup like rendering previews
+        if (this.onReady) {
+          try {
+            this.onReady();
+          } catch (err) {
+            console.error(`Error in onReady callback for node ${this.name}:`, err);
+          }
+        }
       } catch (err) {
         this.error = err as Error;
         console.error(`Error executing node ${this.name}:`, err);

@@ -242,13 +242,13 @@ node.onReady = () => {
       {#if status === 'editing'}
         Editing... (Shift+Enter to compile)
       {:else if status === 'compiling'}
-        <Clock size={14} style="display: inline-block; vertical-align: middle; margin-right: 4px;" />
+        <span style="display: inline-block; vertical-align: middle; margin-right: 4px;"><Clock size={14} /></span>
         Compiling...
       {:else if status === 'success'}
-        <Check size={14} style="display: inline-block; vertical-align: middle; margin-right: 4px;" />
+        <span style="display: inline-block; vertical-align: middle; margin-right: 4px;"><Check size={14} /></span>
         Success!
       {:else if status === 'error'}
-        <XCircle size={14} style="display: inline-block; vertical-align: middle; margin-right: 4px;" />
+        <span style="display: inline-block; vertical-align: middle; margin-right: 4px;"><XCircle size={14} /></span>
         {errorMessage}
       {/if}
     </div>
@@ -258,7 +258,7 @@ node.onReady = () => {
   
   <div class="footer">
     <button class="package-button" on:click={() => packageSearchOpen = true} title="Search NPM packages (⌘K)">
-      <Icon name="Package" size={14} style="display: inline-block; vertical-align: middle; margin-right: 6px;" />
+      <span style="display: inline-block; vertical-align: middle; margin-right: 6px;"><Icon name="Package" size={14} /></span>
       Packages
     </button>
     <div class="footer-right">

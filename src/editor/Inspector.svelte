@@ -3,6 +3,15 @@
   import type { InputPort, Prop } from '@/types/node.types';
   import type { Graph, CanvasAnnotation } from '@/core/Graph';
   import { inferPropControlType } from '@/utils/propUtils';
+  import NumberInput from './components/NumberInput.svelte';
+  import VectorInput from './components/VectorInput.svelte';
+  import ColorPicker from './components/ColorPicker.svelte';
+  import FileInput from './components/FileInput.svelte';
+  import SelectInput from './components/SelectInput.svelte';
+  import ButtonInput from './components/ButtonInput.svelte';
+  import CheckboxInput from './components/CheckboxInput.svelte';
+  import FolderGroup from './components/FolderGroup.svelte';
+  import { propUpdateCounters } from './stores/propUpdateStore';
   
   export let node: Node | null = null;
   export let annotation: CanvasAnnotation | null = null;
@@ -11,18 +20,37 @@
   export let skipAnimation: boolean = false;
   
   $: inputs = node?.inputs || [];
-  $: paramInputs = inputs.filter(p => p.portType === 'param' && !(p.options?.hidden));
+  // Don't show input ports as parameters - they should only be visible as connection points
+  $: paramInputs = [];
   // Track props keys explicitly to ensure reactivity when props are added
   // Use a computed that depends on both node and the props object reference
   $: propsKeys = node ? Object.keys(node.props) : [];
   $: propsCount = node ? Object.keys(node.props).length : 0;
-  // Make props reactive to both node and propsCount to ensure updates are detected
-  $: props = node && propsCount >= 0 ? Object.entries(node.props).filter(([_, prop]) => {
-    if (typeof prop.hidden === 'function') {
-      return !prop.hidden();
-    }
-    return !prop.hidden;
-  }) : [];
+  // CRITICAL: Watch node.props directly to detect when it's recreated
+  // This ensures Svelte detects changes when updateProp recreates the props object
+  $: nodeProps = node?.props;
+  // Watch the prop update counter store to detect when props are updated
+  let propsUpdateCounter = 0;
+  $: {
+    const counters = $propUpdateCounters;
+    propsUpdateCounter = node ? (counters.get(node.id) || 0) : 0;
+  }
+  // Create a stringified version of all prop values to force reactivity when values change
+  // CRITICAL: Include propsUpdateCounter in the calculation to force recalculation when props update
+  $: propsValueKey = (nodeProps && propsUpdateCounter >= 0) ? Object.entries(nodeProps).map(([k, p]) => `${k}:${JSON.stringify(p.value)}`).join('|') + `|counter:${propsUpdateCounter}` : '';
+  // Make props reactive to nodeProps, propsCount, propsValueKey, and propsUpdateCounter to ensure updates are detected
+  let props: Array<[string, Prop]> = [];
+  $: {
+    // Force recalculation by accessing nodeProps fresh each time
+    const currentProps = node?.props;
+    const newProps = (currentProps && propsCount >= 0 && propsValueKey !== undefined) ? Object.entries(currentProps).filter(([_, prop]) => {
+      if (typeof prop.hidden === 'function') {
+        return !prop.hidden();
+      }
+      return !prop.hidden;
+    }) : [];
+    props = newProps;
+  }
   
   function handleInputChange(port: InputPort, value: any) {
     port.value = value;
@@ -120,6 +148,23 @@
     acc[folder].push(item);
     return acc;
   }, {} as Record<string, PropControlItem[]>);
+  
+  // Folder expansion state
+  let folderExpanded: Record<string, boolean> = {};
+  
+  function toggleFolder(folder: string) {
+    folderExpanded[folder] = !folderExpanded[folder];
+    folderExpanded = { ...folderExpanded }; // Trigger reactivity
+  }
+  
+  $: {
+    // Initialize all folders as expanded by default
+    Object.keys(groupedProps).forEach(folder => {
+      if (!(folder in folderExpanded)) {
+        folderExpanded[folder] = true;
+      }
+    });
+  }
   
   // Annotation styling handlers
   function handleAnnotationStyleChange(styleKey: string, value: any) {
@@ -502,56 +547,138 @@
       {#if propControls.length > 0}
         {#each Object.entries(groupedProps) as entry}
           {@const [folder, folderProps] = entry}
-          <div class="folder-group">
-            {#if folder !== 'General'}
-              <div class="folder-header">{folder}</div>
-            {/if}
-            {#each folderProps as item}
-              {@const { key, prop, controlType, displayName } = item}
-              {@const inputId = `prop-${key}-${folder}`}
-              <div class="prop-group">
-                <label class="prop-label" for={inputId}>
-                  {displayName}
-                </label>
-                
-                {#if controlType === 'number' || controlType === 'slider'}
-                  {#if controlType === 'slider' && prop.params?.min !== undefined && prop.params?.max !== undefined}
-                    {@const minValue = typeof prop.params.min === 'number' ? prop.params.min : Array.isArray(prop.params.min) ? prop.params.min[0] : 0}
-                    {@const maxValue = typeof prop.params.max === 'number' ? prop.params.max : Array.isArray(prop.params.max) ? prop.params.max[0] : 100}
-                    <div class="slider-container">
+          {#if folder !== 'General'}
+            <FolderGroup
+              folderName={folder}
+              isExpanded={folderExpanded[folder] ?? true}
+              on:toggle={() => toggleFolder(folder)}
+            >
+              {#each folderProps as item}
+                {@const { key, prop, controlType, displayName } = item}
+                {@const inputId = `prop-${key}-${folder}`}
+                {@const isVector = controlType === 'vec2' || controlType === 'vec3' || controlType === 'vec2i' || controlType === 'vec3i' || controlType === 'vector'}
+                <div class="prop-group" class:prop-group-row={isVector}>
+                  {#if displayName !== null}
+                    <label class="prop-label" for={inputId}>
+                      {displayName}
+                    </label>
+                  {/if}
+                  
+                  {#if controlType === 'number' || controlType === 'slider' || controlType === 'int'}
+                    <NumberInput
+                      {prop}
+                      id={inputId}
+                      onValueChange={(value) => handlePropChange([key, prop], value)}
+                    />
+                  {:else if isVector}
+                    {#key `${key}-${JSON.stringify(prop.value)}-${propsValueKey}-${propsUpdateCounter}`}
+                      <VectorInput
+                        {prop}
+                        id={inputId}
+                        onValueChange={(value) => handlePropChange([key, prop], value)}
+                      />
+                    {/key}
+                  {:else if controlType === 'color'}
+                    <ColorPicker
+                      {prop}
+                      id={inputId}
+                      onValueChange={(value) => handlePropChange([key, prop], value)}
+                    />
+                  {:else if controlType === 'image' || (controlType === 'text' && prop.params?.accept)}
+                    <FileInput
+                      {prop}
+                      id={inputId}
+                      onValueChange={(value) => handlePropChange([key, prop], value)}
+                    />
+                  {:else if controlType === 'text' || controlType === 'textarea'}
+                    {#if controlType === 'textarea'}
+                      <textarea
+                        id={inputId}
+                        class="param-textarea"
+                        value={prop.value || ''}
+                        on:input={(e) => handlePropTextareaInput([key, prop], e)}
+                      ></textarea>
+                    {:else}
                       <input
                         id={inputId}
-                        type="range"
-                        class="slider"
-                        min={minValue}
-                        max={maxValue}
-                        step={prop.params.step || 1}
-                        value={typeof prop.value === 'number' ? prop.value : Array.isArray(prop.value) ? prop.value[0] : 0}
-                        on:input={(e) => handlePropNumberInput([key, prop], e)}
+                        type="text"
+                        class="param-input"
+                        value={prop.value || ''}
+                        on:input={(e) => handlePropTextInput([key, prop], e)}
                       />
-                      <input
-                        type="number"
-                        class="number-input"
-                        min={minValue}
-                        max={maxValue}
-                        step={prop.params.step || 1}
-                        value={typeof prop.value === 'number' ? prop.value : Array.isArray(prop.value) ? prop.value[0] : 0}
-                        on:input={(e) => handlePropNumberInput([key, prop], e)}
-                        aria-label={displayName}
-                      />
-                    </div>
+                    {/if}
+                  {:else if controlType === 'boolean'}
+                    <CheckboxInput
+                      {prop}
+                      id={inputId}
+                      onValueChange={(value) => handlePropChange([key, prop], value)}
+                    />
+                  {:else if controlType === 'select' && prop.params?.options}
+                    <SelectInput
+                      {prop}
+                      id={inputId}
+                      onValueChange={(value) => handlePropChange([key, prop], value)}
+                    />
+                  {:else if controlType === 'button'}
+                    <ButtonInput
+                      {prop}
+                      id={inputId}
+                      onValueChange={() => {
+                        if (typeof prop.value === 'function') {
+                          prop.value();
+                        }
+                      }}
+                    />
                   {:else}
                     <input
                       id={inputId}
-                      type="number"
+                      type="text"
                       class="param-input"
-                      value={typeof prop.value === 'number' ? prop.value : Array.isArray(prop.value) ? prop.value[0] : undefined}
-                      min={typeof prop.params?.min === 'number' ? prop.params.min : undefined}
-                      max={typeof prop.params?.max === 'number' ? prop.params.max : undefined}
-                      step={prop.params?.step || 1}
-                      on:input={(e) => handlePropNumberInput([key, prop], e)}
+                      value={String(prop.value || '')}
+                      on:input={(e) => handlePropTextInput([key, prop], e)}
                     />
                   {/if}
+                </div>
+              {/each}
+            </FolderGroup>
+          {:else}
+            {#each folderProps as item}
+              {@const { key, prop, controlType, displayName } = item}
+              {@const inputId = `prop-${key}-${folder}`}
+              {@const isVector = controlType === 'vec2' || controlType === 'vec3' || controlType === 'vec2i' || controlType === 'vec3i' || controlType === 'vector'}
+              <div class="prop-group" class:prop-group-row={isVector}>
+                {#if displayName !== null}
+                  <label class="prop-label" for={inputId}>
+                    {displayName}
+                  </label>
+                {/if}
+                
+                {#if controlType === 'number' || controlType === 'slider' || controlType === 'int'}
+                  <NumberInput
+                    {prop}
+                    id={inputId}
+                    onValueChange={(value) => handlePropChange([key, prop], value)}
+                  />
+                {:else if isVector}
+                  {#key `${key}-${JSON.stringify(prop.value)}-${propsValueKey}-${propsUpdateCounter}`}
+                    <VectorInput
+                      {prop}
+                      id={inputId}
+                      onValueChange={(value) => handlePropChange([key, prop], value)}
+                    />
+                  {/key}
+                {:else if controlType === 'color'}
+                  <ColorPicker
+                    {prop}
+                    id={inputId}
+                    onValueChange={(value) => handlePropChange([key, prop], value)}
+                  />
+                {:else if controlType === 'image' || (controlType === 'text' && prop.params?.accept)}
+                  <FileInput
+                    {prop}
+                    id={inputId}
+                    onValueChange={(value) => handlePropChange([key, prop], value)}
+                  />
                 {:else if controlType === 'text' || controlType === 'textarea'}
                   {#if controlType === 'textarea'}
                     <textarea
@@ -569,49 +696,28 @@
                       on:input={(e) => handlePropTextInput([key, prop], e)}
                     />
                   {/if}
-                {:else if controlType === 'color'}
-                  <input
-                    id={inputId}
-                    type="color"
-                    class="color-input"
-                    value={prop.value || '#ffffff'}
-                    on:input={(e) => handlePropTextInput([key, prop], e)}
-                  />
                 {:else if controlType === 'boolean'}
-                  <label class="checkbox-label">
-                    <input
-                      id={inputId}
-                      type="checkbox"
-                      checked={prop.value}
-                      on:change={(e) => handlePropCheckboxChange([key, prop], e)}
-                    />
-                    <span>{prop.value ? 'On' : 'Off'}</span>
-                  </label>
+                  <CheckboxInput
+                    {prop}
+                    id={inputId}
+                    onValueChange={(value) => handlePropChange([key, prop], value)}
+                  />
                 {:else if controlType === 'select' && prop.params?.options}
-                  <select
+                  <SelectInput
+                    {prop}
                     id={inputId}
-                    class="select-input"
-                    value={String(prop.value)}
-                    on:change={(e) => handlePropSelectChange([key, prop], e)}
-                  >
-                    {#each prop.params.options as option}
-                      {@const optValue = typeof option === 'object' && 'value' in option ? option.value : option}
-                      {@const optLabel = typeof option === 'object' && 'label' in option ? option.label : String(option)}
-                      <option value={String(optValue)}>{optLabel}</option>
-                    {/each}
-                  </select>
+                    onValueChange={(value) => handlePropChange([key, prop], value)}
+                  />
                 {:else if controlType === 'button'}
-                  <button
+                  <ButtonInput
+                    {prop}
                     id={inputId}
-                    class="prop-button"
-                    on:click={() => {
+                    onValueChange={() => {
                       if (typeof prop.value === 'function') {
                         prop.value();
                       }
                     }}
-                  >
-                    Execute
-                  </button>
+                  />
                 {:else}
                   <input
                     id={inputId}
@@ -623,77 +729,15 @@
                 {/if}
               </div>
             {/each}
-          </div>
+          {/if}
         {/each}
       {/if}
       
-      <!-- Port Parameters -->
-      {#if paramInputs.length === 0 && propControls.length === 0}
+      <!-- Empty state if no props -->
+      {#if propControls.length === 0}
         <div class="empty-state">
           No parameters to edit
         </div>
-      {:else if paramInputs.length > 0}
-        {#each paramInputs as port}
-          {@const portId = `port-${port.id}`}
-          <div class="param-group">
-            <label class="param-label" for={portId}>
-              {port.name}
-              {#if port.options.description}
-                <span class="description">{port.options.description}</span>
-              {/if}
-            </label>
-            
-            {#if port.dataType === 'number'}
-              <input
-                id={portId}
-                type="number"
-                class="param-input"
-                value={port.value}
-                min={port.options?.min}
-                max={port.options?.max}
-                step={port.options?.step || 1}
-                on:input={(e) => handleNumberInput(port, e)}
-              />
-            {:else if port.dataType === 'boolean'}
-              <label class="checkbox-label">
-                <input
-                  id={portId}
-                  type="checkbox"
-                  checked={port.value}
-                  on:change={(e) => handleCheckboxChange(port, e)}
-                />
-                <span>{port.value ? 'On' : 'Off'}</span>
-              </label>
-            {:else if port.dataType === 'string' && port.options?.multiline}
-              <textarea
-                id={portId}
-                class="param-textarea"
-                value={port.value || ''}
-                on:input={(e) => handleTextareaInput(port, e)}
-              ></textarea>
-            {:else}
-              <input
-                id={portId}
-                type="text"
-                class="param-input"
-                value={port.value || ''}
-                on:input={(e) => handleTextInput(port, e)}
-              />
-            {/if}
-          </div>
-        {/each}
-        
-        <!-- Trigger inputs -->
-        {#each inputs.filter(p => p.portType === 'trigger') as port}
-          <div class="trigger-group">
-            <button
-              class="trigger-button"
-              on:click={() => handleTriggerClick(port)}
-            >
-              {port.name}
-            </button>
-          </div>
-        {/each}
       {/if}
       
       {#if node.comment}
@@ -734,7 +778,7 @@
   .content {
     flex: 1;
     overflow-y: auto;
-    padding: 12px;
+    padding: 8px;
   }
   
   .section {
@@ -998,7 +1042,10 @@
   }
   
   .param-group {
-    margin-bottom: 16px;
+    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
   
   .param-label {
@@ -1144,31 +1191,36 @@
     background: #4a9eff;
   }
   
-  .folder-group {
-    margin-bottom: 24px;
-  }
-  
-  .folder-header {
-    font-size: 11px;
-    font-weight: 600;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  }
   
   .prop-group {
-    margin-bottom: 16px;
+    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .prop-group-row {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
   }
   
   .prop-label {
     display: block;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     color: #aaa;
-    margin-bottom: 6px;
+    flex-shrink: 0;
+    min-width: 80px;
+  }
+  
+  .prop-group-row .prop-label {
+    margin-bottom: 0;
+  }
+  
+  .prop-group-row > :global(.vector-input-container) {
+    flex: 1;
+    min-width: 0;
   }
   
   .slider-container {

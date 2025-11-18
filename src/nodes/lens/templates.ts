@@ -15,7 +15,8 @@ node.defineProp('resolution', {
   value: [512, 512],
   params: {
     min: [1, 1],
-    max: [4096, 4096]
+    max: [4096, 4096],
+    integer: true
   },
   displayName: 'Resolution'
 });
@@ -317,7 +318,8 @@ node.defineProp('resolution', {
   value: [512, 512],
   params: {
     min: [1, 1],
-    max: [4096, 4096]
+    max: [4096, 4096],
+    integer: true
   },
   displayName: 'Resolution',
   onChange: render

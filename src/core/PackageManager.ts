@@ -13,8 +13,24 @@ export interface PackageInfo {
   };
 }
 
+// Internal interface for NPM API response structure
+interface NpmSearchPackage {
+  name: string;
+  version: string;
+  description?: string;
+  keywords?: string[];
+  author?: {
+    name: string;
+    email?: string;
+  };
+  links?: {
+    homepage?: string;
+    repository?: string;
+  };
+}
+
 export interface SearchResult {
-  package: PackageInfo;
+  package: NpmSearchPackage;
   score: {
     final: number;
     detail: {
