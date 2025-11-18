@@ -8,6 +8,115 @@
   import { Clock, Check, XCircle } from 'lucide-svelte';
   import { getLensNodeTemplate } from '@/nodes/lens';
   
+  // Node runtime type definitions for Monaco
+  const NODE_TYPES_DEFINITION = `
+declare namespace Cascade {
+  type PortType = 'trigger' | 'param';
+  type DataType = 'number' | 'string' | 'boolean' | 'color' | 'asset' | 'array' | 'object' | 'any';
+  type PropControlType = 'number' | 'int' | 'slider' | 'text' | 'textarea' | 'color' | 'image' | 'boolean' | 'select' | 'vector' | 'vec2' | 'vec3' | 'vec2i' | 'vec3i' | 'range' | 'button' | 'folder' | 'group';
+
+  interface PortOptions {
+    type?: DataType;
+    min?: number;
+    max?: number;
+    step?: number;
+    values?: any[];
+    accept?: string[];
+    description?: string;
+    hidden?: boolean;
+    published?: boolean;
+    multiline?: boolean;
+  }
+
+  interface InputPort<T = any> {
+    id: string;
+    name: string;
+    portType: PortType;
+    dataType: DataType;
+    value: T;
+    defaultValue: T;
+    options: PortOptions;
+    connections: Connection[];
+    onChange?: (value: T) => void;
+    onTrigger?: (props?: any) => void;
+  }
+
+  interface OutputPort<T = any> {
+    id: string;
+    name: string;
+    portType: PortType;
+    dataType: DataType;
+    value: T;
+    connections: Connection[];
+    setValue: (value: T) => void;
+    trigger: (props?: any) => void;
+  }
+
+  interface Connection {
+    id: string;
+    from: { nodeId: string; portId: string };
+    to: { nodeId: string; portId: string };
+    type: PortType;
+  }
+
+  interface Prop<T = any> {
+    value: T;
+    params?: {
+      min?: number | number[];
+      max?: number | number[];
+      step?: number;
+      options?: Array<T | { value: T; label: string }>;
+      accept?: string;
+      locked?: boolean;
+      integer?: boolean;
+    };
+    onChange?: (prop: Prop<T>, context: NodeContext) => void | Promise<void>;
+    displayName?: string | null;
+    type?: PropControlType;
+    disabled?: boolean | (() => boolean);
+    hidden?: boolean | (() => boolean);
+    folder?: string;
+    group?: string;
+  }
+
+  interface NodeContext {
+    id: string;
+    name: string;
+    type: string;
+    code: string;
+    position: { x: number; y: number };
+    preview: HTMLCanvasElement | HTMLImageElement | null;
+    comment: string;
+    error: Error | null;
+    warning: string | null;
+    isTemplate: boolean;
+    isDirty: boolean;
+    inputs: InputPort[];
+    outputs: OutputPort[];
+    props: Record<string, Prop>;
+    bypassed: boolean;
+    cooking: boolean;
+    in<T>(name: string, defaultValue?: T, options?: PortOptions): InputPort<T>;
+    out<T>(name: string, portType?: PortType): OutputPort<T>;
+    defineProp<T>(name: string, config: Prop<T>): void;
+    updateProp(name: string, value: any): void;
+    watchProp(name: string, callback: Function): void;
+    setBypassed(value: boolean): void;
+    setCooking(value: boolean): void;
+    shouldExecute(): boolean;
+    executeBypass(): void;
+    onReady?: () => void;
+    onDestroy?: () => void;
+    log(...args: any[]): void;
+    require(packageName: string): Promise<any>;
+  }
+}
+
+// Global variable available in node code execution context
+declare const node: Cascade.NodeContext;
+declare const graph: any; // Graph type can be added later if needed
+`.trim();
+  
   export let node: Node;
   export let packageManager: PackageManager | null = null;
   export let onClose: () => void;
@@ -29,6 +138,28 @@
     if (!container || isDestroyed) return;
     
     try {
+      // Configure Monaco TypeScript environment with node types
+      monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+        target: monaco.languages.typescript.ScriptTarget.ES2020,
+        allowNonTsExtensions: true,
+        moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+        module: monaco.languages.typescript.ModuleKind.ESNext,
+        noEmit: true,
+        esModuleInterop: true,
+        jsx: monaco.languages.typescript.JsxEmit.None,
+        reactNamespace: "React",
+        allowJs: true,
+        typeRoots: ["node_modules/@types"]
+      });
+      
+      // Add node type definitions to Monaco
+      monaco.languages.typescript.typescriptDefaults.setExtraLibs([
+        {
+          content: NODE_TYPES_DEFINITION,
+          filePath: 'file:///node-context.d.ts'
+        }
+      ]);
+      
       editor = monaco.editor.create(container, {
         value: node.code || getDefaultNodeCode(node.type),
         language: 'typescript',

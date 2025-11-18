@@ -3,6 +3,7 @@
   import { Graph, type CanvasAnnotation } from '@/core/Graph';
   import NodeUI from './NodeUI.svelte';
   import type { Node } from '@/core/Node';
+  import type { Connection } from '@/types/node.types';
   import { marked } from 'marked';
   import { getLensNodeTemplate } from '@/nodes/lens';
   import { getPortColor } from '@/utils/portColors';
@@ -81,6 +82,12 @@
   let connectingFrom: { nodeId: string; portId: string; portType: 'input' | 'output' } | null = null;
   let connectingPosition: { x: number; y: number } | null = null;
   let mousePosition: { x: number; y: number } = { x: 0, y: 0 };
+  let draggingFromConnectedPort: { nodeId: string; portId: string; portType: 'input' | 'output'; connectionIds: string[] } | null = null;
+  
+  // Connection hover state for scissors icon
+  let hoveredConnection: { connectionId: string; position: { x: number; y: number } } | null = null;
+  let ctrlPressed = false;
+  let ctrlClickConnection: string | null = null;
   
   // Node dragging state
   let draggingNode: { nodeId: string; offset: { x: number; y: number } } | null = null;
@@ -172,7 +179,7 @@ setInterval(() => {
       
       colorNode.code = `// Color node - creates a solid color canvas
 node.defineProp('color', {
-  value: '#ffffff',
+  value: '#87CEEB',
   type: 'color',
   displayName: 'Color'
 });
@@ -266,6 +273,9 @@ node.onReady = () => {
         }
         
         graph.connections = [...graph.connections];
+        
+        // Execute Composite node and its upstream dependencies to ensure outputs are ready
+        await graph.executeUpstream(compositeNode);
       } catch (err) {
         console.error('Failed to initialize nodes:', err);
       }
@@ -308,6 +318,22 @@ node.onReady = () => {
   
   function handleMouseDown(e: MouseEvent) {
     if (!canvas) return;
+    
+    // Handle Ctrl+Click on connections early to prevent default behavior
+    if (e.button === 0 && (e.ctrlKey || e.metaKey) && !(e.target as HTMLElement).closest('.node, .annotation')) {
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+      const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
+      
+      const hovered = findConnectionAtPoint(mouseX, mouseY);
+      if (hovered) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Store the connection to disconnect on mouseup
+        ctrlClickConnection = hovered.id;
+        return;
+      }
+    }
     
     // Middle mouse button (button 1) for panning
     if (e.button === 1) {
@@ -591,6 +617,69 @@ node.onReady = () => {
         y: (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom
       };
     }
+    
+    // Check for connection hover (for scissors icon)
+    if (!connectingFrom && !draggingNode && !draggingAnnotation && !isSelecting) {
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+      const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
+      
+      // Check Ctrl key state from event (more reliable than tracking)
+      const isCtrlPressed = e.ctrlKey || e.metaKey;
+      
+      // Check if mouse is over any connection
+      const hovered = findConnectionAtPoint(mouseX, mouseY);
+      if (hovered && isCtrlPressed) {
+        hoveredConnection = {
+          connectionId: hovered.id,
+          position: { x: mouseX, y: mouseY }
+        };
+      } else {
+        hoveredConnection = null;
+      }
+    } else {
+      hoveredConnection = null;
+    }
+  }
+  
+  // Helper function to find connection at a point (hit testing)
+  function findConnectionAtPoint(x: number, y: number): Connection | null {
+    const hitThreshold = 8 / internalTransform.zoom; // 8 pixels tolerance, adjusted for zoom
+    
+    for (const conn of connections) {
+      const fromPos = getPortPosition(conn.from.nodeId, conn.from.portId, 'output');
+      const toPos = getPortPosition(conn.to.nodeId, conn.to.portId, 'input');
+      
+      if (!fromPos || !toPos) continue;
+      
+      // Check if point is near the bezier curve
+      // The curve is: M fromPos C fromPos.x, fromPos.y + curveOffset, toPos.x, toPos.y - curveOffset, toPos.x, toPos.y
+      const curveOffset = Math.abs(toPos.y - fromPos.y) * 0.5;
+      
+      // Sample points along the curve to check distance
+      for (let t = 0; t <= 1; t += 0.05) {
+        const p1x = fromPos.x;
+        const p1y = fromPos.y;
+        const p2x = fromPos.x;
+        const p2y = fromPos.y + curveOffset;
+        const p3x = toPos.x;
+        const p3y = toPos.y - curveOffset;
+        const p4x = toPos.x;
+        const p4y = toPos.y;
+        
+        // Bezier curve point at t
+        const mt = 1 - t;
+        const pointX = mt * mt * mt * p1x + 3 * mt * mt * t * p2x + 3 * mt * t * t * p3x + t * t * t * p4x;
+        const pointY = mt * mt * mt * p1y + 3 * mt * mt * t * p2y + 3 * mt * t * t * p3y + t * t * t * p4y;
+        
+        const distance = Math.sqrt(Math.pow(x - pointX, 2) + Math.pow(y - pointY, 2));
+        if (distance < hitThreshold) {
+          return conn;
+        }
+      }
+    }
+    
+    return null;
   }
   
   function handleMouseUp(e: MouseEvent) {
@@ -601,13 +690,52 @@ node.onReady = () => {
       isPanning = false;
     }
     
-    // Cancel connection if not completed (clicked outside a port)
+    // Complete or cancel connection on mouseup
     if (connectingFrom && e.button === 0) {
       // Check if we're over a port element
       const target = e.target as HTMLElement;
       const portElement = target.closest('.port');
-      if (!portElement) {
-        // Not over a port, cancel connection
+      
+      if (portElement) {
+        // Extract port information from data attributes
+        const toNodeId = portElement.getAttribute('data-node-id');
+        const toPortId = portElement.getAttribute('data-port-id');
+        const toPortType = portElement.getAttribute('data-port-type') as 'input' | 'output' | null;
+        
+        if (toNodeId && toPortId && toPortType) {
+          const from = connectingFrom;
+          
+          // Only allow output -> input connections
+          if (from.portType === 'output' && toPortType === 'input' && from.nodeId !== toNodeId) {
+            const fromNode = graph.getNode(from.nodeId);
+            const toNode = graph.getNode(toNodeId);
+            
+            if (fromNode && toNode) {
+              const fromPort = fromNode.outputs.find(p => p.id === from.portId);
+              const toPort = toNode.inputs.find(p => p.id === toPortId);
+              
+              if (fromPort && toPort) {
+                graph.connect(fromPort, toPort);
+                graph.connections = [...graph.connections];
+              }
+            }
+          }
+        }
+        
+        // Reset connection state
+        connectingFrom = null;
+        connectingPosition = null;
+        draggingFromConnectedPort = null;
+      } else {
+        // Not over a port - if dragging from connected port, disconnect it
+        if (draggingFromConnectedPort) {
+          draggingFromConnectedPort.connectionIds.forEach(connId => {
+            graph.disconnect(connId);
+          });
+          graph.connections = [...graph.connections];
+          draggingFromConnectedPort = null;
+        }
+        // Cancel connection
         connectingFrom = null;
         connectingPosition = null;
       }
@@ -618,6 +746,9 @@ node.onReady = () => {
     draggingAnnotation = null;
     draggingMultiple = null;
     resizingAnnotation = null;
+    
+    // Don't clear ctrlClickConnection here - let the click handler process it
+    // It will be cleared in handleCanvasClick after disconnection
     
     // Finish line drawing
     if (drawingLine) {
@@ -942,6 +1073,34 @@ node.onReady = () => {
   }
   
   function handleCanvasClick(e: MouseEvent) {
+    // Handle Ctrl+Click on connections to disconnect
+    if (ctrlClickConnection) {
+      e.preventDefault();
+      e.stopPropagation();
+      graph.disconnect(ctrlClickConnection);
+      graph.connections = [...graph.connections];
+      hoveredConnection = null;
+      ctrlClickConnection = null;
+      return;
+    }
+    
+    // Fallback: Handle Ctrl+Click on connections to disconnect (if not caught in mousedown)
+    if ((e.ctrlKey || e.metaKey) && !(e.target as HTMLElement).closest('.node, .annotation')) {
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+      const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
+      
+      const hovered = findConnectionAtPoint(mouseX, mouseY);
+      if (hovered) {
+        e.preventDefault();
+        e.stopPropagation();
+        graph.disconnect(hovered.id);
+        graph.connections = [...graph.connections];
+        hoveredConnection = null;
+        return;
+      }
+    }
+    
     // Don't create annotation if clicking on existing annotation
     if ((e.target as HTMLElement).closest('.annotation')) {
       return;
@@ -1760,6 +1919,11 @@ node.onReady = () => {
     // Prevent default context menu
     e.preventDefault();
     
+    // Don't open panel if Ctrl/Cmd is pressed (might be Ctrl+Click)
+    if (e.ctrlKey || e.metaKey) {
+      return;
+    }
+    
     // Don't open panel if right-clicking on a node or annotation
     if ((e.target as HTMLElement).closest('.node, .annotation')) {
       return;
@@ -1848,8 +2012,32 @@ node.onReady = () => {
     
     if (!port) return;
     
+    // Track if port is already connected (for disconnection on drag off canvas)
+    if (port.connections.length > 0) {
+      draggingFromConnectedPort = {
+        nodeId,
+        portId,
+        portType,
+        connectionIds: port.connections.map(c => c.id)
+      };
+    }
+    
     // Start connection (only from output ports on mousedown)
     if (portType === 'output' && !connectingFrom) {
+      const pos = getPortPosition(nodeId, portId, portType);
+      if (pos) {
+        connectingFrom = { nodeId, portId, portType };
+        connectingPosition = pos;
+        const rect = canvas.getBoundingClientRect();
+        mousePosition = {
+          x: (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom,
+          y: (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom
+        };
+      }
+    }
+    
+    // Also allow disconnecting from input ports by dragging
+    if (portType === 'input' && port.connections.length > 0 && !connectingFrom) {
       const pos = getPortPosition(nodeId, portId, portType);
       if (pos) {
         connectingFrom = { nodeId, portId, portType };
@@ -1895,6 +2083,7 @@ node.onReady = () => {
       
       connectingFrom = null;
       connectingPosition = null;
+      draggingFromConnectedPort = null; // Reset when connection is completed
     } else {
       // Fallback: Start connection on click if mousedown didn't work
       if (portType === 'output') {
@@ -2046,6 +2235,11 @@ node.onReady = () => {
       e.preventDefault();
     }
     
+    // Track Ctrl key for scissors icon (check both key and modifier)
+    if (e.key === 'Control' || e.key === 'Meta' || e.ctrlKey || e.metaKey) {
+      ctrlPressed = true;
+    }
+    
     // Canvas keyboard shortcuts
     // ⌘+ / ⌘- - Zoom in/out
     if ((e.metaKey || e.ctrlKey) && (e.key === '+' || e.key === '=')) {
@@ -2168,6 +2362,12 @@ node.onReady = () => {
     if (e.code === 'Space') {
       spacePressed = false;
     }
+    
+    // Track Ctrl key release for scissors icon (check both key and modifier)
+    if (e.key === 'Control' || e.key === 'Meta' || (!e.ctrlKey && !e.metaKey)) {
+      ctrlPressed = false;
+      hoveredConnection = null;
+    }
   }
   
   onMount(() => {
@@ -2261,6 +2461,16 @@ node.onReady = () => {
         {@const midY = (fromPos.y + toPos.y) / 2}
         {@const curveOffset = Math.abs(toPos.y - fromPos.y) * 0.5}
         {@const isTrigger = conn.type === 'trigger'}
+        <!-- Invisible wider path for better hit testing -->
+        <path
+          d="M {fromPos.x} {fromPos.y} C {fromPos.x} {fromPos.y + curveOffset} {toPos.x} {toPos.y - curveOffset} {toPos.x} {toPos.y}"
+          fill="none"
+          stroke="transparent"
+          stroke-width="12"
+          class="connection-hit-area"
+          style="cursor: {(hoveredConnection?.connectionId === conn.id && ctrlPressed) ? 'pointer' : 'default'};"
+        />
+        <!-- Visible connection path -->
         <path
           d="M {fromPos.x} {fromPos.y} C {fromPos.x} {fromPos.y + curveOffset} {toPos.x} {toPos.y - curveOffset} {toPos.x} {toPos.y}"
           fill="none"
@@ -2272,6 +2482,22 @@ node.onReady = () => {
         />
       {/if}
     {/each}
+    
+    <!-- Scissors icon when hovering over connection with Ctrl -->
+    {#if hoveredConnection}
+      {@const pos = hoveredConnection.position}
+      <g transform="translate({pos.x}, {pos.y})">
+        <circle cx="0" cy="0" r="12" fill="#1a1a1a" stroke="#888" stroke-width="1" opacity="0.9" />
+        <!-- Scissors icon (simplified SVG path) -->
+        <path
+          d="M -6,-4 L -6,4 M 6,-4 L 6,4 M -4,-6 L 4,6 M -4,6 L 4,-6"
+          stroke="#fff"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          fill="none"
+        />
+      </g>
+    {/if}
     
     <!-- Connection preview (while dragging) -->
     {#if connectingFrom && connectingPosition}

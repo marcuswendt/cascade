@@ -217,11 +217,9 @@
   }
   
   function closeTab(tabId: string, windowId: string) {
-    console.log('closeTab called:', tabId, windowId);
     // Don't allow closing default tabs
     const defaultTabId = getDefaultTabId(windowId);
     if (tabId === defaultTabId) {
-      console.log('Cannot close default tab');
       return;
     }
     
@@ -229,7 +227,6 @@
     const newTabs = tabs.filter(tab => tab.id !== tabId);
     tabsByWindow.set(windowId, newTabs);
     tabsByWindow = new Map(tabsByWindow);
-    console.log('Tabs after close:', newTabs.map(t => t.id));
     
     // Check if we need to remove default tab (only for non-graph/log windows)
     const hasEditorTabs = newTabs.some(tab => tab.type === 'editor');
@@ -241,12 +238,10 @@
     const activeId = activeTabIds.get(windowId);
     if (activeId === tabId) {
       const remainingTabs = getTabsForWindow(windowId);
-      console.log('Remaining tabs:', remainingTabs.map(t => t.id));
       if (remainingTabs.length > 0) {
         // Switch to the last tab in the list
         const newActiveId = remainingTabs[remainingTabs.length - 1].id;
         activeTabIds.set(windowId, newActiveId);
-        console.log('Switched to tab:', newActiveId);
       } else {
         // No tabs left, ensure default tab exists and switch to it
         ensureDefaultTab(windowId);
@@ -254,10 +249,8 @@
         const defaultTab = finalTabs.find(tab => tab.id === defaultTabId);
         if (defaultTab) {
           activeTabIds.set(windowId, defaultTabId);
-          console.log('Switched to default tab:', defaultTabId);
         } else {
           activeTabIds.set(windowId, null);
-          console.log('No tabs available');
         }
       }
       activeTabIds = new Map(activeTabIds);

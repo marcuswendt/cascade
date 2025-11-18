@@ -113,6 +113,19 @@ export class Graph {
     fromPort.connections.push(connection);
     toPort.connections.push(connection);
     
+    // Propagate existing value from output port to input port when connection is made
+    if (fromPort.value !== undefined && fromPort.value !== null) {
+      toPort.value = fromPort.value;
+      // Trigger onChange callback if it exists
+      if (toPort.onChange) {
+        try {
+          toPort.onChange(fromPort.value);
+        } catch (err) {
+          console.error(`Error in onChange callback for port ${toPort.name}:`, err);
+        }
+      }
+    }
+    
     return connection;
   }
   
@@ -135,32 +148,36 @@ export class Graph {
     }
   }
   
-  execute(entryNode?: Node) {
+  async execute(entryNode?: Node) {
     if (entryNode) {
-      this.executeUpstream(entryNode);
+      await this.executeUpstream(entryNode);
     } else {
       // Execute all nodes with no input connections
+      const promises: Promise<void>[] = [];
       this.nodes.forEach(node => {
         if (node.inputs.every(p => p.connections.length === 0)) {
-          this.executeUpstream(node);
+          promises.push(this.executeUpstream(node));
         }
       });
+      await Promise.all(promises);
     }
   }
   
-  executeUpstream(node: Node) {
+  async executeUpstream(node: Node) {
     // Execute all upstream nodes first
+    const upstreamPromises: Promise<void>[] = [];
     node.inputs.forEach(input => {
       input.connections.forEach(conn => {
         const upstreamNode = this.getNode(conn.from.nodeId);
         if (upstreamNode) {
-          this.executeUpstream(upstreamNode);
+          upstreamPromises.push(this.executeUpstream(upstreamNode));
         }
       });
     });
     
-    // Then execute this node
-    node.execute();
+    // Wait for all upstream nodes to finish, then execute this node
+    await Promise.all(upstreamPromises);
+    await node.execute();
   }
   
   stop() {

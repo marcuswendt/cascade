@@ -28,7 +28,6 @@
   function handleTabClose(tabId: string, e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    console.log('Tab close:', tabId);
     dispatch('tabClose', { tabId });
   }
   
