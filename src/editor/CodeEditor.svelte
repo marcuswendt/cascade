@@ -6,6 +6,7 @@
   import type { PackageManager } from '@/core/PackageManager';
   import Icon from './Icon.svelte';
   import { Clock, Check, XCircle } from 'lucide-svelte';
+  import { getLensNodeTemplate } from '@/nodes/lens';
   
   export let node: Node;
   export let packageManager: PackageManager | null = null;
@@ -171,6 +172,13 @@
   }
   
   function getDefaultNodeCode(type: string): string {
+    // Check Lens library templates first
+    const lensTemplate = getLensNodeTemplate(type);
+    if (lensTemplate) {
+      return lensTemplate;
+    }
+    
+    // Default template
     return `// ${type} node
 const trigger = node.in('trigger', null, { type: 'trigger' });
 const output = node.out('output');

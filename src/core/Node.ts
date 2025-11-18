@@ -150,6 +150,8 @@ export class Node implements NodeContext {
   // Props System Methods (v1.1)
   defineProp<T>(name: string, config: Prop<T>): void {
     this.props[name] = config as Prop;
+    // Mark dirty to trigger reactivity
+    this.markDirty();
   }
   
   updateProp(name: string, value: any): void {

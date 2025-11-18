@@ -28,6 +28,9 @@
   // Expose canvasRef to parent
   export { canvasRef };
   
+  // Store canvas transform state to preserve viewport when switching tabs
+  let canvasTransform = { x: 0, y: 0, zoom: 1 };
+  
   // Tab management for code editors - tabs can be in any window region
   interface Tab {
     id: string;
@@ -35,6 +38,7 @@
     label: string;
     windowId: string; // Which window region this tab belongs to: 'graph', 'viewer', 'log', 'inspector'
     node?: Node; // Only for editor tabs
+    icon?: string; // Optional icon for the tab
   }
   
   const GRAPH_TAB_ID = 'graph-tab';
@@ -88,16 +92,26 @@
     }
   }
   
+  function getTabIcon(tabType: 'graph' | 'editor' | 'viewer' | 'log' | 'inspector'): string | undefined {
+    switch (tabType) {
+      case 'graph': return 'GitGraph';
+      case 'editor': return 'FileText';
+      case 'log': return 'Logs';
+      default: return undefined;
+    }
+  }
+  
   function ensureDefaultTab(windowId: string) {
-    // Add default tab if it doesn't exist in this window
+    // Add default tab if it doesn't exist in this window, or update icon if missing
     const tabs = getTabsForWindow(windowId);
     const defaultTabId = getDefaultTabId(windowId);
     const defaultTab = tabs.find(tab => tab.id === defaultTabId);
     if (!defaultTab) {
       const defaultTabType = getDefaultTabType(windowId);
       const defaultLabel = windowId.charAt(0).toUpperCase() + windowId.slice(1);
+      const icon = getTabIcon(defaultTabType);
       const newTabs = [
-        { id: defaultTabId, type: defaultTabType, label: defaultLabel, windowId },
+        { id: defaultTabId, type: defaultTabType, label: defaultLabel, windowId, icon },
         ...tabs
       ];
       tabsByWindow.set(windowId, newTabs);
@@ -108,11 +122,25 @@
         activeTabIds = new Map(activeTabIds);
       }
       tabsByWindow = new Map(tabsByWindow);
+    } else if (!defaultTab.icon) {
+      // Tab exists but missing icon, update it
+      const defaultTabType = getDefaultTabType(windowId);
+      const icon = getTabIcon(defaultTabType);
+      const updatedTabs = tabs.map(tab => 
+        tab.id === defaultTabId ? { ...tab, icon } : tab
+      );
+      tabsByWindow.set(windowId, updatedTabs);
+      tabsByWindow = new Map(tabsByWindow);
     }
   }
   
   function removeDefaultTab(windowId: string) {
     // Remove default tab if no editor tabs remain
+    // But always keep default tabs for Graph and Log windows
+    if (windowId === 'graph' || windowId === 'log') {
+      return; // Never remove default tabs for Graph and Log windows
+    }
+    
     const tabs = getTabsForWindow(windowId);
     const defaultTabId = getDefaultTabId(windowId);
     const editorTabs = tabs.filter(tab => tab.type === 'editor');
@@ -177,7 +205,8 @@
       type: 'editor',
       node,
       label: node.name,
-      windowId: targetWindowId
+      windowId: targetWindowId,
+      icon: getTabIcon('editor')
     };
     
     const newTabs = [...tabs, newTab];
@@ -188,9 +217,11 @@
   }
   
   function closeTab(tabId: string, windowId: string) {
+    console.log('closeTab called:', tabId, windowId);
     // Don't allow closing default tabs
     const defaultTabId = getDefaultTabId(windowId);
     if (tabId === defaultTabId) {
+      console.log('Cannot close default tab');
       return;
     }
     
@@ -198,28 +229,68 @@
     const newTabs = tabs.filter(tab => tab.id !== tabId);
     tabsByWindow.set(windowId, newTabs);
     tabsByWindow = new Map(tabsByWindow);
+    console.log('Tabs after close:', newTabs.map(t => t.id));
     
-    // If we closed the active tab, switch to another tab
-    const activeId = activeTabIds.get(windowId);
-    if (activeId === tabId) {
-      if (newTabs.length > 0) {
-        activeTabIds.set(windowId, newTabs[newTabs.length - 1].id);
-      } else {
-        activeTabIds.set(windowId, null);
-      }
-      activeTabIds = new Map(activeTabIds);
-    }
-    
-    // Remove default tab if no editor tabs remain
+    // Check if we need to remove default tab (only for non-graph/log windows)
     const hasEditorTabs = newTabs.some(tab => tab.type === 'editor');
     if (!hasEditorTabs) {
       removeDefaultTab(windowId);
     }
+    
+    // If we closed the active tab, switch to another tab
+    const activeId = activeTabIds.get(windowId);
+    if (activeId === tabId) {
+      const remainingTabs = getTabsForWindow(windowId);
+      console.log('Remaining tabs:', remainingTabs.map(t => t.id));
+      if (remainingTabs.length > 0) {
+        // Switch to the last tab in the list
+        const newActiveId = remainingTabs[remainingTabs.length - 1].id;
+        activeTabIds.set(windowId, newActiveId);
+        console.log('Switched to tab:', newActiveId);
+      } else {
+        // No tabs left, ensure default tab exists and switch to it
+        ensureDefaultTab(windowId);
+        const finalTabs = getTabsForWindow(windowId);
+        const defaultTab = finalTabs.find(tab => tab.id === defaultTabId);
+        if (defaultTab) {
+          activeTabIds.set(windowId, defaultTabId);
+          console.log('Switched to default tab:', defaultTabId);
+        } else {
+          activeTabIds.set(windowId, null);
+          console.log('No tabs available');
+        }
+      }
+      activeTabIds = new Map(activeTabIds);
+      // Force update of reactive variables
+      tabsByWindow = new Map(tabsByWindow);
+    }
   }
   
   function selectTab(tabId: string, windowId: string) {
+    console.log('selectTab called:', tabId, windowId);
+    // Verify the tab exists before selecting it
+    const tabs = getTabsForWindow(windowId);
+    console.log('Available tabs:', tabs.map(t => ({ id: t.id, type: t.type, label: t.label })));
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab) {
+      console.warn(`Tab ${tabId} not found in window ${windowId}. Available tabs:`, tabs.map(t => t.id));
+      // Try to ensure default tab exists
+      ensureDefaultTab(windowId);
+      const defaultTabId = getDefaultTabId(windowId);
+      const defaultTab = getTabsForWindow(windowId).find(t => t.id === defaultTabId);
+      if (defaultTab) {
+        activeTabIds.set(windowId, defaultTabId);
+        activeTabIds = new Map(activeTabIds);
+        tabsByWindow = new Map(tabsByWindow);
+        console.log('Switched to default tab:', defaultTabId);
+      }
+      return;
+    }
     activeTabIds.set(windowId, tabId);
     activeTabIds = new Map(activeTabIds);
+    // Force update of reactive variables
+    tabsByWindow = new Map(tabsByWindow);
+    console.log('Tab selected:', tabId, 'Active tab ID set to:', activeTabIds.get(windowId));
   }
   
   function moveTab(tabId: string, fromWindowId: string, toWindowId: string) {
@@ -507,26 +578,74 @@
   $: inspectorTabsCount = inspectorTabs.length;
   $: inspectorActiveTabId = activeTabIds.get('inspector');
   
-  // Force reactivity by explicitly accessing Maps in the reactive statement
+  // Get currently cooking node for Viewer title
+  let cookingNode: Node | null = null;
   $: {
-    tabsByWindow.get('graph'); activeTabIds.get('graph'); // Force reactivity by accessing Maps
+    // Force reactivity by accessing cookingNodes
+    if (graph) {
+      graph.cookingNodes.size; // Access size to trigger reactivity
+    }
+    cookingNode = graph ? Array.from(graph.cookingNodes)[0] || null : null;
+  }
+  $: viewerTitle = cookingNode ? cookingNode.name : 'Viewer';
+  
+  // Get Inspector title based on selected node/annotation
+  let inspectorTitle = 'Inspector';
+  $: {
+    if (selectedNode) {
+      inspectorTitle = selectedNode.name;
+    } else if (selectedAnnotation && graph) {
+      const annotation = graph.getAnnotation(selectedAnnotation);
+      if (annotation) {
+        const annotationName = annotation.type === 'text' ? 'Text' : annotation.type || 'Annotation';
+        inspectorTitle = annotationName;
+      } else {
+        inspectorTitle = 'Inspector';
+      }
+    } else {
+      inspectorTitle = 'Inspector';
+    }
+  }
+  
+  // Always ensure default tabs exist for Graph and Log windows
+  $: {
+    tabsByWindow.get('graph');
+    ensureDefaultTab('graph');
+  }
+  $: {
+    tabsByWindow.get('log');
+    ensureDefaultTab('log');
+  }
+  
+  // Force reactivity by using the computed reactive variables
+  // Access both the Maps and the computed reactive variables to ensure reactivity
+  $: {
+    const _ = tabsByWindow; const __ = activeTabIds; // Force reactivity by accessing Maps
+    graphTabs; graphActiveTabId; // Access reactive variables to trigger update
     graphActiveTab = getActiveTabForWindow('graph');
   }
   $: {
-    tabsByWindow.get('viewer'); activeTabIds.get('viewer'); // Force reactivity by accessing Maps
+    const _ = tabsByWindow; const __ = activeTabIds; // Force reactivity by accessing Maps
+    viewerTabs; viewerActiveTabId; // Access reactive variables to trigger update
     viewerActiveTab = getActiveTabForWindow('viewer');
   }
   $: {
-    tabsByWindow.get('log'); activeTabIds.get('log'); // Force reactivity by accessing Maps
+    const _ = tabsByWindow; const __ = activeTabIds; // Force reactivity by accessing Maps
+    logTabs; logActiveTabId; // Access reactive variables to trigger update
     logActiveTab = getActiveTabForWindow('log');
   }
   $: {
-    tabsByWindow.get('inspector'); activeTabIds.get('inspector'); // Force reactivity by accessing Maps
+    const _ = tabsByWindow; const __ = activeTabIds; // Force reactivity by accessing Maps
+    inspectorTabs; inspectorActiveTabId; // Access reactive variables to trigger update
     inspectorActiveTab = getActiveTabForWindow('inspector');
   }
   
   onMount(() => {
     loadLayout();
+    
+    // Always ensure default tabs exist for Graph and Log windows
+    ensureDefaultTab('graph');
+    ensureDefaultTab('log');
     
     // Force initial computation of reactive tab variables
     graphActiveTab = getActiveTabForWindow('graph');
@@ -623,10 +742,12 @@
               {activeTool}
               bind:selectedNode={selectedNode}
               bind:selectedAnnotation={selectedAnnotation}
+              transform={canvasTransform}
               on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
               on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
               on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
               on:nodeEdit={handleNodeEdit}
+              on:transformChange={(e) => canvasTransform = e.detail.transform}
             />
             {#if !presentationMode}
               <BottomToolbar
@@ -645,10 +766,12 @@
             {activeTool}
             bind:selectedNode={selectedNode}
             bind:selectedAnnotation={selectedAnnotation}
+            transform={canvasTransform}
             on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
             on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
             on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
             on:nodeEdit={handleNodeEdit}
+            on:transformChange={(e) => canvasTransform = e.detail.transform}
           />
           {#if !presentationMode}
             <BottomToolbar
@@ -673,7 +796,8 @@
     <div class="middle-column">
       <!-- Viewer Window (Top) -->
       <Window
-        title="Viewer"
+        title={viewerTitle}
+        icon="View"
         windowId="viewer"
         minimized={viewerMinimized}
         showTabs={viewerTabsCount > 0}
@@ -850,9 +974,9 @@
     
     <!-- Inspector Window (Right) -->
     {#if selectedNode}
-      {@const inspectorTitle = selectedNode.name}
       <Window
         title={inspectorTitle}
+        icon="SlidersHorizontal"
         windowId="inspector"
         minimized={inspectorMinimized}
         showTabs={inspectorTabsCount > 0}
@@ -928,10 +1052,10 @@
     {:else if selectedAnnotation && graph}
       {#if true}
         {@const annotation = graph.getAnnotation(selectedAnnotation)}
-        {@const inspectorTitle = annotation ? (annotation.type === 'text' ? 'Text' : annotation.type || 'Inspector') : 'Inspector'}
         {#if annotation}
         <Window
           title={inspectorTitle}
+          icon="SlidersHorizontal"
           windowId="inspector"
           minimized={inspectorMinimized}
           showTabs={inspectorTabsCount > 0}
@@ -1010,7 +1134,8 @@
       {/if}
     {:else}
       <Window
-        title="Inspector"
+        title={inspectorTitle}
+        icon="SlidersHorizontal"
         windowId="inspector"
         minimized={inspectorMinimized}
         showTabs={inspectorTabsCount > 0}

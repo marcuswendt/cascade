@@ -12,7 +12,12 @@
   
   $: inputs = node?.inputs || [];
   $: paramInputs = inputs.filter(p => p.portType === 'param' && !(p.options?.hidden));
-  $: props = node ? Object.entries(node.props).filter(([_, prop]) => {
+  // Track props keys explicitly to ensure reactivity when props are added
+  // Use a computed that depends on both node and the props object reference
+  $: propsKeys = node ? Object.keys(node.props) : [];
+  $: propsCount = node ? Object.keys(node.props).length : 0;
+  // Make props reactive to both node and propsCount to ensure updates are detected
+  $: props = node && propsCount >= 0 ? Object.entries(node.props).filter(([_, prop]) => {
     if (typeof prop.hidden === 'function') {
       return !prop.hidden();
     }

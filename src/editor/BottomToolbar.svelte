@@ -2,7 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { getAvailableLibraries } from './nodeTemplates';
   import Icon from './Icon.svelte';
-  import { Type, Image, StickyNote, Folder, Minus, PenTool } from 'lucide-svelte';
+  import { MoveUpLeft, Type, Image, StickyNote, Folder, Minus, PenTool } from 'lucide-svelte';
   
   export let activeLibrary: string | null = null;
   export let activeTool = 'select';
@@ -11,6 +11,10 @@
   
   // Get available libraries that have nodes
   $: libraries = getAvailableLibraries();
+  
+  const tools = [
+    { id: 'select', label: 'Select', icon: 'MoveUpLeft', hotkey: 'V', component: MoveUpLeft }
+  ];
   
   const annotationTools = [
     { id: 'text', label: 'Text', icon: 'Type', hotkey: 'T', component: Type },
@@ -28,6 +32,11 @@
     }
   }
   
+  function handleToolClick(toolId: string) {
+    activeTool = toolId;
+    dispatch('toolChange', toolId);
+  }
+  
   function handleAnnotationToolClick(toolId: string) {
     activeTool = toolId;
     dispatch('toolChange', toolId);
@@ -35,6 +44,24 @@
 </script>
 
 <div class="toolbar">
+  <div class="tools-section">
+    {#each tools as tool}
+      <button
+        class="tool-button"
+        class:active={activeTool === tool.id}
+        on:click={() => handleToolClick(tool.id)}
+        title="{tool.label} ({tool.hotkey})"
+      >
+        <span class="icon">
+          <svelte:component this={tool.component} size={18} />
+        </span>
+        <span class="label">{tool.label}</span>
+      </button>
+    {/each}
+  </div>
+  
+  <div class="divider"></div>
+  
   <div class="annotations-section">
     {#each annotationTools as tool}
       <button

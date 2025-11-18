@@ -4,6 +4,7 @@
   import NodeUI from './NodeUI.svelte';
   import type { Node } from '@/core/Node';
   import { marked } from 'marked';
+  import { getLensNodeTemplate } from '@/nodes/lens';
   
   // Configure marked for safe rendering
   marked.setOptions({
@@ -17,8 +18,54 @@
   export let selectedNode: Node | null = null;
   export let graph = new Graph();
   export let selectedAnnotation: string | null = null;
+  export let transform: { x: number; y: number; zoom: number } | undefined = undefined;
   let canvas: HTMLDivElement;
-  let transform = { x: 0, y: 0, zoom: 1 };
+  // Use transform prop if provided, otherwise use internal state
+  let internalTransform = transform ? { ...transform } : { x: 0, y: 0, zoom: 1 };
+  
+  // Track last known prop value to detect external changes
+  let lastPropTransform = transform ? { ...transform } : null;
+  
+  // Sync internal transform with prop when it's provided and changes externally
+  // This reactive statement only runs when the transform PROP changes, not when internalTransform changes
+  $: if (transform) {
+    // Check if prop actually changed (external update)
+    if (!lastPropTransform || 
+        lastPropTransform.x !== transform.x || 
+        lastPropTransform.y !== transform.y || 
+        lastPropTransform.zoom !== transform.zoom) {
+      // Prop changed externally, sync internal state
+      internalTransform = { ...transform };
+      lastPropTransform = { ...transform };
+    }
+  }
+  
+  // Dispatch transform changes back to parent when internal transform changes
+  // This only runs when internalTransform changes, not when prop changes
+  let lastDispatchedTransform = { ...internalTransform };
+  $: if (transform !== undefined) {
+    // Only dispatch if internal transform changed and it's different from the prop
+    const hasChanged = lastDispatchedTransform.x !== internalTransform.x ||
+        lastDispatchedTransform.y !== internalTransform.y ||
+        lastDispatchedTransform.zoom !== internalTransform.zoom;
+    
+    if (hasChanged) {
+      // Check if this change came from the prop (don't dispatch in that case)
+      const isFromProp = lastPropTransform && 
+        lastPropTransform.x === internalTransform.x &&
+        lastPropTransform.y === internalTransform.y &&
+        lastPropTransform.zoom === internalTransform.zoom;
+      
+      if (!isFromProp) {
+        // Internal change, dispatch it
+        lastDispatchedTransform = { ...internalTransform };
+        dispatch('transformChange', { transform: { ...internalTransform } });
+      } else {
+        // Was from prop, just update tracking
+        lastDispatchedTransform = { ...internalTransform };
+      }
+    }
+  }
   let isPanning = false;
   let selectedNodes: string[] = [];
   let spacePressed = false;
@@ -26,6 +73,7 @@
   let selectionStart: { x: number; y: number } | null = null;
   let selectionStartScreen: { x: number; y: number } | null = null;
   let selectionScreenPos: { x: number; y: number } | null = null;
+  let justCompletedSelection = false;
   
   // Connection state
   let connectingFrom: { nodeId: string; portId: string; portType: 'input' | 'output' } | null = null;
@@ -54,12 +102,15 @@
     graph.connections = [];
     graph.annotations = [];
     
-    // Add default nodes
-    const timer = graph.addNode('Timer', { x: 100, y: 100 });
-    const viewer = graph.addNode('Viewer', { x: 400, y: 100 });
+    // Add default nodes - create a node tree on the left
+    // Position nodes to the left of annotations (which start at x: 50)
+    const timer = graph.addNode('Timer', { x: -300, y: 100 });
+    const colorNode = graph.addNode('Color', { x: -300, y: 250 });
+    const viewer = graph.addNode('Viewer', { x: -300, y: 400 });
     viewer.setCooking(true); // Enable cooking on Viewer node
+    colorNode.setCooking(true); // Enable cooking on Color node
     
-    // Add default annotations
+    // Add default annotations (positioned to the right of nodes)
     const headlineAnnotation: any = {
       id: `ann_headline_${Date.now()}`,
       type: 'text',
@@ -94,28 +145,8 @@
       }
     };
     
-    // Create a simple placeholder image using a data URL (1x1 transparent PNG, then we'll make it visible)
-    // For a real default, we could use a canvas-generated image or a simple SVG
-    const placeholderImage = 'data:image/svg+xml;base64,' + btoa(`
-      <svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
-        <rect width="400" height="300" fill="#1a1a1a" stroke="#4a9eff" stroke-width="2"/>
-        <text x="200" y="150" font-family="Arial" font-size="24" fill="#4a9eff" text-anchor="middle">Placeholder Image</text>
-        <text x="200" y="180" font-family="Arial" font-size="14" fill="#888" text-anchor="middle">Drag an image here</text>
-      </svg>
-    `);
-    
-    const imageAnnotation: any = {
-      id: `ann_image_${Date.now()}`,
-      type: 'image',
-      src: placeholderImage,
-      position: { x: 650, y: 50 },
-      size: { width: 400, height: 300 },
-      caption: 'Default Image'
-    };
-    
     graph.addAnnotation(headlineAnnotation);
     graph.addAnnotation(copyAnnotation);
-    graph.addAnnotation(imageAnnotation);
     graph.annotations = [...graph.annotations];
     
     // Initialize timer node
@@ -136,15 +167,93 @@ const input = node.in('input', null);
 const output = node.out('output');
       `;
       
+      colorNode.code = `// Color node - creates a solid color canvas
+const trigger = node.in('trigger', null, { type: 'trigger' });
+
+node.defineProp('color', {
+  value: '#ffffff',
+  type: 'color',
+  displayName: 'Color'
+});
+
+node.defineProp('resolution', {
+  value: [512, 512],
+  params: {
+    min: [1, 1],
+    max: [4096, 4096]
+  },
+  displayName: 'Resolution'
+});
+
+const output = node.out('image');
+
+function render() {
+  const [width, height] = node.props.resolution.value;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.fillStyle = node.props.color.value;
+    ctx.fillRect(0, 0, width, height);
+  }
+  output.setValue(canvas);
+  node.preview = canvas;
+}
+
+// Handle trigger
+if (trigger) {
+  trigger.onTrigger = () => {
+    render();
+  };
+}
+
+// Watch for prop changes
+node.watchProp('color', render);
+node.watchProp('resolution', render);
+
+// Initial render
+node.onReady = () => {
+  render();
+};
+      `;
+      
       try {
         const timerFunction = new Function('node', 'graph', timer.code);
         timer.setFunction(timerFunction);
         timer.execute();
         
+        const colorFunction = new Function('node', 'graph', colorNode.code);
+        colorNode.setFunction(colorFunction);
+        colorNode.execute();
+        
+        const viewerFunction = new Function('node', 'graph', viewer.code);
+        viewer.setFunction(viewerFunction);
+        viewer.execute();
+        
         timer.inputs = [...timer.inputs];
         timer.outputs = [...timer.outputs];
+        colorNode.inputs = [...colorNode.inputs];
+        colorNode.outputs = [...colorNode.outputs];
+        viewer.inputs = [...viewer.inputs];
+        viewer.outputs = [...viewer.outputs];
+        
+        // Connect nodes: Timer -> Color -> Viewer
+        const timerTickPort = timer.outputs.find(p => p.name === 'tick');
+        const colorTriggerPort = colorNode.inputs.find(p => p.name === 'trigger');
+        const colorImagePort = colorNode.outputs.find(p => p.name === 'image');
+        const viewerInputPort = viewer.inputs.find(p => p.name === 'input');
+        
+        if (timerTickPort && colorTriggerPort) {
+          graph.connect(timerTickPort, colorTriggerPort);
+        }
+        if (colorImagePort && viewerInputPort) {
+          graph.connect(colorImagePort, viewerInputPort);
+        }
+        
+        graph.connections = [...graph.connections];
       } catch (err) {
-        console.error('Failed to initialize timer:', err);
+        console.error('Failed to initialize nodes:', err);
       }
       
       graph.nodes = [...graph.nodes];
@@ -174,6 +283,8 @@ const output = node.out('output');
   }));
   
   function handleMouseDown(e: MouseEvent) {
+    if (!canvas) return;
+    
     // Middle mouse button (button 1) for panning
     if (e.button === 1) {
       isPanning = true;
@@ -186,8 +297,8 @@ const output = node.out('output');
       if (!(e.target as HTMLElement).closest('.node, .annotation')) {
         const rect = canvas.getBoundingClientRect();
         selectionStart = {
-          x: (e.clientX - rect.left - transform.x) / transform.zoom,
-          y: (e.clientY - rect.top - transform.y) / transform.zoom
+          x: (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom,
+          y: (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom
         };
         selectionStartScreen = {
           x: e.clientX - rect.left,
@@ -196,11 +307,14 @@ const output = node.out('output');
         mousePosition = { ...selectionStart };
         selectionScreenPos = { ...selectionStartScreen };
         isSelecting = true;
+        justCompletedSelection = false; // Reset flag when starting new selection
         // Clear current selection when starting new selection
         if (!e.shiftKey) {
           selectedNodes = [];
           selectedNode = null;
+          selectedAnnotation = null;
           dispatch('nodeSelect', { node: null });
+          dispatch('annotationSelect', { annotationId: null });
         }
       }
     } else if (e.button === 0 && activeTool === 'line') {
@@ -210,8 +324,8 @@ const output = node.out('output');
       }
       // Start drawing a line
       const rect = canvas.getBoundingClientRect();
-      const x = (e.clientX - rect.left - transform.x) / transform.zoom;
-      const y = (e.clientY - rect.top - transform.y) / transform.zoom;
+      const x = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+      const y = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
       
       const id = `ann_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const annotation: any = {
@@ -235,8 +349,8 @@ const output = node.out('output');
       }
       // Start drawing a polyline
       const rect = canvas.getBoundingClientRect();
-      const x = (e.clientX - rect.left - transform.x) / transform.zoom;
-      const y = (e.clientY - rect.top - transform.y) / transform.zoom;
+      const x = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+      const y = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
       
       const id = `ann_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const annotation: any = {
@@ -258,17 +372,17 @@ const output = node.out('output');
   
   function handleMouseMove(e: MouseEvent) {
     if (isPanning) {
-      transform.x += e.movementX;
-      transform.y += e.movementY;
-      transform = transform;
+      internalTransform.x += e.movementX;
+      internalTransform.y += e.movementY;
+      internalTransform = { ...internalTransform };
     }
     
     // Update selection rectangle
     if (isSelecting && selectionStart) {
       const rect = canvas.getBoundingClientRect();
       // Store both canvas coordinates (for selection logic) and screen coordinates (for rendering)
-      const currentX = (e.clientX - rect.left - transform.x) / transform.zoom;
-      const currentY = (e.clientY - rect.top - transform.y) / transform.zoom;
+      const currentX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+      const currentY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
       mousePosition = { x: currentX, y: currentY };
       // Also store screen coordinates for the selection rectangle rendering
       selectionScreenPos = {
@@ -282,8 +396,8 @@ const output = node.out('output');
       const node = graph.getNode(draggingNode.nodeId);
       if (node) {
         const rect = canvas.getBoundingClientRect();
-        const newX = (e.clientX - rect.left - transform.x) / transform.zoom - draggingNode.offset.x;
-        const newY = (e.clientY - rect.top - transform.y) / transform.zoom - draggingNode.offset.y;
+        const newX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom - draggingNode.offset.x;
+        const newY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom - draggingNode.offset.y;
         
         node.position = { x: newX, y: newY };
         // Force reactivity
@@ -296,8 +410,8 @@ const output = node.out('output');
       const annotation = graph.getAnnotation(draggingAnnotation.annotationId);
       if (annotation) {
         const rect = canvas.getBoundingClientRect();
-        const newX = (e.clientX - rect.left - transform.x) / transform.zoom - draggingAnnotation.offset.x;
-        const newY = (e.clientY - rect.top - transform.y) / transform.zoom - draggingAnnotation.offset.y;
+        const newX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom - draggingAnnotation.offset.x;
+        const newY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom - draggingAnnotation.offset.y;
         
         annotation.position = { x: newX, y: newY };
         graph.annotations = [...graph.annotations];
@@ -309,8 +423,8 @@ const output = node.out('output');
       const annotation = graph.getAnnotation(resizingAnnotation.annotationId);
       if (annotation) {
         const rect = canvas.getBoundingClientRect();
-        const mouseX = (e.clientX - rect.left - transform.x) / transform.zoom;
-        const mouseY = (e.clientY - rect.top - transform.y) / transform.zoom;
+        const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+        const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
         
         const deltaX = mouseX - resizingAnnotation.startPos.x;
         const deltaY = mouseY - resizingAnnotation.startPos.y;
@@ -350,8 +464,8 @@ const output = node.out('output');
       const annotation = graph.getAnnotation(drawingLine.annotationId);
       if (annotation) {
         const rect = canvas.getBoundingClientRect();
-        const mouseX = (e.clientX - rect.left - transform.x) / transform.zoom;
-        const mouseY = (e.clientY - rect.top - transform.y) / transform.zoom;
+        const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+        const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
         
         annotation.endPosition = { x: mouseX, y: mouseY };
         graph.annotations = [...graph.annotations];
@@ -363,8 +477,8 @@ const output = node.out('output');
       const annotation = graph.getAnnotation(drawingPolyline.annotationId);
       if (annotation) {
         const rect = canvas.getBoundingClientRect();
-        const mouseX = (e.clientX - rect.left - transform.x) / transform.zoom;
-        const mouseY = (e.clientY - rect.top - transform.y) / transform.zoom;
+        const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+        const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
         
         // Add point if mouse moved significantly (smoothing)
         const lastPoint = drawingPolyline.points[drawingPolyline.points.length - 1];
@@ -384,8 +498,8 @@ const output = node.out('output');
     if (connectingFrom) {
       const rect = canvas.getBoundingClientRect();
       mousePosition = {
-        x: (e.clientX - rect.left - transform.x) / transform.zoom,
-        y: (e.clientY - rect.top - transform.y) / transform.zoom
+        x: (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom,
+        y: (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom
       };
     }
   }
@@ -422,8 +536,8 @@ const output = node.out('output');
     // Finish selection
     if (isSelecting && selectionStart) {
       const rect = canvas.getBoundingClientRect();
-      const endX = (e.clientX - rect.left - transform.x) / transform.zoom;
-      const endY = (e.clientY - rect.top - transform.y) / transform.zoom;
+      const endX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+      const endY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
       
       // Calculate selection rectangle bounds
       const minX = Math.min(selectionStart.x, endX);
@@ -434,15 +548,77 @@ const output = node.out('output');
       // Find all nodes that intersect with the selection rectangle
       const nodesInSelection: string[] = [];
       graph.nodes.forEach(node => {
-        // Node bounds (approximate - nodes are about 80px wide, 60px tall including label)
+        // Node bounds (approximate - nodes are about 120px wide, 80px tall)
+        const nodeWidth = 120;
+        const nodeHeight = 80;
         const nodeLeft = node.position.x;
-        const nodeRight = node.position.x + 80;
+        const nodeRight = node.position.x + nodeWidth;
         const nodeTop = node.position.y;
-        const nodeBottom = node.position.y + 60;
+        const nodeBottom = node.position.y + nodeHeight;
         
         // Check if node intersects with selection rectangle
         if (nodeRight >= minX && nodeLeft <= maxX && nodeBottom >= minY && nodeTop <= maxY) {
           nodesInSelection.push(node.id);
+        }
+      });
+      
+      // Find all annotations that intersect with the selection rectangle
+      const annotationsInSelection: string[] = [];
+      graph.annotations.forEach(annotation => {
+        let annotationLeft: number, annotationRight: number, annotationTop: number, annotationBottom: number;
+        
+        if (annotation.type === 'line') {
+          // For lines, check if selection rectangle intersects with the line
+          const lineStartX = annotation.position.x;
+          const lineStartY = annotation.position.y;
+          const lineEndX = annotation.endPosition?.x ?? annotation.position.x;
+          const lineEndY = annotation.endPosition?.y ?? annotation.position.y;
+          
+          // Check if line intersects with selection rectangle
+          // Simple bounding box check for line endpoints
+          annotationLeft = Math.min(lineStartX, lineEndX);
+          annotationRight = Math.max(lineStartX, lineEndX);
+          annotationTop = Math.min(lineStartY, lineEndY);
+          annotationBottom = Math.max(lineStartY, lineEndY);
+          
+          // Add some padding for line selection (stroke width)
+          const padding = (annotation.style?.strokeWidth || 2) + 5;
+          annotationLeft -= padding;
+          annotationRight += padding;
+          annotationTop -= padding;
+          annotationBottom += padding;
+        } else if (annotation.type === 'polyline') {
+          // For polylines, check bounding box of all points
+          if (annotation.points && annotation.points.length > 0) {
+            const xs = annotation.points.map(p => p.x);
+            const ys = annotation.points.map(p => p.y);
+            annotationLeft = Math.min(...xs);
+            annotationRight = Math.max(...xs);
+            annotationTop = Math.min(...ys);
+            annotationBottom = Math.max(...ys);
+            
+            // Add padding for stroke width
+            const padding = (annotation.style?.strokeWidth || 2) + 5;
+            annotationLeft -= padding;
+            annotationRight += padding;
+            annotationTop -= padding;
+            annotationBottom += padding;
+          } else {
+            return; // Skip if no points
+          }
+        } else {
+          // For text, image, and group annotations
+          const width = annotation.size?.width || (annotation.type === 'text' ? 540 : annotation.type === 'image' ? 200 : 300);
+          const height = annotation.size?.height || (annotation.type === 'text' ? 60 : annotation.type === 'image' ? 150 : 200);
+          annotationLeft = annotation.position.x;
+          annotationRight = annotation.position.x + width;
+          annotationTop = annotation.position.y;
+          annotationBottom = annotation.position.y + height;
+        }
+        
+        // Check if annotation intersects with selection rectangle
+        if (annotationRight >= minX && annotationLeft <= maxX && annotationBottom >= minY && annotationTop <= maxY) {
+          annotationsInSelection.push(annotation.id);
         }
       });
       
@@ -454,9 +630,23 @@ const output = node.out('output');
             selectedNodes.push(nodeId);
           }
         });
+        annotationsInSelection.forEach(annotationId => {
+          // For annotations, we can only have one selected at a time, so replace
+          if (annotationsInSelection.length > 0) {
+            selectedAnnotation = annotationsInSelection[0];
+            dispatch('annotationSelect', { annotationId: selectedAnnotation });
+          }
+        });
       } else {
         // Replace selection
         selectedNodes = nodesInSelection;
+        if (annotationsInSelection.length > 0) {
+          selectedAnnotation = annotationsInSelection[0];
+          dispatch('annotationSelect', { annotationId: selectedAnnotation });
+        } else {
+          selectedAnnotation = null;
+          dispatch('annotationSelect', { annotationId: null });
+        }
       }
       
       // Update selectedNode to the first selected node (or null)
@@ -471,9 +661,15 @@ const output = node.out('output');
       }
       
       isSelecting = false;
+      justCompletedSelection = true;
       selectionStart = null;
       selectionStartScreen = null;
       selectionScreenPos = null;
+      
+      // Reset the flag after a short delay to allow click handler to check it
+      setTimeout(() => {
+        justCompletedSelection = false;
+      }, 100);
     }
   }
   
@@ -482,8 +678,8 @@ const output = node.out('output');
     const annotation = graph.getAnnotation(annotationId);
     if (annotation) {
       const rect = canvas.getBoundingClientRect();
-      const mouseX = (e.clientX - rect.left - transform.x) / transform.zoom;
-      const mouseY = (e.clientY - rect.top - transform.y) / transform.zoom;
+      const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+      const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
       
       resizingAnnotation = {
         annotationId,
@@ -515,8 +711,8 @@ const output = node.out('output');
     const rect = canvas.getBoundingClientRect();
     
     // Calculate offset from mouse click position to node's top-left corner
-    const mouseX = (e.clientX - rect.left - transform.x) / transform.zoom;
-    const mouseY = (e.clientY - rect.top - transform.y) / transform.zoom;
+    const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+    const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
     
     const offset = {
       x: mouseX - node.position.x,
@@ -586,17 +782,16 @@ const output = node.out('output');
       };
       cookDownstream(node);
     } else {
-      // Normal click: Toggle cook, but clear other cooking nodes first
+      // Normal click: Always clear other cooking nodes first (unless shift+click)
       if (node.cooking) {
         // If already cooking, turn it off
         node.setCooking(false);
         graph.multiCookMode = false;
       } else {
-        // Clear other cooking nodes (unless in multi-cook mode)
-        if (!graph.multiCookMode) {
-          graph.clearCookingNodes();
-        }
+        // Clear all other cooking nodes, then set this one to cooking
+        graph.clearCookingNodes();
         node.setCooking(true);
+        graph.multiCookMode = false;
       }
     }
     
@@ -625,7 +820,9 @@ const output = node.out('output');
       return;
     }
     
-    if (activeTool === 'select' && !(e.target as HTMLElement).closest('.node')) {
+    // Don't clear selection if we just finished a drag selection
+    // (the click event fires after mouseup, so we need to check if we just completed a selection)
+    if (activeTool === 'select' && !(e.target as HTMLElement).closest('.node') && !justCompletedSelection) {
       selectedNodes = [];
       selectedNode = null;
       selectedAnnotation = null;
@@ -634,8 +831,8 @@ const output = node.out('output');
     } else if (['text', 'image', 'group'].includes(activeTool)) {
       // Create annotation
       const rect = canvas.getBoundingClientRect();
-      const x = (e.clientX - rect.left - transform.x) / transform.zoom;
-      const y = (e.clientY - rect.top - transform.y) / transform.zoom;
+      const x = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+      const y = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
       
       createAnnotation(activeTool, x, y);
       // Reset to select tool after creating
@@ -685,6 +882,7 @@ const output = node.out('output');
       // Start editing immediately
       editingAnnotation = id;
       setTimeout(() => {
+        if (!canvas) return;
         const el = canvas.querySelector(`[data-annotation-id="${id}"]`) as HTMLElement;
         if (el) {
           const input = el.querySelector('input, textarea') as HTMLInputElement;
@@ -719,6 +917,7 @@ const output = node.out('output');
       // Start editing immediately
       editingAnnotation = id;
       setTimeout(() => {
+        if (!canvas) return;
         const el = canvas.querySelector(`[data-annotation-id="${id}"]`) as HTMLElement;
         if (el) {
           const input = el.querySelector('input, textarea') as HTMLInputElement;
@@ -756,8 +955,8 @@ const output = node.out('output');
         selectedNodes = [];
         
         const rect = canvas.getBoundingClientRect();
-        const mouseX = (e.clientX - rect.left - transform.x) / transform.zoom;
-        const mouseY = (e.clientY - rect.top - transform.y) / transform.zoom;
+        const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+        const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
         
         const offset = {
           x: mouseX - annotation.position.x,
@@ -794,8 +993,8 @@ const output = node.out('output');
     if (!annotation) return;
     
     const rect = canvas.getBoundingClientRect();
-    const localX = (e.clientX - rect.left - transform.x) / transform.zoom - annotation.position.x;
-    const localY = (e.clientY - rect.top - transform.y) / transform.zoom - annotation.position.y;
+    const localX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom - annotation.position.x;
+    const localY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom - annotation.position.y;
     
     const edgeThreshold = 8;
     const isNearLeft = localX < edgeThreshold;
@@ -824,8 +1023,8 @@ const output = node.out('output');
     
     
     const rect = canvas.getBoundingClientRect();
-    const mouseX = (e.clientX - rect.left - transform.x) / transform.zoom;
-    const mouseY = (e.clientY - rect.top - transform.y) / transform.zoom;
+    const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+    const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
     
     const annotation = graph.getAnnotation(annotationId);
     if (!annotation) return;
@@ -877,6 +1076,85 @@ const output = node.out('output');
       editingAnnotation = null;
     }
   }
+
+  async function handleCut() {
+    const target = document.activeElement as HTMLElement;
+    // Don't cut if focus is in an input or textarea
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+      return;
+    }
+
+    const nodesToCut: Node[] = [];
+    const annotationsToCut: CanvasAnnotation[] = [];
+    
+    // Collect selected nodes
+    if (selectedNodes.length > 0) {
+      selectedNodes.forEach(nodeId => {
+        const node = graph.getNode(nodeId);
+        if (node) {
+          nodesToCut.push(node);
+        }
+      });
+    }
+    
+    // Collect selected annotation
+    if (selectedAnnotation) {
+      const annotation = graph.getAnnotation(selectedAnnotation);
+      if (annotation) {
+        annotationsToCut.push(annotation);
+      }
+    }
+    
+    // If nothing is selected, return
+    if (nodesToCut.length === 0 && annotationsToCut.length === 0) {
+      return;
+    }
+    
+    // Serialize nodes with their properties
+    const nodeData = nodesToCut.map(node => node.toJSON());
+    
+    // Get connections between selected nodes only
+    const selectedNodeIds = new Set(nodesToCut.map(n => n.id));
+    const connectionsToCut = graph.connections.filter(conn => {
+      return selectedNodeIds.has(conn.from.nodeId) && selectedNodeIds.has(conn.to.nodeId);
+    });
+    
+    // Create clipboard data
+    const clipboardData = {
+      type: 'cascade/cut',
+      nodes: nodeData,
+      connections: connectionsToCut,
+      annotations: annotationsToCut
+    };
+    
+    try {
+      // Store in clipboard
+      await navigator.clipboard.writeText(JSON.stringify(clipboardData));
+      
+      // Remove nodes from graph
+      nodesToCut.forEach(node => {
+        graph.removeNode(node.id);
+      });
+      
+      // Remove annotations from graph
+      annotationsToCut.forEach(annotation => {
+        graph.removeAnnotation(annotation.id);
+      });
+      
+      // Update graph reactivity
+      graph.nodes = [...graph.nodes];
+      graph.annotations = [...graph.annotations];
+      
+      // Clear selection
+      selectedNodes = [];
+      selectedNode = null;
+      selectedAnnotation = null;
+      dispatch('nodeSelect', { node: null });
+      dispatch('annotationSelect', { annotationId: null });
+    } catch (err) {
+      console.error('Failed to cut to clipboard:', err);
+    }
+  }
   
   function handleAnnotationContentChange(annotationId: string, content: string) {
     const annotation = graph.getAnnotation(annotationId);
@@ -919,8 +1197,8 @@ const output = node.out('output');
     if (files.length === 0) return;
     
     const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left - transform.x) / transform.zoom;
-    const y = (e.clientY - rect.top - transform.y) / transform.zoom;
+    const x = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+    const y = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
     
     files.forEach(async (file) => {
       // Check if it's an image
@@ -979,7 +1257,7 @@ const output = node.out('output');
     }
   }
   
-  export function handleAddNode(detail: { type: string; category: string | null }) {
+  export async function handleAddNode(detail: { type: string; category: string | null }) {
     const nodeType = detail.type;
     const rect = canvas.getBoundingClientRect();
     
@@ -988,9 +1266,9 @@ const output = node.out('output');
     const viewportCenterY = rect.height / 2;
     
     // Convert screen coordinates to canvas coordinates
-    // Account for pan (transform.x, transform.y) and zoom (transform.zoom)
-    let centerX = (viewportCenterX - transform.x) / transform.zoom;
-    let centerY = (viewportCenterY - transform.y) / transform.zoom;
+    // Account for pan (internalTransform.x, internalTransform.y) and zoom (internalTransform.zoom)
+    let centerX = (viewportCenterX - internalTransform.x) / internalTransform.zoom;
+    let centerY = (viewportCenterY - internalTransform.y) / internalTransform.zoom;
     
     // Check if there's a node at this position (with tolerance)
     const tolerance = 50; // pixels
@@ -1007,25 +1285,125 @@ const output = node.out('output');
     }
     
     const newNode = graph.addNode(nodeType, { x: centerX, y: centerY });
+    
+    // Get default code template and initialize the node
+    const defaultCode = getDefaultNodeCode(nodeType);
+    if (defaultCode) {
+      newNode.code = defaultCode;
+      
+      // Compile and execute the node code to initialize props and ports
+      try {
+        newNode.resetPortTracking();
+        const wrappedCode = `return (async function(node, graph) {\n${defaultCode}\n})(node, graph);`;
+        const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
+        newNode.setFunction(nodeFunction);
+        
+        // Ensure node can execute (not bypassed and temporarily cooking)
+        // This is necessary because shouldExecute() checks if node is cooking when there are other cooking nodes
+        const wasBypassed = newNode.bypassed;
+        const wasCooking = newNode.cooking;
+        if (wasBypassed) {
+          newNode.setBypassed(false);
+        }
+        // Temporarily set cooking to ensure execution happens during initialization
+        if (!wasCooking) {
+          newNode.setCooking(true);
+        }
+        
+        // Execute the node code to define props
+        console.log(`Executing node ${nodeType}, props before:`, Object.keys(newNode.props).length);
+        await newNode.execute();
+        console.log(`Node ${nodeType} executed, props after:`, Object.keys(newNode.props).length, Object.keys(newNode.props));
+        if (newNode.error) {
+          console.error(`Node ${nodeType} execution error:`, newNode.error);
+        }
+        
+        // Restore bypass and cooking state
+        if (wasBypassed) {
+          newNode.setBypassed(true);
+        }
+        if (!wasCooking) {
+          newNode.setCooking(false);
+        }
+        
+        newNode.cleanupUnusedPorts();
+        
+        // Force reactivity for inputs/outputs and props
+        newNode.inputs = [...newNode.inputs];
+        newNode.outputs = [...newNode.outputs];
+        
+        // Force reactivity on props by creating a new object reference
+        // This must happen BEFORE selecting the node so inspector sees the props
+        // Create a completely new props object to ensure Svelte detects the change
+        const newProps = { ...newNode.props };
+        newNode.props = newProps;
+        newNode.markDirty();
+        
+        // Log for debugging
+        console.log(`Node ${nodeType} initialized with ${Object.keys(newProps).length} props:`, Object.keys(newProps));
+        if (Object.keys(newProps).length === 0) {
+          console.warn(`Warning: Node ${nodeType} has no props after execution.`);
+          console.warn('Code snippet:', defaultCode.substring(0, 300));
+          if (newNode.error) {
+            console.error('Node execution error:', newNode.error);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to initialize node:', err);
+        newNode.error = err as Error;
+      }
+    }
+    
     graph.nodes = [...graph.nodes];
     
     // Pan canvas to center on the new node
     // Convert node position to screen coordinates
-    const nodeScreenX = centerX * transform.zoom + transform.x;
-    const nodeScreenY = centerY * transform.zoom + transform.y;
+    const nodeScreenX = centerX * internalTransform.zoom + internalTransform.x;
+    const nodeScreenY = centerY * internalTransform.zoom + internalTransform.y;
     
     // Calculate how much to pan to center the node
     const panX = viewportCenterX - nodeScreenX;
     const panY = viewportCenterY - nodeScreenY;
     
-    transform.x += panX;
-    transform.y += panY;
-    transform = transform; // Trigger reactivity
+    internalTransform.x += panX;
+    internalTransform.y += panY;
+    internalTransform = { ...internalTransform }; // Trigger reactivity
     
-    // Select the new node
+    // Wait a tick to ensure props are fully initialized before selecting
+    await tick();
+    
+    // Select the new node - do this AFTER tick to ensure props are visible
     selectedNodes = [newNode.id];
     selectedNode = newNode;
     dispatch('nodeSelect', { node: newNode });
+  }
+  
+  // Helper function to get default node code template
+  function getDefaultNodeCode(type: string): string {
+    // Check Lens library templates first
+    const lensTemplate = getLensNodeTemplate(type);
+    if (lensTemplate) {
+      return lensTemplate;
+    }
+    
+    // Default template
+    return `// ${type} node
+const trigger = node.in('trigger', null, { type: 'trigger' });
+const output = node.out('output');
+
+// Handle triggers
+if (trigger) {
+  trigger.onTrigger = () => {
+    // Your code here
+    output.setValue('Hello World');
+  };
+}
+
+// Lifecycle
+node.onReady = () => {
+  console.log('Node ready');
+};
+`;
   }
   
   // Update selectedNodes when selectedNode changes externally (but avoid cycles)
@@ -1186,7 +1564,7 @@ const output = node.out('output');
     const newZoom = Math.min(zoomX, zoomY, 1); // Don't zoom in more than 1x
 
     // Set zoom
-    transform.zoom = newZoom;
+    internalTransform.zoom = newZoom;
 
     // Calculate pan to center the content
     // Center of viewport in canvas coordinates
@@ -1198,21 +1576,28 @@ const output = node.out('output');
     const contentCenterScreenY = centerY * newZoom;
 
     // Calculate pan to center
-    transform.x = viewportCenterX - contentCenterScreenX;
-    transform.y = viewportCenterY - contentCenterScreenY;
+    internalTransform.x = viewportCenterX - contentCenterScreenX;
+    internalTransform.y = viewportCenterY - contentCenterScreenY;
 
     // Trigger reactivity
-    transform = transform;
+    internalTransform = { ...internalTransform };
   }
   
   function handleContextMenu(e: MouseEvent) {
-    // Prevent context menu on middle mouse button
-    if (e.button === 1) {
-      e.preventDefault();
+    // Prevent default context menu
+    e.preventDefault();
+    
+    // Don't open panel if right-clicking on a node or annotation
+    if ((e.target as HTMLElement).closest('.node, .annotation')) {
+      return;
     }
+    
+    // Open node panel at mouse position
+    dispatch('openNodePanel', { x: e.clientX, y: e.clientY });
   }
   
   function getPortElement(nodeId: string, portId: string): HTMLElement | null {
+    if (!canvas) return null;
     return canvas.querySelector(`[data-node-id="${nodeId}"][data-port-id="${portId}"]`) as HTMLElement;
   }
   
@@ -1262,15 +1647,15 @@ const output = node.out('output');
     if (dotElement) {
       const dotRect = dotElement.getBoundingClientRect();
       return {
-        x: (dotRect.left + dotRect.width / 2 - canvasRect.left - transform.x) / transform.zoom,
-        y: (dotRect.top + dotRect.height / 2 - canvasRect.top - transform.y) / transform.zoom
+        x: (dotRect.left + dotRect.width / 2 - canvasRect.left - internalTransform.x) / internalTransform.zoom,
+        y: (dotRect.top + dotRect.height / 2 - canvasRect.top - internalTransform.y) / internalTransform.zoom
       };
     }
     
     // Fallback if dot element not found - use port element center
     return {
-      x: (rect.left + rect.width / 2 - canvasRect.left - transform.x) / transform.zoom,
-      y: (rect.top + rect.height / 2 - canvasRect.top - transform.y) / transform.zoom
+      x: (rect.left + rect.width / 2 - canvasRect.left - internalTransform.x) / internalTransform.zoom,
+      y: (rect.top + rect.height / 2 - canvasRect.top - internalTransform.y) / internalTransform.zoom
     };
   }
   
@@ -1315,8 +1700,8 @@ const output = node.out('output');
           connectingPosition = pos;
           const rect = canvas.getBoundingClientRect();
           mousePosition = {
-            x: (e.clientX - rect.left - transform.x) / transform.zoom,
-            y: (e.clientY - rect.top - transform.y) / transform.zoom
+            x: (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom,
+            y: (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom
           };
         }
       }
@@ -1334,7 +1719,7 @@ const output = node.out('output');
     // Calculate zoom delta from vertical scroll, with horizontal scroll as fallback
     const zoomDelta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
     const delta = zoomDelta * -0.005;
-    const oldZoom = transform.zoom;
+    const oldZoom = internalTransform.zoom;
     const newZoom = Math.max(0.1, Math.min(2, oldZoom + delta));
     
     // Zoom from the center of all nodes
@@ -1342,12 +1727,12 @@ const output = node.out('output');
     if (center) {
       // Calculate how much to adjust transform to keep the center point fixed
       // Formula: newTransform.x = oldTransform.x + centerX * (oldZoom - newZoom)
-      transform.x = transform.x + center.x * (oldZoom - newZoom);
-      transform.y = transform.y + center.y * (oldZoom - newZoom);
+      internalTransform.x = internalTransform.x + center.x * (oldZoom - newZoom);
+      internalTransform.y = internalTransform.y + center.y * (oldZoom - newZoom);
     }
     
-    transform.zoom = newZoom;
-    transform = transform;
+    internalTransform.zoom = newZoom;
+    internalTransform = { ...internalTransform };
   }
   
   function handleTouchStart(e: TouchEvent) {
@@ -1378,9 +1763,9 @@ const output = node.out('output');
       const deltaX = centerX - touchPanStart.x;
       const deltaY = centerY - touchPanStart.y;
       
-      transform.x += deltaX;
-      transform.y += deltaY;
-      transform = transform;
+      internalTransform.x += deltaX;
+      internalTransform.y += deltaY;
+      internalTransform = { ...internalTransform };
       
       // Update start position for next move
       touchPanStart.x = centerX;
@@ -1431,9 +1816,9 @@ const output = node.out('output');
         const deltaX = centerX - pointerPanStart.x;
         const deltaY = centerY - pointerPanStart.y;
         
-        transform.x += deltaX;
-        transform.y += deltaY;
-        transform = transform;
+        internalTransform.x += deltaX;
+        internalTransform.y += deltaY;
+        internalTransform = { ...internalTransform };
         
         pointerPanStart.x = centerX;
         pointerPanStart.y = centerY;
@@ -1461,33 +1846,33 @@ const output = node.out('output');
     // ⌘+ / ⌘- - Zoom in/out
     if ((e.metaKey || e.ctrlKey) && (e.key === '+' || e.key === '=')) {
       e.preventDefault();
-      const oldZoom = transform.zoom;
+      const oldZoom = internalTransform.zoom;
       const newZoom = Math.min(2, oldZoom + 0.1);
       
       // Zoom from the center of all nodes
       const center = getNodesCenter();
       if (center) {
-        transform.x = transform.x + center.x * (oldZoom - newZoom);
-        transform.y = transform.y + center.y * (oldZoom - newZoom);
+        internalTransform.x = internalTransform.x + center.x * (oldZoom - newZoom);
+        internalTransform.y = internalTransform.y + center.y * (oldZoom - newZoom);
       }
       
-      transform.zoom = newZoom;
-      transform = transform;
+      internalTransform.zoom = newZoom;
+      internalTransform = { ...internalTransform };
     }
     if ((e.metaKey || e.ctrlKey) && e.key === '-') {
       e.preventDefault();
-      const oldZoom = transform.zoom;
+      const oldZoom = internalTransform.zoom;
       const newZoom = Math.max(0.1, oldZoom - 0.1);
       
       // Zoom from the center of all nodes
       const center = getNodesCenter();
       if (center) {
-        transform.x = transform.x + center.x * (oldZoom - newZoom);
-        transform.y = transform.y + center.y * (oldZoom - newZoom);
+        internalTransform.x = internalTransform.x + center.x * (oldZoom - newZoom);
+        internalTransform.y = internalTransform.y + center.y * (oldZoom - newZoom);
       }
       
-      transform.zoom = newZoom;
-      transform = transform;
+      internalTransform.zoom = newZoom;
+      internalTransform = { ...internalTransform };
     }
     
     // ⌘0 - Zoom out to fit all nodes and annotations
@@ -1529,6 +1914,15 @@ const output = node.out('output');
           e.preventDefault();
           handleAnnotationDelete(selectedAnnotation);
         }
+      }
+    }
+    
+    // ⌘X - Cut selected nodes or annotations
+    if ((e.metaKey || e.ctrlKey) && e.key === 'x') {
+      const target = e.target as HTMLElement;
+      if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        handleCut();
       }
     }
     
@@ -1639,7 +2033,7 @@ const output = node.out('output');
   <!-- Connections layer -->
   <svg 
     class="connections-layer"
-    style="transform: translate({transform.x}px, {transform.y}px) scale({transform.zoom})"
+    style="transform: translate({internalTransform.x}px, {internalTransform.y}px) scale({internalTransform.zoom})"
   >
     <!-- Existing connections -->
     {#each connections as conn (conn.id)}
@@ -1685,7 +2079,7 @@ const output = node.out('output');
   <!-- Annotations Layer (v1.3) -->
   <div 
     class="annotations-container"
-    style="transform: translate({transform.x}px, {transform.y}px) scale({transform.zoom})"
+    style="transform: translate({internalTransform.x}px, {internalTransform.y}px) scale({internalTransform.zoom})"
   >
     {#each annotations as annotation (annotation.id)}
       {@const isEditing = editingAnnotation === annotation.id}
@@ -1949,7 +2343,7 @@ const output = node.out('output');
   <!-- Nodes -->
   <div 
     class="nodes-container"
-    style="transform: translate({transform.x}px, {transform.y}px) scale({transform.zoom})"
+    style="transform: translate({internalTransform.x}px, {internalTransform.y}px) scale({internalTransform.zoom})"
   >
     {#each nodes as node (node.id)}
       <NodeUI 

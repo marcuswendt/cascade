@@ -264,6 +264,13 @@
       // Tool shortcuts
       const toolTarget = e.target as HTMLElement;
       if (toolTarget.tagName !== 'INPUT' && toolTarget.tagName !== 'TEXTAREA') {
+        // V - Select tool
+        if (e.key === 'v' || e.key === 'V') {
+          if (!e.metaKey && !e.ctrlKey) {
+            activeTool = 'select';
+          }
+        }
+        
         // H - Center canvas on home position (same as cmd-0)
         if ((e.key === 'h' || e.key === 'H') && !e.metaKey && !e.ctrlKey && !e.altKey) {
           e.preventDefault();
@@ -434,7 +441,17 @@
               };
               cookDownstream(selectedNode);
             } else {
-              selectedNode.setCooking(!selectedNode.cooking);
+              // Normal C: Always clear other cooking nodes first, then toggle this one
+              if (selectedNode.cooking) {
+                // If already cooking, turn it off
+                selectedNode.setCooking(false);
+                graph.multiCookMode = false;
+              } else {
+                // Clear all other cooking nodes, then set this one to cooking
+                graph.clearCookingNodes();
+                selectedNode.setCooking(true);
+                graph.multiCookMode = false;
+              }
             }
           }
         }

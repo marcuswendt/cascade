@@ -121,16 +121,6 @@
   on:mouseleave={handleMouseUp}
   on:dblclick={handleDoubleClick}
 >
-  <!-- Bypass indicator (yellow band on left) -->
-  {#if isBypassed}
-    <div class="bypass-indicator"></div>
-  {/if}
-  
-  <!-- Cook indicator (blue band on right) -->
-  {#if isCooking}
-    <div class="cook-indicator" class:pulsing={node.cookAnimation}></div>
-  {/if}
-  
   <div class="node-container">
     <div class="node-content">
       <!-- Input ports (top) -->
@@ -425,41 +415,6 @@
     color: white;
     font-size: 10px;
     border-radius: 2px;
-  }
-  
-  .bypass-indicator {
-    position: absolute;
-    left: -4px;
-    top: 0;
-    bottom: 0;
-    width: 4px;
-    background: #ffd700;
-    border-radius: 2px 0 0 2px;
-    z-index: 10;
-  }
-  
-  .cook-indicator {
-    position: absolute;
-    right: -4px;
-    top: 0;
-    bottom: 0;
-    width: 4px;
-    background: #4a9eff;
-    border-radius: 0 2px 2px 0;
-    z-index: 10;
-  }
-  
-  .cook-indicator.pulsing {
-    animation: cookPulse 1s ease-in-out infinite;
-  }
-  
-  @keyframes cookPulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
   }
   
   .port-tooltip {

@@ -37,7 +37,11 @@
     MoveUpLeft: icons.MoveUpLeft,
     Hand: icons.Hand,
     Waves: icons.Waves,
-    ChevronDown: icons.ChevronDown
+    ChevronDown: icons.ChevronDown,
+    View: icons.Eye,
+    SlidersHorizontal: icons.SlidersHorizontal,
+    GitGraph: icons.GitBranch,
+    Logs: icons.Terminal
   };
   
   $: IconComponent = iconMap[name] || icons.Settings;

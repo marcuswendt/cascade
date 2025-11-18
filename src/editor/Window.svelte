@@ -1,7 +1,9 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import Icon from './Icon.svelte';
   
   export let title: string;
+  export let icon: string | null = null;
   export let minimized: boolean = false;
   export let windowId: string;
   export let showTabs: boolean = false;
@@ -38,7 +40,14 @@
         <slot name="tabs" />
       </div>
     {:else}
-      <span class="title">{title}</span>
+      <span class="title">
+        {#if icon}
+          <span class="title-icon">
+            <Icon name={icon} size={14} />
+          </span>
+        {/if}
+        {title}
+      </span>
     {/if}
     <div class="title-actions">
       <slot name="actions" />
@@ -105,6 +114,15 @@
     font-weight: 600;
     color: #fff;
     user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  
+  .title-icon {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
   }
   
   .tabs-slot {

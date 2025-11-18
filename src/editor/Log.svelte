@@ -101,16 +101,6 @@
     }
   }
   
-  function formatTime(date: Date): string {
-    return date.toLocaleTimeString('en-US', { 
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      fractionalSecondDigits: 3
-    });
-  }
-  
   onMount(() => {
     // Store original console methods
     originalConsole = {
@@ -157,7 +147,6 @@
     {#if logEntries.length > 0}
       {#each logEntries as entry (entry.id)}
         <div class="log-entry" class:error={entry.level === 'error'} class:warn={entry.level === 'warn'}>
-          <span class="log-time">{formatTime(entry.timestamp)}</span>
           {#if entry.source}
             <span class="log-source">[{entry.source}]</span>
           {/if}
@@ -216,12 +205,6 @@
   
   .log-entry:last-child {
     border-bottom: none;
-  }
-  
-  .log-time {
-    color: #666;
-    flex-shrink: 0;
-    font-size: 10px;
   }
   
   .log-source {

@@ -1,4 +1,6 @@
 // Node structure: Library > Category > Nodes
+import { lensLibrary } from '@/nodes/lens';
+
 export interface NodeTemplate {
   name: string;
   icon: string;
@@ -60,29 +62,7 @@ export const nodeLibraries: Library[] = [
       }
     ]
   },
-  {
-    id: 'lens',
-    label: 'Lens',
-    icon: 'Palette',
-    categories: [
-      {
-        id: 'filters',
-        label: 'Filters',
-        nodes: [
-          { name: 'Blur', icon: 'Droplets', description: 'Gaussian blur', type: 'Blur' },
-          { name: 'Brightness', icon: 'Sun', description: 'Adjust brightness', type: 'Brightness' },
-          { name: 'Contrast', icon: 'Sliders', description: 'Adjust contrast', type: 'Contrast' }
-        ]
-      },
-      {
-        id: 'import',
-        label: 'Import',
-        nodes: [
-          { name: 'Image Loader', icon: 'Camera', description: 'Load images from assets', type: 'ImageLoader' }
-        ]
-      }
-    ]
-  },
+  lensLibrary,
   {
     id: 'echo',
     label: 'Echo',
