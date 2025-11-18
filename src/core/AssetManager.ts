@@ -10,7 +10,7 @@ export interface Asset {
 }
 
 export class AssetManager {
-  private cache = new Map<string, Asset>();
+  cache = new Map<string, Asset>(); // Made public for drag-drop access
   private projectRoot: string;
   
   constructor(projectRoot: string = '') {

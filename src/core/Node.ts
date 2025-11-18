@@ -1,4 +1,4 @@
-import type { NodeContext, InputPort, OutputPort, PortOptions, PortType, Connection } from '@/types/node.types';
+import type { NodeContext, InputPort, OutputPort, PortOptions, PortType, Connection, Prop } from '@/types/node.types';
 import type { Graph } from './Graph';
 
 export class Node implements NodeContext {
@@ -16,6 +16,16 @@ export class Node implements NodeContext {
   
   inputs: InputPort[] = [];
   outputs: OutputPort[] = [];
+  
+  // Props System (v1.1)
+  props: Record<string, Prop> = {};
+  private propWatchers: Map<string, Function[]> = new Map();
+  
+  // Behavior Toggles (v1.2)
+  bypassed: boolean = false;
+  cooking: boolean = false;
+  bypassOpacity: number = 1.0;
+  cookAnimation: boolean = false;
   
   onReady?: () => void;
   onDestroy?: () => void;
@@ -98,7 +108,103 @@ export class Node implements NodeContext {
     this.nodeFunction = fn;
   }
   
+  // Props System Methods (v1.1)
+  defineProp<T>(name: string, config: Prop<T>): void {
+    this.props[name] = config as Prop;
+  }
+  
+  updateProp(name: string, value: any): void {
+    if (this.props[name]) {
+      this.props[name].value = value;
+      
+      // Call onChange callback
+      if (this.props[name].onChange) {
+        try {
+          this.props[name].onChange!(this.props[name], this);
+        } catch (err) {
+          console.error(`Error in prop onChange for ${name}:`, err);
+        }
+      }
+      
+      // Notify watchers
+      const watchers = this.propWatchers.get(name);
+      if (watchers) {
+        watchers.forEach(callback => {
+          try {
+            callback(value, this.props[name]);
+          } catch (err) {
+            console.error(`Error in prop watcher for ${name}:`, err);
+          }
+        });
+      }
+      
+      this.markDirty();
+    }
+  }
+  
+  watchProp(name: string, callback: Function): void {
+    if (!this.propWatchers.has(name)) {
+      this.propWatchers.set(name, []);
+    }
+    this.propWatchers.get(name)!.push(callback);
+  }
+  
+  // Behavior Toggle Methods (v1.2)
+  setBypassed(value: boolean): void {
+    this.bypassed = value;
+    this.bypassOpacity = value ? 0.5 : 1.0;
+    this.markDirty();
+  }
+  
+  setCooking(value: boolean): void {
+    this.cooking = value;
+    this.cookAnimation = value;
+    if (value) {
+      this.graph.cookingNodes.add(this);
+    } else {
+      this.graph.cookingNodes.delete(this);
+    }
+    this.markDirty();
+  }
+  
+  shouldExecute(): boolean {
+    if (this.bypassed) {
+      return false;
+    }
+    if (this.graph.cookingNodes.size > 0) {
+      return this.cooking || this.graph.isDownstreamOfCooking(this);
+    }
+    return true;
+  }
+  
+  executeBypass(): void {
+    // Pass inputs to outputs without executing
+    this.inputs.forEach(input => {
+      if (input.portType === 'param') {
+        const value = input.value;
+        // Find matching output port and set its value
+        const matchingOutput = this.outputs.find(out => {
+          // Try to match by name or find first available
+          return out.name === input.name || this.outputs.length === 1;
+        });
+        if (matchingOutput) {
+          matchingOutput.setValue(value);
+        }
+      }
+    });
+  }
+  
+  markDirty(): void {
+    this.isDirty = true;
+  }
+  
   async execute() {
+    // Check if should execute
+    if (!this.shouldExecute()) {
+      this.executeBypass();
+      return;
+    }
+    
     if (this.nodeFunction) {
       try {
         await this.nodeFunction(this, this.graph);
@@ -139,24 +245,47 @@ export class Node implements NodeContext {
         name: p.name,
         value: p.value,
         connections: p.connections.map(c => c.id)
-      }))
+      })),
+      props: Object.entries(this.props).reduce((acc, [key, prop]) => {
+        acc[key] = prop.value;
+        return acc;
+      }, {} as Record<string, any>),
+      bypassed: this.bypassed,
+      cooking: this.cooking
     };
   }
   
   restoreState(state: any) {
-    state.inputs.forEach((saved: any) => {
+    state.inputs?.forEach((saved: any) => {
       const port = this.inputs.find(p => p.id === saved.id);
       if (port) {
         port.value = saved.value;
       }
     });
     
-    state.outputs.forEach((saved: any) => {
+    state.outputs?.forEach((saved: any) => {
       const port = this.outputs.find(p => p.id === saved.id);
       if (port) {
         port.value = saved.value;
       }
     });
+    
+    // Restore props
+    if (state.props) {
+      Object.entries(state.props).forEach(([key, value]: [string, any]) => {
+        if (this.props[key]) {
+          this.props[key].value = value;
+        }
+      });
+    }
+    
+    // Restore behavior toggles
+    if (state.bypassed !== undefined) {
+      this.setBypassed(state.bypassed);
+    }
+    if (state.cooking !== undefined) {
+      this.setCooking(state.cooking);
+    }
   }
   
   toJSON() {
@@ -166,7 +295,13 @@ export class Node implements NodeContext {
       type: this.type,
       code: this.code,
       position: this.position,
-      comment: this.comment
+      comment: this.comment,
+      props: Object.entries(this.props).reduce((acc, [key, prop]) => {
+        acc[key] = prop.value;
+        return acc;
+      }, {} as Record<string, any>),
+      bypassed: this.bypassed,
+      cooking: this.cooking
     };
   }
 }

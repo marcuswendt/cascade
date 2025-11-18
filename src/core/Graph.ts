@@ -3,12 +3,43 @@ import { AssetManager } from './AssetManager';
 import { PackageManager } from './PackageManager';
 import type { Connection } from '@/types/node.types';
 
+export interface CanvasAnnotation {
+  id: string;
+  type: 'text' | 'image' | 'group' | 'line' | 'polyline';
+  content?: string;
+  src?: string;
+  position: { x: number; y: number };
+  size?: { width: number; height: number };
+  points?: { x: number; y: number }[]; // For polyline
+  endPosition?: { x: number; y: number }; // For line
+  style?: {
+    fontSize?: number;
+    fontWeight?: 'normal' | 'bold' | '600' | '700';
+    fontStyle?: 'normal' | 'italic';
+    textAlign?: 'left' | 'center' | 'right';
+    color?: string;
+    backgroundColor?: string;
+    padding?: number;
+    borderRadius?: number;
+    borderLeft?: string;
+    strokeWidth?: number;
+    strokeColor?: string;
+  };
+  caption?: string;
+  containedElements?: string[];
+}
+
 export class Graph {
   nodes: Node[] = [];
   connections: Connection[] = [];
+  annotations: CanvasAnnotation[] = [];
   packageManager: PackageManager;
   assetManager: AssetManager;
   sceneContainer: HTMLElement;
+  
+  // Execution Control (v1.2)
+  cookingNodes: Set<Node> = new Set();
+  multiCookMode: boolean = false;
   
   constructor() {
     this.sceneContainer = document.createElement('div');
@@ -91,23 +122,147 @@ export class Graph {
   
   execute(entryNode?: Node) {
     if (entryNode) {
-      entryNode.execute();
+      this.executeUpstream(entryNode);
     } else {
       // Execute all nodes with no input connections
       this.nodes.forEach(node => {
         if (node.inputs.every(p => p.connections.length === 0)) {
-          node.execute();
+          this.executeUpstream(node);
         }
       });
     }
   }
   
+  executeUpstream(node: Node) {
+    // Execute all upstream nodes first
+    node.inputs.forEach(input => {
+      input.connections.forEach(conn => {
+        const upstreamNode = this.getNode(conn.from.nodeId);
+        if (upstreamNode) {
+          this.executeUpstream(upstreamNode);
+        }
+      });
+    });
+    
+    // Then execute this node
+    node.execute();
+  }
+  
+  stop() {
+    // Stop all execution (for future use with timers/intervals)
+    this.nodes.forEach(node => {
+      if (node.onDestroy) {
+        // Could be enhanced to stop specific operations
+      }
+    });
+  }
+  
+  reset() {
+    // Reset all node states
+    this.nodes.forEach(node => {
+      node.error = null;
+      node.warning = null;
+      node.isDirty = false;
+    });
+    this.cookingNodes.clear();
+    this.multiCookMode = false;
+  }
+  
+  // Behavior Control (v1.2)
+  clearCookingNodes(except?: Node): void {
+    if (except) {
+      this.cookingNodes.forEach(node => {
+        if (node !== except) {
+          node.setCooking(false);
+        }
+      });
+    } else {
+      this.cookingNodes.forEach(node => {
+        node.setCooking(false);
+      });
+    }
+  }
+  
+  isDownstreamOfCooking(node: Node): boolean {
+    // Check if node is downstream of any cooking node
+    const visited = new Set<string>();
+    
+    const checkUpstream = (n: Node): boolean => {
+      if (visited.has(n.id)) return false;
+      visited.add(n.id);
+      
+      if (this.cookingNodes.has(n)) {
+        return true;
+      }
+      
+      // Check all upstream nodes
+      for (const input of n.inputs) {
+        for (const conn of input.connections) {
+          const upstreamNode = this.getNode(conn.from.nodeId);
+          if (upstreamNode && checkUpstream(upstreamNode)) {
+            return true;
+          }
+        }
+      }
+      
+      return false;
+    };
+    
+    return checkUpstream(node);
+  }
+  
+  // Annotation Management (v1.3)
+  addAnnotation(annotation: CanvasAnnotation): void {
+    this.annotations.push(annotation);
+  }
+  
+  removeAnnotation(id: string): void {
+    const index = this.annotations.findIndex(a => a.id === id);
+    if (index >= 0) {
+      this.annotations.splice(index, 1);
+    }
+  }
+  
+  getAnnotation(id: string): CanvasAnnotation | null {
+    return this.annotations.find(a => a.id === id) || null;
+  }
+  
   toJSON() {
+    // Get entry points (nodes with no input connections)
+    const entryPoints = this.nodes
+      .filter(node => node.inputs.every(p => p.connections.length === 0))
+      .map(node => node.id);
+    
+    // Get cooking node IDs
+    const cookingNodeIds = Array.from(this.cookingNodes).map(n => n.id);
+    
     return {
-      version: '1.0.0',
+      version: '1.3.0',
+      metadata: {
+        name: 'Cascade Graph',
+        created: new Date().toISOString(),
+        modified: new Date().toISOString()
+      },
+      packages: this.packageManager.getCachedPackages().map((pkg: string) => {
+        const [name, version] = pkg.split('@');
+        return { name, version: version || 'latest' };
+      }),
+      assets: {
+        manifest: this.assetManager.list().map(asset => ({
+          id: asset.id,
+          path: asset.path,
+          type: asset.type,
+          size: asset.size
+        }))
+      },
       nodes: this.nodes.map(n => n.toJSON()),
       connections: this.connections,
-      packages: this.packageManager.getCachedPackages()
+      annotations: this.annotations,
+      execution: {
+        entryPoints,
+        cookingNodes: cookingNodeIds,
+        autoStart: false
+      }
     };
   }
 
@@ -127,6 +282,27 @@ export class Graph {
       node.name = nodeData.name || nodeData.type;
       node.code = nodeData.code || '';
       node.comment = nodeData.comment || '';
+      
+      // Restore props
+      if (nodeData.props) {
+        Object.entries(nodeData.props).forEach(([key, value]: [string, any]) => {
+          // Props will be defined when node code executes
+          // For now, we store the values to restore later
+          if (!node.props[key]) {
+            node.props[key] = { value } as any;
+          } else {
+            node.props[key].value = value;
+          }
+        });
+      }
+      
+      // Restore behavior toggles
+      if (nodeData.bypassed !== undefined) {
+        node.setBypassed(nodeData.bypassed);
+      }
+      if (nodeData.cooking !== undefined) {
+        node.setCooking(nodeData.cooking);
+      }
       
       // Restore node function if code exists
       if (node.code) {
@@ -154,6 +330,11 @@ export class Graph {
         }
       }
     });
+    
+    // Restore annotations
+    if (json.annotations && Array.isArray(json.annotations)) {
+      graph.annotations = json.annotations;
+    }
     
     return graph;
   }

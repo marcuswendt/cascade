@@ -2,9 +2,10 @@
   import { createEventDispatcher } from 'svelte';
   import { getAvailableLibraries } from './nodeTemplates';
   import Icon from './Icon.svelte';
-  import { MoveUpLeft, Hand } from 'lucide-svelte';
+  import { MoveUpLeft, Hand, Type, Image, StickyNote, Folder, Minus, PenTool } from 'lucide-svelte';
   
   export let activeLibrary: string | null = null;
+  export let activeTool = 'select';
   
   const dispatch = createEventDispatcher();
   
@@ -16,7 +17,13 @@
     { id: 'hand', label: 'Hand', icon: 'Hand', hotkey: 'H', component: Hand }
   ];
   
-  let activeTool = 'select';
+  const annotationTools = [
+    { id: 'text', label: 'Text', icon: 'Type', hotkey: 'T', component: Type },
+    { id: 'image', label: 'Image', icon: 'Image', hotkey: 'I', component: Image },
+    { id: 'group', label: 'Group', icon: 'Folder', hotkey: 'G', component: Folder },
+    { id: 'line', label: 'Line', icon: 'Minus', hotkey: 'L', component: Minus },
+    { id: 'polyline', label: 'Draw', icon: 'PenTool', hotkey: 'P', component: PenTool }
+  ];
   
   function handleLibraryClick(libraryId: string) {
     if (activeLibrary === libraryId) {
@@ -30,6 +37,11 @@
     activeTool = toolId;
     dispatch('toolChange', toolId);
   }
+  
+  function handleAnnotationToolClick(toolId: string) {
+    activeTool = toolId;
+    dispatch('toolChange', toolId);
+  }
 </script>
 
 <div class="toolbar">
@@ -39,6 +51,24 @@
         class="tool-button"
         class:active={activeTool === tool.id}
         on:click={() => handleToolClick(tool.id)}
+        title="{tool.label} ({tool.hotkey})"
+      >
+        <span class="icon">
+          <svelte:component this={tool.component} size={18} />
+        </span>
+        <span class="label">{tool.label}</span>
+      </button>
+    {/each}
+  </div>
+  
+  <div class="divider"></div>
+  
+  <div class="annotations-section">
+    {#each annotationTools as tool}
+      <button
+        class="tool-button annotation-tool"
+        class:active={activeTool === tool.id}
+        on:click={() => handleAnnotationToolClick(tool.id)}
         title="{tool.label} ({tool.hotkey})"
       >
         <span class="icon">
@@ -92,6 +122,7 @@
   
   .tools-section,
   .libraries-section,
+  .annotations-section,
   .settings-section {
     display: flex;
     align-items: center;

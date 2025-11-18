@@ -15,6 +15,7 @@
   let activeLibrary: string | null = null;
   let activeCategory: string | null = null;
   let selectedNode: Node | null = null;
+  let selectedAnnotation: string | null = null;
   let nodePanelPosition = { x: 0, y: 0 };
   let activeTool = 'select';
   let mousePosition = { x: 0, y: 0 };
@@ -66,6 +67,16 @@
   
   function handleNodeSelect(node: Node | null) {
     selectedNode = node;
+    if (node) {
+      selectedAnnotation = null;
+    }
+  }
+  
+  function handleAnnotationSelect(e: CustomEvent<{ annotationId: string | null }>) {
+    selectedAnnotation = e.detail.annotationId;
+    if (e.detail.annotationId) {
+      selectedNode = null;
+    }
   }
 
   function handleDocumentAction(action: string) {
@@ -243,14 +254,44 @@
       }
       
       // Tool shortcuts
-      if (e.key === 'v' || e.key === 'V') {
-        if (!e.metaKey && !e.ctrlKey) {
-          activeTool = 'select';
+      const toolTarget = e.target as HTMLElement;
+      if (toolTarget.tagName !== 'INPUT' && toolTarget.tagName !== 'TEXTAREA') {
+        if (e.key === 'v' || e.key === 'V') {
+          if (!e.metaKey && !e.ctrlKey) {
+            activeTool = 'select';
+          }
         }
-      }
-      if (e.key === 'h' || e.key === 'H') {
-        if (!e.metaKey && !e.ctrlKey) {
-          activeTool = 'hand';
+        if (e.key === 'h' || e.key === 'H') {
+          if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+            activeTool = 'hand';
+          }
+        }
+        
+        // Annotation shortcuts
+        if (e.key === 't' || e.key === 'T') {
+          if (!e.metaKey && !e.ctrlKey) {
+            activeTool = 'text';
+          }
+        }
+        if (e.key === 'i' || e.key === 'I') {
+          if (!e.metaKey && !e.ctrlKey) {
+            activeTool = 'image';
+          }
+        }
+        if (e.key === 'g' || e.key === 'G') {
+          if (!e.metaKey && !e.ctrlKey) {
+            activeTool = 'group';
+          }
+        }
+        if (e.key === 'l' || e.key === 'L') {
+          if (!e.metaKey && !e.ctrlKey) {
+            activeTool = 'line';
+          }
+        }
+        if (e.key === 'p' || e.key === 'P') {
+          if (!e.metaKey && !e.ctrlKey) {
+            activeTool = 'polyline';
+          }
         }
       }
       
@@ -354,6 +395,82 @@
           handleDuplicate();
         }
       }
+      
+      // Behavior Toggle Shortcuts (v1.2)
+      const behaviorTarget = e.target as HTMLElement;
+      if (behaviorTarget.tagName !== 'INPUT' && behaviorTarget.tagName !== 'TEXTAREA' && graph && selectedNode) {
+        // B - Toggle bypass
+        if (e.key === 'b' || e.key === 'B') {
+          if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+            e.preventDefault();
+            selectedNode.setBypassed(!selectedNode.bypassed);
+          }
+        }
+        
+        // C - Toggle cook
+        if (e.key === 'c' || e.key === 'C') {
+          if (!e.metaKey && !e.ctrlKey) {
+            e.preventDefault();
+            if (e.shiftKey) {
+              // Shift+C - Multi-cook (cook this chain)
+              graph.multiCookMode = true;
+              selectedNode.setCooking(true);
+              // Cook all downstream nodes
+              const cookDownstream = (node: Node) => {
+                node.outputs.forEach(output => {
+                  output.connections.forEach(conn => {
+                    const downstreamNode = graph?.getNode(conn.to.nodeId);
+                    if (downstreamNode) {
+                      downstreamNode.setCooking(true);
+                      cookDownstream(downstreamNode);
+                    }
+                  });
+                });
+              };
+              cookDownstream(selectedNode);
+            } else {
+              selectedNode.setCooking(!selectedNode.cooking);
+            }
+          }
+        }
+        
+        // Alt+B - Clear all bypasses
+        if (e.altKey && (e.key === 'b' || e.key === 'B')) {
+          e.preventDefault();
+          graph.nodes.forEach(node => {
+            if (node.bypassed) {
+              node.setBypassed(false);
+            }
+          });
+        }
+        
+        // Alt+C - Clear all cooking
+        if (e.altKey && (e.key === 'c' || e.key === 'C')) {
+          e.preventDefault();
+          graph.clearCookingNodes();
+        }
+      }
+      
+      // Delete - Delete selected node
+      if (e.key === 'Delete' && graph && selectedNode) {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          graph.removeNode(selectedNode.id);
+          selectedNode = null;
+        }
+      }
+      
+      // Alt+H - Home (reset view)
+      if (e.altKey && (e.key === 'h' || e.key === 'H')) {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          if (canvasRef) {
+            canvasRef.centerOnNodes();
+          }
+        }
+      }
     }
     
     window.addEventListener('keydown', handleKeyDown);
@@ -380,6 +497,7 @@
   {#if !presentationMode}
     <BottomToolbar
       {activeLibrary}
+      bind:activeTool={activeTool}
       on:libraryToggle={(e) => handleLibraryToggle(e.detail)}
       on:toolChange={(e) => handleToolChange(e.detail)}
     />
@@ -389,8 +507,10 @@
     bind:this={canvasRef}
     {activeTool}
     bind:selectedNode={selectedNode}
+    bind:selectedAnnotation={selectedAnnotation}
     bind:graph={graph}
     on:nodeSelect={(e) => handleNodeSelect(e.detail.node)}
+    on:annotationSelect={(e) => handleAnnotationSelect(e)}
     on:openNodePanel={(e) => {
       // Get mouse position from event or use center of screen
       if (e.detail?.x && e.detail?.y) {
@@ -428,6 +548,17 @@
       node={selectedNode}
       position="right"
     />
+  {/if}
+  
+  {#if selectedAnnotation && graph && (!presentationMode || presentationMode)}
+    {@const annotation = graph.getAnnotation(selectedAnnotation)}
+    {#if annotation}
+      <Inspector
+        annotation={annotation}
+        graph={graph}
+        position="right"
+      />
+    {/if}
   {/if}
 
   {#if graph}

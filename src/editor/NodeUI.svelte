@@ -11,6 +11,8 @@
   
   $: hasError = node.error !== null;
   $: nodeIcon = getNodeIcon(node.type);
+  $: isBypassed = node.bypassed;
+  $: isCooking = node.cooking;
   
   // Reactive statements to track port changes
   $: inputs = node.inputs;
@@ -67,6 +69,18 @@
       handlePortClick(portId, portType, syntheticEvent);
     }
   }
+  
+  function handleBypassClick(e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    dispatch('bypassToggle', { nodeId: node.id, event: e });
+  }
+  
+  function handleCookClick(e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    dispatch('cookToggle', { nodeId: node.id, event: e });
+  }
 </script>
 
 <div 
@@ -76,7 +90,9 @@
   class:selected
   class:error={hasError}
   class:dragging={isDragging}
-  style="left: {node.position.x}px; top: {node.position.y}px"
+  class:bypassed={isBypassed}
+  class:cooking={isCooking}
+  style="left: {node.position.x}px; top: {node.position.y}px; opacity: {node.bypassOpacity}"
   data-node-id={node.id}
   on:click={(e) => {
     e.stopPropagation();
@@ -87,6 +103,16 @@
   on:mouseleave={handleMouseUp}
   on:dblclick={handleDoubleClick}
 >
+  <!-- Bypass indicator (yellow band on left) -->
+  {#if isBypassed}
+    <div class="bypass-indicator"></div>
+  {/if}
+  
+  <!-- Cook indicator (blue band on right) -->
+  {#if isCooking}
+    <div class="cook-indicator" class:pulsing={node.cookAnimation}></div>
+  {/if}
+  
   <div class="node-container">
     <div class="node-content">
       <!-- Input ports (top) -->
@@ -108,9 +134,32 @@
       </div>
       
       <div class="body">
+        <!-- Bypass button (left side) -->
+        <button
+          class="node-button bypass-button"
+          class:active={isBypassed}
+          aria-label="Bypass node"
+          title="Bypass (B)"
+          on:click={handleBypassClick}
+          on:mousedown={(e) => e.stopPropagation()}
+        >
+        </button>
+        
+        <!-- Icon / Preview (center) -->
         <span class="node-icon">
           <Icon name={nodeIcon} size={12} strokeWidth={2} />
         </span>
+        
+        <!-- Cook button (right side) -->
+        <button
+          class="node-button cook-button"
+          class:active={isCooking}
+          aria-label="Cook node"
+          title="Cook (C)"
+          on:click={handleCookClick}
+          on:mousedown={(e) => e.stopPropagation()}
+        >
+        </button>
       </div>
       
       <!-- Output ports (bottom) -->
@@ -225,15 +274,16 @@
   }
   
   .body {
-    width: 60px;
+    width: 80px;
     height: 20px;
     background: #2a2a2a;
     border-radius: 5px;
     border: 1px solid var(--node-border-color, #444);
     display: flex;
     align-items: center;
-    justify-content: center;
-    padding: 0;
+    justify-content: space-between;
+    padding: 0 2px;
+    gap: 2px;
   }
   
   .node.selected .body {
@@ -251,6 +301,55 @@
     align-items: center;
     justify-content: center;
     color: #fff;
+    flex: 1;
+  }
+  
+  .node-button {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #555;
+    background: #1a1a1a;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    flex-shrink: 0;
+    transition: all 0.1s ease;
+  }
+  
+  .node-button:hover {
+    background: #2a2a2a;
+    border-color: #666;
+  }
+  
+  .node-button.active {
+    background: #4a9eff;
+    border-color: #4a9eff;
+  }
+  
+  .bypass-button.active {
+    background: #ffd700;
+    border-color: #ffd700;
+  }
+  
+  .cook-button.active {
+    background: #4a9eff;
+    border-color: #4a9eff;
+  }
+  
+  .button-label {
+    font-size: 9px;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1;
+    user-select: none;
+  }
+  
+  .node-button.active .button-label {
+    color: #000;
   }
   
   .label {
@@ -281,6 +380,41 @@
     color: white;
     font-size: 10px;
     border-radius: 2px;
+  }
+  
+  .bypass-indicator {
+    position: absolute;
+    left: -4px;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: #ffd700;
+    border-radius: 2px 0 0 2px;
+    z-index: 10;
+  }
+  
+  .cook-indicator {
+    position: absolute;
+    right: -4px;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: #4a9eff;
+    border-radius: 0 2px 2px 0;
+    z-index: 10;
+  }
+  
+  .cook-indicator.pulsing {
+    animation: cookPulse 1s ease-in-out infinite;
+  }
+  
+  @keyframes cookPulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
   }
 </style>
 
