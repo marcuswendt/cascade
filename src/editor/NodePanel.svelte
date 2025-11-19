@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { nodeLibraries, getAllNodes, getNodesByLibraryAndCategory, type NodeTemplate, type Category } from './nodeTemplates';
   import Icon from './Icon.svelte';
+  import { typeToPackagePath } from '@/utils/nodeTypeUtils';
   
   import { onMount } from 'svelte';
   
@@ -281,7 +282,9 @@
   function handleNodeClick(node: NodeTemplate & { categoryId?: string }) {
     // Use the categoryId from direct nodes if available, otherwise use the current categoryId
     const nodeCategoryId = node.categoryId || categoryId;
-    dispatch('addNode', { type: node.type, libraryId, categoryId: nodeCategoryId });
+    // Convert to package path format
+    const packagePath = typeToPackagePath(node.type);
+    dispatch('addNode', { type: packagePath, libraryId, categoryId: nodeCategoryId });
   }
   
   function handleCategoryClick(libId: string, catId: string) {
@@ -301,6 +304,7 @@
   
   function handleCustomNodeClick() {
     // Direct creation of custom node, bypassing library/category
+    // Custom nodes don't have package paths, use as-is
     dispatch('addNode', { type: 'Custom', libraryId: null, categoryId: null });
   }
   

@@ -54,6 +54,14 @@ export function inferPropControlType(prop: Prop): PropControlType {
   }
   
   if (Array.isArray(value)) {
+    // Check if it's a color ramp (array of objects with position, color, interpolation)
+    if (value.length > 0 && 
+        typeof value[0] === 'object' && 
+        value[0] !== null &&
+        'position' in value[0] && 
+        'color' in value[0]) {
+      return 'colorramp';
+    }
     // Check if it's a range (2-element array with min/max as single numbers, not arrays)
     if (value.length === 2 && 
         params?.min !== undefined && 

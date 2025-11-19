@@ -1,6 +1,6 @@
 export type PortType = 'trigger' | 'param';
 export type DataType = 'number' | 'string' | 'boolean' | 'color' | 'asset' | 'array' | 'object' | 'any';
-export type PropControlType = 'number' | 'int' | 'slider' | 'text' | 'textarea' | 'color' | 'image' | 'boolean' | 'select' | 'vector' | 'vec2' | 'vec3' | 'vec2i' | 'vec3i' | 'range' | 'button' | 'folder' | 'group';
+export type PropControlType = 'number' | 'int' | 'slider' | 'text' | 'textarea' | 'color' | 'image' | 'boolean' | 'select' | 'vector' | 'vec2' | 'vec3' | 'vec2i' | 'vec3i' | 'range' | 'button' | 'folder' | 'group' | 'colorramp';
 
 export interface PortOptions {
   type?: DataType;
@@ -41,7 +41,6 @@ export interface OutputPort<T = any> {
 
 export interface NodeContext {
   id: string;
-  name: string;
   type: string;
   code: string;
   position: { x: number; y: number };

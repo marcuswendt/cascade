@@ -2,10 +2,11 @@
   import type { Prop } from '@/types/node.types';
   import { onMount } from 'svelte';
   import { openColorPickerId } from '../stores/colorPickerStore';
+  import { normalizeColor, colorToHex, colorToCss, type ColorObject } from '@/utils/colorUtils';
   
   export let prop: Prop;
   export let id: string;
-  export let onValueChange: (value: string) => void;
+  export let onValueChange: (value: ColorObject) => void;
   
   let showPicker = false;
   
@@ -115,15 +116,18 @@
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
   }
   
-  // Update color from hex value
-  function updateFromHex(hexValue: string) {
-    if (!/^#([0-9A-F]{3}|[0-9A-F]{6})$/i.test(hexValue)) return;
+  // Update color from color object or string (for backward compatibility)
+  function updateFromColor(colorValue: ColorObject | string) {
+    // Normalize to color object
+    const colorObj = normalizeColor(colorValue as any);
     
-    hex = hexValue.toUpperCase();
-    const rgb = hexToRgb(hex);
-    red = rgb.r;
-    green = rgb.g;
-    blue = rgb.b;
+    // Update internal hex for display
+    hex = colorToHex(colorObj).toUpperCase();
+    
+    // Update RGB values (0-1 range)
+    red = colorObj.r;
+    green = colorObj.g;
+    blue = colorObj.b;
     
     const hsv = rgbToHsv(red, green, blue);
     hue = hsv.h;
@@ -136,6 +140,11 @@
     }
   }
   
+  // Update color from hex value (kept for backward compatibility)
+  function updateFromHex(hexValue: string) {
+    updateFromColor(hexValue);
+  }
+  
   // Update color from HSV
   function updateFromHsv() {
     const rgb = hsvToRgb(hue, saturation, brightness);
@@ -143,7 +152,9 @@
     green = rgb.g;
     blue = rgb.b;
     hex = rgbToHex(red, green, blue);
-    onValueChange(hex);
+    // Convert to color object for storage
+    const colorObj: ColorObject = { r: red, g: green, b: blue, a: 1.0 };
+    onValueChange(colorObj);
     // Only redraw wheel if context is ready
     if (wheelCtx && wheelCanvas) {
       drawWheel();
@@ -157,7 +168,9 @@
     hue = hsv.h;
     saturation = hsv.s;
     brightness = hsv.v;
-    onValueChange(hex);
+    // Convert to color object for storage
+    const colorObj: ColorObject = { r: red, g: green, b: blue, a: 1.0 };
+    onValueChange(colorObj);
     // Only redraw wheel if context is ready
     if (wheelCtx && wheelCanvas) {
       drawWheel();
@@ -474,24 +487,27 @@
   function handleHexInput(e: Event) {
     const value = (e.target as HTMLInputElement).value;
     if (/^#([0-9A-F]{3}|[0-9A-F]{6})$/i.test(value)) {
-      updateFromHex(value);
-      onValueChange(value);
+      const colorObj = normalizeColor(value);
+      updateFromColor(colorObj);
+      onValueChange(colorObj);
     }
   }
   
   // Select color from palette
   function selectPaletteColor(color: string) {
     previousColor = hex;
-    updateFromHex(color);
-    onValueChange(color);
+    const colorObj = normalizeColor(color);
+    updateFromColor(colorObj);
+    onValueChange(colorObj);
   }
   
   // Swap previous/current
   function swapColors() {
     const temp = previousColor;
     previousColor = hex;
-    updateFromHex(temp);
-    onValueChange(temp);
+    const colorObj = normalizeColor(temp);
+    updateFromColor(colorObj);
+    onValueChange(colorObj);
   }
   
   // Close picker when clicking outside
@@ -503,9 +519,9 @@
   }
   
   onMount(() => {
-    // Initialize from prop value
-    if (typeof prop.value === 'string') {
-      updateFromHex(prop.value);
+    // Initialize from prop value (supports color object, hex, or rgb string)
+    if (prop.value) {
+      updateFromColor(prop.value as any);
     }
     
     // Subscribe to color picker store
@@ -556,9 +572,14 @@
     }
   }
   
-  // Watch for prop value changes
-  $: if (typeof prop.value === 'string' && prop.value !== hex) {
-    updateFromHex(prop.value);
+  // Watch for prop value changes (supports color object, hex, or rgb string)
+  $: if (prop.value) {
+    // Only update if the value is different from what we'd output
+    const colorObj = normalizeColor(prop.value as any);
+    const currentHex = colorToHex(colorObj);
+    if (currentHex !== hex) {
+      updateFromColor(colorObj);
+    }
   }
   
   // Redraw wheel when color mode changes
@@ -570,7 +591,7 @@
 <div class="color-picker-container">
   <button
     class="color-swatch"
-    style="background-color: {hex};"
+    style="background-color: {colorToCss({ r: red, g: green, b: blue, a: 1.0 })};"
     on:click|stopPropagation={() => {
       if (showPicker) {
         showPicker = false;

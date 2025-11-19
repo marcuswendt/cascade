@@ -11,6 +11,7 @@
   import ButtonInput from './components/ButtonInput.svelte';
   import CheckboxInput from './components/CheckboxInput.svelte';
   import FolderGroup from './components/FolderGroup.svelte';
+  import ColorRampEditor from './components/ColorRampEditor.svelte';
   import { propUpdateCounters } from './stores/propUpdateStore';
   
   export let node: Node | null = null;
@@ -802,6 +803,12 @@
                       id={inputId}
                       onValueChange={(value) => handlePropChange([key, prop], value)}
                     />
+                  {:else if controlType === 'colorramp'}
+                    <ColorRampEditor
+                      {prop}
+                      id={inputId}
+                      onValueChange={(value) => handlePropChange([key, prop], value)}
+                    />
                   {:else if controlType === 'image' || (controlType === 'text' && prop.params?.accept)}
                     <FileInput
                       {prop}
@@ -887,6 +894,12 @@
                   {/key}
                 {:else if controlType === 'color'}
                   <ColorPicker
+                    {prop}
+                    id={inputId}
+                    onValueChange={(value) => handlePropChange([key, prop], value)}
+                  />
+                {:else if controlType === 'colorramp'}
+                  <ColorRampEditor
                     {prop}
                     id={inputId}
                     onValueChange={(value) => handlePropChange([key, prop], value)}

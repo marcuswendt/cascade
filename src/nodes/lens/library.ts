@@ -14,7 +14,9 @@ export const lensLibrary: Library = {
       label: 'Generators',
       nodes: [
         { name: 'Color', icon: 'Square', description: 'Create a solid color canvas', type: 'Color' },
-        { name: 'Checkers', icon: 'Grid', description: 'Generate a checkerboard pattern', type: 'Checkers' }
+        { name: 'Checkers', icon: 'Grid', description: 'Generate a checkerboard pattern', type: 'Checkers' },
+        { name: 'Simplex Noise', icon: 'Cloud', description: 'Generate Simplex noise pattern', type: 'SimplexNoise' },
+        { name: 'Ramp', icon: 'Gradient', description: 'Generate color ramps', type: 'Ramp' }
       ]
     },
     {
@@ -22,6 +24,7 @@ export const lensLibrary: Library = {
       label: 'Filters',
       nodes: [
         { name: 'Blur', icon: 'Droplets', description: 'Gaussian blur', type: 'Blur' },
+        { name: 'Normal Map', icon: 'Layers', description: 'Compute normal map from height map', type: 'NormalMap' },
         { name: 'Brightness', icon: 'Sun', description: 'Adjust brightness', type: 'Brightness' },
         { name: 'Contrast', icon: 'Sliders', description: 'Adjust contrast', type: 'Contrast' }
       ]

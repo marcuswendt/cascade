@@ -5,7 +5,7 @@
   import type { Node } from '@/core/engine/Node';
   import type { Connection } from '@/types/node.types';
   import { marked } from 'marked';
-  import { getLensNodeTemplate } from '@/nodes/lens';
+  import { getNodeTemplateCode, packagePathToType } from '@/utils/nodeTypeUtils';
   import { getPortColor } from '@/utils/portColors';
   
   // Configure marked for safe rendering
@@ -122,6 +122,8 @@
     const colorNode = graph.addNode('Color', { x: 200, y: 250 });
     const checkersNode = graph.addNode('Checkers', { x: -200, y: 400 });
     const compositeNode = graph.addNode('Composite', { x: 0, y: 550 });
+    const blurNode = graph.addNode('Blur', { x: 200, y: 750 });
+    const normalMapNode = graph.addNode('NormalMap', { x: 400, y: 950 });
     // Only set cook flag on Composite node
     compositeNode.setCooking(true);
     
@@ -255,6 +257,10 @@ node.onReady = () => {
         checkersNode.outputs = [...checkersNode.outputs];
         compositeNode.inputs = [...compositeNode.inputs];
         compositeNode.outputs = [...compositeNode.outputs];
+        blurNode.inputs = [...blurNode.inputs];
+        blurNode.outputs = [...blurNode.outputs];
+        normalMapNode.inputs = [...normalMapNode.inputs];
+        normalMapNode.outputs = [...normalMapNode.outputs];
         
         // Connect Checkers output to Composite image1 input
         const checkersImagePort = checkersNode.outputs.find(p => p.name === 'image');
@@ -270,6 +276,22 @@ node.onReady = () => {
         
         if (colorImagePort && compositeImage2Port) {
           graph.connect(colorImagePort, compositeImage2Port);
+        }
+        
+        // Connect Composite output to Blur input
+        const compositeImagePort = compositeNode.outputs.find(p => p.name === 'image');
+        const blurImagePort = blurNode.inputs.find(p => p.name === 'image');
+        
+        if (compositeImagePort && blurImagePort) {
+          graph.connect(compositeImagePort, blurImagePort);
+        }
+        
+        // Connect Blur output to NormalMap input
+        const blurOutputPort = blurNode.outputs.find(p => p.name === 'image');
+        const normalMapImagePort = normalMapNode.inputs.find(p => p.name === 'image');
+        
+        if (blurOutputPort && normalMapImagePort) {
+          graph.connect(blurOutputPort, normalMapImagePort);
         }
         
         graph.connections = [...graph.connections];
@@ -289,18 +311,10 @@ node.onReady = () => {
     });
   }
 
-  // Initialize nodes immediately on first load
-  if (graph.nodes.length === 0) {
-    initializeDefaultNodes();
-  }
+  // Graph will be loaded from default.cascade file in App.svelte onMount
   
   // Reactive statement to ensure nodes array changes are detected
   $: nodes = graph.nodes;
-  // Filter out duplicate connections by ID to prevent Svelte key errors
-  $: connections = graph.connections.filter((conn, index, self) => 
-    self.findIndex(c => c.id === conn.id) === index
-  );
-  $: annotations = graph.annotations;
   
   // Force reactivity when node ports change
   $: nodePorts = nodes.map(n => ({ 
@@ -315,6 +329,21 @@ node.onReady = () => {
     x: n.position.x, 
     y: n.position.y 
   }));
+  
+  // Declare connections variable
+  let connections: Connection[] = [];
+  
+  // Filter out duplicate connections by ID to prevent Svelte key errors
+  // Also depend on nodePositions and nodePorts to force re-render when nodes change
+  $: {
+    // Reference nodePositions and nodePorts to make connections reactive to node changes
+    nodePositions;
+    nodePorts;
+    connections = graph.connections.filter((conn, index, self) => 
+      self.findIndex(c => c.id === conn.id) === index
+    );
+  }
+  $: annotations = graph.annotations;
   
   function handleMouseDown(e: MouseEvent) {
     if (!canvas) return;
@@ -1750,6 +1779,8 @@ node.onReady = () => {
     }
     
     graph.nodes = [...graph.nodes];
+    // Force connections to re-render by updating the array reference
+    graph.connections = [...graph.connections];
     
     // Pan canvas to center on the new node
     // Convert node position to screen coordinates
@@ -1775,14 +1806,16 @@ node.onReady = () => {
   
   // Helper function to get default node code template
   function getDefaultNodeCode(type: string): string {
-    // Check Lens library templates first
-    const lensTemplate = getLensNodeTemplate(type);
-    if (lensTemplate) {
-      return lensTemplate;
+    // Type is now a package path (e.g., "cascade.lens.Color")
+    // Use the utility to get template code
+    const templateCode = getNodeTemplateCode(type);
+    if (templateCode) {
+      return templateCode;
     }
     
-    // Default template
-    return `// ${type} node
+    // Fallback: extract short type name for default template
+    const shortType = packagePathToType(type);
+    return `// ${shortType} node
 const trigger = node.in('trigger', null, { type: 'trigger' });
 const output = node.out('output');
 
@@ -2406,8 +2439,8 @@ node.onReady = () => {
             y: node.position.y + 50
           });
           newNode.code = node.code;
-          // Generate unique name based on the original node's name
-          newNode.name = graph.generateUniqueNodeName(node.name);
+          // Generate unique ID based on the original node's ID
+          newNode.id = graph.generateUniqueNodeId(node.id);
           newNode.comment = node.comment;
           newNodes.push(newNode);
         });

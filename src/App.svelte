@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import WindowManager from './editor/WindowManager.svelte';
   import NodePanel from './editor/NodePanel.svelte';
   import ExportDialog from './editor/ExportDialog.svelte';
@@ -112,7 +112,7 @@
     }
   }
 
-  function handleNewProject() {
+  async function handleNewProject() {
     if (graph && confirm('Create a new project? Unsaved changes will be lost.')) {
       // User confirmed, proceed with new project
     } else if (!graph) {
@@ -122,20 +122,68 @@
       return;
     }
     
-    const adapter = GraphEditorAdapter.create();
-    graph = adapter.getGraph();
-        documentName = 'Untitled';
-        currentFilePath = null;
-        updateWindowTitle();
-        // Re-initialize with default nodes
-        if (windowManagerRef && windowManagerRef.initializeDefaultNodes) {
-          windowManagerRef.initializeDefaultNodes();
-          // Center canvas on nodes after a short delay to ensure nodes are rendered
-          setTimeout(() => {
-            if (windowManagerRef && windowManagerRef.centerOnNodes) {
-              windowManagerRef.centerOnNodes();
-            }
-          }, 100);
+    // Load default graph from file
+    try {
+      const response = await fetch('/graphs/default.cascade');
+      if (!response.ok) {
+        throw new Error('Failed to load default graph');
+      }
+      const json = await response.json();
+      
+      // Clear existing graph if it exists
+      if (graph) {
+        graph.nodes.forEach(node => {
+          if (node.onDestroy) {
+            node.onDestroy();
+          }
+        });
+      }
+      
+      // Load new graph
+      const adapter = GraphEditorAdapter.fromJSON(json);
+      graph = adapter.getGraph();
+      documentName = 'Untitled';
+      currentFilePath = null;
+      updateWindowTitle();
+      
+      // Execute all nodes to initialize them
+      for (const node of graph.nodes) {
+        if (node.code) {
+          try {
+            // Wrap code in async function to support top-level await (same as CodeEditor)
+            const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
+            const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
+            node.setFunction(nodeFunction);
+            await node.execute();
+          } catch (err) {
+            console.warn('Failed to execute node ' + node.id + ':', err);
+          }
+        }
+      }
+      
+      // Restore connections now that ports exist
+      graph.restoreConnections();
+      // Wait for DOM to update before forcing reactivity
+      await tick();
+      // Force connections array reference update to trigger reactivity
+      graph.connections = [...graph.connections];
+      // Also update nodes array reference to ensure reactivity
+      graph.nodes = [...graph.nodes];
+      
+      // Center canvas on nodes after loading
+      setTimeout(() => {
+        if (windowManagerRef && windowManagerRef.centerOnNodes) {
+          windowManagerRef.centerOnNodes();
+        }
+      }, 100);
+    } catch (error) {
+      console.error('Failed to load default graph:', error);
+      // Fallback: create empty graph
+      const adapter = GraphEditorAdapter.create();
+      graph = adapter.getGraph();
+      documentName = 'Untitled';
+      currentFilePath = null;
+      updateWindowTitle();
     }
   }
 
@@ -179,6 +227,12 @@
         
         // Restore connections now that ports exist
         graph.restoreConnections();
+        // Wait for DOM to update before forcing reactivity
+        await tick();
+        // Force connections array reference update to trigger reactivity
+        graph.connections = [...graph.connections];
+        // Also update nodes array reference to ensure reactivity
+        graph.nodes = [...graph.nodes];
         
         // Center canvas on nodes after loading
         setTimeout(() => {
@@ -265,8 +319,65 @@
   }
 
   // Set initial window title
-  onMount(() => {
+  onMount(async () => {
     updateWindowTitle();
+    
+    // Load default graph on startup
+    if (!graph) {
+      try {
+        const response = await fetch('/graphs/default.cascade');
+        if (!response.ok) {
+          throw new Error('Failed to load default graph');
+        }
+        const json = await response.json();
+        
+        // Load graph from JSON
+        const adapter = GraphEditorAdapter.fromJSON(json);
+        graph = adapter.getGraph();
+        documentName = 'Default Cascade Graph';
+        currentFilePath = null;
+        updateWindowTitle();
+        
+        // Execute all nodes to initialize them
+        for (const node of graph.nodes) {
+          if (node.code) {
+            try {
+              // Wrap code in async function to support top-level await (same as CodeEditor)
+              const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
+              const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
+              node.setFunction(nodeFunction);
+              await node.execute();
+            } catch (err) {
+              console.warn('Failed to execute node ' + node.id + ':', err);
+            }
+          }
+        }
+        
+        // Restore connections now that ports exist
+        graph.restoreConnections();
+        // Wait for DOM to update before forcing reactivity
+        await tick();
+        // Force connections array reference update to trigger reactivity
+        graph.connections = [...graph.connections];
+        // Also update nodes array reference to ensure reactivity
+        graph.nodes = [...graph.nodes];
+        
+        // Center canvas on nodes after loading
+        setTimeout(() => {
+          if (windowManagerRef && windowManagerRef.centerOnNodes) {
+            windowManagerRef.centerOnNodes();
+          }
+        }, 100);
+      } catch (error) {
+        console.error('Failed to load default graph:', error);
+        // Fallback: create empty graph
+        const adapter = GraphEditorAdapter.create();
+        graph = adapter.getGraph();
+        documentName = 'Untitled';
+        currentFilePath = null;
+        updateWindowTitle();
+      }
+    }
     
     // Track global mouse position
     function handleMouseMove(e: MouseEvent) {

@@ -204,7 +204,7 @@
       id: tabId,
       type: 'editor',
       node,
-      label: node.name,
+      label: node.id,
       windowId: targetWindowId,
       icon: getTabIcon('editor')
     };
@@ -580,13 +580,14 @@
     }
     cookingNode = graph ? Array.from(graph.cookingNodes)[0] || null : null;
   }
-  $: viewerTitle = cookingNode ? cookingNode.name : 'Viewer';
+  // Viewer title: show selected node if selected, otherwise show cooking node
+  $: viewerTitle = selectedNode ? selectedNode.id : (cookingNode ? cookingNode.id : 'Viewer');
   
   // Get Inspector title based on selected node/annotation
   let inspectorTitle = 'Inspector';
   $: {
     if (selectedNode) {
-      inspectorTitle = selectedNode.name;
+      inspectorTitle = selectedNode.id;
     } else if (selectedAnnotation && graph) {
       const annotation = graph.getAnnotation(selectedAnnotation);
       if (annotation) {

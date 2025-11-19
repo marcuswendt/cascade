@@ -23,7 +23,7 @@
   let tooltip: { text: string; x: number; y: number; type: 'input' | 'output' } | null = null;
   let isEditingName = false;
   let nameInput: HTMLInputElement;
-  let tempName = node.name;
+  let tempName = node.id;
   
   function showPortTooltip(e: MouseEvent, portName: string, portType: 'input' | 'output') {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -122,7 +122,7 @@
     e.stopPropagation();
     e.preventDefault();
     isEditingName = true;
-    tempName = node.name;
+    tempName = node.id;
     // Focus and select the input after it's rendered
     setTimeout(() => {
       nameInput?.focus();
@@ -132,16 +132,22 @@
   
   function saveName() {
     if (tempName.trim()) {
-      const actualName = node.rename(tempName.trim());
-      tempName = actualName;
+      // Remove spaces from the input
+      const sanitized = tempName.trim().replace(/\s+/g, '');
+      if (sanitized) {
+        const actualId = node.rename(sanitized);
+        tempName = actualId;
+      } else {
+        tempName = node.id; // Revert if empty after sanitization
+      }
     } else {
-      tempName = node.name; // Revert if empty
+      tempName = node.id; // Revert if empty
     }
     isEditingName = false;
   }
   
   function cancelEdit() {
-    tempName = node.name;
+    tempName = node.id;
     isEditingName = false;
   }
   
@@ -165,16 +171,16 @@
     }
   }
   
-  // Update tempName when node.name changes externally
-  $: if (node.name && !isEditingName) {
-    tempName = node.name;
+  // Update tempName when node.id changes externally
+  $: if (node.id && !isEditingName) {
+    tempName = node.id;
   }
 </script>
 
 <div 
   class="node"
   role="application"
-  aria-label="Node: {node.name}"
+  aria-label="Node: {node.id}"
   class:selected
   class:error={hasError}
   class:dragging={isDragging}
@@ -288,7 +294,7 @@
           on:keydown={handleNameKeyDownSpan}
           title="Click to rename (Enter or Space)"
         >
-          {node.name}
+          {node.id}
         </span>
       {/if}
     </div>
