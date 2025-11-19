@@ -455,15 +455,15 @@ async function render() {
   // If inputs are missing, execute upstream nodes to ensure they render first
   if (!image1.value || !image2.value) {
     // Execute upstream nodes first to ensure inputs are ready
-    // The framework handles execution state checking and cycle detection internally
+    // Use graph.execute() which handles topological sort and cycle detection
     const upstreamPromises = [];
     node.inputs.forEach(input => {
       input.connections.forEach(conn => {
         const upstreamNode = graph.getNode(conn.from.nodeId);
         if (upstreamNode) {
-          // Use graph.executeUpstream() which handles everything internally
+          // Execute from upstream node - graph handles dependencies automatically
           upstreamPromises.push(
-            graph.executeUpstream(upstreamNode).catch(err => {
+            graph.execute(upstreamNode).catch(err => {
               // Handle errors gracefully (e.g., cycles)
               console.warn('Failed to execute upstream node:', err);
             })

@@ -44,34 +44,44 @@ export async function runGraph(options: RunOptions): Promise<void> {
     process.exit(1);
   }
 
-  // Execute nodes to initialize ports (needed for connection validation)
-  // Nodes need to execute at least once to create their ports via node.in() and node.out()
+  // Ports should already be restored from JSON metadata (if available)
+  // Only execute nodes if ports weren't restored from metadata
+  // This avoids unnecessary execution just for port discovery
+  const nodesNeedingExecution: any[] = [];
   for (const node of graph.nodes) {
-    if (node.code) {
-      try {
-        // Execute to initialize ports and props
-        // The node's execute() method handles initialization properly
-        // Suppress browser API errors in Node.js environment
-        await node.execute();
-      } catch (err: any) {
-        // Ignore execution errors during initialization - they'll be caught during actual execution
-        // Browser API errors (like document is not defined) are expected in CLI for browser-only nodes
-        const errMsg = err.message || String(err);
-        const isBrowserAPIError = 
-          errMsg.includes('document is not defined') ||
-          errMsg.includes('window is not defined') ||
-          errMsg.includes('HTMLCanvasElement') ||
-          errMsg.includes('HTMLImageElement');
-        
-        if (verbose && !isBrowserAPIError) {
-          console.warn(`Warning: Node ${node.name} (${node.id}) failed to initialize: ${errMsg}`);
-        }
-        // Browser API errors are expected and can be ignored - these nodes are designed for browser execution
+    // Check if node has ports (restored from metadata)
+    // If not, we may need to execute to create them
+    const hasPorts = node.inputs.length > 0 || node.outputs.length > 0;
+    if (!hasPorts && node.code) {
+      nodesNeedingExecution.push(node);
+    }
+  }
+  
+  // Only execute nodes that don't have ports from metadata
+  for (const node of nodesNeedingExecution) {
+    try {
+      // Execute to initialize ports and props
+      // The node's execute() method handles initialization properly
+      // Suppress browser API errors in Node.js environment
+      await node.execute();
+    } catch (err: any) {
+      // Ignore execution errors during initialization - they'll be caught during actual execution
+      // Browser API errors (like document is not defined) are expected in CLI for browser-only nodes
+      const errMsg = err.message || String(err);
+      const isBrowserAPIError = 
+        errMsg.includes('document is not defined') ||
+        errMsg.includes('window is not defined') ||
+        errMsg.includes('HTMLCanvasElement') ||
+        errMsg.includes('HTMLImageElement');
+      
+      if (verbose && !isBrowserAPIError) {
+        console.warn(`Warning: Node ${node.name} (${node.id}) failed to initialize: ${errMsg}`);
       }
+      // Browser API errors are expected and can be ignored - these nodes are designed for browser execution
     }
   }
 
-  // Restore connections now that ports exist
+  // Restore connections now that ports exist (either from metadata or execution)
   graph.restoreConnections();
 
   // Validate graph (now that ports and connections exist)

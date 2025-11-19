@@ -12,7 +12,7 @@ export class Node implements NodeContext {
   error: Error | null = null;
   warning: string | null = null;
   isTemplate: boolean = false;
-  isDirty: boolean = false;
+  isDirtyFlag: boolean = false; // Renamed to avoid conflict with isDirty() method
   
   inputs: InputPort[] = [];
   outputs: OutputPort[] = [];
@@ -30,6 +30,9 @@ export class Node implements NodeContext {
   bypassOpacity: number = 1.0;
   cookAnimation: boolean = false;
   
+  // Execution timeout (in milliseconds, default 30 seconds)
+  executionTimeout: number = 30000;
+  
   onReady?: () => void;
   onDestroy?: () => void;
   
@@ -38,6 +41,10 @@ export class Node implements NodeContext {
   
   // Track ports that are called during compilation to clean up unused ones
   private portsUsedDuringCompilation: Set<string> = new Set();
+  
+  // Track last execution time and input hash for dirty checking
+  private lastExecutionTime: number = 0;
+  private lastInputHash: string = '';
   
   constructor(id: string, type: string, graph: Graph) {
     this.id = id;
@@ -252,7 +259,7 @@ export class Node implements NodeContext {
   }
   
   markDirty(): void {
-    this.isDirty = true;
+    this.isDirtyFlag = true;
   }
   
   /**
@@ -274,6 +281,53 @@ export class Node implements NodeContext {
     return uniqueName;
   }
   
+  /**
+   * Create a timeout promise that rejects after specified milliseconds
+   */
+  private createTimeoutPromise(ms: number): Promise<never> {
+    return new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Node execution timeout after ${ms}ms`));
+      }, ms);
+    });
+  }
+  
+  /**
+   * Calculate hash of input values for dirty checking
+   */
+  private calculateInputHash(): string {
+    const inputValues = this.inputs.map(input => {
+      const value = input.value;
+      // Simple hash - can be improved for complex objects
+      if (value === null || value === undefined) return 'null';
+      if (typeof value === 'object') {
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return String(value);
+        }
+      }
+      return String(value);
+    }).join('|');
+    
+    return inputValues;
+  }
+  
+  /**
+   * Check if node is dirty (inputs have changed since last execution)
+   */
+  isDirtyCheck(): boolean {
+    if (!this.hasExecuted) return true; // Always execute first time
+    
+    const currentHash = this.calculateInputHash();
+    return currentHash !== this.lastInputHash;
+  }
+  
+  // Keep isDirty as a getter for interface compatibility
+  get isDirty(): boolean {
+    return this.isDirtyFlag || this.isDirtyCheck();
+  }
+  
   async execute() {
     if (this.nodeFunction) {
       // If node hasn't been executed yet, always run the function at least once
@@ -286,10 +340,24 @@ export class Node implements NodeContext {
         return;
       }
       
+      // Check if node is dirty (for incremental execution)
+      if (!needsInitialization && !this.isDirtyCheck()) {
+        // Node hasn't changed, skip execution
+        return;
+      }
+      
       try {
-        await this.nodeFunction(this, this.graph);
+        // Execute with timeout
+        const executionPromise = this.nodeFunction(this, this.graph);
+        const timeoutPromise = this.createTimeoutPromise(this.executionTimeout);
+        
+        await Promise.race([executionPromise, timeoutPromise]);
+        
         this.error = null;
         this.hasExecuted = true;
+        this.lastExecutionTime = Date.now();
+        this.lastInputHash = this.calculateInputHash();
+        this.isDirtyFlag = false;
         
         // Call onReady callback after node function has been set up
         // This allows nodes to perform initial setup like rendering previews
@@ -311,9 +379,17 @@ export class Node implements NodeContext {
             }
           }
         }
-      } catch (err) {
+      } catch (err: any) {
+        // Mark node as errored but don't break execution
         this.error = err as Error;
-        console.error(`Error executing node ${this.name}:`, err);
+        this.isDirtyFlag = true; // Mark as dirty so it will retry on next execution
+        
+        // Only log non-timeout errors (timeout errors are expected)
+        if (!err.message?.includes('timeout')) {
+          console.error(`Error executing node ${this.name}:`, err);
+        }
+        
+        // Don't throw - allow graph execution to continue
       }
     }
   }
@@ -435,6 +511,20 @@ export class Node implements NodeContext {
       code: this.code,
       position: this.position,
       comment: this.comment,
+      // Store port metadata to avoid execution for port discovery
+      inputs: this.inputs.map(port => ({
+        id: port.id,
+        name: port.name,
+        portType: port.portType,
+        dataType: port.dataType,
+        defaultValue: port.defaultValue
+      })),
+      outputs: this.outputs.map(port => ({
+        id: port.id,
+        name: port.name,
+        portType: port.portType,
+        dataType: port.dataType
+      })),
       props: Object.entries(this.props).reduce((acc, [key, prop]) => {
         acc[key] = prop.value;
         return acc;

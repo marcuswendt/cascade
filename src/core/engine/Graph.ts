@@ -47,8 +47,9 @@ export class Graph {
   // Execution state
   executionState: ExecutionState = 'idle';
   private executionQueue: Node[] = [];
-  // Shared visited set for executeUpstream calls during active execution
-  private activeExecutionVisited: Set<string> | null = null;
+  
+  // Cached topological order (invalidated when graph structure changes)
+  private cachedTopologicalOrder: string[] | null = null;
   
   constructor(assetManager?: AssetManager, packageManager?: PackageManager) {
     this.assetManager = assetManager || new AssetManager();
@@ -85,6 +86,10 @@ export class Graph {
     // Generate unique name automatically
     node.name = this.generateUniqueNodeName(type);
     this.nodes.push(node);
+    
+    // Invalidate cached topological order when graph structure changes
+    this.invalidateTopologicalOrder();
+    
     return node;
   }
   
@@ -105,6 +110,9 @@ export class Graph {
       
       // Remove node
       this.nodes.splice(index, 1);
+      
+      // Invalidate cached topological order when graph structure changes
+      this.invalidateTopologicalOrder();
     }
   }
   
@@ -172,6 +180,9 @@ export class Graph {
     fromPort.connections.push(connection);
     toPort.connections.push(connection);
     
+    // Invalidate cached topological order when graph structure changes
+    this.invalidateTopologicalOrder();
+    
     // Propagate existing value from output port to input port when connection is made
     if (fromPort.value !== undefined && fromPort.value !== null) {
       toPort.value = fromPort.value;
@@ -204,6 +215,9 @@ export class Graph {
       });
       
       this.connections.splice(index, 1);
+      
+      // Invalidate cached topological order when graph structure changes
+      this.invalidateTopologicalOrder();
     }
   }
   
@@ -224,8 +238,6 @@ export class Graph {
     }
 
     this.executionState = 'running';
-    // Initialize shared visited set for executeUpstream calls during this execution
-    this.activeExecutionVisited = new Set();
     
     try {
       if (entryNode) {
@@ -247,59 +259,29 @@ export class Graph {
       }
     } finally {
       this.executionState = 'idle';
-      // Clear shared visited set when execution completes
-      this.activeExecutionVisited = null;
     }
   }
   
   /**
-   * Execute upstream nodes for a given node, handling execution state internally.
-   * This method is safe to call from within node callbacks and will automatically
-   * handle cases where graph execution is already in progress.
-   * 
-   * @param node The node whose upstream dependencies should be executed
+   * Get or compute topological order for the entire graph
+   * Caches the result until graph structure changes
    */
-  async executeUpstream(node: Node): Promise<void> {
-    // If execution is already in progress, execute nodes directly
-    // to avoid conflicts with the global execution state
-    if (this.executionState === 'running') {
-      // Use shared visited set for this execution context to prevent duplicate work
-      // and infinite recursion in cycles
-      if (!this.activeExecutionVisited) {
-        this.activeExecutionVisited = new Set();
-      }
-      
-      // Prevent infinite recursion in case of cycles
-      if (this.activeExecutionVisited.has(node.id)) {
-        return;
-      }
-      this.activeExecutionVisited.add(node.id);
-
-      // Execute upstream nodes directly when already in execution context
-      const upstreamPromises: Promise<void>[] = [];
-      for (const input of node.inputs) {
-        for (const conn of input.connections) {
-          const upstreamNode = this.getNode(conn.from.nodeId);
-          if (upstreamNode) {
-            // Recursively execute upstream nodes first (with cycle detection)
-            upstreamPromises.push(this.executeUpstream(upstreamNode));
-          }
-        }
-      }
-      // Wait for all upstream nodes, then execute this node
-      await Promise.all(upstreamPromises);
-      await node.execute();
-    } else {
-      // Use full execute() method for proper topological sort when not in execution context
-      try {
-        await this.execute(node);
-      } catch (err) {
-        // Handle cycle detection errors gracefully
-        console.warn(`Failed to execute upstream for node ${node.name}:`, err);
-      }
+  private getTopologicalOrder(): string[] {
+    if (this.cachedTopologicalOrder) {
+      return this.cachedTopologicalOrder;
     }
+    
+    this.cachedTopologicalOrder = GraphValidator.topologicalSort(this);
+    return this.cachedTopologicalOrder;
   }
-
+  
+  /**
+   * Invalidate cached topological order (call when graph structure changes)
+   */
+  private invalidateTopologicalOrder(): void {
+    this.cachedTopologicalOrder = null;
+  }
+  
   /**
    * Execute from a specific entry node using topological sort
    */
@@ -335,41 +317,48 @@ export class Graph {
       return fromNode && toNode && nodesToExecute.has(fromNode) && nodesToExecute.has(toNode);
     });
     
-    // Get topological order
+    // Get topological order for this subgraph
     const sortedNodeIds = GraphValidator.topologicalSort(subgraph);
     
-    // Execute nodes in topological order
-    // Nodes at the same level can execute in parallel
-    const executed = new Set<string>();
+    // Group nodes by dependency level for parallel execution
+    const nodeLevels: Node[][] = [];
+    const nodeToLevel = new Map<string, number>();
     
-    for (const nodeId of sortedNodeIds) {
-      const node = this.getNode(nodeId);
-      if (!node) continue;
+    // Calculate level for each node (distance from entry point)
+    const calculateLevel = (nodeId: string): number => {
+      if (nodeToLevel.has(nodeId)) {
+        return nodeToLevel.get(nodeId)!;
+      }
       
-      // Wait for all upstream nodes to complete
-      const upstreamPromises: Promise<void>[] = [];
+      const node = this.getNode(nodeId);
+      if (!node) return 0;
+      
+      let maxUpstreamLevel = -1;
       for (const input of node.inputs) {
         for (const conn of input.connections) {
-          const upstreamNode = this.getNode(conn.from.nodeId);
-          if (upstreamNode && !executed.has(upstreamNode.id)) {
-            // This shouldn't happen with proper topological sort, but safety check
-            upstreamPromises.push(
-              new Promise(resolve => {
-                const checkInterval = setInterval(() => {
-                  if (executed.has(upstreamNode.id)) {
-                    clearInterval(checkInterval);
-                    resolve();
-                  }
-                }, 10);
-              })
-            );
-          }
+          const upstreamLevel = calculateLevel(conn.from.nodeId);
+          maxUpstreamLevel = Math.max(maxUpstreamLevel, upstreamLevel);
         }
       }
       
-      await Promise.all(upstreamPromises);
-      await node.execute();
-      executed.add(nodeId);
+      const level = maxUpstreamLevel + 1;
+      nodeToLevel.set(nodeId, level);
+      
+      // Ensure level array is large enough
+      while (nodeLevels.length <= level) {
+        nodeLevels.push([]);
+      }
+      nodeLevels[level].push(node);
+      
+      return level;
+    };
+    
+    // Calculate levels for all nodes
+    sortedNodeIds.forEach(nodeId => calculateLevel(nodeId));
+    
+    // Execute nodes level by level, with parallel execution within each level
+    for (const level of nodeLevels) {
+      await Promise.all(level.map(node => node.execute()));
     }
   }
   
@@ -388,7 +377,7 @@ export class Graph {
     this.nodes.forEach(node => {
       node.error = null;
       node.warning = null;
-      node.isDirty = false;
+      node.markDirty(); // Mark as dirty to force re-execution
     });
     this.cookingNodes.clear();
     this.multiCookMode = false;
@@ -513,6 +502,31 @@ export class Graph {
       node.name = graph.generateUniqueNodeName(baseName, node.id);
       node.code = nodeData.code || '';
       node.comment = nodeData.comment || '';
+      
+      // Restore port metadata if available (avoids need to execute for port discovery)
+      if (nodeData.inputs && Array.isArray(nodeData.inputs)) {
+        nodeData.inputs.forEach((portData: any) => {
+          // Create port using the stored metadata
+          const port = node.in(portData.name, portData.defaultValue, {
+            type: portData.dataType || 'any'
+          });
+          // Restore port ID to match saved ID (needed for connection restoration)
+          if (port.id !== portData.id) {
+            (port as any).id = portData.id;
+          }
+        });
+      }
+      
+      if (nodeData.outputs && Array.isArray(nodeData.outputs)) {
+        nodeData.outputs.forEach((portData: any) => {
+          // Create port using the stored metadata
+          const port = node.out(portData.name, portData.portType || 'param');
+          // Restore port ID to match saved ID (needed for connection restoration)
+          if (port.id !== portData.id) {
+            (port as any).id = portData.id;
+          }
+        });
+      }
       
       // Restore props
       if (nodeData.props) {
