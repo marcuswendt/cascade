@@ -3,6 +3,8 @@ import { AssetManager } from './AssetManager.js';
 import { PackageManager } from './PackageManager.js';
 import { GraphValidator, type ValidationResult } from './GraphValidator.js';
 import type { Connection } from '../../types/node.types.js';
+import { packagePathToType, getNodeTemplateCode } from '../../utils/nodeTypeUtils.js';
+import { normalizeColor, isColorValue } from '../../utils/colorUtils.js';
 
 export interface CanvasAnnotation {
   id: string;
@@ -57,34 +59,40 @@ export class Graph {
   }
   
   /**
-   * Generates a unique node name based on a base name.
+   * Generates a unique node ID based on a base ID.
    * Always appends a number starting from 1 (e.g., "Checkers1", "Checkers2").
-   * @param baseName The base name to use (typically the node type)
+   * Ensures the ID has no spaces.
+   * @param baseId The base ID to use (typically the node type)
    * @param excludeNodeId Optional node ID to exclude from uniqueness check (useful when renaming)
-   * @returns A unique node name
+   * @returns A unique node ID with no spaces
    */
-  generateUniqueNodeName(baseName: string, excludeNodeId?: string): string {
+  generateUniqueNodeId(baseId: string, excludeNodeId?: string): string {
+    // Remove spaces from base ID
+    const sanitizedBaseId = baseId.replace(/\s+/g, '');
+    
     // Always use numbered versions starting from 1
     let counter = 1;
-    let candidateName = `${baseName}${counter}`;
+    let candidateId = `${sanitizedBaseId}${counter}`;
     
-    // Find the first available numbered name
+    // Find the first available numbered ID
     while (this.nodes.some(
-      node => node.name === candidateName && (!excludeNodeId || node.id !== excludeNodeId)
+      node => node.id === candidateId && (!excludeNodeId || node.id !== excludeNodeId)
     )) {
       counter++;
-      candidateName = `${baseName}${counter}`;
+      candidateId = `${sanitizedBaseId}${counter}`;
     }
     
-    return candidateName;
+    return candidateId;
   }
   
   addNode(type: string, position: { x: number; y: number }): Node {
-    const id = `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const node = new Node(id, type, this);
+    // Type should be a package path, but we'll convert to short type for internal use
+    const shortType = packagePathToType(type);
+    
+    // Generate unique ID automatically based on short type
+    const id = this.generateUniqueNodeId(shortType);
+    const node = new Node(id, shortType, this);
     node.position = position;
-    // Generate unique name automatically
-    node.name = this.generateUniqueNodeName(type);
     this.nodes.push(node);
     
     // Invalidate cached topological order when graph structure changes
@@ -445,42 +453,82 @@ export class Graph {
   }
   
   toJSON() {
-    // Get entry points (nodes with no input connections)
-    const entryPoints = this.nodes
-      .filter(node => node.inputs.every(p => p.connections.length === 0))
-      .map(node => node.id);
-    
-    // Get cooking node IDs
-    const cookingNodeIds = Array.from(this.cookingNodes).map(n => n.id);
-    
-    return {
+    const result: any = {
       version: '0.1',
       metadata: {
         name: 'Cascade Graph',
         created: new Date().toISOString(),
         modified: new Date().toISOString()
-      },
-      packages: this.packageManager.getCachedPackages().map((pkg: string) => {
-        const [name, version] = pkg.split('@');
-        return { name, version: version || 'latest' };
-      }),
-      assets: {
-        manifest: this.assetManager.list().map(asset => ({
-          id: asset.id,
-          path: asset.path,
-          type: asset.type,
-          size: asset.size
-        }))
-      },
-      nodes: this.nodes.map(n => n.toJSON()),
-      connections: this.connections,
-      annotations: this.annotations,
-      execution: {
-        entryPoints,
-        cookingNodes: cookingNodeIds,
-        autoStart: false
       }
     };
+    
+    // Only include packages if not empty
+    const packages = this.packageManager.getCachedPackages().map((pkg: string) => {
+      const [name, version] = pkg.split('@');
+      return { name, version: version || 'latest' };
+    });
+    if (packages.length > 0) {
+      result.packages = packages;
+    }
+    
+    // Only include assets if manifest is not empty
+    const assets = this.assetManager.list().map(asset => ({
+      id: asset.id,
+      path: asset.path,
+      type: asset.type,
+      size: asset.size
+    }));
+    if (assets.length > 0) {
+      result.assets = { manifest: assets };
+    }
+    
+    result.nodes = this.nodes.map(n => n.toJSON());
+    
+    // Only include connections if not empty
+    const connections = this.connections.map(conn => {
+      const fromNode = this.getNode(conn.from.nodeId);
+      const toNode = this.getNode(conn.to.nodeId);
+      if (!fromNode || !toNode) return null;
+      
+      // Find port indices
+      const fromPortIndex = fromNode.outputs.findIndex(p => p.id === conn.from.portId);
+      const toPortIndex = toNode.inputs.findIndex(p => p.id === conn.to.portId);
+      
+      if (fromPortIndex === -1 || toPortIndex === -1) return null;
+      
+      // Return as [[nodeId, portIndex], [nodeId, portIndex]]
+      return [[conn.from.nodeId, fromPortIndex], [conn.to.nodeId, toPortIndex]];
+    }).filter((conn): conn is [[string, number], [string, number]] => conn !== null);
+    if (connections.length > 0) {
+      result.connections = connections;
+    }
+    
+    // Only include annotations if not empty
+    if (this.annotations.length > 0) {
+      result.annotations = this.annotations.map(ann => {
+        const serialized: any = {
+          id: ann.id,
+          type: ann.type,
+          position: [ann.position.x, ann.position.y]
+        };
+        if (ann.content !== undefined) serialized.content = ann.content;
+        if (ann.src !== undefined) serialized.src = ann.src;
+        if (ann.size) serialized.size = ann.size;
+        if (ann.points) serialized.points = ann.points.map(p => [p.x, p.y]);
+        if (ann.endPosition) serialized.endPosition = [ann.endPosition.x, ann.endPosition.y];
+        if (ann.style) serialized.style = ann.style;
+        if (ann.caption !== undefined) serialized.caption = ann.caption;
+        if (ann.containedElements) serialized.containedElements = ann.containedElements;
+        return serialized;
+      });
+    }
+    
+    // Execution section is redundant:
+    // - entryPoints are computed dynamically from nodes with no input connections
+    // - cookingNodes are derived from the 'cook' flag on each node
+    // Both are restored automatically when nodes are loaded
+    
+    return result;
   }
 
   static fromJSON(json: any, assetManager?: AssetManager, packageManager?: PackageManager): Graph {
@@ -494,14 +542,55 @@ export class Graph {
     
     // Create nodes
     json.nodes.forEach((nodeData: any) => {
-      const node = graph.addNode(nodeData.type, nodeData.position || { x: 0, y: 0 });
-      node.id = nodeData.id;
-      // Generate unique name, using the saved name as base if available
-      // Exclude this node from uniqueness check since it's already in the graph
-      const baseName = nodeData.name || nodeData.type;
-      node.name = graph.generateUniqueNodeName(baseName, node.id);
-      node.code = nodeData.code || '';
+      // Use the saved ID directly, or generate a unique one if not present
+      let nodeId = nodeData.id;
+      if (!nodeId) {
+        // Fallback: use name if available (for backward compatibility), otherwise use type
+        const baseId = nodeData.name || nodeData.type;
+        nodeId = graph.generateUniqueNodeId(baseId);
+      } else {
+        // Check if ID is unique, if not, generate a unique variant
+        let counter = 1;
+        let candidateId = nodeId;
+        while (graph.nodes.some(n => n.id === candidateId)) {
+          counter++;
+          candidateId = `${nodeId}${counter}`;
+        }
+        nodeId = candidateId;
+      }
+      
+      // Type must be a package path (e.g., "cascade.lens.Color")
+      const nodeType = nodeData.type;
+      if (!nodeType || !nodeType.includes('.')) {
+        console.warn(`Invalid node type format: ${nodeType}. Expected package path (e.g., "cascade.lens.Color"). Skipping node.`);
+        return;
+      }
+      
+      // Extract short type name for internal representation
+      const shortType = packagePathToType(nodeType);
+      
+      // Try to load template code for standard library nodes
+      let nodeCode = nodeData.code || '';
+      const templateCode = getNodeTemplateCode(nodeType);
+      if (templateCode) {
+        // Use template code instead of stored code for standard library nodes
+        nodeCode = templateCode;
+      }
+      
+      // Create node with the short type name (internal representation)
+      const node = new Node(nodeId, shortType, graph);
+      
+      // Support both array [x, y] and object { x, y } formats for backward compatibility
+      if (Array.isArray(nodeData.position)) {
+        node.position = { x: nodeData.position[0] || 0, y: nodeData.position[1] || 0 };
+      } else if (nodeData.position && typeof nodeData.position === 'object') {
+        node.position = { x: nodeData.position.x || 0, y: nodeData.position.y || 0 };
+      } else {
+        node.position = { x: 0, y: 0 };
+      }
+      node.code = nodeCode;
       node.comment = nodeData.comment || '';
+      graph.nodes.push(node);
       
       // Restore port metadata if available (avoids need to execute for port discovery)
       if (nodeData.inputs && Array.isArray(nodeData.inputs)) {
@@ -531,22 +620,34 @@ export class Graph {
       // Restore props
       if (nodeData.props) {
         Object.entries(nodeData.props).forEach(([key, value]: [string, any]) => {
+          // Normalize color values to object format (support multiple input formats for backward compatibility)
+          let normalizedValue = value;
+          if (isColorValue(value)) {
+            const normalized = normalizeColor(value);
+            // Only include alpha if it's not 1.0
+            normalizedValue = normalized.a !== undefined && normalized.a !== 1.0
+              ? { r: normalized.r, g: normalized.g, b: normalized.b, a: normalized.a }
+              : { r: normalized.r, g: normalized.g, b: normalized.b };
+          }
+          
           // Props will be defined when node code executes
           // For now, we store the values to restore later
           if (!node.props[key]) {
-            node.props[key] = { value } as any;
+            node.props[key] = { value: normalizedValue } as any;
           } else {
-            node.props[key].value = value;
+            node.props[key].value = normalizedValue;
           }
         });
       }
       
-      // Restore behavior toggles
-      if (nodeData.bypassed !== undefined) {
-        node.setBypassed(nodeData.bypassed);
+      // Restore behavior toggles (support both old and new field names)
+      const bypassValue = nodeData.bypass !== undefined ? nodeData.bypass : nodeData.bypassed;
+      if (bypassValue !== undefined) {
+        node.setBypassed(bypassValue);
       }
-      if (nodeData.cooking !== undefined) {
-        node.setCooking(nodeData.cooking);
+      const cookValue = nodeData.cook !== undefined ? nodeData.cook : nodeData.cooking;
+      if (cookValue !== undefined) {
+        node.setCooking(cookValue);
       }
       
       // Restore node function if code exists
@@ -567,9 +668,36 @@ export class Graph {
     // Connections will be fully validated after nodes execute
     const connectionsToRestore = json.connections || [];
     
-    // Restore annotations
+    // Restore annotations (support both array and object position formats)
     if (json.annotations && Array.isArray(json.annotations)) {
-      graph.annotations = json.annotations;
+      graph.annotations = json.annotations.map((annData: any) => {
+        const annotation: CanvasAnnotation = {
+          id: annData.id,
+          type: annData.type,
+          position: Array.isArray(annData.position) 
+            ? { x: annData.position[0] || 0, y: annData.position[1] || 0 }
+            : { x: annData.position?.x || 0, y: annData.position?.y || 0 }
+        };
+        if (annData.content !== undefined) annotation.content = annData.content;
+        if (annData.src !== undefined) annotation.src = annData.src;
+        if (annData.size) annotation.size = annData.size;
+        if (annData.points) {
+          annotation.points = annData.points.map((p: any) => 
+            Array.isArray(p) 
+              ? { x: p[0] || 0, y: p[1] || 0 }
+              : { x: p.x || 0, y: p.y || 0 }
+          );
+        }
+        if (annData.endPosition) {
+          annotation.endPosition = Array.isArray(annData.endPosition)
+            ? { x: annData.endPosition[0] || 0, y: annData.endPosition[1] || 0 }
+            : { x: annData.endPosition.x || 0, y: annData.endPosition.y || 0 };
+        }
+        if (annData.style) annotation.style = annData.style;
+        if (annData.caption !== undefined) annotation.caption = annData.caption;
+        if (annData.containedElements) annotation.containedElements = annData.containedElements;
+        return annotation;
+      });
     }
     
     // Store connections to restore after nodes execute (for CLI/headless environments)
@@ -579,11 +707,42 @@ export class Graph {
     // Try to restore connections now (will work if nodes were already executed)
     // If ports don't exist, they'll be restored later when restoreConnections() is called
     connectionsToRestore.forEach((connData: any) => {
-      const fromNode = graph.getNode(connData.from.nodeId);
-      const toNode = graph.getNode(connData.to.nodeId);
-      if (fromNode && toNode) {
-        const fromPort = fromNode.outputs.find(p => p.id === connData.from.portId);
-        const toPort = toNode.inputs.find(p => p.id === connData.to.portId);
+      // Support both old format (object with nodeId/portId) and new format (array with indices)
+      let fromNodeId: string, fromPortIndex: number | string;
+      let toNodeId: string, toPortIndex: number | string;
+      
+      if (Array.isArray(connData) && Array.isArray(connData[0]) && Array.isArray(connData[1])) {
+        // New format: [[nodeId, portIndex], [nodeId, portIndex]]
+        [fromNodeId, fromPortIndex] = connData[0];
+        [toNodeId, toPortIndex] = connData[1];
+      } else if (connData.from && connData.to) {
+        // Old format: { from: { nodeId, portId }, to: { nodeId, portId } }
+        fromNodeId = connData.from.nodeId;
+        toNodeId = connData.to.nodeId;
+        const fromNode = graph.getNode(fromNodeId);
+        const toNode = graph.getNode(toNodeId);
+        if (fromNode && toNode) {
+          const fromPort = fromNode.outputs.find(p => p.id === connData.from.portId);
+          const toPort = toNode.inputs.find(p => p.id === connData.to.portId);
+          if (fromPort && toPort) {
+            try {
+              graph.connect(fromPort, toPort);
+            } catch (err) {
+              // Connection failed - will be retried after nodes execute
+            }
+          }
+        }
+        return; // Skip new format processing for old format
+      } else {
+        return; // Invalid format
+      }
+      
+      // New format: use indices
+      const fromNode = graph.getNode(fromNodeId);
+      const toNode = graph.getNode(toNodeId);
+      if (fromNode && toNode && typeof fromPortIndex === 'number' && typeof toPortIndex === 'number') {
+        const fromPort = fromNode.outputs[fromPortIndex];
+        const toPort = toNode.inputs[toPortIndex];
         if (fromPort && toPort) {
           try {
             graph.connect(fromPort, toPort);
@@ -606,18 +765,58 @@ export class Graph {
     if (connectionsToRestore.length === 0) return;
     
     connectionsToRestore.forEach((connData: any) => {
-      const fromNode = this.getNode(connData.from.nodeId);
-      const toNode = this.getNode(connData.to.nodeId);
-      if (fromNode && toNode) {
-        const fromPort = fromNode.outputs.find(p => p.id === connData.from.portId);
-        const toPort = toNode.inputs.find(p => p.id === connData.to.portId);
+      // Support both old format (object with nodeId/portId) and new format (array with indices)
+      let fromNodeId: string, fromPortIndex: number | string;
+      let toNodeId: string, toPortIndex: number | string;
+      
+      if (Array.isArray(connData) && Array.isArray(connData[0]) && Array.isArray(connData[1])) {
+        // New format: [[nodeId, portIndex], [nodeId, portIndex]]
+        [fromNodeId, fromPortIndex] = connData[0];
+        [toNodeId, toPortIndex] = connData[1];
+      } else if (connData.from && connData.to) {
+        // Old format: { from: { nodeId, portId }, to: { nodeId, portId } }
+        fromNodeId = connData.from.nodeId;
+        toNodeId = connData.to.nodeId;
+        const fromNode = this.getNode(fromNodeId);
+        const toNode = this.getNode(toNodeId);
+        if (fromNode && toNode) {
+          const fromPort = fromNode.outputs.find(p => p.id === connData.from.portId);
+          const toPort = toNode.inputs.find(p => p.id === connData.to.portId);
+          if (fromPort && toPort) {
+            // Check if connection already exists
+            const exists = this.connections.some(c => 
+              c.from.nodeId === fromNodeId &&
+              c.from.portId === fromPort.id &&
+              c.to.nodeId === toNodeId &&
+              c.to.portId === toPort.id
+            );
+            if (!exists) {
+              try {
+                this.connect(fromPort, toPort);
+              } catch (err) {
+                // Connection validation failed - skip it
+              }
+            }
+          }
+        }
+        return; // Skip new format processing for old format
+      } else {
+        return; // Invalid format
+      }
+      
+      // New format: use indices
+      const fromNode = this.getNode(fromNodeId);
+      const toNode = this.getNode(toNodeId);
+      if (fromNode && toNode && typeof fromPortIndex === 'number' && typeof toPortIndex === 'number') {
+        const fromPort = fromNode.outputs[fromPortIndex];
+        const toPort = toNode.inputs[toPortIndex];
         if (fromPort && toPort) {
           // Check if connection already exists
           const exists = this.connections.some(c => 
-            c.from.nodeId === connData.from.nodeId &&
-            c.from.portId === connData.from.portId &&
-            c.to.nodeId === connData.to.nodeId &&
-            c.to.portId === connData.to.portId
+            c.from.nodeId === fromNodeId &&
+            c.from.portId === fromPort.id &&
+            c.to.nodeId === toNodeId &&
+            c.to.portId === toPort.id
           );
           if (!exists) {
             try {

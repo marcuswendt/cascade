@@ -75,7 +75,7 @@ export async function runGraph(options: RunOptions): Promise<void> {
         errMsg.includes('HTMLImageElement');
       
       if (verbose && !isBrowserAPIError) {
-        console.warn(`Warning: Node ${node.name} (${node.id}) failed to initialize: ${errMsg}`);
+        console.warn(`Warning: Node ${node.id} failed to initialize: ${errMsg}`);
       }
       // Browser API errors are expected and can be ignored - these nodes are designed for browser execution
     }

@@ -1,9 +1,10 @@
 import type { NodeContext, InputPort, OutputPort, PortOptions, PortType, Connection, Prop } from '../../types/node.types.js';
 import type { Graph } from './Graph.js';
+import { typeToPackagePath, isStandardLibraryNode } from '../../utils/nodeTypeUtils.js';
+import { normalizeColor, isColorValue, type ColorObject } from '../../utils/colorUtils.js';
 
 export class Node implements NodeContext {
   id: string;
-  name: string;
   type: string;
   code: string;
   position: { x: number; y: number };
@@ -49,7 +50,6 @@ export class Node implements NodeContext {
   constructor(id: string, type: string, graph: Graph) {
     this.id = id;
     this.type = type;
-    this.name = type;
     this.code = '';
     this.position = { x: 0, y: 0 };
     this.graph = graph;
@@ -263,22 +263,27 @@ export class Node implements NodeContext {
   }
   
   /**
-   * Renames the node, ensuring the new name is unique.
-   * If the requested name is not unique, generates a unique variant.
-   * @param newName The desired new name
-   * @returns The actual name that was set (may differ if original wasn't unique)
+   * Renames the node, ensuring the new ID is unique and has no spaces.
+   * If the requested ID is not unique, generates a unique variant.
+   * @param newId The desired new ID
+   * @returns The actual ID that was set (may differ if original wasn't unique)
    */
-  rename(newName: string): string {
-    if (!newName || !newName.trim()) {
-      return this.name; // Don't allow empty names
+  rename(newId: string): string {
+    if (!newId || !newId.trim()) {
+      return this.id; // Don't allow empty IDs
     }
     
-    const trimmedName = newName.trim();
-    // Use the graph's unique name generator, excluding this node from the check
-    const uniqueName = this.graph.generateUniqueNodeName(trimmedName, this.id);
-    this.name = uniqueName;
+    // Remove spaces and sanitize the ID
+    const sanitizedId = newId.trim().replace(/\s+/g, '');
+    if (!sanitizedId) {
+      return this.id; // Don't allow empty IDs after sanitization
+    }
+    
+    // Use the graph's unique ID generator, excluding this node from the check
+    const uniqueId = this.graph.generateUniqueNodeId(sanitizedId, this.id);
+    this.id = uniqueId;
     this.markDirty();
-    return uniqueName;
+    return uniqueId;
   }
   
   /**
@@ -375,7 +380,7 @@ export class Node implements NodeContext {
               errMsg.includes('HTMLImageElement');
             
             if (!isBrowserAPIError) {
-              console.error(`Error in onReady callback for node ${this.name}:`, err);
+              console.error(`Error in onReady callback for node ${this.id}:`, err);
             }
           }
         }
@@ -386,7 +391,7 @@ export class Node implements NodeContext {
         
         // Only log non-timeout errors (timeout errors are expected)
         if (!err.message?.includes('timeout')) {
-          console.error(`Error executing node ${this.name}:`, err);
+          console.error(`Error executing node ${this.id}:`, err);
         }
         
         // Don't throw - allow graph execution to continue
@@ -395,7 +400,7 @@ export class Node implements NodeContext {
   }
   
   log(...args: any[]) {
-    console.log(`[${this.name}]`, ...args);
+    console.log(`[${this.id}]`, ...args);
   }
   
   async require(packageName: string, version?: string): Promise<any> {
@@ -504,34 +509,75 @@ export class Node implements NodeContext {
   }
   
   toJSON() {
-    return {
+    // Convert type to full package path
+    const fullType = typeToPackagePath(this.type);
+    
+    const result: any = {
       id: this.id,
-      name: this.name,
-      type: this.type,
-      code: this.code,
-      position: this.position,
-      comment: this.comment,
-      // Store port metadata to avoid execution for port discovery
-      inputs: this.inputs.map(port => ({
+      type: fullType,
+      position: [this.position.x, this.position.y]
+    };
+    
+    // Only include code if it's a custom node (not from standard library)
+    if (!isStandardLibraryNode(fullType) && this.code) {
+      result.code = this.code;
+    }
+    
+    // Only include comment if not empty
+    if (this.comment && this.comment.trim()) {
+      result.comment = this.comment;
+    }
+    
+    // Only include inputs if not empty
+    if (this.inputs.length > 0) {
+      result.inputs = this.inputs.map(port => ({
         id: port.id,
         name: port.name,
         portType: port.portType,
         dataType: port.dataType,
         defaultValue: port.defaultValue
-      })),
-      outputs: this.outputs.map(port => ({
+      }));
+    }
+    
+    // Only include outputs if not empty
+    if (this.outputs.length > 0) {
+      result.outputs = this.outputs.map(port => ({
         id: port.id,
         name: port.name,
         portType: port.portType,
         dataType: port.dataType
-      })),
-      props: Object.entries(this.props).reduce((acc, [key, prop]) => {
-        acc[key] = prop.value;
-        return acc;
-      }, {} as Record<string, any>),
-      bypassed: this.bypassed,
-      cooking: this.cooking
-    };
+      }));
+    }
+    
+    // Only include props if not empty
+    const props = Object.entries(this.props).reduce((acc, [key, prop]) => {
+      let value = prop.value;
+      // Convert color values to normalized object format
+      if (prop.type === 'color' && isColorValue(value)) {
+        const normalized = normalizeColor(value as any);
+        // Only include alpha if it's not 1.0
+        value = normalized.a !== undefined && normalized.a !== 1.0
+          ? { r: normalized.r, g: normalized.g, b: normalized.b, a: normalized.a }
+          : { r: normalized.r, g: normalized.g, b: normalized.b };
+      }
+      acc[key] = value;
+      return acc;
+    }, {} as Record<string, any>);
+    if (Object.keys(props).length > 0) {
+      result.props = props;
+    }
+    
+    // Only include bypass if true (renamed from bypassed)
+    if (this.bypassed) {
+      result.bypass = true;
+    }
+    
+    // Only include cook if true (renamed from cooking)
+    if (this.cooking) {
+      result.cook = true;
+    }
+    
+    return result;
   }
 }
 

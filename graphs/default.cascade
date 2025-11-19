@@ -66,6 +66,35 @@
       },
       "bypassed": false,
       "cooking": true
+    },
+    {
+      "id": "node_blur_default",
+      "name": "Blur1",
+      "type": "Blur",
+      "code": "// Blur node - applies Gaussian blur to an image\nconst image = node.in('image', null);\n\nnode.defineProp('radius', {\n  value: 5.0,\n  params: {\n    min: 0.0,\n    max: 100.0,\n    step: 0.1\n  },\n  displayName: 'Radius',\n  onChange: render\n});\n\nnode.defineProp('wrapEdges', {\n  value: false,\n  type: 'boolean',\n  displayName: 'Wrap Edges',\n  onChange: render\n});\n\nconst output = node.out('image');\n\nfunction getImageSize(img) {\n  if (img instanceof HTMLCanvasElement) {\n    return { width: img.width, height: img.height };\n  } else if (img instanceof HTMLImageElement) {\n    return { width: img.naturalWidth || img.width, height: img.naturalHeight || img.height };\n  }\n  return { width: 0, height: 0 };\n}\n\nfunction getImageData(img, targetWidth, targetHeight) {\n  const tempCanvas = document.createElement('canvas');\n  tempCanvas.width = targetWidth;\n  tempCanvas.height = targetHeight;\n  const tempCtx = tempCanvas.getContext('2d');\n  if (!tempCtx) return null;\n  \n  let srcWidth, srcHeight;\n  if (img instanceof HTMLCanvasElement) {\n    srcWidth = img.width;\n    srcHeight = img.height;\n  } else if (img instanceof HTMLImageElement) {\n    srcWidth = img.naturalWidth || img.width;\n    srcHeight = img.naturalHeight || img.height;\n  } else {\n    return null;\n  }\n  \n  tempCtx.drawImage(img, 0, 0, srcWidth, srcHeight, 0, 0, targetWidth, targetHeight);\n  return tempCtx.getImageData(0, 0, targetWidth, targetHeight);\n}\n\nfunction gaussianBlur(imageData, radius, wrapEdges) {\n  if (radius <= 0) {\n    return imageData;\n  }\n  \n  const width = imageData.width;\n  const height = imageData.height;\n  const data = imageData.data;\n  const result = new ImageData(width, height);\n  const resultData = result.data;\n  \n  // Create Gaussian kernel\n  const kernelSize = Math.ceil(radius * 3) * 2 + 1;\n  const kernel = [];\n  const sigma = radius / 3;\n  const twoSigmaSq = 2 * sigma * sigma;\n  let sum = 0;\n  \n  for (let i = 0; i < kernelSize; i++) {\n    const x = i - Math.floor(kernelSize / 2);\n    const value = Math.exp(-(x * x) / twoSigmaSq);\n    kernel[i] = value;\n    sum += value;\n  }\n  \n  // Normalize kernel\n  for (let i = 0; i < kernelSize; i++) {\n    kernel[i] /= sum;\n  }\n  \n  // Helper function to get pixel coordinate with edge handling\n  function getCoord(coord, max, wrap) {\n    if (wrap) {\n      // Wrap around edges\n      if (coord < 0) {\n        return max + (coord % max);\n      } else if (coord >= max) {\n        return coord % max;\n      }\n      return coord;\n    } else {\n      // Clamp to edges\n      return Math.max(0, Math.min(max - 1, coord));\n    }\n  }\n  \n  // Apply horizontal blur\n  const tempData = new Uint8ClampedArray(data.length);\n  const halfKernel = Math.floor(kernelSize / 2);\n  \n  for (let y = 0; y < height; y++) {\n    for (let x = 0; x < width; x++) {\n      let r = 0, g = 0, b = 0, a = 0;\n      \n      for (let k = 0; k < kernelSize; k++) {\n        const px = getCoord(x + k - halfKernel, width, wrapEdges);\n        const idx = (y * width + px) * 4;\n        const weight = kernel[k];\n        r += data[idx] * weight;\n        g += data[idx + 1] * weight;\n        b += data[idx + 2] * weight;\n        a += data[idx + 3] * weight;\n      }\n      \n      const idx = (y * width + x) * 4;\n      tempData[idx] = r;\n      tempData[idx + 1] = g;\n      tempData[idx + 2] = b;\n      tempData[idx + 3] = a;\n    }\n  }\n  \n  // Apply vertical blur\n  for (let y = 0; y < height; y++) {\n    for (let x = 0; x < width; x++) {\n      let r = 0, g = 0, b = 0, a = 0;\n      \n      for (let k = 0; k < kernelSize; k++) {\n        const py = getCoord(y + k - halfKernel, height, wrapEdges);\n        const idx = (py * width + x) * 4;\n        const weight = kernel[k];\n        r += tempData[idx] * weight;\n        g += tempData[idx + 1] * weight;\n        b += tempData[idx + 2] * weight;\n        a += tempData[idx + 3] * weight;\n      }\n      \n      const idx = (y * width + x) * 4;\n      resultData[idx] = Math.round(r);\n      resultData[idx + 1] = Math.round(g);\n      resultData[idx + 2] = Math.round(b);\n      resultData[idx + 3] = Math.round(a);\n    }\n  }\n  \n  return result;\n}\n\nfunction render() {\n  if (!image.value) {\n    return;\n  }\n  \n  const img = image.value;\n  const { width, height } = getImageSize(img);\n  \n  if (width === 0 || height === 0) {\n    return;\n  }\n  \n  const imageData = getImageData(img, width, height);\n  if (!imageData) {\n    return;\n  }\n  \n  const radius = node.props.radius.value;\n  const wrapEdges = node.props.wrapEdges.value;\n  const blurredData = gaussianBlur(imageData, radius, wrapEdges);\n  \n  const canvas = document.createElement('canvas');\n  canvas.width = width;\n  canvas.height = height;\n  const ctx = canvas.getContext('2d');\n  \n  if (!ctx) return;\n  \n  ctx.putImageData(blurredData, 0, 0);\n  \n  output.setValue(canvas);\n  node.preview = canvas;\n}\n\n// Watch for input changes\nimage.onChange = render;\n\n// Watch for prop changes\nnode.watchProp('radius', render);\nnode.watchProp('wrapEdges', render);\n\n// Initial render\nnode.onReady = () => {\n  render();\n};",
+      "position": { "x": 200, "y": 750 },
+      "comment": "",
+      "props": {
+        "radius": 5.0,
+        "wrapEdges": false
+      },
+      "bypassed": false,
+      "cooking": false
+    },
+    {
+      "id": "node_normalmap_default",
+      "name": "NormalMap1",
+      "type": "NormalMap",
+      "code": "// Normal Map node - computes normal map from height map (red channel)\nconst image = node.in('image', null);\n\nnode.defineProp('scale', {\n  value: 1.0,\n  params: {\n    min: 0.0,\n    max: 10.0,\n    step: 0.1\n  },\n  displayName: 'Scale',\n  onChange: render\n});\n\nnode.defineProp('flipX', {\n  value: false,\n  type: 'boolean',\n  displayName: 'Flip X',\n  onChange: render\n});\n\nnode.defineProp('flipY', {\n  value: false,\n  type: 'boolean',\n  displayName: 'Flip Y',\n  onChange: render\n});\n\nconst output = node.out('image');\n\nfunction getImageSize(img) {\n  if (img instanceof HTMLCanvasElement) {\n    return { width: img.width, height: img.height };\n  } else if (img instanceof HTMLImageElement) {\n    return { width: img.naturalWidth || img.width, height: img.naturalHeight || img.height };\n  }\n  return { width: 0, height: 0 };\n}\n\nfunction getImageData(img, targetWidth, targetHeight) {\n  const tempCanvas = document.createElement('canvas');\n  tempCanvas.width = targetWidth;\n  tempCanvas.height = targetHeight;\n  const tempCtx = tempCanvas.getContext('2d');\n  if (!tempCtx) return null;\n  \n  let srcWidth, srcHeight;\n  if (img instanceof HTMLCanvasElement) {\n    srcWidth = img.width;\n    srcHeight = img.height;\n  } else if (img instanceof HTMLImageElement) {\n    srcWidth = img.naturalWidth || img.width;\n    srcHeight = img.naturalHeight || img.height;\n  } else {\n    return null;\n  }\n  \n  tempCtx.drawImage(img, 0, 0, srcWidth, srcHeight, 0, 0, targetWidth, targetHeight);\n  return tempCtx.getImageData(0, 0, targetWidth, targetHeight);\n}\n\nfunction computeNormalMap(imageData, scale, flipX, flipY) {\n  const width = imageData.width;\n  const height = imageData.height;\n  const data = imageData.data;\n  const result = new ImageData(width, height);\n  const resultData = result.data;\n  \n  // Extract red channel (height values)\n  const heightMap = new Float32Array(width * height);\n  for (let i = 0; i < data.length; i += 4) {\n    const idx = i / 4;\n    heightMap[idx] = data[i] / 255.0; // Red channel as height\n  }\n  \n  // Compute gradients using finite differences\n  for (let y = 0; y < height; y++) {\n    for (let x = 0; x < width; x++) {\n      const idx = y * width + x;\n      \n      // Get neighboring heights with clamping\n      const h00 = heightMap[idx]; // Current\n      const h10 = heightMap[Math.min(x + 1, width - 1) + y * width]; // Right\n      const h01 = heightMap[x + Math.min(y + 1, height - 1) * width]; // Down\n      \n      // Compute gradients (Sobel-like)\n      const dx = (h10 - h00) * scale;\n      const dy = (h01 - h00) * scale;\n      \n      // Apply flips\n      const finalDx = flipX ? -dx : dx;\n      const finalDy = flipY ? -dy : dy;\n      \n      // Compute normal vector\n      // Normal = normalize(-dx, -dy, 1)\n      const nx = -finalDx;\n      const ny = -finalDy;\n      const nz = 1.0;\n      \n      const length = Math.sqrt(nx * nx + ny * ny + nz * nz);\n      const normalizedX = nx / length;\n      const normalizedY = ny / length;\n      const normalizedZ = nz / length;\n      \n      // Map from [-1, 1] to [0, 1] for normal map format\n      const r = (normalizedX * 0.5 + 0.5) * 255;\n      const g = (normalizedY * 0.5 + 0.5) * 255;\n      const b = (normalizedZ * 0.5 + 0.5) * 255;\n      \n      const resultIdx = idx * 4;\n      resultData[resultIdx] = Math.round(Math.max(0, Math.min(255, r)));\n      resultData[resultIdx + 1] = Math.round(Math.max(0, Math.min(255, g)));\n      resultData[resultIdx + 2] = Math.round(Math.max(0, Math.min(255, b)));\n      resultData[resultIdx + 3] = 255; // Alpha\n    }\n  }\n  \n  return result;\n}\n\nfunction render() {\n  if (!image.value) {\n    return;\n  }\n  \n  const img = image.value;\n  const { width, height } = getImageSize(img);\n  \n  if (width === 0 || height === 0) {\n    return;\n  }\n  \n  const imageData = getImageData(img, width, height);\n  if (!imageData) {\n    return;\n  }\n  \n  const scale = node.props.scale.value;\n  const flipX = node.props.flipX.value;\n  const flipY = node.props.flipY.value;\n  const normalData = computeNormalMap(imageData, scale, flipX, flipY);\n  \n  const canvas = document.createElement('canvas');\n  canvas.width = width;\n  canvas.height = height;\n  const ctx = canvas.getContext('2d');\n  \n  if (!ctx) return;\n  \n  ctx.putImageData(normalData, 0, 0);\n  \n  output.setValue(canvas);\n  node.preview = canvas;\n}\n\n// Watch for input changes\nimage.onChange = render;\n\n// Watch for prop changes\nnode.watchProp('scale', render);\nnode.watchProp('flipX', render);\nnode.watchProp('flipY', render);\n\n// Initial render\nnode.onReady = () => {\n  render();\n};",
+      "position": { "x": 400, "y": 950 },
+      "comment": "",
+      "props": {
+        "scale": 1.0,
+        "flipX": false,
+        "flipY": false
+      },
+      "bypassed": false,
+      "cooking": false
     }
   ],
   "connections": [
@@ -90,6 +119,30 @@
       "to": {
         "nodeId": "node_composite_default",
         "portId": "node_composite_default_in_image2"
+      },
+      "type": "param"
+    },
+    {
+      "id": "conn_composite_to_blur",
+      "from": {
+        "nodeId": "node_composite_default",
+        "portId": "node_composite_default_out_image"
+      },
+      "to": {
+        "nodeId": "node_blur_default",
+        "portId": "node_blur_default_in_image"
+      },
+      "type": "param"
+    },
+    {
+      "id": "conn_blur_to_normalmap",
+      "from": {
+        "nodeId": "node_blur_default",
+        "portId": "node_blur_default_out_image"
+      },
+      "to": {
+        "nodeId": "node_normalmap_default",
+        "portId": "node_normalmap_default_in_image"
       },
       "type": "param"
     }
