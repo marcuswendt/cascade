@@ -3244,7 +3244,6 @@ node.onReady = () => {
   .annotation-text {
     color: #fff;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    position: relative;
     overflow: visible;
   }
   
@@ -3252,7 +3251,6 @@ node.onReady = () => {
     border-radius: 4px;
     overflow: visible;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    position: relative;
   }
   
   .annotation-image img {
