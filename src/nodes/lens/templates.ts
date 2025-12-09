@@ -70,7 +70,9 @@ node.onReady = () => {
   }
   
   if (type === 'Image') {
-    return nodeTemplate`// Image node - loads an image file
+    return nodeTemplate`// Image node - loads an image file or accepts image input
+const imageInput = node.in('image', null);
+
 node.defineProp('file', {
   value: '',
   type: 'image',
@@ -79,7 +81,7 @@ node.defineProp('file', {
   },
   displayName: 'File',
   onChange: async (prop) => {
-    if (prop.value) {
+    if (prop.value && !imageInput.value) {
       await render();
     }
   }
@@ -96,7 +98,7 @@ node.defineProp('resolutionMode', {
   },
   displayName: 'Resolution Mode',
   onChange: async () => {
-    if (node.props.file.value) {
+    if ((node.props.file.value || imageInput.value)) {
       await render();
     }
   }
@@ -111,7 +113,7 @@ node.defineProp('maxResolution', {
   displayName: 'Max Resolution',
   hidden: () => node.props.resolutionMode.value !== 'max',
   onChange: async () => {
-    if (node.props.file.value && node.props.resolutionMode.value === 'max') {
+    if ((node.props.file.value || imageInput.value) && node.props.resolutionMode.value === 'max') {
       await render();
     }
   }
@@ -126,7 +128,7 @@ node.defineProp('fixedResolution', {
   displayName: 'Fixed Resolution',
   hidden: () => node.props.resolutionMode.value !== 'fixed',
   onChange: async () => {
-    if (node.props.file.value && node.props.resolutionMode.value === 'fixed') {
+    if ((node.props.file.value || imageInput.value) && node.props.resolutionMode.value === 'fixed') {
       await render();
     }
   }
@@ -135,20 +137,46 @@ node.defineProp('fixedResolution', {
 const output = node.out('image');
 
 async function render() {
-  if (!node.props.file.value) {
+  let img = null;
+  
+  // First check input port (from annotation or other node)
+  if (imageInput.value) {
+    if (imageInput.value instanceof HTMLImageElement) {
+      img = imageInput.value;
+    } else if (imageInput.value instanceof HTMLCanvasElement) {
+      // Convert canvas to image
+      img = new Image();
+      img.src = imageInput.value.toDataURL();
+      await new Promise((resolve, reject) => {
+        img!.onload = resolve;
+        img!.onerror = reject;
+      });
+    } else if (typeof imageInput.value === 'string') {
+      // String might be an image path
+      img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise((resolve, reject) => {
+        img!.onload = resolve;
+        img!.onerror = reject;
+        img!.src = imageInput.value;
+      });
+    }
+  } else if (node.props.file.value) {
+    // Fall back to file prop
+    img = new Image();
+    img.crossOrigin = 'anonymous';
+    await new Promise((resolve, reject) => {
+      img!.onload = resolve;
+      img!.onerror = reject;
+      img!.src = node.props.file.value;
+    });
+  }
+  
+  if (!img) {
     return;
   }
   
   try {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = reject;
-      img.src = node.props.file.value;
-    });
-    
     const mode = node.props.resolutionMode.value;
     let result;
     
@@ -193,12 +221,19 @@ async function render() {
     }
   } catch (error) {
     node.error = error;
-    console.error('Failed to load image:', error);
+    console.error('Failed to process image:', error);
   }
 }
 
+// Watch for input changes
+imageInput.onChange = () => {
+  render().catch(err => {
+    console.error('Image render error in input onChange:', err);
+  });
+};
+
 node.onReady = async () => {
-  if (node.props.file.value) {
+  if (node.props.file.value || imageInput.value) {
     await render();
   }
 };
@@ -458,26 +493,39 @@ function getBlendMode(mode) {
 }
 
 async function render() {
-  // If inputs are missing, execute upstream nodes to ensure they render first
-  if (!image1.value || !image2.value) {
-    // Execute upstream nodes first to ensure inputs are ready
-    // Use graph.execute() which handles topological sort and cycle detection
-    const upstreamPromises = [];
-    node.inputs.forEach(input => {
-      input.connections.forEach(conn => {
-        const upstreamNode = graph.getNode(conn.from.nodeId);
-        if (upstreamNode) {
-          // Execute from upstream node - graph handles dependencies automatically
-          upstreamPromises.push(
-            graph.execute(upstreamNode).catch(err => {
-              // Handle errors gracefully (e.g., cycles)
-              console.warn('Failed to execute upstream node:', err);
-            })
-          );
-        }
-      });
+  // Execute upstream nodes for any missing inputs
+  const upstreamPromises = [];
+  
+  // Check image1 input
+  if (!image1.value) {
+    image1.connections.forEach(conn => {
+      const upstreamNode = graph.getNode(conn.from.nodeId);
+      if (upstreamNode) {
+        upstreamPromises.push(
+          graph.execute(upstreamNode).catch(err => {
+            console.warn('Failed to execute upstream node for image1:', err);
+          })
+        );
+      }
     });
-    // Wait for all upstream nodes to finish executing
+  }
+  
+  // Check image2 input
+  if (!image2.value) {
+    image2.connections.forEach(conn => {
+      const upstreamNode = graph.getNode(conn.from.nodeId);
+      if (upstreamNode) {
+        upstreamPromises.push(
+          graph.execute(upstreamNode).catch(err => {
+            console.warn('Failed to execute upstream node for image2:', err);
+          })
+        );
+      }
+    });
+  }
+  
+  // Wait for all upstream nodes to finish executing
+  if (upstreamPromises.length > 0) {
     await Promise.all(upstreamPromises);
   }
   

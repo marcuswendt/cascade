@@ -475,7 +475,7 @@
             handleCategoryClick(libraryId, item.data.id);
             navigationMode = 'node';
             selectedNodeIndex = 0;
-          } else if (item.type === 'node') {
+          } else if (item.type === 'computation') {
             // Direct node - create it immediately
             handleNodeClick(getNode(item));
           }

@@ -10,12 +10,12 @@
   import Tabs from './Tabs.svelte';
   import CodeEditor from './CodeEditor.svelte';
   import type { Graph } from '@/core/engine/Graph';
-  import type { Node } from '@/core/engine/Node';
+  import type { Computation } from '@/core/engine/Computation';
   
   import { createEventDispatcher } from 'svelte';
   
   export let graph: Graph | undefined;
-  export let selectedNode: Node | null = null;
+  export let selectedNode: Computation | null = null;
   export let selectedAnnotation: string | null = null;
   export let activeTool: string = 'select';
   export let activeLibrary: string | null = null;
@@ -37,7 +37,7 @@
     type: 'graph' | 'editor' | 'viewer' | 'log' | 'inspector';
     label: string;
     windowId: string; // Which window region this tab belongs to: 'graph', 'viewer', 'log', 'inspector'
-    node?: Node; // Only for editor tabs
+    node?: Computation; // Only for editor tabs
     icon?: string; // Optional icon for the tab
   }
   
@@ -182,7 +182,7 @@
     activeTabIds = new Map(activeTabIds);
   }
   
-  function openEditorTab(node: Node, targetWindowId: string = 'graph') {
+  function openEditorTab(node: Computation, targetWindowId: string = 'graph') {
     // Always ensure default tab exists when opening an editor
     ensureDefaultTab(targetWindowId);
     const tabs = getTabsForWindow(targetWindowId);
@@ -329,7 +329,7 @@
     }
   }
   
-  function handleNodeEdit(e: CustomEvent<{ node: Node }>) {
+  function handleNodeEdit(e: CustomEvent<{ node: Computation }>) {
     openEditorTab(e.detail.node, 'graph');
   }
   
@@ -411,11 +411,11 @@
   }
   
   // Method to initialize default nodes
-  export function initializeDefaultNodes() {
-    if (canvasRef && canvasRef.initializeDefaultNodes) {
-      canvasRef.initializeDefaultNodes();
-    }
-  }
+  // export function initializeDefaultNodes() {
+  //   if (canvasRef && canvasRef.initializeDefaultNodes) {
+  //     canvasRef.initializeDefaultNodes();
+  //   }
+  // }
   
   // Method to center on nodes
   export function centerOnNodes() {
@@ -572,7 +572,7 @@
   $: inspectorActiveTabId = activeTabIds.get('inspector');
   
   // Get currently cooking node for Viewer title
-  let cookingNode: Node | null = null;
+  let cookingNode: Computation | null = null;
   $: {
     // Force reactivity by accessing cookingNodes
     if (graph) {

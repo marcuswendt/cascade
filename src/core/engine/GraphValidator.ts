@@ -1,5 +1,5 @@
 import type { Graph } from './Graph.js';
-import type { Node } from './Node.js';
+import type { Computation } from './Computation.js';
 import type { Connection } from '../../types/node.types.js';
 
 export interface ValidationError {
@@ -62,8 +62,9 @@ export class GraphValidator {
       return false;
     };
 
-    // Check all nodes
-    for (const node of graph.nodes) {
+    // Check all nodes (filter elements by type)
+    const nodes = graph.nodes;
+    for (const node of nodes) {
       if (!visited.has(node.id)) {
         dfs(node.id);
       }
@@ -150,8 +151,9 @@ export class GraphValidator {
       sorted.push(nodeId);
     };
 
-    // Visit all nodes
-    for (const node of graph.nodes) {
+    // Visit all nodes (filter elements by type)
+    const nodes = graph.nodes;
+    for (const node of nodes) {
       if (!visited.has(node.id)) {
         visit(node.id);
       }
@@ -279,7 +281,8 @@ export class GraphValidator {
       connectedNodes.add(conn.to.nodeId);
     }
 
-    const orphanedNodes = graph.nodes.filter(n => {
+    const nodes = graph.nodes;
+    const orphanedNodes = nodes.filter(n => {
       // A node is orphaned if it has no connections AND is not an entry point
       const hasNoConnections = !connectedNodes.has(n.id);
       const isEntryPoint = n.inputs.every(p => p.connections.length === 0);
@@ -295,10 +298,10 @@ export class GraphValidator {
     }
 
     // Check entry points exist
-    const entryPoints = graph.nodes.filter(
+    const entryPoints = nodes.filter(
       node => node.inputs.every(p => p.connections.length === 0)
     );
-    if (entryPoints.length === 0 && graph.nodes.length > 0) {
+    if (entryPoints.length === 0 && nodes.length > 0) {
       warnings.push({
         type: 'invalid_entry_point',
         message: 'No entry points found (all nodes have input connections)'

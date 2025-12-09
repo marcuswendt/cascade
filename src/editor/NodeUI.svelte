@@ -1,11 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { Node } from '@/core/engine/Node';
+  import type { Computation } from '@/core/engine/Computation';
   import { getNodeIcon } from './nodeTemplates';
   import Icon from './Icon.svelte';
   import { getPortColor } from '@/utils/portColors';
   
-  export let node: Node;
+  export let node: Computation;
   export let selected = false;
   
   const dispatch = createEventDispatcher();

@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { Graph } from '@/core/engine/Graph';
-  import type { Node } from '@/core/engine/Node';
+  import type { Computation } from '@/core/engine/Computation';
   
   export let graph: Graph | undefined;
-  export let selectedNode: Node | null = null;
-  
+  export let selectedNode: Computation | null = null;
+
   let container: HTMLDivElement;
   let currentViewer: 'canvas' | 'image' | 'text' | 'empty' = 'empty';
-  let displayNode: Node | null = null;
+  let displayNode: Computation | null = null;
   
   // Determine which node to display
   $: {
@@ -190,6 +190,27 @@
     }
   }
   
+  // Render empty viewer
+  function renderEmpty() {
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    const wrapper = document.createElement('div');
+    wrapper.className = 'empty-viewer';
+    
+    const p1 = document.createElement('p');
+    p1.textContent = 'No preview available';
+    wrapper.appendChild(p1);
+    
+    const p2 = document.createElement('p');
+    p2.className = 'hint';
+    p2.textContent = 'Select a node with output to view its content';
+    wrapper.appendChild(p2);
+    
+    container.appendChild(wrapper);
+  }
+  
   // Update viewer when node or type changes
   $: {
     if (currentViewer === 'canvas') {
@@ -199,9 +220,7 @@
     } else if (currentViewer === 'text') {
       renderText();
     } else {
-      if (container) {
-        container.innerHTML = '';
-      }
+      renderEmpty();
     }
   }
   
@@ -236,7 +255,7 @@
     background: #0a0a0a;
   }
   
-  .empty-viewer {
+  :global(.empty-viewer) {
     width: 100%;
     height: 100%;
     display: flex;
@@ -249,11 +268,11 @@
     padding: 32px;
   }
   
-  .empty-viewer p {
+  :global(.empty-viewer p) {
     margin: 8px 0;
   }
   
-  .empty-viewer .hint {
+  :global(.empty-viewer .hint) {
     font-size: 12px;
     color: #444;
   }

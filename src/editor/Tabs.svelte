@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { Node } from '@/core/engine/Node';
+  import type { Computation } from '@/core/engine/Computation';
   import Icon from './Icon.svelte';
   
   interface Tab {
@@ -8,7 +8,7 @@
     type: 'graph' | 'editor' | 'viewer' | 'log' | 'inspector';
     label: string;
     windowId: string;
-    node?: Node;
+    node?: Computation;
     icon?: string;
   }
   

@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { Node } from '@/core/engine/Node';
-  import type { InputPort, Prop } from '@/types/node.types';
+  import type { Computation } from '@/core/engine/Computation';
+  import type { InputPort, Prop, OutputPort } from '@/types/node.types';
   import type { Graph, CanvasAnnotation } from '@/core/engine/Graph';
+  import type { Annotation } from '@/core/annotations/Annotation';
   import { inferPropControlType } from '@/utils/propUtils';
   import NumberInput from './components/NumberInput.svelte';
   import VectorInput from './components/VectorInput.svelte';
@@ -13,8 +14,9 @@
   import FolderGroup from './components/FolderGroup.svelte';
   import ColorRampEditor from './components/ColorRampEditor.svelte';
   import { propUpdateCounters } from './stores/propUpdateStore';
+  import { normalizeColor, colorToHex } from '@/utils/colorUtils';
   
-  export let node: Node | null = null;
+  export let node: Computation | null = null;
   export let annotation: CanvasAnnotation | null = null;
   export let graph: Graph | null = null;
   export let position: 'right' | 'left' = 'right';
@@ -170,54 +172,44 @@
   // Annotation styling handlers
   function handleAnnotationStyleChange(styleKey: string, value: any) {
     if (annotation && graph) {
-      // Create a new style object to ensure reactivity
-      annotation.style = {
-        ...annotation.style,
+      // Create a new style object directly without mutating the original
+      const newStyle = {
+        ...(annotation.style || {}),
         [styleKey]: value
       };
-      // Force reactivity by creating new array and updating annotation reference
-      const index = graph.annotations.findIndex(a => a.id === annotation.id);
-      if (index >= 0) {
-        graph.annotations = [
-          ...graph.annotations.slice(0, index),
-          { ...graph.annotations[index], style: annotation.style },
-          ...graph.annotations.slice(index + 1)
-        ];
+      // Update annotation instance directly, then trigger reactivity
+      const ann = graph.getAnnotation(annotation.id);
+      if (ann) {
+        ann.style = newStyle;
+        // Trigger reactivity by reassigning annotations array
+        graph.annotations = [...graph.annotations];
       }
     }
   }
   
   function handleAnnotationSizeChange(sizeKey: 'width' | 'height', value: number) {
     if (annotation && graph) {
-      // Create a new size object to ensure reactivity
-      annotation.size = {
-        ...(annotation.size || { width: 540, height: 60 }),
-        [sizeKey]: value
-      };
-      // Force reactivity by creating new array and updating annotation reference
-      const index = graph.annotations.findIndex(a => a.id === annotation.id);
-      if (index >= 0) {
-        graph.annotations = [
-          ...graph.annotations.slice(0, index),
-          { ...graph.annotations[index], size: annotation.size },
-          ...graph.annotations.slice(index + 1)
-        ];
+      const ann = graph.getAnnotation(annotation.id);
+      if (ann) {
+        if (!ann.size) {
+          ann.size = { width: 540, height: 60 };
+        }
+        ann.size[sizeKey] = value;
+        // Trigger reactivity
+        graph.annotations = [...graph.annotations];
       }
     }
   }
   
   function handleAnnotationContentChange(value: string) {
     if (annotation && graph) {
-      // Force reactivity by creating new array and updating annotation reference
-      const index = graph.annotations.findIndex(a => a.id === annotation.id);
-      if (index >= 0) {
-        graph.annotations = [
-          ...graph.annotations.slice(0, index),
-          { ...graph.annotations[index], content: value },
-          ...graph.annotations.slice(index + 1)
-        ];
+      const ann = graph.getAnnotation(annotation.id);
+      if (ann && ann.type === 'text') {
+        (ann as any).content = value;
+        // Trigger reactivity
+        graph.annotations = [...graph.annotations];
         // Update the annotation reference
-        annotation.content = value;
+        (annotation as any).content = value;
       }
     }
   }
@@ -255,14 +247,10 @@
   function handleAnnotationPositionXInput(e: Event) {
     const value = parseFloat((e.target as HTMLInputElement).value);
     if (!isNaN(value) && annotation && graph) {
-      const index = graph.annotations.findIndex(a => a.id === annotation.id);
-      if (index >= 0) {
-        graph.annotations = [
-          ...graph.annotations.slice(0, index),
-          { ...graph.annotations[index], position: { ...annotation.position, x: value } },
-          ...graph.annotations.slice(index + 1)
-        ];
-        annotation.position.x = value;
+      const ann = graph.getAnnotation(annotation.id);
+      if (ann) {
+        ann.position.x = value;
+        graph.annotations = [...graph.annotations];
       }
     }
   }
@@ -270,14 +258,10 @@
   function handleAnnotationPositionYInput(e: Event) {
     const value = parseFloat((e.target as HTMLInputElement).value);
     if (!isNaN(value) && annotation && graph) {
-      const index = graph.annotations.findIndex(a => a.id === annotation.id);
-      if (index >= 0) {
-        graph.annotations = [
-          ...graph.annotations.slice(0, index),
-          { ...graph.annotations[index], position: { ...annotation.position, y: value } },
-          ...graph.annotations.slice(index + 1)
-        ];
-        annotation.position.y = value;
+      const ann = graph.getAnnotation(annotation.id);
+      if (ann) {
+        ann.position.y = value;
+        graph.annotations = [...graph.annotations];
       }
     }
   }
@@ -285,17 +269,17 @@
   function handleAnnotationEndPositionXInput(e: Event) {
     const value = parseFloat((e.target as HTMLInputElement).value);
     if (!isNaN(value) && annotation && graph) {
-      const index = graph.annotations.findIndex(a => a.id === annotation.id);
-      if (index >= 0) {
-        graph.annotations = [
-          ...graph.annotations.slice(0, index),
-          { ...graph.annotations[index], endPosition: { ...(annotation.endPosition || annotation.position), x: value } },
-          ...graph.annotations.slice(index + 1)
-        ];
-        if (annotation.endPosition) {
-          annotation.endPosition.x = value;
+      const ann = graph.getAnnotation(annotation.id);
+      if (ann && ann.type === 'line') {
+        if (!(ann as any).endPosition) {
+          (ann as any).endPosition = { ...ann.position };
+        }
+        (ann as any).endPosition.x = value;
+        graph.annotations = [...graph.annotations];
+        if ((annotation as any).endPosition) {
+          (annotation as any).endPosition.x = value;
         } else {
-          annotation.endPosition = { ...annotation.position, x: value };
+          (annotation as any).endPosition = { ...annotation.position, x: value };
         }
       }
     }
@@ -304,17 +288,17 @@
   function handleAnnotationEndPositionYInput(e: Event) {
     const value = parseFloat((e.target as HTMLInputElement).value);
     if (!isNaN(value) && annotation && graph) {
-      const index = graph.annotations.findIndex(a => a.id === annotation.id);
-      if (index >= 0) {
-        graph.annotations = [
-          ...graph.annotations.slice(0, index),
-          { ...graph.annotations[index], endPosition: { ...(annotation.endPosition || annotation.position), y: value } },
-          ...graph.annotations.slice(index + 1)
-        ];
-        if (annotation.endPosition) {
-          annotation.endPosition.y = value;
+      const ann = graph.getAnnotation(annotation.id);
+      if (ann && ann.type === 'line') {
+        if (!(ann as any).endPosition) {
+          (ann as any).endPosition = { ...ann.position };
+        }
+        (ann as any).endPosition.y = value;
+        graph.annotations = [...graph.annotations];
+        if ((annotation as any).endPosition) {
+          (annotation as any).endPosition.y = value;
         } else {
-          annotation.endPosition = { ...annotation.position, y: value };
+          (annotation as any).endPosition = { ...annotation.position, y: value };
         }
       }
     }
@@ -332,6 +316,60 @@
     if (/^#[0-9A-Fa-f]{6}$/.test(value)) {
       handleAnnotationStyleChange('strokeColor', value);
     }
+  }
+  
+  // Handler for VectorInput position changes
+  function handleAnnotationPositionChange(value: number[]) {
+    if (annotation && graph && value.length >= 2) {
+      const ann = graph.getAnnotation(annotation.id);
+      if (ann) {
+        ann.position = { x: value[0], y: value[1] };
+        graph.annotations = [...graph.annotations];
+      }
+    }
+  }
+  
+  // Handler for ColorPicker text color changes
+  function handleAnnotationTextColorChange(color: any) {
+    if (annotation && graph) {
+      // ColorPicker returns ColorObject, convert to hex string for annotation style
+      const colorObj = normalizeColor(color);
+      const hexValue = colorToHex(colorObj);
+      handleAnnotationStyleChange('color', hexValue);
+    }
+  }
+  
+  // Handler for ColorPicker background color changes
+  function handleAnnotationBackgroundColorChange(color: any) {
+    if (annotation && graph) {
+      // ColorPicker returns ColorObject, convert to hex string for annotation style
+      const colorObj = normalizeColor(color);
+      const hexValue = colorToHex(colorObj);
+      handleAnnotationStyleChange('backgroundColor', hexValue);
+    }
+  }
+  
+  // Helper function to adjust number input value
+  function adjustNumberInput(inputId: string, delta: number, min?: number, max?: number, step: number = 1) {
+    const input = document.getElementById(inputId) as HTMLInputElement;
+    if (!input) return;
+    
+    let currentValue = parseFloat(input.value) || 0;
+    let newValue = currentValue + (delta * step);
+    
+    if (min !== undefined && newValue < min) newValue = min;
+    if (max !== undefined && newValue > max) newValue = max;
+    
+    input.value = String(newValue);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  
+  // Mousewheel handler for number inputs
+  function handleNumberInputWheel(e: WheelEvent, min?: number, max?: number, step: number = 1) {
+    e.preventDefault();
+    const input = e.target as HTMLInputElement;
+    const delta = e.deltaY > 0 ? -1 : 1;
+    adjustNumberInput(input.id, delta, min, max, step);
   }
 </script>
 
@@ -357,28 +395,17 @@
         <div class="section-header">
           <span class="section-title">Position</span>
         </div>
-        <div class="position-grid">
-          <div class="position-input-group">
-            <label class="position-label" for="annotation-x">X</label>
-            <input
-              id="annotation-x"
-              type="number"
-              class="position-input"
-              value={Math.round(annotation.position.x)}
-              on:input={handleAnnotationPositionXInput}
-            />
-          </div>
-          <div class="position-input-group">
-            <label class="position-label" for="annotation-y">Y</label>
-            <input
-              id="annotation-y"
-              type="number"
-              class="position-input"
-              value={Math.round(annotation.position.y)}
-              on:input={handleAnnotationPositionYInput}
-            />
-          </div>
-        </div>
+        {#key `position-${annotation.id}-${annotation.position.x}-${annotation.position.y}`}
+          <VectorInput
+            prop={{
+              value: [annotation.position.x, annotation.position.y],
+              type: 'vec2',
+              params: { integer: true }
+            }}
+            id="annotation-position"
+            onValueChange={handleAnnotationPositionChange}
+          />
+        {/key}
       </div>
       
       <!-- Layout -->
@@ -389,25 +416,55 @@
         <div class="layout-grid">
           <div class="layout-input-group">
             <label class="layout-label" for="annotation-width">W</label>
-            <input
-              id="annotation-width"
-              type="number"
-              class="layout-input"
-              min="100"
-              value={annotation.size?.width || 540}
-              on:input={(e) => handleAnnotationSizeInput('width', e)}
-            />
+            <div class="number-input-with-buttons">
+              <input
+                id="annotation-width"
+                type="number"
+                class="layout-input"
+                min="100"
+                value={annotation.size?.width || 540}
+                on:input={(e) => handleAnnotationSizeInput('width', e)}
+                on:wheel={(e) => handleNumberInputWheel(e, 100, undefined, 10)}
+              />
+              <button
+                class="number-button decrement"
+                on:click={() => adjustNumberInput('annotation-width', -1, 100)}
+                type="button"
+                title="Decrease"
+              >−</button>
+              <button
+                class="number-button increment"
+                on:click={() => adjustNumberInput('annotation-width', 1, 100)}
+                type="button"
+                title="Increase"
+              >+</button>
+            </div>
           </div>
           <div class="layout-input-group">
             <label class="layout-label" for="annotation-height">H</label>
-            <input
-              id="annotation-height"
-              type="number"
-              class="layout-input"
-              min="20"
-              value={annotation.size?.height || 60}
-              on:input={(e) => handleAnnotationSizeInput('height', e)}
-            />
+            <div class="number-input-with-buttons">
+              <input
+                id="annotation-height"
+                type="number"
+                class="layout-input"
+                min="20"
+                value={annotation.size?.height || 60}
+                on:input={(e) => handleAnnotationSizeInput('height', e)}
+                on:wheel={(e) => handleNumberInputWheel(e, 20, undefined, 10)}
+              />
+              <button
+                class="number-button decrement"
+                on:click={() => adjustNumberInput('annotation-height', -1, 20)}
+                type="button"
+                title="Decrease"
+              >−</button>
+              <button
+                class="number-button increment"
+                on:click={() => adjustNumberInput('annotation-height', 1, 20)}
+                type="button"
+                title="Increase"
+              >+</button>
+            </div>
           </div>
         </div>
       </div>
@@ -418,49 +475,82 @@
           <span class="section-title">Typography</span>
         </div>
         
-        <div class="typography-row">
-          <div class="typography-input-group">
-            <label class="typography-label" for="annotation-font-weight">Weight</label>
-            <select
-              id="annotation-font-weight"
-              class="typography-select"
-              value={annotation.style?.fontWeight || 'normal'}
-              on:change={(e) => handleAnnotationStyleSelectChange('fontWeight', e)}
-            >
-              <option value="normal">Regular</option>
-              <option value="600">Semi-bold</option>
-              <option value="bold">Bold</option>
-              <option value="700">Extra Bold</option>
-            </select>
-          </div>
-          
-          <div class="typography-input-group">
-            <label class="typography-label" for="annotation-font-size">Size</label>
-            <input
-              id="annotation-font-size"
-              type="number"
-              class="typography-number-input"
-              min="8"
-              max="72"
-              step="1"
-              value={annotation.style?.fontSize || 14}
-              on:input={(e) => handleAnnotationStyleNumberInput('fontSize', e)}
-            />
-          </div>
+        <!-- Size Presets -->
+        <div class="typography-presets">
+          <button
+            class="preset-button"
+            class:active={(annotation.style?.fontSize || 14) === 32 && (annotation.style?.fontWeight || 'normal') === 'bold'}
+            on:click={() => {
+              handleAnnotationStyleChange('fontSize', 32);
+              handleAnnotationStyleChange('fontWeight', 'bold');
+            }}
+            title="Heading 1"
+          >
+            H1
+          </button>
+          <button
+            class="preset-button"
+            class:active={(annotation.style?.fontSize || 14) === 24 && (annotation.style?.fontWeight || 'normal') === 'bold'}
+            on:click={() => {
+              handleAnnotationStyleChange('fontSize', 24);
+              handleAnnotationStyleChange('fontWeight', 'bold');
+            }}
+            title="Heading 2"
+          >
+            H2
+          </button>
+          <button
+            class="preset-button"
+            class:active={(annotation.style?.fontSize || 14) === 18 && (annotation.style?.fontWeight || 'normal') === 'bold'}
+            on:click={() => {
+              handleAnnotationStyleChange('fontSize', 18);
+              handleAnnotationStyleChange('fontWeight', 'bold');
+            }}
+            title="Heading 3"
+          >
+            H3
+          </button>
+          <button
+            class="preset-button"
+            class:active={(annotation.style?.fontSize || 14) === 14 && (annotation.style?.fontWeight || 'normal') === 'normal'}
+            on:click={() => {
+              handleAnnotationStyleChange('fontSize', 14);
+              handleAnnotationStyleChange('fontWeight', 'normal');
+            }}
+            title="Text"
+          >
+            Text
+          </button>
         </div>
         
         <div class="typography-row">
           <div class="typography-input-group">
-            <label class="typography-label" for="annotation-font-style">Style</label>
-            <select
-              id="annotation-font-style"
-              class="typography-select"
-              value={annotation.style?.fontStyle || 'normal'}
-              on:change={(e) => handleAnnotationStyleSelectChange('fontStyle', e)}
-            >
-              <option value="normal">Normal</option>
-              <option value="italic">Italic</option>
-            </select>
+            <label class="typography-label" for="annotation-font-size">Size</label>
+            <div class="number-input-with-buttons">
+              <input
+                id="annotation-font-size"
+                type="number"
+                class="typography-number-input"
+                min="8"
+                max="72"
+                step="1"
+                value={annotation.style?.fontSize || 14}
+                on:input={(e) => handleAnnotationStyleNumberInput('fontSize', e)}
+                on:wheel={(e) => handleNumberInputWheel(e, 8, 72, 1)}
+              />
+              <button
+                class="number-button decrement"
+                on:click={() => adjustNumberInput('annotation-font-size', -1, 8, 72, 1)}
+                type="button"
+                title="Decrease"
+              >−</button>
+              <button
+                class="number-button increment"
+                on:click={() => adjustNumberInput('annotation-font-size', 1, 8, 72, 1)}
+                type="button"
+                title="Increase"
+              >+</button>
+            </div>
           </div>
           
           <div class="typography-input-group">
@@ -502,30 +592,60 @@
             </div>
           </div>
         </div>
+        
+        <!-- Style Toggle Buttons -->
+        <div class="typography-toggles">
+          <button
+            class="toggle-button"
+            class:active={(annotation.style?.fontWeight || 'normal') === 'bold'}
+            on:click={() => {
+              const currentWeight = annotation.style?.fontWeight || 'normal';
+              handleAnnotationStyleChange('fontWeight', currentWeight === 'bold' ? 'normal' : 'bold');
+            }}
+            title="Bold"
+          >
+            <strong>B</strong>
+          </button>
+          <button
+            class="toggle-button"
+            class:active={(annotation.style?.fontStyle || 'normal') === 'italic'}
+            on:click={() => {
+              const currentStyle = annotation.style?.fontStyle || 'normal';
+              handleAnnotationStyleChange('fontStyle', currentStyle === 'italic' ? 'normal' : 'italic');
+            }}
+            title="Italic"
+          >
+            <em>I</em>
+          </button>
+          <button
+            class="toggle-button"
+            class:active={(annotation.style?.fontWeight || 'normal') === 'normal' && (annotation.style?.fontStyle || 'normal') === 'normal'}
+            on:click={() => {
+              handleAnnotationStyleChange('fontWeight', 'normal');
+              handleAnnotationStyleChange('fontStyle', 'normal');
+            }}
+            title="Normal"
+          >
+            N
+          </button>
+        </div>
       </div>
       
-      <!-- Fill -->
+      <!-- Text Color -->
       <div class="section">
         <div class="section-header">
-          <span class="section-title">Fill</span>
+          <span class="section-title">Text Color</span>
         </div>
-        <div class="fill-controls">
-          <input
+        {#key `text-color-${annotation.id}-${annotation.style?.color || '#ffffff'}`}
+          <ColorPicker
+            prop={{
+              value: annotation.style?.color || '#ffffff',
+              type: 'color'
+            }}
             id="annotation-text-color"
-            type="color"
-            class="color-picker"
-            value={annotation.style?.color || '#ffffff'}
-            on:input={(e) => handleAnnotationStyleColorInput('color', e)}
+            onValueChange={handleAnnotationTextColorChange}
           />
-          <input
-            id="annotation-color-hex"
-            type="text"
-            class="color-hex-input"
-            value={(annotation.style?.color || '#ffffff').toUpperCase()}
-            on:input={handleAnnotationColorHexInput}
-            placeholder="#FFFFFF"
-          />
-        </div>
+        {/key}
       </div>
       
       <!-- Appearance -->
@@ -536,48 +656,51 @@
         
         <div class="appearance-row">
           <div class="appearance-input-group">
-            <label class="appearance-label" for="annotation-padding">Padding</label>
-            <input
-              id="annotation-padding"
-              type="number"
-              class="appearance-number-input"
-              min="0"
-              max="32"
-              step="1"
-              value={annotation.style?.padding || 8}
-              on:input={(e) => handleAnnotationStyleNumberInput('padding', e)}
-            />
-          </div>
-          
-          <div class="appearance-input-group">
             <label class="appearance-label" for="annotation-border-radius">Radius</label>
-            <input
-              id="annotation-border-radius"
-              type="number"
-              class="appearance-number-input"
-              min="0"
-              max="16"
-              step="1"
-              value={annotation.style?.borderRadius || 4}
-              on:input={(e) => handleAnnotationStyleNumberInput('borderRadius', e)}
-            />
-          </div>
-        </div>
-        
-        {#if annotation.style?.backgroundColor}
-          <div class="appearance-row">
-            <div class="appearance-input-group">
-              <label class="appearance-label" for="annotation-bg-color">Background</label>
+            <div class="number-input-with-buttons">
               <input
-                id="annotation-bg-color"
-                type="color"
-                class="color-picker-small"
-                value={annotation.style.backgroundColor}
-                on:input={(e) => handleAnnotationStyleColorInput('backgroundColor', e)}
+                id="annotation-border-radius"
+                type="number"
+                class="appearance-number-input"
+                min="0"
+                max="16"
+                step="1"
+                value={annotation.style?.borderRadius || 4}
+                on:input={(e) => handleAnnotationStyleNumberInput('borderRadius', e)}
+                on:wheel={(e) => handleNumberInputWheel(e, 0, 16, 1)}
               />
+              <button
+                class="number-button decrement"
+                on:click={() => adjustNumberInput('annotation-border-radius', -1, 0, 16, 1)}
+                type="button"
+                title="Decrease"
+              >−</button>
+              <button
+                class="number-button increment"
+                on:click={() => adjustNumberInput('annotation-border-radius', 1, 0, 16, 1)}
+                type="button"
+                title="Increase"
+              >+</button>
             </div>
           </div>
-        {/if}
+        </div>
+      </div>
+      
+      <!-- Background Color -->
+      <div class="section">
+        <div class="section-header">
+          <span class="section-title">Background Color</span>
+        </div>
+        {#key `bg-color-${annotation.id}-${annotation.style?.backgroundColor || '#000000'}`}
+          <ColorPicker
+            prop={{
+              value: annotation.style?.backgroundColor || '#000000',
+              type: 'color'
+            }}
+            id="annotation-bg-color"
+            onValueChange={handleAnnotationBackgroundColorChange}
+          />
+        {/key}
       </div>
     </div>
   </div>
@@ -667,16 +790,31 @@
         <div class="appearance-row" style="margin-top: 8px;">
           <div class="appearance-input-group">
             <label class="appearance-label" for="annotation-stroke-width">Width</label>
-            <input
-              id="annotation-stroke-width"
-              type="number"
-              class="appearance-number-input"
-              min="1"
-              max="20"
-              step="1"
-              value={annotation.style?.strokeWidth || 2}
-              on:input={(e) => handleAnnotationStyleNumberInput('strokeWidth', e)}
-            />
+            <div class="number-input-with-buttons">
+              <input
+                id="annotation-stroke-width"
+                type="number"
+                class="appearance-number-input"
+                min="1"
+                max="20"
+                step="1"
+                value={annotation.style?.strokeWidth || 2}
+                on:input={(e) => handleAnnotationStyleNumberInput('strokeWidth', e)}
+                on:wheel={(e) => handleNumberInputWheel(e, 1, 20, 1)}
+              />
+              <button
+                class="number-button decrement"
+                on:click={() => adjustNumberInput('annotation-stroke-width', -1, 1, 20, 1)}
+                type="button"
+                title="Decrease"
+              >−</button>
+              <button
+                class="number-button increment"
+                on:click={() => adjustNumberInput('annotation-stroke-width', 1, 1, 20, 1)}
+                type="button"
+                title="Increase"
+              >+</button>
+            </div>
           </div>
         </div>
       </div>
@@ -739,16 +877,31 @@
         <div class="appearance-row" style="margin-top: 8px;">
           <div class="appearance-input-group">
             <label class="appearance-label" for="annotation-stroke-width">Width</label>
-            <input
-              id="annotation-stroke-width"
-              type="number"
-              class="appearance-number-input"
-              min="1"
-              max="20"
-              step="1"
-              value={annotation.style?.strokeWidth || 2}
-              on:input={(e) => handleAnnotationStyleNumberInput('strokeWidth', e)}
-            />
+            <div class="number-input-with-buttons">
+              <input
+                id="annotation-stroke-width"
+                type="number"
+                class="appearance-number-input"
+                min="1"
+                max="20"
+                step="1"
+                value={annotation.style?.strokeWidth || 2}
+                on:input={(e) => handleAnnotationStyleNumberInput('strokeWidth', e)}
+                on:wheel={(e) => handleNumberInputWheel(e, 1, 20, 1)}
+              />
+              <button
+                class="number-button decrement"
+                on:click={() => adjustNumberInput('annotation-stroke-width', -1, 1, 20, 1)}
+                type="button"
+                title="Decrease"
+              >−</button>
+              <button
+                class="number-button increment"
+                on:click={() => adjustNumberInput('annotation-stroke-width', 1, 1, 20, 1)}
+                type="button"
+                title="Increase"
+              >+</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1038,7 +1191,8 @@
     font-size: 13px;
     font-family: inherit;
     min-height: 60px;
-    resize: vertical;
+    resize: both;
+    overflow: auto;
   }
   
   .content-textarea:focus {
@@ -1086,6 +1240,68 @@
     border-color: #4a9eff;
   }
   
+  .number-input-with-buttons {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1;
+    position: relative;
+  }
+  
+  .number-input-with-buttons .layout-input,
+  .number-input-with-buttons .typography-number-input,
+  .number-input-with-buttons .appearance-number-input {
+    flex: 1;
+    margin: 0;
+    padding-right: 24px;
+  }
+  
+  .number-input-with-buttons .number-button {
+    position: absolute;
+    right: 0;
+    width: 20px;
+    height: 12px;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    color: #aaa;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+  
+  .number-input-with-buttons .number-button.decrement {
+    top: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom: none;
+  }
+  
+  .number-input-with-buttons .number-button.increment {
+    bottom: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+  
+  .number-input-with-buttons .number-button:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #fff;
+  }
+  
+  .number-input-with-buttons .number-button:active {
+    background: rgba(74, 158, 255, 0.2);
+    border-color: #4a9eff;
+    color: #4a9eff;
+  }
+  
   .typography-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1103,22 +1319,6 @@
     font-size: 11px;
     font-weight: 500;
     color: #aaa;
-  }
-  
-  .typography-select {
-    padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    color: #fff;
-    font-size: 12px;
-    font-family: inherit;
-    cursor: pointer;
-  }
-  
-  .typography-select:focus {
-    outline: none;
-    border-color: #4a9eff;
   }
   
   .typography-number-input {
@@ -1170,6 +1370,70 @@
     color: #4a9eff;
   }
   
+  .typography-presets {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  
+  .preset-button {
+    flex: 1;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: #aaa;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: center;
+  }
+  
+  .preset-button:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  
+  .preset-button.active {
+    background: rgba(74, 158, 255, 0.2);
+    border-color: #4a9eff;
+    color: #4a9eff;
+  }
+  
+  .typography-toggles {
+    display: flex;
+    gap: 4px;
+    margin-top: 8px;
+  }
+  
+  .toggle-button {
+    flex: 1;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: #aaa;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: center;
+  }
+  
+  .toggle-button:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+  
+  .toggle-button.active {
+    background: rgba(74, 158, 255, 0.2);
+    border-color: #4a9eff;
+    color: #4a9eff;
+  }
+  
   .fill-controls {
     display: flex;
     align-items: center;
@@ -1217,7 +1481,7 @@
   
   .appearance-row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: 8px;
     margin-bottom: 8px;
   }
@@ -1250,51 +1514,6 @@
     border-color: #4a9eff;
   }
   
-  .color-picker-small {
-    width: 32px;
-    height: 24px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    cursor: pointer;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    background: none;
-    padding: 0;
-  }
-  
-  .color-picker-small::-webkit-color-swatch-wrapper {
-    padding: 0;
-  }
-  
-  .color-picker-small::-webkit-color-swatch {
-    border: none;
-    border-radius: 3px;
-  }
-  
-  .param-group {
-    margin-bottom: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  
-  .param-label {
-    display: block;
-    font-size: 12px;
-    font-weight: 500;
-    color: #aaa;
-    margin-bottom: 6px;
-  }
-  
-  .param-label .description {
-    display: block;
-    font-size: 10px;
-    color: #666;
-    font-weight: normal;
-    margin-top: 2px;
-  }
-  
   .param-input,
   .param-textarea {
     width: 100%;
@@ -1318,42 +1537,6 @@
     resize: vertical;
   }
   
-  .checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    color: #fff;
-    font-size: 14px;
-  }
-  
-  .checkbox-label input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    cursor: pointer;
-  }
-  
-  .trigger-group {
-    margin-bottom: 12px;
-  }
-  
-  .trigger-button {
-    width: 100%;
-    padding: 10px;
-    background: #4a9eff;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.15s ease;
-  }
-  
-  .trigger-button:hover {
-    background: #357abd;
-  }
-  
   .comment-section {
     margin-top: 16px;
     padding-top: 16px;
@@ -1373,55 +1556,6 @@
     color: #666;
     font-size: 14px;
   }
-  
-  .behavior-toggles {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  
-  .toggle-button {
-    flex: 1;
-    padding: 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    color: #aaa;
-    font-size: 12px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    transition: all 0.15s ease;
-  }
-  
-  .toggle-button:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: #fff;
-  }
-  
-  .toggle-button.active {
-    border-color: #4a9eff;
-    color: #4a9eff;
-  }
-  
-  .toggle-indicator {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-  }
-  
-  .toggle-indicator.bypass {
-    background: #ffd700;
-  }
-  
-  .toggle-indicator.cook {
-    background: #4a9eff;
-  }
-  
   
   .prop-group {
     margin-bottom: 10px;
@@ -1452,96 +1586,6 @@
   .prop-group-row > :global(.vector-input-container) {
     flex: 1;
     min-width: 0;
-  }
-  
-  .slider-container {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-  
-  .slider {
-    flex: 1;
-    height: 4px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 2px;
-    outline: none;
-    -webkit-appearance: none;
-    appearance: none;
-  }
-  
-  .slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 14px;
-    height: 14px;
-    background: #4a9eff;
-    border-radius: 50%;
-    cursor: pointer;
-  }
-  
-  .slider::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
-    background: #4a9eff;
-    border-radius: 50%;
-    cursor: pointer;
-    border: none;
-  }
-  
-  .number-input {
-    width: 80px;
-    padding: 6px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    color: #fff;
-    font-size: 12px;
-  }
-  
-  .color-input {
-    width: 100%;
-    height: 40px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    cursor: pointer;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-  }
-  
-  .select-input {
-    width: 100%;
-    padding: 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    color: #fff;
-    font-size: 14px;
-    font-family: inherit;
-    cursor: pointer;
-  }
-  
-  .select-input:focus {
-    outline: none;
-    border-color: #4a9eff;
-  }
-  
-  .prop-button {
-    width: 100%;
-    padding: 10px;
-    background: #4a9eff;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.15s ease;
-  }
-  
-  .prop-button:hover {
-    background: #357abd;
   }
 </style>
 

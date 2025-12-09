@@ -1,5 +1,5 @@
 import type { Graph } from '@/core/engine/Graph';
-import type { Node } from '@/core/engine/Node';
+import type { Computation } from '@/core/engine/Computation';
 import type { Asset } from '@/core/engine/AssetManager';
 
 export interface ExportOptions {
@@ -12,27 +12,32 @@ export interface ExportOptions {
  * Compile graph to executable JavaScript
  */
 export function compileGraph(graph: Graph): string {
-  const nodes = graph.nodes.map(node => ({
-    id: node.id,
-    type: node.type,
-    code: node.code,
-    position: node.position,
-    inputs: node.inputs.map(port => ({
-      id: port.id,
-      name: port.name,
-      portType: port.portType,
-      dataType: port.dataType,
-      value: port.value,
-      defaultValue: port.defaultValue
-    })),
-    outputs: node.outputs.map(port => ({
-      id: port.id,
-      name: port.name,
-      portType: port.portType,
-      dataType: port.dataType,
-      value: port.value
-    }))
-  }));
+  const nodes = graph.elements
+    .filter(e => e.type === 'computation')
+    .map(node => {
+      const comp = node as Computation;
+      return {
+        id: comp.id,
+        type: comp.type,
+        code: comp.code,
+        position: comp.position,
+        inputs: comp.inputs.map(port => ({
+          id: port.id,
+          name: port.name,
+          portType: port.portType,
+          dataType: port.dataType,
+          value: port.value,
+          defaultValue: port.defaultValue
+        })),
+        outputs: comp.outputs.map(port => ({
+          id: port.id,
+          name: port.name,
+          portType: port.portType,
+          dataType: port.dataType,
+          value: port.value
+        }))
+      };
+    });
 
   const connections = graph.connections.map(conn => ({
     id: conn.id,
@@ -41,10 +46,12 @@ export function compileGraph(graph: Graph): string {
     type: conn.type
   }));
 
-  // Find entry points (nodes with no input connections)
-  const entryPoints = graph.nodes
-    .filter(node => node.inputs.every(p => p.connections.length === 0))
-    .map(node => node.id);
+  // Find entry points (computations with no input connections)
+  const entryPoints = graph.elements
+    .filter(e => e.type === 'computation')
+    .map(e => e as Computation)
+    .filter(comp => comp.inputs.every(p => p.connections.length === 0))
+    .map(comp => comp.id);
 
   return `
 const graphData = {
@@ -234,7 +241,7 @@ function getMinimalRuntime(): string {
       
       // Find entry points and start execution
       const entryNodes = graphData.entryPoints
-        .map(id => graph.nodes.find(n => n.id === id))
+        .map(id => graph.elements.find(e => e.type === 'computation' && e.id === id) as Computation | undefined)
         .filter(Boolean);
       
       entryNodes.forEach(node => {
@@ -285,7 +292,7 @@ function getMinimalRuntime(): string {
             setValue: (value) => {
               port.value = value;
               port.connections.forEach(conn => {
-                const targetNode = graph.nodes.find(n => n.id === conn.to.nodeId);
+                const targetNode = graph.elements.find(e => e.type === 'computation' && e.id === conn.to.nodeId) as Computation | undefined;
                 if (targetNode) {
                   const targetPort = targetNode.inputs.find(p => p.id === conn.to.portId);
                   if (targetPort) {
@@ -297,7 +304,7 @@ function getMinimalRuntime(): string {
             },
             trigger: (props) => {
               port.connections.forEach(conn => {
-                const targetNode = graph.nodes.find(n => n.id === conn.to.nodeId);
+                const targetNode = graph.elements.find(e => e.type === 'computation' && e.id === conn.to.nodeId) as Computation | undefined;
                 if (targetNode) {
                   const targetPort = targetNode.inputs.find(p => p.id === conn.to.portId);
                   if (targetPort && targetPort.onTrigger) {
@@ -385,10 +392,16 @@ function getMinimalRuntime(): string {
         }
         
         connect(fromPort, toPort) {
+          // Parse port IDs to extract element IDs and indices
+          const fromParts = fromPort.id.split('_');
+          const toParts = toPort.id.split('_');
+          const fromElementId = fromParts.slice(0, -2).join('_');
+          const toElementId = toParts.slice(0, -2).join('_');
+          
           const connection = {
             id: 'conn_' + Date.now(),
-            from: { nodeId: fromPort.id.split('_out_')[0], portId: fromPort.id },
-            to: { nodeId: toPort.id.split('_in_')[0], portId: toPort.id },
+            from: { nodeId: fromElementId, portId: fromPort.id },
+            to: { nodeId: toElementId, portId: toPort.id },
             type: fromPort.portType
           };
           this.connections.push(connection);

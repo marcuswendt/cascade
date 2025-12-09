@@ -6,7 +6,7 @@
   import DocumentPanel from './editor/DocumentPanel.svelte';
   import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
   import { Graph } from '@/core/engine/Graph';
-  import type { Node } from '@/core/engine/Node';
+  import type { Node } from '@/core/engine/Object';
   import { GraphEditorAdapter } from './editor/GraphEditorAdapter';
   
   let presentationMode = false;
@@ -210,6 +210,9 @@
         currentFilePath = file.name;
         updateWindowTitle();
         
+        // Wait for annotation ports to be initialized (especially image annotations)
+        await graph.waitForAnnotationPorts();
+        
         // Execute all nodes to initialize them
         for (const node of graph.nodes) {
           if (node.code) {
@@ -337,6 +340,9 @@
         documentName = 'Default Cascade Graph';
         currentFilePath = null;
         updateWindowTitle();
+        
+        // Wait for annotation ports to be initialized (especially image annotations)
+        await graph.waitForAnnotationPorts();
         
         // Execute all nodes to initialize them
         for (const node of graph.nodes) {

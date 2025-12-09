@@ -1,4 +1,5 @@
 import { Graph } from '../core/engine/Graph.js';
+import { Computation } from '../core/engine/Computation.js';
 import { AssetManager, NodeAssetLoader } from '../core/engine/AssetManager.js';
 import { PackageManager } from '../core/engine/PackageManager.js';
 import * as fs from 'fs/promises';
@@ -45,11 +46,12 @@ export async function runGraph(options: RunOptions): Promise<void> {
   }
 
   // Ports should already be restored from JSON metadata (if available)
-  // Only execute nodes if ports weren't restored from metadata
+  // Only execute computations if ports weren't restored from metadata
   // This avoids unnecessary execution just for port discovery
-  const nodesNeedingExecution: any[] = [];
-  for (const node of graph.nodes) {
-    // Check if node has ports (restored from metadata)
+  const nodesNeedingExecution: Computation[] = [];
+  for (const element of graph.elements.filter(e => e.type === 'computation')) {
+    const node = element as Computation;
+    // Check if computation has ports (restored from metadata)
     // If not, we may need to execute to create them
     const hasPorts = node.inputs.length > 0 || node.outputs.length > 0;
     if (!hasPorts && node.code) {
@@ -106,7 +108,8 @@ export async function runGraph(options: RunOptions): Promise<void> {
   }
 
   if (verbose) {
-    console.log(`Graph loaded: ${graph.nodes.length} nodes, ${graph.connections.length} connections`);
+    const nodeCount = graph.elements.filter(e => e.type === 'computation').length;
+    console.log(`Graph loaded: ${nodeCount} nodes, ${graph.connections.length} connections`);
   }
 
   if (validateOnly) {

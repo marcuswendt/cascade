@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import * as monaco from 'monaco-editor';
-  import type { Node } from '@/core/engine/Node';
+  import type { Computation } from '@/core/engine/Computation';
   import PackageSearch from './PackageSearch.svelte';
   import type { PackageManager } from '@/core/engine/PackageManager';
   import Icon from './Icon.svelte';
@@ -117,7 +117,7 @@ declare const node: Cascade.NodeContext;
 declare const graph: any; // Graph type can be added later if needed
 `.trim();
   
-  export let node: Node;
+  export let node: Computation;
   export let packageManager: PackageManager | null = null;
   export let onClose: () => void;
   export let showCloseButton: boolean = true; // For tab mode, we might hide the close button
