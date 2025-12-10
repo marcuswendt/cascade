@@ -8,6 +8,15 @@
   import type { Node } from '@/core/engine/Node';
   import type { Computation } from '@/core/engine/Computation';
   import { GraphEditorAdapter } from './editor/GraphEditorAdapter';
+  import {
+    recordSnapshotImmediate,
+    popUndo,
+    popRedo,
+    clearHistory,
+    canUndo,
+    canRedo,
+    type GraphSnapshot
+  } from './editor/stores/historyStore';
 
   let presentationMode = false;
   let activeLibrary: string | null = null;
@@ -119,7 +128,10 @@
       // User cancelled
       return;
     }
-    
+
+    // Clear history when creating new project
+    clearHistory();
+
     // Load default graph from file
     try {
       const response = await fetch('/graphs/default.cascade');
@@ -190,8 +202,11 @@
       const file = await triggerFileInput('.cascade');
       if (!file) return;
 
+      // Clear history when opening new project
+      clearHistory();
+
       const json = await loadGraphFromFile(file);
-      
+
       // Clear existing graph if it exists
       if (graph) {
         graph.nodes.forEach(node => {
@@ -314,6 +329,85 @@
     }
   }
 
+  /**
+   * Restore graph from a history snapshot (for undo/redo)
+   */
+  async function restoreFromSnapshot(snapshot: GraphSnapshot) {
+    if (!graph) return;
+
+    // Clean up existing nodes
+    graph.nodes.forEach(node => {
+      if (node.onDestroy) {
+        node.onDestroy();
+      }
+    });
+
+    // Load graph from snapshot JSON
+    const adapter = GraphEditorAdapter.fromJSON(snapshot.json);
+    graph = adapter.getGraph();
+
+    // Wait for annotation ports to be initialized
+    await graph.waitForAnnotationPorts();
+
+    // Execute all nodes to initialize them
+    for (const node of graph.nodes) {
+      if (node.code) {
+        try {
+          const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
+          const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
+          node.setFunction(nodeFunction);
+          await node.execute();
+        } catch (err) {
+          console.warn('Failed to execute node ' + node.id + ':', err);
+        }
+      }
+    }
+
+    // Restore connections now that ports exist
+    graph.restoreConnections();
+
+    // Wait for DOM to update before forcing reactivity
+    await tick();
+
+    // Force reactivity
+    graph.connections = [...graph.connections];
+    graph.elements = [...graph.elements];
+
+    // Restore selection
+    selectedNode = snapshot.selectedNodeId ? graph.getNode(snapshot.selectedNodeId) : null;
+    selectedAnnotation = snapshot.selectedAnnotationId;
+  }
+
+  /**
+   * Handle undo action
+   */
+  async function handleUndo() {
+    if (!graph) return;
+    const snapshot = popUndo(graph, selectedNode?.id || null, selectedAnnotation);
+    if (snapshot) {
+      await restoreFromSnapshot(snapshot);
+    }
+  }
+
+  /**
+   * Handle redo action
+   */
+  async function handleRedo() {
+    if (!graph) return;
+    const snapshot = popRedo(graph, selectedNode?.id || null, selectedAnnotation);
+    if (snapshot) {
+      await restoreFromSnapshot(snapshot);
+    }
+  }
+
+  /**
+   * Record current state to history (called before edits)
+   */
+  function recordHistory() {
+    if (!graph) return;
+    recordSnapshotImmediate(graph, selectedNode?.id || null, selectedAnnotation);
+  }
+
   // Update window title when document name changes
   $: if (documentName) {
     updateWindowTitle();
@@ -396,7 +490,21 @@
         e.preventDefault();
         togglePresentationMode();
       }
-      
+
+      // ⌘Z - Undo
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      // ⌘Shift+Z - Redo
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+
       // Tool shortcuts
       const toolTarget = e.target as HTMLElement;
       if (toolTarget.tagName !== 'INPUT' && toolTarget.tagName !== 'TEXTAREA') {
@@ -631,6 +739,7 @@
         const target = e.target as HTMLElement;
         if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
           e.preventDefault();
+          recordHistory();
           graph.removeNode(selectedNode.id);
           selectedNode = null;
         }
@@ -667,6 +776,7 @@
     bind:activeLibrary={activeLibrary}
     bind:documentName={documentName}
     {presentationMode}
+    onRecordHistory={recordHistory}
     on:nodeSelect={(e) => handleNodeSelect(e.detail.node)}
     on:annotationSelect={(e) => handleAnnotationSelect(e)}
     on:libraryToggle={(e) => handleLibraryToggle(e.detail)}

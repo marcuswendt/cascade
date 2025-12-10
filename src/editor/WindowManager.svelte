@@ -21,6 +21,7 @@
   export let activeLibrary: string | null = null;
   export let presentationMode: boolean = false;
   export let documentName: string = 'Untitled';
+  export let onRecordHistory: (() => void) | undefined = undefined;
   
   const dispatch = createEventDispatcher();
   let canvasRef: any = null;
@@ -707,6 +708,7 @@
                 packageManager={graph?.packageManager || null}
                 onClose={() => closeTab(tabId, 'graph')}
                 showCloseButton={false}
+                {onRecordHistory}
               />
             {/if}
           </div>
@@ -724,11 +726,11 @@
           <!-- Inspector Tab -->
           <div class="tab-content">
             {#if selectedNode}
-              <Inspector node={selectedNode} position="right" skipAnimation={false} />
+              <Inspector node={selectedNode} position="right" skipAnimation={false} {onRecordHistory} />
             {:else if selectedAnnotation && graph}
               {@const annotation = graph.getAnnotation(selectedAnnotation)}
               {#if annotation}
-                <Inspector annotation={annotation} {graph} position="right" skipAnimation={false} />
+                <Inspector annotation={annotation} {graph} position="right" skipAnimation={false} {onRecordHistory} />
               {/if}
             {/if}
           </div>
@@ -742,6 +744,7 @@
               bind:selectedNode={selectedNode}
               bind:selectedAnnotation={selectedAnnotation}
               transform={canvasTransform}
+              {onRecordHistory}
               on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
               on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
               on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
@@ -759,6 +762,7 @@
             bind:selectedNode={selectedNode}
             bind:selectedAnnotation={selectedAnnotation}
             transform={canvasTransform}
+            {onRecordHistory}
             on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
             on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
             on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
@@ -812,6 +816,7 @@
                 packageManager={graph?.packageManager || null}
                 onClose={() => closeTab(tabId, 'viewer')}
                 showCloseButton={false}
+                {onRecordHistory}
               />
             {/if}
           </div>
@@ -823,6 +828,7 @@
               bind:activeTool={activeTool}
               bind:selectedNode={selectedNode}
               bind:selectedAnnotation={selectedAnnotation}
+              {onRecordHistory}
               on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
               on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
               on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
@@ -837,11 +843,11 @@
         {:else if viewerActiveTab && viewerActiveTab.type === 'inspector'}
           <div class="tab-content">
             {#if selectedNode}
-              <Inspector node={selectedNode} position="right" skipAnimation={false} />
+              <Inspector node={selectedNode} position="right" skipAnimation={false} {onRecordHistory} />
             {:else if selectedAnnotation && graph}
               {@const annotation = graph.getAnnotation(selectedAnnotation)}
               {#if annotation}
-                <Inspector annotation={annotation} {graph} position="right" skipAnimation={false} />
+                <Inspector annotation={annotation} {graph} position="right" skipAnimation={false} {onRecordHistory} />
               {/if}
             {/if}
           </div>
@@ -908,6 +914,7 @@
                 packageManager={graph?.packageManager || null}
                 onClose={() => closeTab(tabId, 'log')}
                 showCloseButton={false}
+                {onRecordHistory}
               />
             {/if}
           </div>
@@ -919,6 +926,7 @@
               bind:activeTool={activeTool}
               bind:selectedNode={selectedNode}
               bind:selectedAnnotation={selectedAnnotation}
+              {onRecordHistory}
               on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
               on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
               on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
@@ -933,11 +941,11 @@
         {:else if logActiveTab && logActiveTab.type === 'inspector'}
           <div class="tab-content">
             {#if selectedNode}
-              <Inspector node={selectedNode} position="right" skipAnimation={false} />
+              <Inspector node={selectedNode} position="right" skipAnimation={false} {onRecordHistory} />
             {:else if selectedAnnotation && graph}
               {@const annotation = graph.getAnnotation(selectedAnnotation)}
               {#if annotation}
-                <Inspector annotation={annotation} {graph} position="right" skipAnimation={false} />
+                <Inspector annotation={annotation} {graph} position="right" skipAnimation={false} {onRecordHistory} />
               {/if}
             {/if}
           </div>
@@ -994,6 +1002,7 @@
                 packageManager={graph?.packageManager || null}
                 onClose={() => closeTab(tabId, 'inspector')}
                 showCloseButton={false}
+                {onRecordHistory}
               />
             {/if}
           </div>
@@ -1005,6 +1014,7 @@
               bind:activeTool={activeTool}
               bind:selectedNode={selectedNode}
               bind:selectedAnnotation={selectedAnnotation}
+              {onRecordHistory}
               on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
               on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
               on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
@@ -1027,6 +1037,7 @@
               node={selectedNode}
               position="right"
               skipAnimation={false}
+              {onRecordHistory}
             />
           </div>
         {:else}
@@ -1035,6 +1046,7 @@
             node={selectedNode}
             position="right"
             skipAnimation={false}
+            {onRecordHistory}
           />
         {/if}
       </Window>
@@ -1085,6 +1097,7 @@
                 bind:activeTool={activeTool}
                 bind:selectedNode={selectedNode}
                 bind:selectedAnnotation={selectedAnnotation}
+                {onRecordHistory}
                 on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
                 on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
                 on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
@@ -1108,6 +1121,7 @@
                 {graph}
                 position="right"
                 skipAnimation={false}
+                {onRecordHistory}
               />
             </div>
           {:else}
@@ -1117,6 +1131,7 @@
               {graph}
               position="right"
               skipAnimation={false}
+              {onRecordHistory}
             />
           {/if}
         </Window>
@@ -1155,6 +1170,7 @@
                 packageManager={graph?.packageManager || null}
                 onClose={() => closeTab(tabId, 'inspector')}
                 showCloseButton={false}
+                {onRecordHistory}
               />
             {/if}
           </div>
@@ -1166,6 +1182,7 @@
               bind:activeTool={activeTool}
               bind:selectedNode={selectedNode}
               bind:selectedAnnotation={selectedAnnotation}
+              {onRecordHistory}
               on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
               on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
               on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
@@ -1185,22 +1202,22 @@
           <!-- Inspector Tab (default) -->
           <div class="tab-content">
             {#if selectedNode}
-              <Inspector node={selectedNode} position="right" skipAnimation={false} />
+              <Inspector node={selectedNode} position="right" skipAnimation={false} {onRecordHistory} />
             {:else if selectedAnnotation && graph}
               {@const annotation = graph.getAnnotation(selectedAnnotation)}
               {#if annotation}
-                <Inspector annotation={annotation} {graph} position="right" skipAnimation={false} />
+                <Inspector annotation={annotation} {graph} position="right" skipAnimation={false} {onRecordHistory} />
               {/if}
             {/if}
           </div>
         {:else}
           <!-- No tabs - show Inspector if available -->
           {#if selectedNode}
-            <Inspector node={selectedNode} position="right" skipAnimation={false} />
+            <Inspector node={selectedNode} position="right" skipAnimation={false} {onRecordHistory} />
           {:else if selectedAnnotation && graph}
             {@const annotation = graph.getAnnotation(selectedAnnotation)}
             {#if annotation}
-              <Inspector annotation={annotation} {graph} position="right" skipAnimation={false} />
+              <Inspector annotation={annotation} {graph} position="right" skipAnimation={false} {onRecordHistory} />
             {/if}
           {/if}
         {/if}

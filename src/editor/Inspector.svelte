@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import type { Computation } from '@/core/engine/Computation';
   import type { InputPort, Prop, OutputPort } from '@/types/node.types';
   import type { Graph, CanvasAnnotation } from '@/core/engine/Graph';
@@ -21,6 +22,30 @@
   export let graph: Graph | null = null;
   export let position: 'right' | 'left' = 'right';
   export let skipAnimation: boolean = false;
+  export let onRecordHistory: (() => void) | undefined = undefined;
+
+  // Track if history was recorded for current editing session
+  let historyRecordedForCurrentEdit = false;
+
+  // Record history once at the start of an edit session
+  function maybeRecordHistory() {
+    if (!historyRecordedForCurrentEdit && onRecordHistory) {
+      onRecordHistory();
+      historyRecordedForCurrentEdit = true;
+    }
+  }
+
+  // Reset the flag when mouse is released (end of drag) or on blur
+  function resetHistoryTracking() {
+    historyRecordedForCurrentEdit = false;
+  }
+
+  // Listen for mouseup to reset history tracking after drag operations
+  onMount(() => {
+    const handleMouseUp = () => resetHistoryTracking();
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => window.removeEventListener('mouseup', handleMouseUp);
+  });
   
   $: inputs = node?.inputs || [];
   // Don't show input ports as parameters - they should only be visible as connection points
@@ -90,6 +115,7 @@
   
   function handlePropChange([key, prop]: [string, Prop], value: any) {
     if (node) {
+      maybeRecordHistory();
       node.updateProp(key, value);
     }
   }

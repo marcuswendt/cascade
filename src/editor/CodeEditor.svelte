@@ -121,6 +121,7 @@ declare const graph: any; // Graph type can be added later if needed
   export let packageManager: PackageManager | null = null;
   export let onClose: () => void;
   export let showCloseButton: boolean = true; // For tab mode, we might hide the close button
+  export let onRecordHistory: (() => void) | undefined = undefined;
   
   let container: HTMLDivElement;
   let editor: monaco.editor.IStandaloneCodeEditor | null = null;
@@ -230,7 +231,10 @@ declare const graph: any; // Graph type can be added later if needed
   
   async function compileNode() {
     if (!editor || isDestroyed) return;
-    
+
+    // Record history before code change
+    onRecordHistory?.();
+
     let code: string;
     try {
       code = editor.getValue();
@@ -238,7 +242,7 @@ declare const graph: any; // Graph type can be added later if needed
       console.error('Error getting editor value:', error);
       return;
     }
-    
+
     status = 'compiling';
     
     try {
