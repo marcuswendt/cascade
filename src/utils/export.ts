@@ -13,7 +13,7 @@ export interface ExportOptions {
  */
 export function compileGraph(graph: Graph): string {
   const nodes = graph.elements
-    .filter(e => e.type === 'computation')
+    .filter(e => e.kind === 'computation')
     .map(node => {
       const comp = node as Computation;
       return {
@@ -48,7 +48,7 @@ export function compileGraph(graph: Graph): string {
 
   // Find entry points (computations with no input connections)
   const entryPoints = graph.elements
-    .filter(e => e.type === 'computation')
+    .filter(e => e.kind === 'computation')
     .map(e => e as Computation)
     .filter(comp => comp.inputs.every(p => p.connections.length === 0))
     .map(comp => comp.id);
@@ -241,7 +241,7 @@ function getMinimalRuntime(): string {
       
       // Find entry points and start execution
       const entryNodes = graphData.entryPoints
-        .map(id => graph.elements.find(e => e.type === 'computation' && e.id === id) as Computation | undefined)
+        .map(id => graph.nodes.find(e => e.id === id))
         .filter(Boolean);
       
       entryNodes.forEach(node => {
@@ -259,6 +259,7 @@ function getMinimalRuntime(): string {
       class Node {
         constructor(id, type) {
           this.id = id;
+          this.kind = 'computation';
           this.type = type;
           this.inputs = [];
           this.outputs = [];
@@ -292,7 +293,7 @@ function getMinimalRuntime(): string {
             setValue: (value) => {
               port.value = value;
               port.connections.forEach(conn => {
-                const targetNode = graph.elements.find(e => e.type === 'computation' && e.id === conn.to.nodeId) as Computation | undefined;
+                const targetNode = graph.nodes.find(e => e.id === conn.to.nodeId);
                 if (targetNode) {
                   const targetPort = targetNode.inputs.find(p => p.id === conn.to.portId);
                   if (targetPort) {
@@ -304,7 +305,7 @@ function getMinimalRuntime(): string {
             },
             trigger: (props) => {
               port.connections.forEach(conn => {
-                const targetNode = graph.elements.find(e => e.type === 'computation' && e.id === conn.to.nodeId) as Computation | undefined;
+                const targetNode = graph.nodes.find(e => e.id === conn.to.nodeId);
                 if (targetNode) {
                   const targetPort = targetNode.inputs.find(p => p.id === conn.to.portId);
                   if (targetPort && targetPort.onTrigger) {

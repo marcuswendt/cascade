@@ -1,17 +1,21 @@
 import type { InputPort, OutputPort } from '../../types/node.types.js';
 
+export type ElementKind = 'computation' | 'annotation';
+
 /**
  * Base class for all canvas elements (computations and annotations)
  */
 export abstract class Node {
   id: string;
+  kind: ElementKind;
   type: string;
   position: { x: number; y: number };
   inputs: InputPort[] = [];
   outputs: OutputPort[] = [];
 
-  constructor(id: string, type: string) {
+  constructor(id: string, kind: ElementKind, type: string) {
     this.id = id;
+    this.kind = kind;
     this.type = type;
     this.position = { x: 0, y: 0 };
   }

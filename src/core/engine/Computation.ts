@@ -35,7 +35,7 @@ export class Computation extends Node implements NodeContext {
   private manualDirty: boolean = false;
   
   constructor(id: string, type: string, graph: Graph) {
-    super(id, 'computation');
+    super(id, 'computation', type);
     this.code = '';
     this.graph = graph;
   }

@@ -23,7 +23,7 @@ export class Annotation extends Node {
   containedElements?: string[];
 
   constructor(id: string, type: string) {
-    super(id, type);
+    super(id, 'annotation', type);
   }
 
   /**

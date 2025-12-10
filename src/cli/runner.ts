@@ -49,7 +49,7 @@ export async function runGraph(options: RunOptions): Promise<void> {
   // Only execute computations if ports weren't restored from metadata
   // This avoids unnecessary execution just for port discovery
   const nodesNeedingExecution: Computation[] = [];
-  for (const element of graph.elements.filter(e => e.type === 'computation')) {
+  for (const element of graph.elements.filter(e => e.kind === 'computation')) {
     const node = element as Computation;
     // Check if computation has ports (restored from metadata)
     // If not, we may need to execute to create them
@@ -108,7 +108,7 @@ export async function runGraph(options: RunOptions): Promise<void> {
   }
 
   if (verbose) {
-    const nodeCount = graph.elements.filter(e => e.type === 'computation').length;
+    const nodeCount = graph.elements.filter(e => e.kind === 'computation').length;
     console.log(`Graph loaded: ${nodeCount} nodes, ${graph.connections.length} connections`);
   }
 

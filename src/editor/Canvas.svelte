@@ -7,6 +7,7 @@
   import { marked } from 'marked';
   import { getNodeTemplateCode, packagePathToType } from '@/utils/nodeTypeUtils';
   import { getPortColor } from '@/utils/portColors';
+  import { recordSnapshotImmediate } from './stores/historyStore';
   
   // Configure marked for safe rendering
   marked.setOptions({
@@ -21,6 +22,13 @@
   export let graph = new Graph();
   export let selectedAnnotation: string | null = null;
   export let transform: { x: number; y: number; zoom: number } | undefined = undefined;
+  export let onRecordHistory: (() => void) | undefined = undefined;
+
+  // Helper to record history using Canvas's graph reference directly
+  // This ensures we capture the correct graph state
+  function recordHistory() {
+    recordSnapshotImmediate(graph, selectedNode?.id || null, selectedAnnotation);
+  }
   let canvas: HTMLDivElement;
   // Use transform prop if provided, otherwise use internal state
   let internalTransform = transform ? { ...transform } : { x: 0, y: 0, zoom: 1 };
@@ -433,6 +441,7 @@ node.onReady = () => {
           strokeColor: '#ffffff'
         }
       };
+      recordHistory();
       graph.addAnnotation(annotation);
       graph.annotations = [...graph.annotations];
       drawingLine = { annotationId: id, startPos: { x, y } };
@@ -458,6 +467,7 @@ node.onReady = () => {
           strokeColor: '#ffffff'
         }
       };
+      recordHistory();
       graph.addAnnotation(annotation);
       graph.annotations = [...graph.annotations];
       drawingPolyline = { annotationId: id, points: [{ x, y }] };
@@ -936,6 +946,7 @@ node.onReady = () => {
               
               if (fromPort && toPort) {
                 try {
+                  recordHistory();
                   graph.connect(fromPort, toPort);
                   graph.connections = [...graph.connections];
                 } catch (err) {
@@ -953,6 +964,7 @@ node.onReady = () => {
       } else {
         // Not over a port - if dragging from connected port, disconnect it
         if (draggingFromConnectedPort) {
+          recordHistory();
           draggingFromConnectedPort.connectionIds.forEach(connId => {
             graph.disconnect(connId);
           });
@@ -1168,21 +1180,24 @@ node.onReady = () => {
     if ((e.target as HTMLElement).closest('.port') || e.button === 1) {
       return;
     }
-    
+
     const node = graph.getNode(nodeId);
     if (!node) return;
-    
+
+    // Record history before starting drag
+    recordHistory();
+
     const rect = canvas.getBoundingClientRect();
-    
+
     // Calculate offset from mouse click position to node's top-left corner
     const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
     const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
-    
+
     const offset = {
       x: mouseX - node.position.x,
       y: mouseY - node.position.y
     };
-    
+
     draggingNode = { nodeId, offset };
     
     // If multiple items are selected, prepare to drag all of them
@@ -1299,23 +1314,25 @@ node.onReady = () => {
     if (ctrlClickConnection) {
       e.preventDefault();
       e.stopPropagation();
+      recordHistory();
       graph.disconnect(ctrlClickConnection);
       graph.connections = [...graph.connections];
       hoveredConnection = null;
       ctrlClickConnection = null;
       return;
     }
-    
+
     // Fallback: Handle Ctrl+Click on connections to disconnect (if not caught in mousedown)
     if ((e.ctrlKey || e.metaKey) && e.target && !(e.target as HTMLElement).closest('.node, .annotation')) {
       const rect = canvas.getBoundingClientRect();
       const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
       const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
-      
+
       const hovered = findConnectionAtPoint(mouseX, mouseY);
       if (hovered) {
         e.preventDefault();
         e.stopPropagation();
+        recordHistory();
         graph.disconnect(hovered.id);
         graph.connections = [...graph.connections];
         hoveredConnection = null;
@@ -1352,7 +1369,10 @@ node.onReady = () => {
   
   function createAnnotation(type: string, x: number, y: number) {
     const id = `ann_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
+    // Record history before creating annotation
+    recordHistory();
+
     if (type === 'image') {
       // Create file input for image
       const input = document.createElement('input');
@@ -1466,7 +1486,10 @@ node.onReady = () => {
       if ((e.target as HTMLElement).closest('input, textarea, button, .resize-handle')) {
         return;
       }
-      
+
+      // Record history before starting drag
+      recordHistory();
+
       const annotation = graph.getAnnotation(annotationId);
       if (annotation) {
         // Update selection if not already selected
@@ -1585,7 +1608,10 @@ node.onReady = () => {
     
     if (isNearLeft || isNearRight || isNearTop || isNearBottom) {
       e.stopPropagation();
-      
+
+      // Record history before resize
+      recordHistory();
+
       let handle: 'se' | 'sw' | 'ne' | 'nw' | 'e' | 'w' | 'n' | 's' = 'se';
       if (isNearLeft && isNearTop) handle = 'nw';
       else if (isNearLeft && isNearBottom) handle = 'sw';
@@ -1611,7 +1637,10 @@ node.onReady = () => {
     editingAnnotation = annotationId;
   }
   
-  function handleAnnotationDelete(annotationId: string) {
+  function handleAnnotationDelete(annotationId: string, skipHistoryRecord = false) {
+    if (!skipHistoryRecord) {
+      recordHistory();
+    }
     graph.removeAnnotation(annotationId);
     graph.annotations = [...graph.annotations];
     if (selectedAnnotation === annotationId) {
@@ -1662,6 +1691,9 @@ node.onReady = () => {
     if (nodesToCut.length === 0 && annotationsToCut.length === 0) {
       return;
     }
+
+    // Record history before cut operation
+    recordHistory();
     
     // Serialize nodes with their properties
     const nodeData = nodesToCut.map(node => node.toJSON());
@@ -1812,6 +1844,9 @@ node.onReady = () => {
   }
   
   export async function handleAddNode(detail: { type: string; category: string | null }) {
+    // Record history before adding node
+    recordHistory();
+
     const nodeType = detail.type;
     const rect = canvas.getBoundingClientRect();
 
@@ -2215,7 +2250,7 @@ node.onReady = () => {
       // Fallback to calculated position if element not found
       // Try to get element directly first (handles IDs that already have "ann_" prefix)
       let annotation = graph.getElement(nodeId);
-      if (!annotation || annotation.type === 'computation') {
+      if (!annotation || annotation.kind === 'computation') {
         const annotationId = nodeId.substring(4);
         annotation = graph.getAnnotation(annotationId) || graph.getElement(annotationId);
       }
@@ -2307,7 +2342,7 @@ node.onReady = () => {
       // Try to get the annotation using the nodeId directly first (in case ID already has "ann_")
       let annotation = graph.getElement(nodeId);
       // If not found, try removing the "ann_" prefix
-      if (!annotation || annotation.type === 'computation') {
+      if (!annotation || annotation.kind === 'computation') {
         const annotationId = nodeId.substring(4); // Remove 'ann_' prefix
         annotation = graph.getAnnotation(annotationId) || graph.getElement(annotationId);
       }
@@ -2641,6 +2676,7 @@ node.onReady = () => {
       if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
         if (selectedNodes.length > 0) {
           e.preventDefault();
+          recordHistory();
           selectedNodes.forEach(nodeId => {
             graph.removeNode(nodeId);
           });
@@ -2650,8 +2686,9 @@ node.onReady = () => {
           dispatch('nodeSelect', { node: null });
         } else if (selectedAnnotations.length > 0) {
           e.preventDefault();
+          recordHistory();
           selectedAnnotations.forEach(annotationId => {
-            handleAnnotationDelete(annotationId);
+            handleAnnotationDelete(annotationId, true);
           });
         } else if (selectedAnnotation) {
           e.preventDefault();
@@ -2687,6 +2724,7 @@ node.onReady = () => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
       e.preventDefault();
       if (selectedNodes.length > 0) {
+        recordHistory();
         const nodesToDuplicate = selectedNodes.map(id => graph.getNode(id)).filter(Boolean) as Node[];
         const newNodes: Node[] = [];
         
@@ -2812,8 +2850,8 @@ node.onReady = () => {
       {@const toPos = getPortPosition(conn.to.nodeId, conn.to.portId, 'input')}
       {#if fromPos && toPos}
         {@const fromElement = graph.getElement(conn.from.nodeId)}
-        {@const fromNode = fromElement?.type === 'computation' ? fromElement : null}
-        {@const fromAnnotation = fromElement && fromElement.type !== 'computation' ? fromElement : null}
+        {@const fromNode = fromElement?.kind === 'computation' ? fromElement : null}
+        {@const fromAnnotation = fromElement && fromElement.kind !== 'computation' ? fromElement : null}
         {@const fromPort = fromNode?.outputs.find(p => p.id === conn.from.portId) || fromAnnotation?.outputs?.find(p => p.id === conn.from.portId)}
         {@const connectionColor = fromPort ? getPortColor(fromPort) : '#888'}
         {@const midY = (fromPos.y + toPos.y) / 2}
@@ -2862,8 +2900,8 @@ node.onReady = () => {
       {@const from = connectingFrom}
       {@const fromElementId = from.nodeId.startsWith('ann_') ? from.nodeId.substring(4) : from.nodeId}
       {@const fromElement = graph.getElement(fromElementId)}
-      {@const fromNode = fromElement?.type === 'computation' ? fromElement : null}
-      {@const fromAnnotation = fromElement && fromElement.type !== 'computation' ? fromElement : null}
+      {@const fromNode = fromElement?.kind === 'computation' ? fromElement : null}
+      {@const fromAnnotation = fromElement && fromElement.kind !== 'computation' ? fromElement : null}
       {@const fromPort = from.portType === 'output' 
         ? (fromNode?.outputs.find(p => p.id === from.portId) || fromAnnotation?.outputs?.find(p => p.id === from.portId))
         : fromNode?.inputs.find(p => p.id === from.portId)}
