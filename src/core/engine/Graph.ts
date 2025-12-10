@@ -12,6 +12,7 @@ import { GraphValidator, type ValidationResult } from './GraphValidator.js';
 import type { Connection, OutputPort } from '../../types/node.types.js';
 import { packagePathToType, getNodeTemplateCode } from '../../utils/nodeTypeUtils.js';
 import { normalizeColor, isColorValue } from '../../utils/colorUtils.js';
+import { ElementType, isComputation, isAnnotation } from '../../types/element.types.js';
 
 /**
  * Parse a port ID to extract element ID, port type, and index
@@ -68,14 +69,12 @@ export class Graph {
     this._elements = value;
   }
 
-  // Execution Control (v1.2)
+  // Execution Control
   cookingNodes: Set<Computation> = new Set();
-  multiCookMode: boolean = false;
-  
+
   // Execution state
   executionState: ExecutionState = 'idle';
-  private executionQueue: Computation[] = [];
-  
+
   // Cached topological order (invalidated when graph structure changes)
   private cachedTopologicalOrder: string[] | null = null;
   
@@ -85,37 +84,31 @@ export class Graph {
   }
   
   /**
-   * Get all computations (computed property for backward compatibility)
+   * Get all computations
    */
   get nodes(): Computation[] {
-    return this._elements.filter(e => e.type === 'computation') as Computation[];
+    return this._elements.filter(isComputation) as Computation[];
   }
-  
+
   /**
-   * Set computations (for reactivity in Svelte - backward compatibility)
+   * Set computations (triggers Svelte reactivity)
    */
   set nodes(value: Computation[]) {
-    // Remove old computations, keep annotations
-    this._elements = this._elements.filter(e => e.type !== 'computation');
-    // Add new computations
-    value.forEach(comp => this._elements.push(comp));
+    this._elements = [...this._elements.filter(isAnnotation), ...value];
   }
-  
+
   /**
-   * Get all annotations (computed property for backward compatibility)
+   * Get all annotations
    */
-  get annotations(): Annotation[] {
-    return this._elements.filter(e => e.type !== 'computation') as Annotation[];
+  get annotations(): CanvasAnnotation[] {
+    return this._elements.filter(isAnnotation) as CanvasAnnotation[];
   }
-  
+
   /**
-   * Set annotations (for reactivity in Svelte - backward compatibility)
+   * Set annotations (triggers Svelte reactivity)
    */
-  set annotations(value: Annotation[]) {
-    // Remove old annotations, keep nodes
-    this._elements = this._elements.filter(e => e.type === 'computation');
-    // Add new annotations
-    value.forEach(ann => this._elements.push(ann));
+  set annotations(value: CanvasAnnotation[]) {
+    this._elements = [...this._elements.filter(isComputation), ...value];
   }
   
   /**
@@ -157,7 +150,7 @@ export class Graph {
    */
   getNode(nodeId: string): Computation | null {
     const element = this.getElement(nodeId);
-    return element && element.type === 'computation' ? element as Computation : null;
+    return element && isComputation(element) ? element as Computation : null;
   }
 
   /**
@@ -165,7 +158,7 @@ export class Graph {
    */
   getAnnotation(id: string): Annotation | null {
     const element = this.getElement(id);
-    return element && element.type !== 'computation' ? element as Annotation : null;
+    return element && isAnnotation(element) ? element as Annotation : null;
   }
 
   /**
@@ -245,7 +238,7 @@ export class Graph {
     
     // For node-to-node connections, use GraphValidator
     // For annotation-to-node or other combinations, allow them
-    if (fromElement.type === 'computation' && toElement.type === 'computation') {
+    if (isComputation(fromElement) && isComputation(toElement)) {
       const error = GraphValidator.validateConnection(
         this,
         fromElementId,
@@ -369,9 +362,7 @@ export class Graph {
         await this.executeFromEntry(entryNode);
       } else {
         // Execute all entry points (computations with no input connections)
-        const entryPoints = this._elements
-          .filter(e => e.type === 'computation')
-          .map(e => e as Computation)
+        const entryPoints = this.nodes
           .filter(comp => comp.inputs.every(p => p.connections.length === 0));
         
         if (entryPoints.length === 0) {
@@ -487,32 +478,18 @@ export class Graph {
     }
   }
   
-    stop() {
+  stop() {
     this.executionState = 'stopped';
-    // Stop all execution (for future use with timers/intervals)
-    this._elements
-      .filter(e => e.type === 'computation')
-      .forEach(comp => {
-        if ((comp as Computation).onDestroy) {
-          // Could be enhanced to stop specific operations
-        }
-      });
   }
-  
+
   reset() {
-    // Reset all computation states
-    this._elements
-      .filter(e => e.type === 'computation')
-      .forEach(comp => {
-        const c = comp as Computation;
-        c.error = null;
-        c.warning = null;
-        c.markDirty(); // Mark as dirty to force re-execution
-      });
+    this.nodes.forEach(node => {
+      node.error = null;
+      node.warning = null;
+      node.markDirty();
+    });
     this.cookingNodes.clear();
-    this.multiCookMode = false;
     this.executionState = 'idle';
-    this.executionQueue = [];
   }
   
   // Behavior Control (v1.2)
@@ -558,63 +535,49 @@ export class Graph {
     return checkUpstream(node);
   }
   
-  // Annotation Management (v1.3)
-  // Note: These methods are kept for backward compatibility but will be updated to use Annotation classes
   addAnnotation(annotation: Annotation | any): void {
-    // Convert plain objects to Annotation instances if needed
     let annotationInstance: Annotation;
-    
+
     if (annotation instanceof Annotation) {
       annotationInstance = annotation;
     } else {
-      // Create appropriate annotation type from plain object
       const annData = annotation;
       switch (annData.type) {
-        case 'image':
+        case ElementType.IMAGE:
           annotationInstance = new ImageAnnotation(annData.id);
-          (annotationInstance as any).src = annData.src;
+          (annotationInstance as ImageAnnotation).src = annData.src;
           break;
-        case 'text':
+        case ElementType.TEXT:
           annotationInstance = new TextAnnotation(annData.id);
-          (annotationInstance as any).content = annData.content;
+          (annotationInstance as TextAnnotation).content = annData.content;
           break;
-        case 'group':
+        case ElementType.GROUP:
           annotationInstance = new GroupAnnotation(annData.id);
           break;
-        case 'line':
+        case ElementType.LINE:
           annotationInstance = new LineAnnotation(annData.id);
           if (annData.endPosition) {
-            (annotationInstance as any).endPosition = annData.endPosition;
+            (annotationInstance as LineAnnotation).endPosition = annData.endPosition;
           }
           break;
-        case 'polyline':
+        case ElementType.POLYLINE:
           annotationInstance = new PolylineAnnotation(annData.id);
           if (annData.points) {
-            (annotationInstance as any).points = annData.points;
+            (annotationInstance as PolylineAnnotation).points = annData.points;
           }
           break;
         default:
           annotationInstance = new Annotation(annData.id, annData.type);
       }
-      
-      // Copy properties from plain object
+
       annotationInstance.position = annData.position || { x: 0, y: 0 };
-      if (annData.size) {
-        annotationInstance.size = annData.size;
-      }
-      if (annData.style) {
-        annotationInstance.style = { ...annData.style };
-      }
-      if (annData.caption !== undefined) {
-        annotationInstance.caption = annData.caption;
-      }
-      if (annData.containedElements) {
-        annotationInstance.containedElements = annData.containedElements;
-      }
+      if (annData.size) annotationInstance.size = annData.size;
+      if (annData.style) annotationInstance.style = { ...annData.style };
+      if (annData.caption !== undefined) annotationInstance.caption = annData.caption;
+      if (annData.containedElements) annotationInstance.containedElements = annData.containedElements;
     }
-    
+
     this.addElement(annotationInstance);
-    // Initialize ports for annotations that support them
     this.initializeAnnotationPorts(annotationInstance).catch(err => {
       console.error(`Failed to initialize ports for annotation ${annotationInstance.id}:`, err);
     });
@@ -629,11 +592,10 @@ export class Graph {
    * Annotations always have exactly one output at index 0
    */
   async initializeAnnotationPorts(annotation: Annotation): Promise<void> {
-    // Clear existing ports
     annotation.outputs = [];
 
-    if (annotation.type === 'image') {
-      const imageAnnotation = annotation as any; // Type assertion for now
+    if (annotation.type === ElementType.IMAGE) {
+      const imageAnnotation = annotation as ImageAnnotation;
       // Always create the port, even if src is not set yet
       // Create image output port with index-based ID
       const portId = createPortId(annotation.id, 'output', 0);
@@ -662,13 +624,12 @@ export class Graph {
           });
         },
         trigger: (props?: any) => {
-          // Trigger connected nodes
           port.connections.forEach(conn => {
             const toParsed = parsePortId(conn.to.portId);
             const targetElement = this.getElement(toParsed.elementId);
-            if (targetElement && targetElement.type === 'computation') {
+            if (targetElement && isComputation(targetElement)) {
               const targetPort = targetElement.getInputPort(toParsed.index);
-              if (targetPort && targetPort.onTrigger) {
+              if (targetPort?.onTrigger) {
                 targetPort.onTrigger(props);
               }
             }
@@ -678,32 +639,29 @@ export class Graph {
 
       annotation.outputs.push(port);
 
-      // Load image asynchronously if src is set
-      if (imageAnnotation.src) {
+      const imageSrc = imageAnnotation.src;
+      if (imageSrc) {
         try {
           const img = new Image();
           img.crossOrigin = 'anonymous';
-          
+
           await new Promise<void>((resolve, reject) => {
             img.onload = () => {
               port.setValue(img);
               resolve();
             };
             img.onerror = reject;
-            // Handle both absolute and relative paths
-            const src = imageAnnotation.src.startsWith('/') || imageAnnotation.src.startsWith('http') 
-              ? imageAnnotation.src 
-              : `/${imageAnnotation.src}`;
-            img.src = src;
+            img.src = imageSrc.startsWith('/') || imageSrc.startsWith('http')
+              ? imageSrc
+              : `/${imageSrc}`;
           });
         } catch (error) {
           console.error(`Failed to load image for annotation ${annotation.id}:`, error);
         }
       }
-    } else if (annotation.type === 'text') {
-      const textAnnotation = annotation as any; // Type assertion for now
+    } else if (annotation.type === ElementType.TEXT) {
+      const textAnnotation = annotation as TextAnnotation;
       if (textAnnotation.content !== undefined) {
-        // Create text output port with index-based ID
         const portId = createPortId(annotation.id, 'output', 0);
         const port: OutputPort<string> = {
           id: portId,
@@ -714,7 +672,6 @@ export class Graph {
           connections: [],
           setValue: (value: string) => {
             port.value = value;
-            // Propagate to connected inputs
             port.connections.forEach(conn => {
               const toParsed = parsePortId(conn.to.portId);
               const targetElement = this.getElement(toParsed.elementId);
@@ -722,23 +679,18 @@ export class Graph {
                 const targetPort = targetElement.getInputPort(toParsed.index);
                 if (targetPort) {
                   targetPort.value = value;
-                  if (targetPort.onChange) {
-                    targetPort.onChange(value);
-                  }
+                  targetPort.onChange?.(value);
                 }
               }
             });
           },
           trigger: (props?: any) => {
-            // Trigger connected nodes
             port.connections.forEach(conn => {
               const toParsed = parsePortId(conn.to.portId);
               const targetElement = this.getElement(toParsed.elementId);
-              if (targetElement && targetElement.type === 'computation') {
+              if (targetElement && isComputation(targetElement)) {
                 const targetPort = targetElement.getInputPort(toParsed.index);
-                if (targetPort && targetPort.onTrigger) {
-                  targetPort.onTrigger(props);
-                }
+                targetPort?.onTrigger?.(props);
               }
             });
           }
@@ -780,9 +732,8 @@ export class Graph {
     }
     
     // Order: 1. annotations, 2. nodes, 3. connections (logical loading order)
-    // Separate elements by type
-    const annotations = this._elements.filter(e => e.type !== 'computation') as Annotation[];
-    const nodes = this._elements.filter(e => e.type === 'computation') as Computation[];
+    const annotations = this.annotations;
+    const nodes = this.nodes;
     
     // Only include annotations if not empty
     if (annotations.length > 0) {
@@ -984,60 +935,54 @@ export class Graph {
     // Connections will be fully validated after nodes execute
     const connectionsToRestore = json.connections || [];
     
-    // Restore annotations (support both array and object position formats)
+    // Restore annotations
     if (json.annotations && Array.isArray(json.annotations)) {
       const annotations: Annotation[] = json.annotations.map((annData: any) => {
         let annotation: Annotation;
-        const position = Array.isArray(annData.position) 
+        const position = Array.isArray(annData.position)
           ? { x: annData.position[0] || 0, y: annData.position[1] || 0 }
           : { x: annData.position?.x || 0, y: annData.position?.y || 0 };
-        
-        // Create appropriate annotation type
+
         switch (annData.type) {
-          case 'image':
+          case ElementType.IMAGE:
             annotation = new ImageAnnotation(annData.id);
-            (annotation as any).src = annData.src;
+            (annotation as ImageAnnotation).src = annData.src;
             break;
-          case 'text':
+          case ElementType.TEXT:
             annotation = new TextAnnotation(annData.id);
-            (annotation as any).content = annData.content;
+            (annotation as TextAnnotation).content = annData.content;
             break;
-          case 'group':
+          case ElementType.GROUP:
             annotation = new GroupAnnotation(annData.id);
             break;
-          case 'line':
+          case ElementType.LINE:
             annotation = new LineAnnotation(annData.id);
             if (annData.endPosition) {
-              (annotation as any).endPosition = Array.isArray(annData.endPosition)
+              (annotation as LineAnnotation).endPosition = Array.isArray(annData.endPosition)
                 ? { x: annData.endPosition[0] || 0, y: annData.endPosition[1] || 0 }
                 : { x: annData.endPosition.x || 0, y: annData.endPosition.y || 0 };
             }
             break;
-          case 'polyline':
+          case ElementType.POLYLINE:
             annotation = new PolylineAnnotation(annData.id);
             if (annData.points) {
-              (annotation as any).points = annData.points.map((p: any) => 
-                Array.isArray(p) 
+              (annotation as PolylineAnnotation).points = annData.points.map((p: any) =>
+                Array.isArray(p)
                   ? { x: p[0] || 0, y: p[1] || 0 }
                   : { x: p.x || 0, y: p.y || 0 }
               );
             }
             break;
           default:
-            // Fallback to base annotation
             annotation = new Annotation(annData.id, annData.type);
         }
-        
+
         annotation.position = position;
-        if (annData.size) {
-          annotation.size = { width: annData.size.width, height: annData.size.height };
-        }
-        if (annData.style) {
-          annotation.style = { ...annData.style };
-        }
+        if (annData.size) annotation.size = { width: annData.size.width, height: annData.size.height };
+        if (annData.style) annotation.style = { ...annData.style };
         if (annData.caption !== undefined) annotation.caption = annData.caption;
         if (annData.containedElements) annotation.containedElements = annData.containedElements;
-        
+
         return annotation;
       });
       
@@ -1055,67 +1000,17 @@ export class Graph {
       (graph as any)._annotationPortsInitialized = Promise.resolve();
     }
     
-    // Store connections to restore after nodes execute (for CLI/headless environments)
-    // In browser, connections are restored here but may fail silently if ports don't exist yet
+    // Store connections to restore after nodes execute
     (graph as any)._connectionsToRestore = connectionsToRestore;
-    
+
     // Try to restore connections now (will work if nodes were already executed)
-    // If ports don't exist, they'll be restored later when restoreConnections() is called
     connectionsToRestore.forEach((connData: any) => {
-      // Support both old format (object with nodeId/portId) and new format (array with indices)
-      let fromNodeId: string, fromPortIndex: number | string;
-      let toNodeId: string, toPortIndex: number | string;
-      
-      if (Array.isArray(connData) && Array.isArray(connData[0]) && Array.isArray(connData[1])) {
-        // New format: [[nodeId, portIndex], [nodeId, portIndex]]
-        [fromNodeId, fromPortIndex] = connData[0];
-        [toNodeId, toPortIndex] = connData[1];
-      } else if (connData.from && connData.to) {
-        // Old format: { from: { nodeId, portId }, to: { nodeId, portId } }
-        fromNodeId = connData.from.nodeId;
-        toNodeId = connData.to.nodeId;
-        const fromNode = graph.getNode(fromNodeId);
-        const toNode = graph.getNode(toNodeId);
-        if (fromNode && toNode) {
-          const fromPort = fromNode.outputs.find(p => p.id === connData.from.portId);
-          const toPort = toNode.inputs.find(p => p.id === connData.to.portId);
-          if (fromPort && toPort) {
-            try {
-              graph.connect(fromPort, toPort);
-            } catch (err) {
-              // Connection failed - will be retried after nodes execute
-            }
-          }
-        }
-        return; // Skip new format processing for old format
-      } else {
-        return; // Invalid format
-      }
-      
-      // New format: use indices
-      // Works for any element type (nodes and annotations)
-      const fromElement = graph.getElement(fromNodeId);
-      const toElement = graph.getElement(toNodeId);
-      if (fromElement && toElement && typeof fromPortIndex === 'number' && typeof toPortIndex === 'number') {
-        const fromPort = fromElement.getOutputPort(fromPortIndex);
-        const toPort = toElement.getInputPort(toPortIndex);
-        if (fromPort && toPort) {
-          try {
-            graph.connect(fromPort, toPort);
-          } catch (err) {
-            // Connection failed - will be retried after nodes execute
-          }
-        }
-      }
+      graph.tryRestoreConnection(connData, false);
     });
-    
+
     return graph;
   }
   
-  /**
-   * Wait for annotation ports to be initialized
-   * Call this before executing nodes that depend on annotation outputs
-   */
   async waitForAnnotationPorts(): Promise<void> {
     const initPromise = (this as any)._annotationPortsInitialized;
     if (initPromise) {
@@ -1124,80 +1019,58 @@ export class Graph {
   }
 
   /**
+   * Try to restore a single connection from serialized data
+   * @internal
+   */
+  tryRestoreConnection(connData: any, checkDuplicates = false): boolean {
+    if (!Array.isArray(connData) || !Array.isArray(connData[0]) || !Array.isArray(connData[1])) {
+      return false;
+    }
+
+    const [fromNodeId, fromPortIndex] = connData[0];
+    const [toNodeId, toPortIndex] = connData[1];
+
+    if (typeof fromPortIndex !== 'number' || typeof toPortIndex !== 'number') {
+      return false;
+    }
+
+    const fromElement = this.getElement(fromNodeId);
+    const toElement = this.getElement(toNodeId);
+    if (!fromElement || !toElement) return false;
+
+    const fromPort = fromElement.getOutputPort(fromPortIndex);
+    const toPort = toElement.getInputPort(toPortIndex);
+    if (!fromPort || !toPort) return false;
+
+    if (checkDuplicates) {
+      const exists = this.connections.some(c =>
+        c.from.nodeId === fromNodeId &&
+        c.from.portId === fromPort.id &&
+        c.to.nodeId === toNodeId &&
+        c.to.portId === toPort.id
+      );
+      if (exists) return true;
+    }
+
+    try {
+      this.connect(fromPort, toPort);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Restore connections that were stored during fromJSON
-   * Call this after nodes have been executed to ensure ports exist
    */
   restoreConnections(): void {
     const connectionsToRestore = (this as any)._connectionsToRestore || [];
     if (connectionsToRestore.length === 0) return;
-    
+
     connectionsToRestore.forEach((connData: any) => {
-      // Support both old format (object with nodeId/portId) and new format (array with indices)
-      let fromNodeId: string, fromPortIndex: number | string;
-      let toNodeId: string, toPortIndex: number | string;
-      
-      if (Array.isArray(connData) && Array.isArray(connData[0]) && Array.isArray(connData[1])) {
-        // New format: [[nodeId, portIndex], [nodeId, portIndex]]
-        [fromNodeId, fromPortIndex] = connData[0];
-        [toNodeId, toPortIndex] = connData[1];
-      } else if (connData.from && connData.to) {
-        // Old format: { from: { nodeId, portId }, to: { nodeId, portId } }
-        fromNodeId = connData.from.nodeId;
-        toNodeId = connData.to.nodeId;
-        const fromNode = this.getNode(fromNodeId);
-        const toNode = this.getNode(toNodeId);
-        if (fromNode && toNode) {
-          const fromPort = fromNode.outputs.find(p => p.id === connData.from.portId);
-          const toPort = toNode.inputs.find(p => p.id === connData.to.portId);
-          if (fromPort && toPort) {
-            // Check if connection already exists
-            const exists = this.connections.some(c => 
-              c.from.nodeId === fromNodeId &&
-              c.from.portId === fromPort.id &&
-              c.to.nodeId === toNodeId &&
-              c.to.portId === toPort.id
-            );
-            if (!exists) {
-              try {
-                this.connect(fromPort, toPort);
-              } catch (err) {
-                // Connection validation failed - skip it
-              }
-            }
-          }
-        }
-        return; // Skip new format processing for old format
-      } else {
-        return; // Invalid format
-      }
-      
-      // New format: use indices
-      // Works for any element type (nodes and annotations)
-      const fromElement = this.getElement(fromNodeId);
-      const toElement = this.getElement(toNodeId);
-      if (fromElement && toElement && typeof fromPortIndex === 'number' && typeof toPortIndex === 'number') {
-        const fromPort = fromElement.getOutputPort(fromPortIndex);
-        const toPort = toElement.getInputPort(toPortIndex);
-        if (fromPort && toPort) {
-          // Check if connection already exists
-          const exists = this.connections.some(c => 
-            c.from.nodeId === fromNodeId &&
-            c.from.portId === fromPort.id &&
-            c.to.nodeId === toNodeId &&
-            c.to.portId === toPort.id
-          );
-          if (!exists) {
-            try {
-              this.connect(fromPort, toPort);
-            } catch (err) {
-              // Connection validation failed - skip it
-            }
-          }
-        }
-      }
+      this.tryRestoreConnection(connData, true);
     });
-    
-    // Clean up
+
     delete (this as any)._connectionsToRestore;
   }
 }

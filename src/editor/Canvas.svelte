@@ -1242,12 +1242,11 @@ node.onReady = () => {
   function handleCookToggle(nodeId: string, e: MouseEvent) {
     const node = graph.getNode(nodeId);
     if (!node) return;
-    
+
     if (e.shiftKey) {
       // Shift+click: Multi-cook mode - cook this node and all downstream nodes
-      graph.multiCookMode = true;
       node.setCooking(true);
-      
+
       // Cook all downstream nodes
       const cookDownstream = (n: Node) => {
         n.outputs.forEach(output => {
@@ -1262,19 +1261,15 @@ node.onReady = () => {
       };
       cookDownstream(node);
     } else {
-      // Normal click: Always clear other cooking nodes first (unless shift+click)
+      // Normal click: Toggle cook state
       if (node.cooking) {
-        // If already cooking, turn it off
         node.setCooking(false);
-        graph.multiCookMode = false;
       } else {
-        // Clear all other cooking nodes, then set this one to cooking
         graph.clearCookingNodes();
         node.setCooking(true);
-        graph.multiCookMode = false;
       }
     }
-    
+
     graph.nodes = [...graph.nodes]; // Force reactivity
   }
   

@@ -5,13 +5,14 @@
   import ExportDialog from './editor/ExportDialog.svelte';
   import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
   import { Graph } from '@/core/engine/Graph';
-  import type { Node } from '@/core/engine/Object';
+  import type { Node } from '@/core/engine/Node';
+  import type { Computation } from '@/core/engine/Computation';
   import { GraphEditorAdapter } from './editor/GraphEditorAdapter';
 
   let presentationMode = false;
   let activeLibrary: string | null = null;
   let activeCategory: string | null = null;
-  let selectedNode: Node | null = null;
+  let selectedNode: Computation | null = null;
   let selectedAnnotation: string | null = null;
   let inspectorWasVisible = false;
   
@@ -164,8 +165,8 @@
       await tick();
       // Force connections array reference update to trigger reactivity
       graph.connections = [...graph.connections];
-      // Also update nodes array reference to ensure reactivity
-      graph.nodes = [...graph.nodes];
+      // Force elements array reference to trigger reactivity
+      graph.elements = [...graph.elements];
       
       // Center canvas on nodes after loading
       setTimeout(() => {
@@ -231,16 +232,16 @@
         await tick();
         // Force connections array reference update to trigger reactivity
         graph.connections = [...graph.connections];
-        // Also update nodes array reference to ensure reactivity
-        graph.nodes = [...graph.nodes];
-        
+        // Force elements array reference to trigger reactivity
+        graph.elements = [...graph.elements];
+
         // Center canvas on nodes after loading
         setTimeout(() => {
           if (windowManagerRef && windowManagerRef.centerOnNodes) {
             windowManagerRef.centerOnNodes();
           }
         }, 100);
-    } catch (error) {
+      } catch (error) {
       alert('Failed to open project: ' + (error as Error).message);
     }
   }
@@ -362,9 +363,9 @@
         await tick();
         // Force connections array reference update to trigger reactivity
         graph.connections = [...graph.connections];
-        // Also update nodes array reference to ensure reactivity
-        graph.nodes = [...graph.nodes];
-        
+        // Force elements array reference to trigger reactivity
+        graph.elements = [...graph.elements];
+
         // Center canvas on nodes after loading
         setTimeout(() => {
           if (windowManagerRef && windowManagerRef.centerOnNodes) {
@@ -582,12 +583,11 @@
             e.preventDefault();
             if (e.shiftKey) {
               // Shift+C - Multi-cook (cook this chain)
-              graph.multiCookMode = true;
               selectedNode.setCooking(true);
               // Cook all downstream nodes
-              const cookDownstream = (node: Node) => {
-                node.outputs.forEach(output => {
-                  output.connections.forEach(conn => {
+              const cookDownstream = (node: Computation) => {
+                node.outputs.forEach((output) => {
+                  output.connections.forEach((conn) => {
                     const downstreamNode = graph?.getNode(conn.to.nodeId);
                     if (downstreamNode) {
                       downstreamNode.setCooking(true);
@@ -600,14 +600,10 @@
             } else {
               // Normal C: Always clear other cooking nodes first, then toggle this one
               if (selectedNode.cooking) {
-                // If already cooking, turn it off
                 selectedNode.setCooking(false);
-                graph.multiCookMode = false;
               } else {
-                // Clear all other cooking nodes, then set this one to cooking
                 graph.clearCookingNodes();
                 selectedNode.setCooking(true);
-                graph.multiCookMode = false;
               }
             }
           }

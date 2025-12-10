@@ -11,36 +11,28 @@ export class Computation extends Node implements NodeContext {
   error: Error | null = null;
   warning: string | null = null;
   isTemplate: boolean = false;
-  isDirtyFlag: boolean = false; // Renamed to avoid conflict with isDirty() method
-  
-  // Props System (v1.1)
+
   props: Record<string, Prop> = {};
   private propWatchers: Map<string, Function[]> = new Map();
-  
-  // Behavior Toggles (v1.2)
+
   bypassed: boolean = false;
   cooking: boolean = false;
-  
-  // Track if node function has been executed at least once
+
   private hasExecuted: boolean = false;
   bypassOpacity: number = 1.0;
   cookAnimation: boolean = false;
-  
-  // Execution timeout (in milliseconds, default 30 seconds)
+
   executionTimeout: number = 30000;
-  
+
   onReady?: () => void;
   onDestroy?: () => void;
-  
+
   private nodeFunction?: Function;
   private graph: Graph;
-  
-  // Track ports that are called during compilation to clean up unused ones
+
   private portsUsedDuringCompilation: Set<string> = new Set();
-  
-  // Track last execution time and input hash for dirty checking
-  private lastExecutionTime: number = 0;
   private lastInputHash: string = '';
+  private manualDirty: boolean = false;
   
   constructor(id: string, type: string, graph: Graph) {
     super(id, 'computation');
@@ -254,7 +246,7 @@ export class Computation extends Node implements NodeContext {
   }
   
   markDirty(): void {
-    this.isDirtyFlag = true;
+    this.manualDirty = true;
   }
   
   /**
@@ -292,13 +284,9 @@ export class Computation extends Node implements NodeContext {
     });
   }
   
-  /**
-   * Calculate hash of input values for dirty checking
-   */
   private calculateInputHash(): string {
-    const inputValues = this.inputs.map(input => {
+    return this.inputs.map(input => {
       const value = input.value;
-      // Simple hash - can be improved for complex objects
       if (value === null || value === undefined) return 'null';
       if (typeof value === 'object') {
         try {
@@ -309,87 +297,60 @@ export class Computation extends Node implements NodeContext {
       }
       return String(value);
     }).join('|');
-    
-    return inputValues;
   }
-  
-  /**
-   * Check if node is dirty (inputs have changed since last execution)
-   */
-  isDirtyCheck(): boolean {
-    if (!this.hasExecuted) return true; // Always execute first time
-    
-    const currentHash = this.calculateInputHash();
-    return currentHash !== this.lastInputHash;
-  }
-  
-  // Keep isDirty as a getter for interface compatibility
+
   get isDirty(): boolean {
-    return this.isDirtyFlag || this.isDirtyCheck();
+    if (!this.hasExecuted || this.manualDirty) return true;
+    return this.calculateInputHash() !== this.lastInputHash;
   }
   
   async execute() {
-    if (this.nodeFunction) {
-      // If node hasn't been executed yet, always run the function at least once
-      // to set up props, ports, and onReady callback, even if bypassed
-      const needsInitialization = !this.hasExecuted;
-      
-      // Check if should execute
-      if (!this.shouldExecute() && !needsInitialization) {
-        this.executeBypass();
-        return;
-      }
-      
-      // Check if node is dirty (for incremental execution)
-      if (!needsInitialization && !this.isDirtyCheck()) {
-        // Node hasn't changed, skip execution
-        return;
-      }
-      
-      try {
-        // Execute with timeout
-        const executionPromise = this.nodeFunction(this, this.graph);
-        const timeoutPromise = this.createTimeoutPromise(this.executionTimeout);
-        
-        await Promise.race([executionPromise, timeoutPromise]);
-        
-        this.error = null;
-        this.hasExecuted = true;
-        this.lastExecutionTime = Date.now();
-        this.lastInputHash = this.calculateInputHash();
-        this.isDirtyFlag = false;
-        
-        // Call onReady callback after node function has been set up
-        // This allows nodes to perform initial setup like rendering previews
-        if (this.onReady) {
-          try {
-            this.onReady();
-          } catch (err: any) {
-            // In Node.js environment, browser API errors are expected for browser-only nodes
-            // Only log if it's not a browser API error
-            const errMsg = err?.message || String(err);
-            const isBrowserAPIError = 
-              errMsg.includes('document is not defined') ||
-              errMsg.includes('window is not defined') ||
-              errMsg.includes('HTMLCanvasElement') ||
-              errMsg.includes('HTMLImageElement');
-            
-            if (!isBrowserAPIError) {
-              console.error(`Error in onReady callback for node ${this.id}:`, err);
-            }
+    if (!this.nodeFunction) return;
+
+    const needsInitialization = !this.hasExecuted;
+
+    if (!this.shouldExecute() && !needsInitialization) {
+      this.executeBypass();
+      return;
+    }
+
+    if (!needsInitialization && !this.isDirty) {
+      return;
+    }
+
+    try {
+      const executionPromise = this.nodeFunction(this, this.graph);
+      const timeoutPromise = this.createTimeoutPromise(this.executionTimeout);
+
+      await Promise.race([executionPromise, timeoutPromise]);
+
+      this.error = null;
+      this.hasExecuted = true;
+      this.lastInputHash = this.calculateInputHash();
+      this.manualDirty = false;
+
+      if (this.onReady) {
+        try {
+          this.onReady();
+        } catch (err: any) {
+          const errMsg = err?.message || String(err);
+          const isBrowserAPIError =
+            errMsg.includes('document is not defined') ||
+            errMsg.includes('window is not defined') ||
+            errMsg.includes('HTMLCanvasElement') ||
+            errMsg.includes('HTMLImageElement');
+
+          if (!isBrowserAPIError) {
+            console.error(`Error in onReady callback for node ${this.id}:`, err);
           }
         }
-      } catch (err: any) {
-        // Mark node as errored but don't break execution
-        this.error = err as Error;
-        this.isDirtyFlag = true; // Mark as dirty so it will retry on next execution
-        
-        // Only log non-timeout errors (timeout errors are expected)
-        if (!err.message?.includes('timeout')) {
-          console.error(`Error executing node ${this.id}:`, err);
-        }
-        
-        // Don't throw - allow graph execution to continue
+      }
+    } catch (err: any) {
+      this.error = err as Error;
+      this.manualDirty = true;
+
+      if (!err.message?.includes('timeout')) {
+        console.error(`Error executing node ${this.id}:`, err);
       }
     }
   }
