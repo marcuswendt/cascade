@@ -1819,16 +1819,30 @@ node.onReady = () => {
   export async function handleAddNode(detail: { type: string; category: string | null }) {
     const nodeType = detail.type;
     const rect = canvas.getBoundingClientRect();
-    
+
     // Calculate the center of the visible viewport in screen coordinates
     const viewportCenterX = rect.width / 2;
     const viewportCenterY = rect.height / 2;
-    
+
     // Convert screen coordinates to canvas coordinates
     // Account for pan (internalTransform.x, internalTransform.y) and zoom (internalTransform.zoom)
     let centerX = (viewportCenterX - internalTransform.x) / internalTransform.zoom;
     let centerY = (viewportCenterY - internalTransform.y) / internalTransform.zoom;
-    
+
+    // Check if this is an annotation type (e.g., "annotation:text", "annotation:image")
+    if (nodeType.startsWith('annotation:')) {
+      const annotationType = nodeType.replace('annotation:', '');
+      // Line and polyline require click-and-drag interaction, so set the tool mode
+      if (annotationType === 'line' || annotationType === 'polyline') {
+        activeTool = annotationType;
+        dispatch('toolChange', annotationType);
+        return;
+      }
+      // Other annotations can be created immediately at center
+      createAnnotation(annotationType, centerX, centerY);
+      return;
+    }
+
     // Check if there's a node at this position (with tolerance)
     const tolerance = 50; // pixels
     const nodeAtPosition = graph.nodes.find(node => {
@@ -1836,13 +1850,13 @@ node.onReady = () => {
       const dy = Math.abs(node.position.y - centerY);
       return dx < tolerance && dy < tolerance;
     });
-    
+
     // If there's a node at this position, offset the new node to bottom right
     if (nodeAtPosition) {
       centerX += 50; // Offset to the right (1/3 of 150)
       centerY += 33; // Offset downward (1/3 of 100)
     }
-    
+
     const newNode = graph.addNode(nodeType, { x: centerX, y: centerY });
     
     // Get default code template and initialize the node

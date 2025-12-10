@@ -282,9 +282,12 @@
   function handleNodeClick(node: NodeTemplate & { categoryId?: string }) {
     // Use the categoryId from direct nodes if available, otherwise use the current categoryId
     const nodeCategoryId = node.categoryId || categoryId;
-    // Convert to package path format
-    const packagePath = typeToPackagePath(node.type);
-    dispatch('addNode', { type: packagePath, libraryId, categoryId: nodeCategoryId });
+    // Annotation types use colon prefix (e.g., "annotation:text") - pass as-is
+    // Other types get converted to package path format
+    const nodeType = node.type.startsWith('annotation:')
+      ? node.type
+      : typeToPackagePath(node.type);
+    dispatch('addNode', { type: nodeType, libraryId, categoryId: nodeCategoryId });
   }
   
   function handleCategoryClick(libId: string, catId: string) {

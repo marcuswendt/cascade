@@ -21,7 +21,28 @@ export interface Library {
   categories: Category[];
 }
 
+// Annotations library - contains all annotation node types
+export const annotationsLibrary: Library = {
+  id: 'annotations',
+  label: 'Annotations',
+  icon: 'StickyNote',
+  categories: [
+    {
+      id: 'annotations',
+      label: 'Annotations',
+      nodes: [
+        { name: 'Text', icon: 'Type', description: 'Add text annotation', type: 'annotation:text' },
+        { name: 'Image', icon: 'Image', description: 'Add image annotation', type: 'annotation:image' },
+        { name: 'Group', icon: 'Folder', description: 'Group elements together', type: 'annotation:group' },
+        { name: 'Line', icon: 'Minus', description: 'Draw a line', type: 'annotation:line' },
+        { name: 'Draw', icon: 'PenTool', description: 'Freehand drawing', type: 'annotation:polyline' }
+      ]
+    }
+  ]
+};
+
 export const nodeLibraries: Library[] = [
+  annotationsLibrary,
   {
     id: 'core',
     label: 'Core',

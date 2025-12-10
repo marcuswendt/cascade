@@ -45,7 +45,14 @@
     Logs: icons.Terminal,
     Network: icons.Network,
     Workflow: icons.Workflow,
-    ScrollText: icons.ScrollText
+    ScrollText: icons.ScrollText,
+    // Annotation icons
+    Type: icons.Type,
+    Image: icons.Image,
+    Folder: icons.Folder,
+    Minus: icons.Minus,
+    PenTool: icons.PenTool,
+    StickyNote: icons.StickyNote
   };
   
   $: IconComponent = iconMap[name] || icons.Settings;
