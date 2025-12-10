@@ -6,20 +6,21 @@
   import Viewer from './Viewer.svelte';
   import Inspector from './Inspector.svelte';
   import Log from './Log.svelte';
-  import BottomToolbar from './BottomToolbar.svelte';
   import Tabs from './Tabs.svelte';
+  import GraphTabs from './GraphTabs.svelte';
   import CodeEditor from './CodeEditor.svelte';
   import type { Graph } from '@/core/engine/Graph';
   import type { Computation } from '@/core/engine/Computation';
-  
+
   import { createEventDispatcher } from 'svelte';
-  
+
   export let graph: Graph | undefined;
   export let selectedNode: Computation | null = null;
   export let selectedAnnotation: string | null = null;
   export let activeTool: string = 'select';
   export let activeLibrary: string | null = null;
   export let presentationMode: boolean = false;
+  export let documentName: string = 'Untitled';
   
   const dispatch = createEventDispatcher();
   let canvasRef: any = null;
@@ -669,20 +670,23 @@
       icon="Workflow"
       windowId="graph"
       minimized={graphMinimized}
-      showTabs={graphTabsCount > 0}
+      showTabs={true}
       on:minimize={handleMinimize}
       on:restore={handleRestore}
       on:dragover={(e) => handleTabDragOver(e.detail.event)}
       on:drop={(e) => handleTabDrop(e.detail.event, 'graph')}
     >
-      <Tabs
+      <GraphTabs
         slot="tabs"
         tabs={graphTabs}
         activeTabId={graphActiveTabId}
         windowId="graph"
+        {documentName}
         on:tabSelect={(e) => selectTab(e.detail.tabId, 'graph')}
         on:tabClose={(e) => closeTab(e.detail.tabId, 'graph')}
         on:tabDragStart={(e) => handleTabDragStart(e, 'graph')}
+        on:action={(e) => dispatch('action', e.detail)}
+        on:nameChange={(e) => dispatch('nameChange', e.detail)}
       />
       
       <div 
@@ -734,7 +738,7 @@
             <Canvas
               bind:this={canvasRef}
               bind:graph={graph}
-              {activeTool}
+              bind:activeTool={activeTool}
               bind:selectedNode={selectedNode}
               bind:selectedAnnotation={selectedAnnotation}
               transform={canvasTransform}
@@ -743,22 +747,15 @@
               on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
               on:nodeEdit={handleNodeEdit}
               on:transformChange={(e) => canvasTransform = e.detail.transform}
+              on:toolChange={(e) => dispatch('toolChange', e.detail)}
             />
-            {#if !presentationMode}
-              <BottomToolbar
-                {activeLibrary}
-                bind:activeTool={activeTool}
-                on:libraryToggle={(e) => dispatch('libraryToggle', e.detail)}
-                on:toolChange={(e) => dispatch('toolChange', e.detail)}
-              />
-            {/if}
           </div>
         {:else}
           <!-- No tabs - show Canvas view -->
           <Canvas
             bind:this={canvasRef}
             bind:graph={graph}
-            {activeTool}
+            bind:activeTool={activeTool}
             bind:selectedNode={selectedNode}
             bind:selectedAnnotation={selectedAnnotation}
             transform={canvasTransform}
@@ -767,15 +764,8 @@
             on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
             on:nodeEdit={handleNodeEdit}
             on:transformChange={(e) => canvasTransform = e.detail.transform}
+            on:toolChange={(e) => dispatch('toolChange', e.detail)}
           />
-          {#if !presentationMode}
-            <BottomToolbar
-              {activeLibrary}
-              bind:activeTool={activeTool}
-              on:libraryToggle={(e) => dispatch('libraryToggle', e.detail)}
-              on:toolChange={(e) => dispatch('toolChange', e.detail)}
-            />
-          {/if}
         {/if}
       </div>
     </Window>
@@ -830,13 +820,14 @@
             <Canvas
               bind:this={canvasRef}
               bind:graph={graph}
-              {activeTool}
+              bind:activeTool={activeTool}
               bind:selectedNode={selectedNode}
               bind:selectedAnnotation={selectedAnnotation}
               on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
               on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
               on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
               on:nodeEdit={(e) => openEditorTab(e.detail.node, 'viewer')}
+              on:toolChange={(e) => dispatch('toolChange', e.detail)}
             />
           </div>
         {:else if viewerActiveTab && viewerActiveTab.type === 'log'}
@@ -925,13 +916,14 @@
             <Canvas
               bind:this={canvasRef}
               bind:graph={graph}
-              {activeTool}
+              bind:activeTool={activeTool}
               bind:selectedNode={selectedNode}
               bind:selectedAnnotation={selectedAnnotation}
               on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
               on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
               on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
               on:nodeEdit={(e) => openEditorTab(e.detail.node, 'log')}
+              on:toolChange={(e) => dispatch('toolChange', e.detail)}
             />
           </div>
         {:else if logActiveTab && logActiveTab.type === 'viewer'}
@@ -1010,13 +1002,14 @@
             <Canvas
               bind:this={canvasRef}
               bind:graph={graph}
-              {activeTool}
+              bind:activeTool={activeTool}
               bind:selectedNode={selectedNode}
               bind:selectedAnnotation={selectedAnnotation}
               on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
               on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
               on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
               on:nodeEdit={(e) => openEditorTab(e.detail.node, 'inspector')}
+              on:toolChange={(e) => dispatch('toolChange', e.detail)}
             />
           </div>
         {:else if inspectorActiveTab && inspectorActiveTab.type === 'viewer'}
@@ -1028,7 +1021,7 @@
             <Log bind:this={logRef} />
           </div>
         {:else if inspectorActiveTab && inspectorActiveTab.type === 'inspector'}
-          <!-- Inspector Tab (default) -->
+          <!-- Inspector Tab (default) - first selectedNode block -->
           <div class="tab-content">
             <Inspector
               node={selectedNode}
@@ -1089,13 +1082,14 @@
               <Canvas
                 bind:this={canvasRef}
                 bind:graph={graph}
-                {activeTool}
+                bind:activeTool={activeTool}
                 bind:selectedNode={selectedNode}
                 bind:selectedAnnotation={selectedAnnotation}
                 on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
                 on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
                 on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
                 on:nodeEdit={(e) => openEditorTab(e.detail.node, 'inspector')}
+                on:toolChange={(e) => dispatch('toolChange', e.detail)}
               />
             </div>
           {:else if inspectorActiveTab && inspectorActiveTab.type === 'viewer'}
@@ -1169,13 +1163,14 @@
             <Canvas
               bind:this={canvasRef}
               bind:graph={graph}
-              {activeTool}
+              bind:activeTool={activeTool}
               bind:selectedNode={selectedNode}
               bind:selectedAnnotation={selectedAnnotation}
               on:nodeSelect={(e) => dispatch('nodeSelect', e.detail)}
               on:annotationSelect={(e) => dispatch('annotationSelect', e.detail)}
               on:openNodePanel={(e) => dispatch('openNodePanel', e.detail)}
               on:nodeEdit={(e) => openEditorTab(e.detail.node, 'inspector')}
+              on:toolChange={(e) => dispatch('toolChange', e.detail)}
             />
           </div>
         {:else if inspectorActiveTab && inspectorActiveTab.type === 'viewer'}

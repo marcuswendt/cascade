@@ -107,6 +107,9 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     flex-shrink: 0;
     gap: 12px;
+    overflow: visible;
+    position: relative;
+    z-index: 10;
   }
   
   .title {
@@ -129,7 +132,7 @@
     flex: 1;
     display: flex;
     align-items: center;
-    overflow: hidden;
+    overflow: visible;
   }
   
   .title-actions {

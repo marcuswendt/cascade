@@ -3,14 +3,12 @@
   import WindowManager from './editor/WindowManager.svelte';
   import NodePanel from './editor/NodePanel.svelte';
   import ExportDialog from './editor/ExportDialog.svelte';
-  import DocumentPanel from './editor/DocumentPanel.svelte';
   import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
   import { Graph } from '@/core/engine/Graph';
   import type { Node } from '@/core/engine/Object';
   import { GraphEditorAdapter } from './editor/GraphEditorAdapter';
-  
+
   let presentationMode = false;
-  let showDocumentPanel = true;
   let activeLibrary: string | null = null;
   let activeCategory: string | null = null;
   let selectedNode: Node | null = null;
@@ -31,7 +29,6 @@
   
   function togglePresentationMode() {
     presentationMode = !presentationMode;
-    showDocumentPanel = !presentationMode; // Hide document panel in presentation mode
     if (presentationMode) {
       activeLibrary = null;
       activeCategory = null;
@@ -665,38 +662,32 @@
 </script>
 
 <div class="app" class:presentation-mode={presentationMode}>
-  {#if showDocumentPanel}
-    <DocumentPanel
-      {graph}
-      bind:documentName={documentName}
-      on:action={(e) => handleDocumentAction(e.detail)}
-      on:nameChange={(e) => {
-        documentName = e.detail;
-        updateWindowTitle();
-      }}
-    />
-  {/if}
-
   <WindowManager
     bind:this={windowManagerRef}
     {graph}
     {selectedNode}
     {selectedAnnotation}
-    {activeTool}
+    bind:activeTool={activeTool}
     bind:activeLibrary={activeLibrary}
+    bind:documentName={documentName}
     {presentationMode}
     on:nodeSelect={(e) => handleNodeSelect(e.detail.node)}
     on:annotationSelect={(e) => handleAnnotationSelect(e)}
     on:libraryToggle={(e) => handleLibraryToggle(e.detail)}
     on:toolChange={(e) => handleToolChange(e.detail)}
+    on:action={(e) => handleDocumentAction(e.detail)}
+    on:nameChange={(e) => {
+      documentName = e.detail;
+      updateWindowTitle();
+    }}
     on:openNodePanel={(e) => {
       // Get mouse position from event or use center of screen
       if (e.detail?.x && e.detail?.y) {
         mousePosition = { x: e.detail.x, y: e.detail.y };
       } else {
-        mousePosition = { 
-          x: window.innerWidth / 2, 
-          y: window.innerHeight / 2 
+        mousePosition = {
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2
         };
       }
       // Open with first available library
