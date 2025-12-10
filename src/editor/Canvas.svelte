@@ -2669,6 +2669,20 @@ node.onReady = () => {
       }
     }
     
+    // ⌘A - Select all nodes and annotations
+    if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
+      const target = e.target as HTMLElement;
+      if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        selectedNodes = graph.nodes.map(n => n.id);
+        selectedAnnotations = graph.annotations.map(a => a.id);
+        if (graph.nodes.length > 0) {
+          selectedNode = graph.nodes[0];
+          dispatch('nodeSelect', { node: graph.nodes[0] });
+        }
+      }
+    }
+
     // ⌘D - Duplicate selected nodes
     if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
       e.preventDefault();
