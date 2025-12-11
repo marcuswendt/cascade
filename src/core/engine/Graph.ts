@@ -699,7 +699,7 @@ export class Graph {
               resolve();
             };
             img.onerror = reject;
-            img.src = imageSrc.startsWith('/') || imageSrc.startsWith('http')
+            img.src = imageSrc.startsWith('/') || imageSrc.startsWith('http') || imageSrc.startsWith('data:')
               ? imageSrc
               : `/${imageSrc}`;
           });
