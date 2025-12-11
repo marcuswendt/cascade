@@ -3,7 +3,7 @@
   import type { Graph, CanvasAnnotation } from '@/core/engine/Graph';
   import type { Computation } from '@/core/engine/Computation';
   import Inspector from '../Inspector.svelte';
-  import { sharedContextStore } from '../dockview/renderer';
+  import { sharedContextStore, panelLockStore } from '../dockview/renderer';
 
   export let panelId: string;
   export let panelParams: CascadePanelParams;
@@ -16,6 +16,12 @@
   export let selectedAnnotation: string | null = null;
   export let onRecordHistory: (() => void) | undefined = undefined;
 
+  // The node/annotation to actually display (locked or selected)
+  $: lockState = $panelLockStore.get(panelId);
+  $: isLocked = lockState?.isLocked ?? false;
+  $: displayNode = isLocked ? lockState?.lockedNode : selectedNode;
+  $: displayAnnotationId = isLocked ? lockState?.lockedAnnotationId : selectedAnnotation;
+
   // Get annotation object from ID
   let annotation: CanvasAnnotation | null = null;
 
@@ -27,24 +33,25 @@
     onRecordHistory = $sharedContextStore.onRecordHistory;
   }
 
-  // Get annotation when selectedAnnotation changes
+  // Get annotation when displayAnnotationId changes
   $: {
-    if (graph && selectedAnnotation) {
-      annotation = graph.elements.find(el => el.id === selectedAnnotation) || null;
+    if (graph && displayAnnotationId) {
+      annotation = graph.elements.find(el => el.id === displayAnnotationId) || null;
     } else {
       annotation = null;
     }
   }
 
-  // Update panel title when selected node changes
+  // Update panel title when display node changes
   $: {
     if (panelApi?.setTitle) {
-      if (selectedNode) {
-        panelApi.setTitle(`Inspector: ${selectedNode.name}`);
+      const lockPrefix = isLocked ? '~ ' : '';
+      if (displayNode) {
+        panelApi.setTitle(`${lockPrefix}Inspector: ${displayNode.id}`);
       } else if (annotation) {
-        panelApi.setTitle(`Inspector: ${annotation.type}`);
+        panelApi.setTitle(`${lockPrefix}Inspector: ${annotation.type}`);
       } else {
-        panelApi.setTitle('Inspector');
+        panelApi.setTitle(`${lockPrefix}Inspector`);
       }
     }
   }
@@ -52,7 +59,7 @@
 
 <div class="panel-wrapper">
   <Inspector
-    node={selectedNode}
+    node={displayNode}
     {annotation}
     {graph}
     position="right"

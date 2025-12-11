@@ -350,27 +350,40 @@
     color: #fff;
   }
 
-  /* Horizontally collapsed group - rotate tabs 90 degrees */
-  .dockview-container :global(.cascade-collapsed-horizontal) {
-    position: relative !important;
-    overflow: visible !important;
+  /* Lock button in tab */
+  .dockview-container :global(.cascade-tab-lock) {
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    color: #666;
+    cursor: pointer;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
   }
 
-  .dockview-container :global(.cascade-collapsed-horizontal .dv-tabs-and-actions-container) {
-    transform: rotate(90deg) !important;
-    transform-origin: left top !important;
-    position: absolute !important;
-    left: 35px !important;
-    top: 0 !important;
-    width: max-content !important;
-    height: 35px !important;
-    white-space: nowrap !important;
-    border-bottom: none !important;
-    background: #252525 !important;
+  .dockview-container :global(.cascade-tab-lock:hover:not(:disabled)) {
+    background: #404040;
+    color: #ccc;
   }
 
-  .dockview-container :global(.cascade-collapsed-horizontal .dv-content-container) {
-    display: none !important;
+  .dockview-container :global(.cascade-tab-lock:disabled) {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .dockview-container :global(.cascade-tab-lock.locked) {
+    color: #4a9eff;
+  }
+
+  .dockview-container :global(.cascade-tab-lock.locked:hover) {
+    background: #404040;
+    color: #6bb3ff;
   }
 
   /* Add panel dropdown menu */

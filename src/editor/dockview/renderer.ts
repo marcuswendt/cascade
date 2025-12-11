@@ -3,8 +3,9 @@ import type {
   GroupPanelPartInitParameters
 } from 'dockview-core';
 import { mount, unmount, type Component } from 'svelte';
-import { writable, type Writable } from 'svelte/store';
+import { writable, get, type Writable } from 'svelte/store';
 import type { CascadePanelParams, PanelContext } from './types';
+import type { Computation } from '@/core/engine/Computation';
 
 // Registry of panel components
 export interface PanelComponentEntry {
@@ -16,6 +17,46 @@ const componentRegistry = new Map<string, PanelComponentEntry>();
 
 // Shared context store for reactive updates
 export const sharedContextStore: Writable<PanelContext | null> = writable(null);
+
+// Lock state for panels (panel ID -> locked node)
+export interface PanelLockState {
+  isLocked: boolean;
+  lockedNode: Computation | null;
+  lockedAnnotationId: string | null;
+}
+
+export const panelLockStore: Writable<Map<string, PanelLockState>> = writable(new Map());
+
+export function togglePanelLock(panelId: string): void {
+  const context = get(sharedContextStore);
+  panelLockStore.update(locks => {
+    const newLocks = new Map(locks);
+    const current = newLocks.get(panelId);
+
+    if (current?.isLocked) {
+      // Unlock
+      newLocks.delete(panelId);
+    } else {
+      // Lock to current selection
+      if (context?.selectedNode || context?.selectedAnnotation) {
+        newLocks.set(panelId, {
+          isLocked: true,
+          lockedNode: context.selectedNode,
+          lockedAnnotationId: context.selectedAnnotation
+        });
+      }
+    }
+    return newLocks;
+  });
+}
+
+export function getPanelLockState(panelId: string): PanelLockState | undefined {
+  return get(panelLockStore).get(panelId);
+}
+
+export function isPanelLocked(panelId: string): boolean {
+  return get(panelLockStore).get(panelId)?.isLocked ?? false;
+}
 
 export function setSharedContext(context: PanelContext): void {
   sharedContextStore.set(context);

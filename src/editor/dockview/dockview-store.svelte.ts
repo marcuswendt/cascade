@@ -9,7 +9,8 @@ import {
   type IHeaderActionsRenderer
 } from 'dockview-core';
 import type { CascadePanelParams, PanelType } from './types';
-import { createSvelteRenderer } from './renderer';
+import { createSvelteRenderer, togglePanelLock, panelLockStore, sharedContextStore } from './renderer';
+import { get } from 'svelte/store';
 
 const STORAGE_KEY = 'cascade-dockview-layout';
 
@@ -100,6 +101,14 @@ class DockviewStore {
         const element = document.createElement('div');
         element.className = 'cascade-tab';
 
+        // Lock button (only shown for viewer/inspector)
+        const lockBtn = document.createElement('button');
+        lockBtn.className = 'cascade-tab-lock';
+        lockBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+        lockBtn.title = 'Lock to current node';
+        lockBtn.style.display = 'none';
+        element.appendChild(lockBtn);
+
         const titleSpan = document.createElement('span');
         titleSpan.className = 'cascade-tab-title';
         element.appendChild(titleSpan);
@@ -112,11 +121,62 @@ class DockviewStore {
         element.appendChild(closeBtn);
 
         let panelApi: any = null;
+        let panelId: string = '';
+        let panelType: string = '';
+        let unsubscribeLock: (() => void) | null = null;
+        let unsubscribeContext: (() => void) | null = null;
+
+        const updateLockButton = () => {
+          const locks = get(panelLockStore);
+          const lockState = locks.get(panelId);
+          const context = get(sharedContextStore);
+          const hasSelection = !!(context?.selectedNode || context?.selectedAnnotation);
+
+          if (lockState?.isLocked) {
+            lockBtn.classList.add('locked');
+            lockBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+            lockBtn.title = 'Unlock (follow selection)';
+            lockBtn.disabled = false;
+          } else {
+            lockBtn.classList.remove('locked');
+            lockBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 5-5 5 5 0 0 1 5 5v4"/><line x1="17" y1="7" x2="21" y2="3"/></svg>`;
+            lockBtn.title = hasSelection ? 'Lock to current node' : 'Select a node to lock';
+            lockBtn.disabled = !hasSelection;
+          }
+        };
 
         return {
           element,
           init: (params) => {
             panelApi = params.api;
+            panelId = params.api.id;
+
+            // Get panel type from params
+            const panelParams = params.params as CascadePanelParams;
+            panelType = panelParams?.type || '';
+
+            // Show lock button for viewer and inspector panels
+            if (panelType === 'viewer' || panelType === 'inspector') {
+              lockBtn.style.display = 'flex';
+
+              // Subscribe to lock store changes
+              unsubscribeLock = panelLockStore.subscribe(() => {
+                updateLockButton();
+              });
+
+              // Subscribe to context changes to enable/disable lock button
+              unsubscribeContext = sharedContextStore.subscribe(() => {
+                updateLockButton();
+              });
+
+              // Lock button handler
+              lockBtn.onclick = (e) => {
+                e.stopPropagation();
+                togglePanelLock(panelId);
+              };
+
+              updateLockButton();
+            }
 
             // Set initial title
             titleSpan.textContent = panelApi.title || 'Untitled';
@@ -143,6 +203,8 @@ class DockviewStore {
           },
           dispose: () => {
             panelApi = null;
+            if (unsubscribeLock) unsubscribeLock();
+            if (unsubscribeContext) unsubscribeContext();
           }
         };
       },
