@@ -74,7 +74,6 @@ export function createSvelteRenderer(
 
       // Get current shared context
       const context = getSharedContext();
-      console.log('[renderer] mounting component with params:', params, 'context graph:', context?.graph);
 
       // Mount Svelte 5 component
       instance = mount(entry.component, {

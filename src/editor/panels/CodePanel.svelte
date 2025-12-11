@@ -17,7 +17,6 @@
   // Get the node from the graph using nodeId from params
   let node: Computation | null = null;
   const nodeId = panelParams?.nodeId;
-  console.log('[CodePanel] panelParams:', panelParams, 'nodeId:', nodeId, 'graph:', graph);
 
   // Subscribe to context store for reactive updates
   $: if ($sharedContextStore) {

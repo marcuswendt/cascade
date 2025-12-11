@@ -2197,13 +2197,24 @@ node.onReady = () => {
     internalTransform = { ...internalTransform };
   }
 
-  // Select all nodes and annotations
+  // Select all nodes and annotations (toggle: if all selected, deselect all)
   export function selectAll() {
-    selectedNodes = graph.nodes.map(n => n.id);
-    selectedAnnotations = graph.annotations.map(a => a.id);
-    if (graph.nodes.length > 0) {
-      selectedNode = graph.nodes[0];
-      dispatch('nodeSelect', { node: graph.nodes[0] });
+    const allNodesSelected = graph.nodes.length > 0 &&
+      graph.nodes.every(n => selectedNodes.includes(n.id));
+    const allAnnotationsSelected = graph.annotations.length === 0 ||
+      graph.annotations.every(a => selectedAnnotations.includes(a.id));
+
+    if (allNodesSelected && allAnnotationsSelected && selectedNodes.length > 0) {
+      // Everything already selected - deselect all
+      deselectAll();
+    } else {
+      // Select all
+      selectedNodes = graph.nodes.map(n => n.id);
+      selectedAnnotations = graph.annotations.map(a => a.id);
+      if (graph.nodes.length > 0) {
+        selectedNode = graph.nodes[0];
+        dispatch('nodeSelect', { node: graph.nodes[0] });
+      }
     }
   }
 

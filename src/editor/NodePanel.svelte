@@ -669,7 +669,7 @@
   {#if !searchQuery && hoveredLibraryId !== undefined && hoveredNodes.length > 0}
     <div 
       class="menu-column submenu-column"
-      style="left: {calculatedPosition.x + 164}px; top: {calculatedPosition.y}px"
+      style="left: {calculatedPosition.x + 200}px; top: {calculatedPosition.y}px"
       on:mouseenter={() => {
         // Keep submenu open when hovering over it
       }}

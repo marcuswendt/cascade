@@ -29,6 +29,9 @@ class DockviewStore {
   private _isReady = $state(false);
   private _minimizedGroups = $state<Map<string, { height: number; originalMinHeight: number; originalMinWidth?: number; orientation: 'horizontal' | 'vertical' }>>(new Map());
 
+  // Pending params for panels being added - dockview doesn't pass params to createComponent
+  private _pendingParams = new Map<string, CascadePanelParams>();
+
   // Getters
   get api() { return this._api; }
   get activePanel() { return this._activePanel; }
@@ -47,9 +50,15 @@ class DockviewStore {
 
     const options: DockviewComponentOptions = {
       createComponent: (componentOptions: { id: string; name: string; params?: CascadePanelParams }) => {
-        // During deserialization, params might not be available or might be incomplete
-        // Ensure we always have valid params with type property
-        const existingParams = componentOptions.params;
+        // Dockview doesn't pass params to createComponent, so we check our pending params map first
+        const pendingParams = self._pendingParams.get(componentOptions.id);
+        if (pendingParams) {
+          self._pendingParams.delete(componentOptions.id);
+        }
+
+        // Use pending params if available, otherwise fall back to componentOptions.params
+        const existingParams = pendingParams || componentOptions.params;
+
         const params: CascadePanelParams = {
           // First spread all existing params to preserve nodeId, graphId, etc.
           ...existingParams,
@@ -117,8 +126,8 @@ class DockviewStore {
               titleSpan.textContent = panelApi.title || 'Untitled';
             });
 
-            // Click on title to toggle minimize - get group at click time
-            titleSpan.onclick = (e) => {
+            // Double-click on title to toggle minimize - get group at click time
+            titleSpan.ondblclick = (e) => {
               e.stopPropagation();
               const currentGroup = panelApi?.group;
               if (currentGroup?.id) {
@@ -209,6 +218,9 @@ class DockviewStore {
         };
       }
     }
+
+    // Store params for createComponent to pick up (dockview doesn't pass params to createComponent)
+    this._pendingParams.set(options.id, panelParams);
 
     this._api.addPanel(addOptions);
   }
@@ -410,6 +422,50 @@ class DockviewStore {
   }
 
   /**
+   * Filter out code panels from a layout (both panels object and grid views)
+   * Code panels don't preserve their nodeId params when serialized and should
+   * be opened on-demand when user double-clicks a node
+   */
+  private filterCodePanelsFromLayout(layout: SerializedDockview): void {
+    // Filter panels object
+    if (layout.panels) {
+      const filteredPanels: Record<string, any> = {};
+      for (const [id, panel] of Object.entries(layout.panels as Record<string, any>)) {
+        if (!id.startsWith('code-')) {
+          filteredPanels[id] = panel;
+        }
+      }
+      layout.panels = filteredPanels;
+    }
+
+    // Filter grid views recursively
+    if (layout.grid?.root) {
+      this.filterCodePanelsFromGridNode(layout.grid.root);
+    }
+  }
+
+  /**
+   * Recursively filter code panel IDs from grid node views
+   */
+  private filterCodePanelsFromGridNode(node: any): void {
+    if (!node) return;
+
+    if (node.type === 'leaf' && node.data?.views) {
+      // Filter out code panel IDs from views array
+      node.data.views = node.data.views.filter((viewId: string) => !viewId.startsWith('code-'));
+      // Update activeView if it was a code panel
+      if (node.data.activeView?.startsWith('code-')) {
+        node.data.activeView = node.data.views[0] || null;
+      }
+    } else if (node.type === 'branch' && node.data) {
+      // Recurse into branch children
+      for (const child of node.data) {
+        this.filterCodePanelsFromGridNode(child);
+      }
+    }
+  }
+
+  /**
    * Save current layout to localStorage
    */
   saveLayout(): void {
@@ -437,6 +493,12 @@ class DockviewStore {
         if (saved) {
           layoutToLoad = JSON.parse(saved);
           isFromStorage = true;
+
+          // Remove code panels from saved layout - they don't preserve nodeId params
+          // and should be opened on-demand when user double-clicks a node
+          if (layoutToLoad) {
+            this.filterCodePanelsFromLayout(layoutToLoad);
+          }
         }
       } catch (error) {
         console.warn('Failed to parse saved layout:', error);
