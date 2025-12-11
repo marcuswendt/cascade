@@ -203,8 +203,22 @@
 
         {:else if activeTab === 'appearance'}
           <div class="section">
-            <div class="coming-soon">
-              Appearance settings coming soon.
+            <div class="setting-group">
+              <h3>Editor</h3>
+              <div class="setting-row">
+                <label for="fontSize">Font Size</label>
+                <div class="slider-control">
+                  <input
+                    type="range"
+                    id="fontSize"
+                    min="10"
+                    max="24"
+                    step="1"
+                    bind:value={localSettings.editor.fontSize}
+                  />
+                  <span class="slider-value">{localSettings.editor.fontSize}px</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -540,5 +554,74 @@
 
   .save-button:hover {
     background: #357abd;
+  }
+
+  /* Setting Groups */
+  .setting-group {
+    margin-bottom: 24px;
+  }
+
+  .setting-group h3 {
+    margin: 0 0 12px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid #404040;
+    border-radius: 6px;
+    margin-bottom: 8px;
+  }
+
+  .setting-row label {
+    color: #ccc;
+    font-size: 14px;
+  }
+
+  .slider-control {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .slider-control input[type="range"] {
+    width: 120px;
+    height: 4px;
+    background: #404040;
+    border-radius: 2px;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .slider-control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #4a9eff;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .slider-control input[type="range"]::-webkit-slider-thumb:hover {
+    background: #357abd;
+  }
+
+  .slider-value {
+    min-width: 40px;
+    text-align: right;
+    color: #fff;
+    font-size: 13px;
+    font-family: 'SF Mono', Monaco, monospace;
   }
 </style>

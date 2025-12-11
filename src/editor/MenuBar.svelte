@@ -80,6 +80,7 @@
     { type: 'separator' },
     { label: 'Export...', action: 'export', shortcut: '⌘E' },
     { type: 'separator' },
+    { label: 'Project Settings...', action: 'projectSettings', shortcut: '⇧⌘,' },
     { label: 'Settings...', action: 'settings', shortcut: '⌘,' },
     { type: 'separator' },
     { label: 'About Cascade', action: 'about' }
@@ -99,6 +100,7 @@
     { label: 'Center on Nodes', action: 'centerOnNodes', shortcut: 'H' },
     { label: 'Reset Layout', action: 'resetLayout', shortcut: '⇧⌘P' },
     { type: 'separator' },
+    { label: 'Maximize Tab', action: 'maximizeTab', shortcut: '⌘B' },
     { label: 'Presentation Mode', action: 'presentationMode', shortcut: '⌘.' },
     { type: 'separator' },
     { label: 'Focus Graph', action: 'focusGraph', shortcut: '⌘1' },

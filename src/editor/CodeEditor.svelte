@@ -2,12 +2,18 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import * as monaco from 'monaco-editor';
   import type { Computation } from '@/core/engine/Computation';
+  import type { Graph } from '@/core/engine/Graph';
   import PackageSearch from './PackageSearch.svelte';
   import type { PackageManager } from '@/core/engine/PackageManager';
   import Icon from './Icon.svelte';
-  import { Clock, Check, XCircle } from 'lucide-svelte';
+  import { Clock, Check, XCircle, Copy, FileOutput, History, Lock, FolderOpen, Sparkles, Loader2 } from 'lucide-svelte';
   import { getLensNodeTemplate } from '@/nodes/lens';
-  
+  import { isStandardLibraryNode, typeToPackagePath } from '@/utils/nodeTypeUtils';
+  import type { NodeSource, FileStatus } from '@/types/node.types';
+  import { getAICodeGenerator, AICodeGenerator } from './ai/AICodeGenerator';
+  import type { AIProvider } from './ai/types';
+  import { settingsStore } from './stores/settingsStore';
+
   // Node runtime type definitions for Monaco
   const NODE_TYPES_DEFINITION = `
 declare namespace Cascade {
@@ -116,28 +122,86 @@ declare namespace Cascade {
 declare const node: Cascade.NodeContext;
 declare const graph: any; // Graph type can be added later if needed
 `.trim();
-  
+
+  // Props
   export let node: Computation;
+  export let graph: Graph | null = null;
   export let packageManager: PackageManager | null = null;
   export let onClose: () => void;
-  export let showCloseButton: boolean = true; // For tab mode, we might hide the close button
+  export let showCloseButton: boolean = true;
   export let onRecordHistory: (() => void) | undefined = undefined;
-  
+  export let onDuplicate: ((modulePath: string) => void) | undefined = undefined;
+  export let onExtract: ((modulePath: string) => void) | undefined = undefined;
+  export let onShowHistory: (() => void) | undefined = undefined;
+
+  // State
   let container: HTMLDivElement;
   let editor: monaco.editor.IStandaloneCodeEditor | null = null;
   let status: 'idle' | 'editing' | 'compiling' | 'success' | 'error' = 'idle';
   let errorMessage = '';
   let isDestroyed = false;
   let packageSearchOpen = false;
-  
+
+  // Source information
+  let sourceType: 'stdlib' | 'embedded' | 'project' = 'embedded';
+  let modulePath = '';
+  let displayPath = '';
+  let fileStatus: FileStatus = 'synced';
+  let historyCount = 0;
+
+  // AI prompt state
+  let aiPrompt = '';
+  let aiModel: AIProvider = 'claude';
+  let isGenerating = false;
+  let aiError = '';
+  let streamedCode = '';
+
+  // Computed
+  $: isReadOnly = sourceType === 'stdlib';
+  $: canDuplicate = sourceType === 'stdlib';
+  $: canExtract = sourceType === 'embedded';
+  $: canShowHistory = sourceType === 'embedded' && historyCount > 0;
+
+  // Update editor font size when settings change
+  $: if (editor && $settingsStore.editor.fontSize) {
+    editor.updateOptions({ fontSize: $settingsStore.editor.fontSize });
+  }
+
+  // Determine source info from node
+  function updateSourceInfo() {
+    const fullType = node.type.includes('.') ? node.type : typeToPackagePath(node.type);
+    modulePath = (node as any).modulePath || fullType;
+
+    // Determine source type
+    if (isStandardLibraryNode(modulePath)) {
+      sourceType = 'stdlib';
+      const parts = modulePath.split('.');
+      displayPath = `<cascade>/${parts.slice(1).join('/')}.ts`;
+    } else if (modulePath.startsWith('local.')) {
+      sourceType = 'embedded';
+      displayPath = '<embedded>';
+    } else {
+      sourceType = (node as any).sourceType || 'embedded';
+      displayPath = (node as any).filePath || '<embedded>';
+    }
+
+    // Get history count from module resolver if available
+    if (graph?.moduleResolver && sourceType === 'embedded') {
+      const config = graph.moduleResolver.exportConfig();
+      const embedded = config.embeddedModules[modulePath];
+      historyCount = embedded?.history?.length || 0;
+    }
+  }
+
   onMount(async () => {
     if (!container || isDestroyed) return;
-    
-    // Wait for DOM to be ready
+
+    updateSourceInfo();
+
     await tick();
-    
+
     if (!container || isDestroyed) return;
-    
+
     try {
       // Configure Monaco TypeScript environment with node types
       monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
@@ -152,7 +216,7 @@ declare const graph: any; // Graph type can be added later if needed
         allowJs: true,
         typeRoots: ["node_modules/@types"]
       });
-      
+
       // Add node type definitions to Monaco
       monaco.languages.typescript.typescriptDefaults.setExtraLibs([
         {
@@ -160,26 +224,27 @@ declare const graph: any; // Graph type can be added later if needed
           filePath: 'file:///node-context.d.ts'
         }
       ]);
-      
+
       editor = monaco.editor.create(container, {
         value: node.code || getDefaultNodeCode(node.type),
         language: 'typescript',
         theme: 'vs-dark',
         minimap: { enabled: false },
-        fontSize: 14,
-        automaticLayout: true
+        fontSize: $settingsStore.editor.fontSize,
+        automaticLayout: true,
+        readOnly: isReadOnly
       });
-      
-      // Shift+Enter to compile
+
+      // Shift+Enter to compile (only if not read-only)
       editor.addCommand(
         monaco.KeyMod.Shift | monaco.KeyCode.Enter,
         () => {
-          if (!isDestroyed && editor) {
+          if (!isDestroyed && editor && !isReadOnly) {
             compileNode();
           }
         }
       );
-      
+
       // Escape to close
       editor.addCommand(
         monaco.KeyCode.Escape,
@@ -193,19 +258,19 @@ declare const graph: any; // Graph type can be added later if needed
           }
         }
       );
-      
+
       // ⌘K / Ctrl+K to open package search
       editor.addCommand(
         monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK,
         () => {
-          if (!isDestroyed) {
+          if (!isDestroyed && !isReadOnly) {
             packageSearchOpen = true;
           }
         }
       );
-      
+
       editor.onDidChangeModelContent(() => {
-        if (!isDestroyed) {
+        if (!isDestroyed && !isReadOnly) {
           status = 'editing';
         }
       });
@@ -215,24 +280,22 @@ declare const graph: any; // Graph type can be added later if needed
       status = 'error';
     }
   });
-  
+
   onDestroy(() => {
     isDestroyed = true;
     if (editor) {
       try {
         editor.dispose();
       } catch (error) {
-        // Ignore disposal errors
         console.warn('Error disposing Monaco editor:', error);
       }
       editor = null;
     }
   });
-  
-  async function compileNode() {
-    if (!editor || isDestroyed) return;
 
-    // Record history before code change
+  async function compileNode() {
+    if (!editor || isDestroyed || isReadOnly) return;
+
     onRecordHistory?.();
 
     let code: string;
@@ -244,12 +307,10 @@ declare const graph: any; // Graph type can be added later if needed
     }
 
     status = 'compiling';
-    
+
     try {
-      // Preserve state
       const oldState = node.preserveState();
-      
-      // Call onDestroy
+
       if (node.onDestroy) {
         try {
           node.onDestroy();
@@ -257,30 +318,20 @@ declare const graph: any; // Graph type can be added later if needed
           console.warn('Error in node.onDestroy:', err);
         }
       }
-      
-      // Reset port tracking before compilation
+
       node.resetPortTracking();
-      
-      // Compile new function
-      // Wrap code in async function to support top-level await
-      // The function should return a promise that resolves when the async code completes
+
       const wrappedCode = `return (async function(node, graph) {\n${code}\n})(node, graph);`;
       const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
-      
-      // Update node
+
       node.code = code;
       node.setFunction(nodeFunction);
-      
-      // Execute to initialize (this will track which ports are used)
+
       await node.execute();
-      
-      // Clean up ports that are no longer in the code
+
       node.cleanupUnusedPorts();
-      
-      // Restore state
       node.restoreState(oldState);
-      
-      // Call onReady
+
       if (node.onReady) {
         try {
           node.onReady();
@@ -288,32 +339,28 @@ declare const graph: any; // Graph type can be added later if needed
           console.warn('Error in node.onReady:', err);
         }
       }
-      
+
       if (isDestroyed) return;
-      
+
       status = 'success';
       errorMessage = '';
-      
-      // Don't auto-close when using tabs - let the user keep editing
-      
+
     } catch (error: any) {
       if (isDestroyed) return;
-      
+
       status = 'error';
       errorMessage = error.message || 'Unknown error';
       node.error = error;
       console.error('Error compiling node:', error);
     }
   }
-  
+
   function getDefaultNodeCode(type: string): string {
-    // Check Lens library templates first
     const lensTemplate = getLensNodeTemplate(type);
     if (lensTemplate) {
       return lensTemplate;
     }
-    
-    // Default template
+
     return `// ${type} node
 const trigger = node.in('trigger', null, { type: 'trigger' });
 const output = node.out('output');
@@ -334,34 +381,29 @@ node.onReady = () => {
   }
 
   function handlePackageSelect(e: CustomEvent<{ packageName: string }>) {
-    if (!editor) return;
-    
+    if (!editor || isReadOnly) return;
+
     const packageName = e.detail.packageName;
     const model = editor.getModel();
     if (!model) return;
-    
+
     const selection = editor.getSelection();
     if (!selection) return;
-    
-    // Insert require statement at cursor or top of file
+
     const requireCode = `const ${packageName.replace(/[^a-zA-Z0-9]/g, '_')} = await node.require('${packageName}');\n`;
-    
-    // If there's a selection, replace it, otherwise insert at cursor
+
     if (selection.isEmpty()) {
-      // Insert at cursor position
       editor.executeEdits('insert-package', [{
         range: new monaco.Range(selection.startLineNumber, selection.startColumn, selection.startLineNumber, selection.startColumn),
         text: requireCode
       }]);
     } else {
-      // Replace selection
       editor.executeEdits('insert-package', [{
         range: selection,
         text: requireCode
       }]);
     }
-    
-    // Move cursor after inserted text
+
     const newPosition = {
       lineNumber: selection.startLineNumber,
       column: selection.startColumn + requireCode.length
@@ -369,37 +411,244 @@ node.onReady = () => {
     editor.setPosition(newPosition);
     editor.focus();
   }
+
+  function handleDuplicate() {
+    onDuplicate?.(modulePath);
+  }
+
+  function handleExtract() {
+    onExtract?.(modulePath);
+  }
+
+  function handleShowHistory() {
+    onShowHistory?.();
+  }
+
+  async function handleAIGenerate() {
+    if (!aiPrompt.trim() || isGenerating || isReadOnly || !editor) return;
+
+    const generator = getAICodeGenerator();
+
+    // Check if provider is configured
+    if (!generator.isConfigured(aiModel)) {
+      aiError = `${aiModel} is not configured. Add your API key in Settings.`;
+      return;
+    }
+
+    isGenerating = true;
+    aiError = '';
+    streamedCode = '';
+
+    // Build context from current node
+    const context = AICodeGenerator.buildContext(node, modulePath);
+
+    // Record history before AI changes
+    onRecordHistory?.();
+
+    try {
+      // Use streaming for better UX
+      await generator.generateStream(
+        {
+          prompt: aiPrompt,
+          context,
+          provider: aiModel,
+          stream: true
+        },
+        {
+          onToken: (token) => {
+            streamedCode += token;
+            // Update editor with streamed code
+            if (editor && !isDestroyed) {
+              editor.setValue(streamedCode);
+            }
+          },
+          onComplete: (result) => {
+            isGenerating = false;
+            if (editor && !isDestroyed) {
+              editor.setValue(result.code);
+              // Auto-compile after successful generation
+              compileNode();
+            }
+            aiPrompt = '';
+          },
+          onError: (error) => {
+            isGenerating = false;
+            aiError = error.message;
+            // Restore original code on error
+            if (editor && !isDestroyed && node.code) {
+              editor.setValue(node.code);
+            }
+          }
+        }
+      );
+    } catch (error: any) {
+      isGenerating = false;
+      aiError = error.message || 'Failed to generate code';
+      // Restore original code on error
+      if (editor && !isDestroyed && node.code) {
+        editor.setValue(node.code);
+      }
+    }
+  }
+
+  function getSourceBadgeClass(): string {
+    switch (sourceType) {
+      case 'stdlib': return 'badge-stdlib';
+      case 'embedded': return 'badge-embedded';
+      case 'project': return 'badge-project';
+      default: return '';
+    }
+  }
+
+  function getSourceBadgeText(): string {
+    switch (sourceType) {
+      case 'stdlib': return 'stdlib';
+      case 'embedded': return 'embedded';
+      case 'project': return fileStatus === 'synced' ? 'project' : fileStatus;
+      default: return '';
+    }
+  }
 </script>
 
 <div class="editor-container-wrapper">
-  <div class="header">
+  <!-- Header: Module Path & Source Info -->
+  <div class="header-bar">
+    <div class="header-info">
+      <div class="module-path">
+        <Icon name="Package" size={14} />
+        <span class="path-text">{modulePath}</span>
+      </div>
+      <div class="source-path">
+        <Icon name="FileCode" size={14} />
+        <span class="path-text secondary">{displayPath}</span>
+        <span class="source-badge {getSourceBadgeClass()}">
+          {#if sourceType === 'stdlib'}
+            <Lock size={10} />
+          {/if}
+          {getSourceBadgeText()}
+        </span>
+        {#if historyCount > 0}
+          <span class="history-badge" title="{historyCount} versions">
+            <History size={10} />
+            {historyCount}
+          </span>
+        {/if}
+      </div>
+    </div>
+  </div>
+
+  <!-- Status Bar -->
+  <div class="status-bar">
     <div class="status status-{status}">
       {#if status === 'editing'}
         Editing... (Shift+Enter to compile)
       {:else if status === 'compiling'}
-        <span style="display: inline-block; vertical-align: middle; margin-right: 4px;"><Clock size={14} /></span>
+        <Clock size={14} />
         Compiling...
       {:else if status === 'success'}
-        <span style="display: inline-block; vertical-align: middle; margin-right: 4px;"><Check size={14} /></span>
+        <Check size={14} />
         Success!
       {:else if status === 'error'}
-        <span style="display: inline-block; vertical-align: middle; margin-right: 4px;"><XCircle size={14} /></span>
+        <XCircle size={14} />
         {errorMessage}
+      {:else if isReadOnly}
+        <Lock size={14} />
+        Read-only (standard library)
       {/if}
     </div>
   </div>
-  
+
+  <!-- Monaco Editor -->
   <div class="editor-container" bind:this={container}></div>
-  
+
+  <!-- Action Bar -->
+  <div class="action-bar">
+    {#if canDuplicate}
+      <button class="action-button" on:click={handleDuplicate} title="Duplicate to local.*">
+        <Copy size={14} />
+        Duplicate to local
+      </button>
+    {/if}
+    {#if canExtract}
+      <button class="action-button" on:click={handleExtract} title="Extract to external file">
+        <FileOutput size={14} />
+        Extract to File
+      </button>
+    {/if}
+    {#if canShowHistory}
+      <button class="action-button" on:click={handleShowHistory} title="View version history">
+        <History size={14} />
+        History ({historyCount})
+      </button>
+    {/if}
+    {#if sourceType === 'project'}
+      <button class="action-button" title="Open in external editor">
+        <FolderOpen size={14} />
+        Open in VSCode
+      </button>
+    {/if}
+  </div>
+
+  <!-- AI Prompt Panel -->
+  {#if !isReadOnly}
+    <div class="ai-panel">
+      <div class="ai-input-row">
+        {#if isGenerating}
+          <div class="ai-spinner">
+            <Loader2 size={16} class="spinning" />
+          </div>
+        {:else}
+          <Sparkles size={16} class="ai-icon" />
+        {/if}
+        <input
+          type="text"
+          class="ai-prompt-input"
+          placeholder="Describe what you want the node to do..."
+          bind:value={aiPrompt}
+          on:keydown={(e) => e.key === 'Enter' && !e.shiftKey && handleAIGenerate()}
+          disabled={isGenerating}
+        />
+      </div>
+      {#if aiError}
+        <div class="ai-error">
+          <XCircle size={14} />
+          {aiError}
+        </div>
+      {/if}
+      <div class="ai-controls">
+        <select class="model-select" bind:value={aiModel} disabled={isGenerating}>
+          <option value="claude">Claude</option>
+          <option value="openai">OpenAI</option>
+          <option value="gemini">Gemini</option>
+        </select>
+        <button
+          class="ai-generate-button"
+          on:click={handleAIGenerate}
+          disabled={!aiPrompt.trim() || isGenerating}
+        >
+          {#if isGenerating}
+            <Loader2 size={14} class="spinning" />
+            Generating...
+          {:else}
+            ⚡ Generate
+          {/if}
+        </button>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Footer -->
   <div class="footer">
-    <button class="package-button" on:click={() => packageSearchOpen = true} title="Search NPM packages (⌘K)">
-      <span style="display: inline-block; vertical-align: middle; margin-right: 6px;"><Icon name="Package" size={14} /></span>
+    <button class="package-button" on:click={() => packageSearchOpen = true} title="Search NPM packages (⌘K)" disabled={isReadOnly}>
+      <Icon name="Package" size={14} />
       Packages
     </button>
     <div class="footer-right">
-      <button on:click={compileNode} disabled={!editor || isDestroyed}>
-        Compile (Shift+Enter)
-      </button>
+      {#if !isReadOnly}
+        <button on:click={compileNode} disabled={!editor || isDestroyed}>
+          Compile (Shift+Enter)
+        </button>
+      {/if}
       {#if showCloseButton}
         <button on:click={onClose}>
           Close (Esc)
@@ -427,61 +676,248 @@ node.onReady = () => {
     background: #1e1e1e;
     overflow: hidden;
   }
-  
-  .editor-modal {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 800px;
-    height: 600px;
-    background: #1e1e1e;
-    border-radius: 8px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-    display: flex;
-    flex-direction: column;
-    z-index: 1000;
-  }
-  
-  .header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 16px;
+
+  /* Header Bar */
+  .header-bar {
+    padding: 8px 12px;
+    background: #252526;
     border-bottom: 1px solid #333;
   }
-  
-  .header h3 {
-    margin: 0;
-    color: #fff;
-    font-size: 16px;
+
+  .header-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
-  
-  .status {
-    flex: 1;
-    font-size: 14px;
+
+  .module-path, .source-path {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #ccc;
+  }
+
+  .source-path {
+    font-size: 12px;
+  }
+
+  .path-text {
+    font-family: 'SF Mono', Monaco, monospace;
+  }
+
+  .path-text.secondary {
     color: #888;
   }
-  
+
+  .source-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+
+  .badge-stdlib {
+    background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+  }
+
+  .badge-embedded {
+    background: rgba(76, 175, 80, 0.2);
+    color: #4caf50;
+  }
+
+  .badge-project {
+    background: rgba(33, 150, 243, 0.2);
+    color: #2196f3;
+  }
+
+  .history-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    background: rgba(156, 39, 176, 0.2);
+    color: #9c27b0;
+    border-radius: 10px;
+    font-size: 11px;
+  }
+
+  /* Status Bar */
+  .status-bar {
+    padding: 8px 12px;
+    border-bottom: 1px solid #333;
+  }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #888;
+  }
+
   .status-error {
     color: #ff4444;
   }
-  
+
   .status-success {
     color: #44ff44;
   }
-  
+
+  /* Editor */
   .editor-container {
     flex: 1;
     min-height: 0;
   }
-  
+
+  /* Action Bar */
+  .action-bar {
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #252526;
+    border-top: 1px solid #333;
+    flex-wrap: wrap;
+  }
+
+  .action-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #aaa;
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s ease;
+  }
+
+  .action-button:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border-color: #555;
+  }
+
+  /* AI Panel */
+  .ai-panel {
+    padding: 12px;
+    background: #1a1a2e;
+    border-top: 1px solid #333;
+  }
+
+  .ai-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .ai-input-row :global(.ai-icon) {
+    color: #9c27b0;
+    flex-shrink: 0;
+  }
+
+  .ai-spinner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9c27b0;
+    flex-shrink: 0;
+  }
+
+  .ai-spinner :global(.spinning),
+  .ai-generate-button :global(.spinning) {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .ai-error {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: rgba(255, 68, 68, 0.1);
+    border: 1px solid rgba(255, 68, 68, 0.3);
+    border-radius: 4px;
+    color: #ff6666;
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+
+  .ai-prompt-input {
+    flex: 1;
+    padding: 8px 12px;
+    background: #252536;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 13px;
+  }
+
+  .ai-prompt-input:focus {
+    outline: none;
+    border-color: #9c27b0;
+  }
+
+  .ai-prompt-input::placeholder {
+    color: #666;
+  }
+
+  .ai-controls {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  .model-select {
+    padding: 6px 12px;
+    background: #252536;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .ai-generate-button {
+    padding: 6px 16px;
+    background: linear-gradient(135deg, #9c27b0, #673ab7);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: opacity 0.15s ease;
+  }
+
+  .ai-generate-button:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .ai-generate-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Footer */
   .footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 16px;
+    padding: 12px;
     border-top: 1px solid #333;
   }
 
@@ -491,6 +927,9 @@ node.onReady = () => {
   }
 
   .package-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     padding: 8px 16px;
     background: rgba(74, 158, 255, 0.2);
     color: #4a9eff;
@@ -501,11 +940,16 @@ node.onReady = () => {
     transition: all 0.15s ease;
   }
 
-  .package-button:hover {
+  .package-button:hover:not(:disabled) {
     background: rgba(74, 158, 255, 0.3);
     border-color: #4a9eff;
   }
-  
+
+  .package-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   button {
     padding: 8px 16px;
     background: #4a9eff;
@@ -515,30 +959,13 @@ node.onReady = () => {
     cursor: pointer;
     font-size: 14px;
   }
-  
+
   button:hover:not(:disabled) {
     background: #357abd;
   }
-  
+
   button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
-  
-  .close-button {
-    margin-left: auto;
-    background: transparent;
-    font-size: 24px;
-    padding: 0;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  
-  .close-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-  }
 </style>
-

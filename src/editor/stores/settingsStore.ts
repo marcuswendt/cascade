@@ -29,10 +29,10 @@ export const SERVICE_PRESETS = [
 export interface UserSettings {
   apiKeys: APIKeyEntry[];
   appearance: {
-    // Future: theme, accentColor, fontSize
+    // Future: theme, accentColor
   };
   editor: {
-    // Future: autoSave, defaultZoom
+    fontSize: number;
   };
 }
 
@@ -40,7 +40,9 @@ function createDefaultSettings(): UserSettings {
   return {
     apiKeys: [],
     appearance: {},
-    editor: {}
+    editor: {
+      fontSize: 12
+    }
   };
 }
 
@@ -49,7 +51,14 @@ function loadSettings(): UserSettings {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      return { ...createDefaultSettings(), ...parsed };
+      const defaults = createDefaultSettings();
+      // Deep merge to preserve nested defaults
+      return {
+        ...defaults,
+        ...parsed,
+        appearance: { ...defaults.appearance, ...parsed.appearance },
+        editor: { ...defaults.editor, ...parsed.editor }
+      };
     }
   } catch (e) {
     console.warn('Failed to load settings:', e);
@@ -137,6 +146,23 @@ export function removeApiKey(id: string): void {
  */
 export function setSettings(settings: UserSettings): void {
   settingsStore.set(settings);
+}
+
+/**
+ * Get the editor font size
+ */
+export function getEditorFontSize(): number {
+  return get(settingsStore).editor.fontSize;
+}
+
+/**
+ * Update editor settings
+ */
+export function updateEditorSettings(updates: Partial<UserSettings['editor']>): void {
+  settingsStore.update(settings => ({
+    ...settings,
+    editor: { ...settings.editor, ...updates }
+  }));
 }
 
 export { settingsStore };

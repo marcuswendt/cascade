@@ -186,6 +186,9 @@
       case 'presentationMode':
         togglePresentationMode();
         break;
+      case 'maximizeTab':
+        dockviewStore.toggleMaximizeActivePanel();
+        break;
       case 'focusGraph':
         dockviewStore.focusPanel('graph-main');
         break;
@@ -687,11 +690,10 @@
       }
       
       // Additional keyboard shortcuts
-      // ⌘B - Toggle bottom toolbar visibility (via presentation mode)
+      // ⌘B - Maximize/restore active panel
       if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
         e.preventDefault();
-        // Toggle presentation mode which hides toolbar
-        togglePresentationMode();
+        dockviewStore.toggleMaximizeActivePanel();
       }
       
       // ⌘/ - Toggle node panel (same as Tab)

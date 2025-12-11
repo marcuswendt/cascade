@@ -334,6 +334,34 @@ class DockviewStore {
   }
 
   /**
+   * Check if any panel is maximized
+   */
+  isActivePanelMaximized(): boolean {
+    if (!this._api) return false;
+    return (this._api as any).hasMaximizedGroup?.() ?? false;
+  }
+
+  /**
+   * Toggle maximize for the active panel's group using dockview's built-in API
+   */
+  toggleMaximizeActivePanel(): void {
+    if (!this._api) return;
+
+    const apiAny = this._api as any;
+
+    if (apiAny.hasMaximizedGroup?.()) {
+      // Restore from maximized
+      apiAny.exitMaximizedGroup?.();
+    } else {
+      // Maximize the active panel's group
+      const activePanel = this._api.getPanel(this._activePanel || '');
+      if (activePanel) {
+        apiAny.maximizeGroup?.(activePanel);
+      }
+    }
+  }
+
+  /**
    * Toggle minimize/restore for a group
    */
   toggleMinimizeGroup(groupId: string): void {
