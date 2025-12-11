@@ -26,12 +26,11 @@ export class SelectNode extends Computation {
     // Index property - selects which input to route to output
     this.defineProp('index', {
       value: 0,
-      type: 'number',
+      type: 'int',
       params: {
         min: 0,
         max: 1,
-        step: 1,
-        integer: true
+        step: 1
       },
       displayName: 'Index'
     });
