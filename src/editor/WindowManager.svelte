@@ -10,7 +10,7 @@
   import GraphTabs from './GraphTabs.svelte';
   import CodeEditor from './CodeEditor.svelte';
   import type { Graph } from '@/core/engine/Graph';
-  import type { Computation } from '@/core/engine/Computation';
+  import type { Computation } from '@/core/engine/Node';
 
   import { createEventDispatcher } from 'svelte';
 

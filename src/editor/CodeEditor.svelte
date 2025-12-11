@@ -1,20 +1,20 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import * as monaco from 'monaco-editor';
-  import type { Computation } from '@/core/engine/Computation';
+  import type { Computation } from '@/core/engine/Node';
   import type { Graph } from '@/core/engine/Graph';
   import PackageSearch from './PackageSearch.svelte';
   import type { PackageManager } from '@/core/engine/PackageManager';
   import Icon from './Icon.svelte';
   import { Clock, Check, XCircle, Copy, FileOutput, History, Lock, FolderOpen, Sparkles, Loader2 } from 'lucide-svelte';
-  import { getLensNodeTemplate } from '@/nodes/lens';
-  import { isStandardLibraryNode, typeToPackagePath } from '@/utils/nodeTypeUtils';
+  import { isStandardLibraryNode, typeToPackagePath, getNodeClass } from '@/utils/nodeTypeUtils';
   import type { NodeSource, FileStatus } from '@/types/node.types';
   import { getAICodeGenerator, AICodeGenerator } from './ai/AICodeGenerator';
   import type { AIProvider } from './ai/types';
   import { settingsStore } from './stores/settingsStore';
 
   // Node runtime type definitions for Monaco
+  // These provide autocomplete for custom node code
   const NODE_TYPES_DEFINITION = `
 declare namespace Cascade {
   type PortType = 'trigger' | 'param';
@@ -76,7 +76,7 @@ declare namespace Cascade {
       locked?: boolean;
       integer?: boolean;
     };
-    onChange?: (prop: Prop<T>, context: NodeContext) => void | Promise<void>;
+    onChange?: (prop: Prop<T>, context: Node) => void | Promise<void>;
     displayName?: string | null;
     type?: PropControlType;
     disabled?: boolean | (() => boolean);
@@ -85,42 +85,57 @@ declare namespace Cascade {
     group?: string;
   }
 
-  interface NodeContext {
+  /** Base class for all graph elements */
+  interface Node {
     id: string;
-    name: string;
     type: string;
-    code: string;
     position: { x: number; y: number };
     preview: HTMLCanvasElement | HTMLImageElement | null;
     comment: string;
     error: Error | null;
     warning: string | null;
-    isTemplate: boolean;
     isDirty: boolean;
     inputs: InputPort[];
     outputs: OutputPort[];
     props: Record<string, Prop>;
-    bypassed: boolean;
-    cooking: boolean;
+
+    // Port creation
     in<T>(name: string, defaultValue?: T, options?: PortOptions): InputPort<T>;
     out<T>(name: string, portType?: PortType): OutputPort<T>;
+
+    // Props system
     defineProp<T>(name: string, config: Prop<T>): void;
     updateProp(name: string, value: any): void;
     watchProp(name: string, callback: Function): void;
-    setBypassed(value: boolean): void;
-    setCooking(value: boolean): void;
-    shouldExecute(): boolean;
-    executeBypass(): void;
+
+    // Variadic inputs
+    defineVariadicInput(baseName: string, config?: { minCount?: number; maxCount?: number; defaultValue?: any }): void;
+    getVariadicInputs(baseName: string): InputPort[];
+
+    // Lifecycle hooks
+    onSetup?: () => void | Promise<void>;
+    onUpdate?: () => void | Promise<void>;
+    onRender?: () => void | Promise<void>;
     onReady?: () => void;
     onDestroy?: () => void;
+
+    // Utilities
     log(...args: any[]): void;
-    require(packageName: string): Promise<any>;
+    markDirty(): void;
+
+    // Computation-specific (available on computation nodes)
+    code?: string;
+    bypassed?: boolean;
+    cooking?: boolean;
+    setBypassed?(value: boolean): void;
+    setCooking?(value: boolean): void;
+    require?(packageName: string): Promise<any>;
   }
 }
 
 // Global variable available in node code execution context
-declare const node: Cascade.NodeContext;
-declare const graph: any; // Graph type can be added later if needed
+declare const node: Cascade.Node;
+declare const graph: any;
 `.trim();
 
   // Props
@@ -356,26 +371,50 @@ declare const graph: any; // Graph type can be added later if needed
   }
 
   function getDefaultNodeCode(type: string): string {
-    const lensTemplate = getLensNodeTemplate(type);
-    if (lensTemplate) {
-      return lensTemplate;
+    // Check if this is a class-based stdlib node
+    const packagePath = typeToPackagePath(type);
+    const NodeClass = getNodeClass(packagePath);
+    if (NodeClass) {
+      // Class-based nodes have their logic in the class, not in code
+      return `// Standard Library Node: ${type}
+//
+// This node is implemented as a class (${NodeClass.name}).
+// Standard library nodes are read-only.
+//
+// To customize: click "Duplicate as Custom" to create an editable copy.
+`;
     }
 
-    return `// ${type} node
-const trigger = node.in('trigger', null, { type: 'trigger' });
+    // Default template for custom nodes
+    return `// ${type} - Custom Node
+//
+// Define inputs
+const input = node.in('input', null);
+
+// Define properties (shown in inspector)
+node.defineProp('value', {
+  value: 1.0,
+  params: { min: 0, max: 10, step: 0.1 },
+  displayName: 'Value'
+});
+
+// Define outputs
 const output = node.out('output');
 
-// Handle triggers
-if (trigger) {
-  trigger.onTrigger = () => {
-    // Your code here
-    output.setValue('Hello World');
-  };
-}
+// React to input changes
+input.onChange = (value) => {
+  // Process input and set output
+  output.setValue(value);
+};
 
-// Lifecycle
+// React to property changes
+node.watchProp('value', (newValue) => {
+  output.setValue(newValue);
+});
+
+// Called once when node is ready
 node.onReady = () => {
-  console.log('Node ready');
+  output.setValue(node.props.value.value);
 };
 `;
   }

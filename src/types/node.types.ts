@@ -2,6 +2,95 @@ export type PortType = 'trigger' | 'param';
 export type DataType = 'number' | 'string' | 'boolean' | 'color' | 'asset' | 'array' | 'object' | 'any';
 export type PropControlType = 'number' | 'int' | 'slider' | 'text' | 'textarea' | 'color' | 'image' | 'boolean' | 'select' | 'vector' | 'vec2' | 'vec3' | 'vec2i' | 'vec3i' | 'range' | 'button' | 'folder' | 'group' | 'colorramp';
 
+// ============================================================================
+// Node Source System (v0.2)
+// ============================================================================
+
+/**
+ * File status for project (external) modules
+ */
+export type FileStatus = 'synced' | 'missing' | 'conflict' | 'modified-external';
+
+/**
+ * Code version entry for history tracking
+ */
+export interface CodeVersion {
+  code: string;
+  timestamp: string;
+  author: 'user' | 'ai';
+  prompt?: string;  // AI prompt if author is 'ai'
+}
+
+/**
+ * Standard library source - read-only, loaded from templates
+ */
+export interface StdlibSource {
+  type: 'stdlib';
+  module: string;  // e.g., 'cascade.lens.Color'
+}
+
+/**
+ * Embedded source - stored inline in .cascade file, editable
+ */
+export interface EmbeddedSource {
+  type: 'embedded';
+  module: string;  // e.g., 'local.MyCustomNode'
+  code: string;
+  history: CodeVersion[];
+}
+
+/**
+ * Project source - stored in external file, editable externally
+ */
+export interface ProjectSource {
+  type: 'project';
+  module: string;       // e.g., 'myproject.filters.Blur'
+  file: string;         // relative path e.g., './src/filters/Blur.ts'
+  cachedCode: string;   // backup copy for when file is missing
+  lastSync: string;     // ISO timestamp of last sync
+  status: FileStatus;
+}
+
+/**
+ * Union type for all node sources
+ */
+export type NodeSource = StdlibSource | EmbeddedSource | ProjectSource;
+
+/**
+ * Project package definition - maps an alias to a filesystem path
+ */
+export interface ProjectPackage {
+  path: string;    // relative or absolute path to package root
+  alias: string;   // module prefix e.g., 'myproject'
+}
+
+/**
+ * Embedded module stored in .cascade file
+ */
+export interface EmbeddedModule {
+  code: string;
+  history: CodeVersion[];
+  created?: string;
+  modified?: string;
+}
+
+/**
+ * External module reference stored in .cascade file
+ */
+export interface ExternalModule {
+  file: string;         // relative path to .ts file
+  cachedCode: string;   // backup copy
+  lastSync: string;     // ISO timestamp
+}
+
+/**
+ * Project configuration in .cascade file
+ */
+export interface ProjectConfig {
+  name?: string;
+  packages: ProjectPackage[];
+}
+
 export interface PortOptions {
   type?: DataType;
   min?: number;
@@ -13,6 +102,21 @@ export interface PortOptions {
   hidden?: boolean;
   published?: boolean;
   multiline?: boolean;
+}
+
+// ============================================================================
+// Variadic Inputs (v1.3)
+// ============================================================================
+
+/**
+ * Configuration for variadic (auto-growing) input ports
+ */
+export interface VariadicConfig {
+  baseName: string;
+  minCount: number;
+  maxCount?: number;
+  defaultValue: any;
+  portOptions: PortOptions;
 }
 
 export interface InputPort<T = any> {
@@ -39,49 +143,6 @@ export interface OutputPort<T = any> {
   trigger: (props?: any) => void;
 }
 
-export interface NodeContext {
-  id: string;
-  type: string;
-  code: string;
-  position: { x: number; y: number };
-  preview: HTMLCanvasElement | HTMLImageElement | null;
-  comment: string;
-  error: Error | null;
-  warning: string | null;
-  isTemplate: boolean;
-  isDirty: boolean;
-  
-  inputs: InputPort[];
-  outputs: OutputPort[];
-  
-  // Props System (v1.1)
-  props: Record<string, Prop>;
-  
-  // Behavior Toggles (v1.2)
-  bypassed: boolean;
-  cooking: boolean;
-  
-  in<T>(name: string, defaultValue?: T, options?: PortOptions): InputPort<T>;
-  out<T>(name: string, portType?: PortType): OutputPort<T>;
-  
-  // Props Methods
-  defineProp<T>(name: string, config: Prop<T>): void;
-  updateProp(name: string, value: any): void;
-  watchProp(name: string, callback: Function): void;
-  
-  // Behavior Toggle Methods
-  setBypassed(value: boolean): void;
-  setCooking(value: boolean): void;
-  shouldExecute(): boolean;
-  executeBypass(): void;
-  
-  onReady?: () => void;
-  onDestroy?: () => void;
-  
-  log(...args: any[]): void;
-  require(packageName: string): Promise<any>;
-}
-
 export interface Connection {
   id: string;
   from: { nodeId: string; portId: string };
@@ -89,9 +150,13 @@ export interface Connection {
   type: PortType;
 }
 
+// ============================================================================
+// Props System
+// ============================================================================
+
 export interface Prop<T = any> {
   value: T;
-  
+
   // Parameters
   params?: {
     min?: number | number[];
@@ -102,22 +167,19 @@ export interface Prop<T = any> {
     locked?: boolean; // For vector inputs
     integer?: boolean; // Explicit integer mode
   };
-  
-  // Callbacks
-  onChange?: (prop: Prop<T>, context: NodeContext) => void | Promise<void>;
-  
+
+  // Callbacks - context is the Node instance
+  onChange?: (prop: Prop<T>, context: any) => void | Promise<void>;
+
   // Display
   displayName?: string | null;
   type?: PropControlType;
-  
+
   // Visibility
   disabled?: boolean | (() => boolean);
   hidden?: boolean | (() => boolean);
-  
+
   // Organization
   folder?: string;
   group?: string;
 }
-
-
-

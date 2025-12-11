@@ -1,5 +1,6 @@
 // Node structure: Library > Category > Nodes
 import { lensLibrary } from '@/nodes/lens';
+import { coreLibrary } from '@/nodes/core';
 
 export interface NodeTemplate {
   name: string;
@@ -43,59 +44,8 @@ export const annotationsLibrary: Library = {
 
 export const nodeLibraries: Library[] = [
   annotationsLibrary,
-  {
-    id: 'core',
-    label: 'Core',
-    icon: 'Settings',
-    categories: [
-      {
-        id: 'math',
-        label: 'Math',
-        nodes: [
-          { name: 'Add', icon: 'Plus', description: 'Add two numbers', type: 'Add' },
-          { name: 'Multiply', icon: 'X', description: 'Multiply two numbers', type: 'Multiply' },
-          { name: 'Sine', icon: 'Triangle', description: 'Sine function', type: 'Sine' },
-          { name: 'Clamp', icon: 'Ruler', description: 'Clamp value', type: 'Clamp' }
-        ]
-      },
-      {
-        id: 'time',
-        label: 'Time',
-        nodes: [
-          { name: 'Timer', icon: 'Timer', description: 'Animation timer', type: 'Timer' }
-        ]
-      },
-      {
-        id: 'input',
-        label: 'Input',
-        nodes: [
-          { name: 'Mouse', icon: 'MousePointer2', description: 'Mouse input', type: 'Mouse' },
-          { name: 'Keyboard', icon: 'Keyboard', description: 'Keyboard input', type: 'Keyboard' }
-        ]
-      },
-      {
-        id: 'output',
-        label: 'Output',
-        nodes: [
-          { name: 'Viewer', icon: 'Eye', description: 'Display output', type: 'Viewer' },
-          { name: 'Export', icon: 'Save', description: 'Export image', type: 'Export' }
-        ]
-      }
-    ]
-  },
-  lensLibrary,
-  {
-    id: 'echo',
-    label: 'Echo',
-    icon: 'Volume2',
-    categories: [
-      {
-        id: 'audio',
-        label: 'Audio',
-        nodes: []
-      }
-    ]
-  },
+  coreLibrary,
+  lensLibrary
 ];
 
 // Custom node template - shown as standalone button in menu, not in library hierarchy

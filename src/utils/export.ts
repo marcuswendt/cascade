@@ -1,5 +1,5 @@
 import type { Graph } from '@/core/engine/Graph';
-import type { Computation } from '@/core/engine/Computation';
+import type { Computation } from '@/core/engine/Node';
 import type { Asset } from '@/core/engine/AssetManager';
 
 export interface ExportOptions {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { CascadePanelParams } from '../dockview/types';
   import type { Graph } from '@/core/engine/Graph';
-  import type { Computation } from '@/core/engine/Computation';
+  import type { Computation } from '@/core/engine/Node';
   import CodeEditor from '../CodeEditor.svelte';
   import { sharedContextStore } from '../dockview/renderer';
 

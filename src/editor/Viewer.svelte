@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { Graph } from '@/core/engine/Graph';
-  import type { Computation } from '@/core/engine/Computation';
+  import type { Computation } from '@/core/engine/Node';
   
   export let graph: Graph | undefined;
   export let selectedNode: Computation | null = null;

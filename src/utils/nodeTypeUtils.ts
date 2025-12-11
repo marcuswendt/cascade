@@ -2,8 +2,25 @@
  * Utilities for handling node type names and package paths
  */
 
-import { nodeLibraries } from '@/editor/nodeTemplates';
-import { getLensNodeTemplate } from '@/nodes/lens';
+import type { Computation } from '@/core/engine/Node';
+import type { Graph } from '@/core/engine/Graph';
+
+// Node function type - receives the node instance and graph
+export type NodeFunction = (node: Computation, graph: Graph) => void | Promise<void>;
+
+// Type for class-based node constructors
+export type NodeClass = new (id: string, graph: Graph) => Computation;
+
+// Class-based node registries (populated by library modules)
+const nodeClassRegistries: Map<string, Record<string, NodeClass>> = new Map();
+
+/**
+ * Register node classes from a library
+ * Called by library modules during initialization
+ */
+export function registerNodeClasses(libraryId: string, classes: Record<string, NodeClass>): void {
+  nodeClassRegistries.set(libraryId, classes);
+}
 
 /**
  * Convert a short type name to a full package path
@@ -14,19 +31,14 @@ export function typeToPackagePath(type: string): string {
   if (type.includes('.')) {
     return type;
   }
-  
-  // Find which library contains this node type
-  for (const library of nodeLibraries) {
-    for (const category of library.categories) {
-      for (const node of category.nodes) {
-        if (node.type === type) {
-          // Return full package path: cascade.{libraryId}.{type}
-          return `cascade.${library.id}.${type}`;
-        }
-      }
+
+  // Find which library contains this node type by checking registries
+  for (const [libraryId, classes] of nodeClassRegistries) {
+    if (type in classes) {
+      return `cascade.${libraryId}.${type}`;
     }
   }
-  
+
   // If not found in any library, assume it's a custom node
   // Return as-is (custom nodes don't have package paths)
   return type;
@@ -41,7 +53,7 @@ export function packagePathToType(packagePath: string): string {
   if (!packagePath.includes('.')) {
     return packagePath;
   }
-  
+
   // Extract the last part after the last dot
   const parts = packagePath.split('.');
   return parts[parts.length - 1];
@@ -62,33 +74,44 @@ export function getLibraryIdFromType(type: string): string | null {
   if (!type.includes('.')) {
     return null;
   }
-  
+
   const parts = type.split('.');
   if (parts.length >= 2 && parts[0] === 'cascade') {
     return parts[1];
   }
-  
+
   return null;
 }
 
 /**
- * Get node template code for a given type
- * Returns null if no template is available
+ * Get node class for a given type (class-based nodes)
+ * Returns null if no class is available (custom nodes)
  */
-export function getNodeTemplateCode(type: string): string | null {
-  // Extract library and node type from package path
+export function getNodeClass(type: string): NodeClass | null {
   const libraryId = getLibraryIdFromType(type);
   const nodeType = packagePathToType(type);
-  
-  if (libraryId === 'lens') {
-    return getLensNodeTemplate(nodeType);
+
+  if (!libraryId) {
+    return null;
   }
-  
-  // Add other library template loaders here as needed
-  // if (libraryId === 'core') {
-  //   return getCoreNodeTemplate(nodeType);
-  // }
-  
+
+  const registry = nodeClassRegistries.get(libraryId);
+  if (registry && registry[nodeType]) {
+    return registry[nodeType];
+  }
+
   return null;
 }
 
+/**
+ * Compile a custom node from code string
+ * Used for embedded and project nodes that aren't part of stdlib
+ *
+ * The compiled function receives the Computation instance as `node`
+ * and can use all Node methods: in(), out(), defineProp(), etc.
+ */
+export function compileCustomNode(code: string): NodeFunction {
+  const wrappedCode = `return (async function(node, graph) {\n${code}\n})(node, graph);`;
+  const fn = new Function('node', 'graph', wrappedCode);
+  return fn as NodeFunction;
+}

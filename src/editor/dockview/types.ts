@@ -4,7 +4,7 @@ import type {
   IDockviewPanel
 } from 'dockview-core';
 import type { Graph } from '@/core/engine/Graph';
-import type { Computation } from '@/core/engine/Computation';
+import type { Computation } from '@/core/engine/Node';
 
 // Panel type identifiers
 export type PanelType = 'graph' | 'inspector' | 'viewer' | 'log' | 'code';

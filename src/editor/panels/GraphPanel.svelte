@@ -2,7 +2,7 @@
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import type { CascadePanelParams } from '../dockview/types';
   import type { Graph } from '@/core/engine/Graph';
-  import type { Computation } from '@/core/engine/Computation';
+  import type { Computation } from '@/core/engine/Node';
   import Canvas from '../Canvas.svelte';
   import { sharedContextStore } from '../dockview/renderer';
   import { dockviewStore } from '../dockview/dockview-store.svelte';

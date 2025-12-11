@@ -1,4 +1,4 @@
-import { Computation } from './Computation.js';
+import { Computation } from './Node.js';
 import { Node } from './Node.js';
 import { Annotation } from '../../nodes/annotations/Annotation.js';
 import { ImageAnnotation } from '../../nodes/annotations/Image.js';
@@ -8,11 +8,23 @@ import { LineAnnotation } from '../../nodes/annotations/Line.js';
 import { PolylineAnnotation } from '../../nodes/annotations/Polyline.js';
 import { AssetManager } from './AssetManager.js';
 import { PackageManager } from './PackageManager.js';
+import { ModuleResolver, createModuleResolver } from './ModuleResolver.js';
 import { GraphValidator, type ValidationResult } from './GraphValidator.js';
-import type { Connection, OutputPort } from '../../types/node.types.js';
-import { packagePathToType, getNodeTemplateCode } from '../../utils/nodeTypeUtils.js';
+import type {
+  Connection,
+  OutputPort,
+  ProjectPackage,
+  EmbeddedModule,
+  ExternalModule,
+  ProjectConfig,
+  NodeSource
+} from '../../types/node.types.js';
+import { packagePathToType, isStandardLibraryNode, getNodeClass, compileCustomNode } from '../../utils/nodeTypeUtils.js';
 import { normalizeColor, isColorValue } from '../../utils/colorUtils.js';
 import { ElementType, isComputation, isAnnotation } from '../../types/element.types.js';
+
+// Current file format version
+export const GRAPH_FORMAT_VERSION = '0.2';
 
 /**
  * Parse a port ID to extract element ID, port type, and index
@@ -57,6 +69,10 @@ export class Graph {
   private connectionIdCounter: number = 0;
   packageManager: PackageManager;
   assetManager: AssetManager;
+  moduleResolver: ModuleResolver;
+
+  // Project configuration (v0.2)
+  project: ProjectConfig = { packages: [] };
 
   /**
    * Unified elements array (computations and annotations)
@@ -78,9 +94,10 @@ export class Graph {
   // Cached topological order (invalidated when graph structure changes)
   private cachedTopologicalOrder: string[] | null = null;
   
-  constructor(assetManager?: AssetManager, packageManager?: PackageManager) {
+  constructor(assetManager?: AssetManager, packageManager?: PackageManager, moduleResolver?: ModuleResolver) {
     this.assetManager = assetManager || new AssetManager();
     this.packageManager = packageManager || new PackageManager();
+    this.moduleResolver = moduleResolver || createModuleResolver();
   }
   
   /**
@@ -197,13 +214,25 @@ export class Graph {
   addNode(type: string, position: { x: number; y: number }): Computation {
     // Type should be a package path, but we'll convert to short type for internal use
     const shortType = packagePathToType(type);
-    
+
     // Generate unique ID automatically based on short type
     const id = this.generateUniqueNodeId(shortType);
-    const computation = new Computation(id, shortType, this);
+
+    // Try to get a class-based node first (for stdlib nodes)
+    const NodeClass = getNodeClass(type);
+    let computation: Computation;
+
+    if (NodeClass) {
+      // Class-based node - instantiate directly
+      computation = new NodeClass(id, this);
+    } else {
+      // Fallback: create base Computation for custom/function-based nodes
+      computation = new Computation(id, shortType, this);
+    }
+
     computation.position = position;
     this.addElement(computation);
-    
+
     return computation;
   }
   
@@ -312,10 +341,13 @@ export class Graph {
         }
       }
     }
-    
+
+    // Sync variadic ports on the target node
+    this.syncVariadicPortsOnNode(toParsed.elementId);
+
     return connection;
   }
-  
+
   disconnect(connectionId: string) {
     const index = this.connections.findIndex(c => c.id === connectionId);
     if (index >= 0) {
@@ -332,12 +364,28 @@ export class Graph {
       });
       
       this.connections.splice(index, 1);
-      
+
       // Invalidate cached topological order when graph structure changes
       this.invalidateTopologicalOrder();
+
+      // Sync variadic ports on the target node
+      this.syncVariadicPortsOnNode(conn.to.nodeId);
     }
   }
-  
+
+  /**
+   * Sync variadic ports on a node after connection changes
+   */
+  private syncVariadicPortsOnNode(nodeId: string): void {
+    const node = this.getNode(nodeId);
+    if (node instanceof Computation) {
+      const configs = node.getVariadicConfigs();
+      configs.forEach((_, baseName) => {
+        node.syncVariadicPorts(baseName);
+      });
+    }
+  }
+
   /**
    * Validate the entire graph
    */
@@ -544,30 +592,30 @@ export class Graph {
       const annData = annotation;
       switch (annData.type) {
         case ElementType.IMAGE:
-          annotationInstance = new ImageAnnotation(annData.id);
+          annotationInstance = new ImageAnnotation(annData.id, this);
           (annotationInstance as ImageAnnotation).src = annData.src;
           break;
         case ElementType.TEXT:
-          annotationInstance = new TextAnnotation(annData.id);
+          annotationInstance = new TextAnnotation(annData.id, this);
           (annotationInstance as TextAnnotation).content = annData.content;
           break;
         case ElementType.GROUP:
-          annotationInstance = new GroupAnnotation(annData.id);
+          annotationInstance = new GroupAnnotation(annData.id, this);
           break;
         case ElementType.LINE:
-          annotationInstance = new LineAnnotation(annData.id);
+          annotationInstance = new LineAnnotation(annData.id, this);
           if (annData.endPosition) {
             (annotationInstance as LineAnnotation).endPosition = annData.endPosition;
           }
           break;
         case ElementType.POLYLINE:
-          annotationInstance = new PolylineAnnotation(annData.id);
+          annotationInstance = new PolylineAnnotation(annData.id, this);
           if (annData.points) {
             (annotationInstance as PolylineAnnotation).points = annData.points;
           }
           break;
         default:
-          annotationInstance = new Annotation(annData.id, annData.type);
+          annotationInstance = new Annotation(annData.id, annData.type, this);
       }
 
       annotationInstance.position = annData.position || { x: 0, y: 0 };
@@ -703,15 +751,36 @@ export class Graph {
   
   toJSON() {
     const result: any = {
-      version: '0.1',
+      version: GRAPH_FORMAT_VERSION,
       metadata: {
-        name: 'Cascade Graph',
+        name: this.project.name || 'Cascade Graph',
         created: new Date().toISOString(),
         modified: new Date().toISOString()
       }
     };
-    
-    // Only include packages if not empty
+
+    // Project configuration (v0.2)
+    if (this.project.packages.length > 0) {
+      result.project = {
+        packages: this.project.packages.map(pkg => ({
+          path: pkg.path,
+          alias: pkg.alias
+        }))
+      };
+    }
+
+    // Embedded modules (v0.2) - modules stored inline in the file
+    const resolverConfig = this.moduleResolver.exportConfig();
+    if (Object.keys(resolverConfig.embeddedModules).length > 0) {
+      result.embeddedModules = resolverConfig.embeddedModules;
+    }
+
+    // External modules (v0.2) - references to project files with cached code
+    if (Object.keys(resolverConfig.externalModules).length > 0) {
+      result.externalModules = resolverConfig.externalModules;
+    }
+
+    // NPM packages (for runtime dependencies)
     const packages = this.packageManager.getCachedPackages().map((pkg: string) => {
       const [name, version] = pkg.split('@');
       return { name, version: version || 'latest' };
@@ -719,7 +788,7 @@ export class Graph {
     if (packages.length > 0) {
       result.packages = packages;
     }
-    
+
     // Only include assets if manifest is not empty
     const assets = this.assetManager.list().map(asset => ({
       id: asset.id,
@@ -730,11 +799,11 @@ export class Graph {
     if (assets.length > 0) {
       result.assets = { manifest: assets };
     }
-    
+
     // Order: 1. annotations, 2. nodes, 3. connections (logical loading order)
     const annotations = this.annotations;
     const nodes = this.nodes;
-    
+
     // Only include annotations if not empty
     if (annotations.length > 0) {
       result.annotations = annotations.map(ann => {
@@ -755,27 +824,27 @@ export class Graph {
         return serialized;
       });
     }
-    
-    result.nodes = nodes.map(n => n.toJSON());
-    
+
+    result.nodes = nodes.map(n => this.nodeToJSON(n));
+
     // Only include connections if not empty
     const connections = this.connections.map(conn => {
       // Parse port IDs to get element IDs and indices
       try {
         const fromParsed = parsePortId(conn.from.portId);
         const toParsed = parsePortId(conn.to.portId);
-        
+
         const fromElement = this.getElement(fromParsed.elementId);
         const toElement = this.getElement(toParsed.elementId);
-        
+
         if (!fromElement || !toElement) return null;
-        
+
         // Verify port indices match
         const fromPort = fromElement.getOutputPort(fromParsed.index);
         const toPort = toElement.getInputPort(toParsed.index);
-        
+
         if (!fromPort || !toPort) return null;
-        
+
         // Return as [[elementId, portIndex], [elementId, portIndex]]
         return [[fromParsed.elementId, fromParsed.index], [toParsed.elementId, toParsed.index]];
       } catch (err) {
@@ -786,31 +855,121 @@ export class Graph {
     if (connections.length > 0) {
       result.connections = connections;
     }
-    
-    // Execution section is redundant:
-    // - entryPoints are computed dynamically from nodes with no input connections
-    // - cookingNodes are derived from the 'cook' flag on each node
-    // Both are restored automatically when nodes are loaded
-    
+
+    return result;
+  }
+
+  /**
+   * Serialize a node with v0.2 source information
+   */
+  private nodeToJSON(node: Computation): any {
+    const fullType = node.type.includes('.') ? node.type : `cascade.lens.${node.type}`;
+    const isStdlib = isStandardLibraryNode(fullType);
+
+    const result: any = {
+      id: node.id,
+      module: fullType,
+      position: [node.position.x, node.position.y]
+    };
+
+    // Determine source type
+    if (isStdlib) {
+      result.source = 'stdlib';
+    } else if (fullType.startsWith('local.')) {
+      result.source = 'embedded';
+    } else {
+      // Check if it's a project module
+      const sourceType = this.moduleResolver.getSourceType(fullType);
+      result.source = sourceType || 'embedded';
+
+      // For project modules, include file reference
+      if (sourceType === 'project') {
+        const config = this.moduleResolver.exportConfig();
+        const external = config.externalModules[fullType];
+        if (external) {
+          result.file = external.file;
+        }
+      }
+    }
+
+    // Only include code for non-stdlib embedded nodes
+    if (result.source === 'embedded' && node.code) {
+      result.code = node.code;
+    }
+
+    // Only include comment if not empty
+    if (node.comment && node.comment.trim()) {
+      result.comment = node.comment;
+    }
+
+    // Serialize props
+    const props = Object.entries(node.props).reduce((acc, [key, prop]) => {
+      let value = prop.value;
+      if (prop.type === 'color' && isColorValue(value)) {
+        const normalized = normalizeColor(value as any);
+        value = [normalized.r, normalized.g, normalized.b, normalized.a ?? 1.0];
+      }
+      acc[key] = value;
+      return acc;
+    }, {} as Record<string, any>);
+    if (Object.keys(props).length > 0) {
+      result.props = props;
+    }
+
+    // Behavior toggles
+    if (node.bypassed) {
+      result.bypass = true;
+    }
+    if (node.cooking) {
+      result.cook = true;
+    }
+
     return result;
   }
 
   static fromJSON(json: any, assetManager?: AssetManager, packageManager?: PackageManager): Graph {
     const graph = new Graph(assetManager, packageManager);
-    
+    const version = json.version || '0.1';
+
+    // Load project configuration (v0.2)
+    if (json.project) {
+      graph.project = {
+        name: json.metadata?.name,
+        packages: json.project.packages || []
+      };
+      // Update module resolver with project packages
+      json.project.packages?.forEach((pkg: ProjectPackage) => {
+        graph.moduleResolver.addProjectPackage(pkg);
+      });
+    }
+
+    // Load embedded modules (v0.2)
+    if (json.embeddedModules) {
+      graph.moduleResolver.importConfig({
+        embeddedModules: json.embeddedModules
+      });
+    }
+
+    // Load external modules (v0.2)
+    if (json.externalModules) {
+      graph.moduleResolver.importConfig({
+        externalModules: json.externalModules
+      });
+    }
+
     // Load packages if specified (for future use)
     if (json.packages && Array.isArray(json.packages)) {
       // Packages will be loaded on-demand when nodes require them
       // We could preload them here, but it's better to load on-demand
     }
-    
+
     // Create nodes
     json.nodes.forEach((nodeData: any) => {
       // Use the saved ID directly, or generate a unique one if not present
       let nodeId = nodeData.id;
       if (!nodeId) {
         // Fallback: use name if available (for backward compatibility), otherwise use type
-        const baseId = nodeData.name || nodeData.type;
+        const baseId = nodeData.name || nodeData.type || nodeData.module;
         nodeId = graph.generateUniqueNodeId(baseId);
       } else {
         // Check if ID is unique, if not, generate a unique variant
@@ -822,28 +981,48 @@ export class Graph {
         }
         nodeId = candidateId;
       }
-      
-      // Type must be a package path (e.g., "cascade.lens.Color")
-      const nodeType = nodeData.type;
+
+      // Support both v0.1 'type' and v0.2 'module' fields
+      const nodeType = nodeData.module || nodeData.type;
       if (!nodeType || !nodeType.includes('.')) {
         console.warn(`Invalid node type format: ${nodeType}. Expected package path (e.g., "cascade.lens.Color"). Skipping node.`);
         return;
       }
-      
+
       // Extract short type name for internal representation
       const shortType = packagePathToType(nodeType);
-      
-      // Try to load template code for standard library nodes
-      let nodeCode = nodeData.code || '';
-      const templateCode = getNodeTemplateCode(nodeType);
-      if (templateCode) {
-        // Use template code instead of stored code for standard library nodes
-        nodeCode = templateCode;
+
+      // Determine source and get code for custom nodes
+      const source = nodeData.source || (isStandardLibraryNode(nodeType) ? 'stdlib' : 'embedded');
+      let nodeCode = '';
+
+      if (source === 'embedded') {
+        // Check embedded modules first (v0.2), then inline code
+        const embeddedModule = json.embeddedModules?.[nodeType];
+        nodeCode = embeddedModule?.code || nodeData.code || '';
+      } else if (source === 'project') {
+        // Project source - use cached code from external modules
+        const externalModule = json.externalModules?.[nodeType];
+        nodeCode = externalModule?.cachedCode || nodeData.code || '';
       }
-      
-      // Create computation with the short type name (internal representation)
-      const node = new Computation(nodeId, shortType, graph);
-      
+      // stdlib nodes use class-based instantiation, no code needed
+
+      // Try to get a class-based node first (for stdlib nodes)
+      const NodeClass = getNodeClass(nodeType);
+      let node: Computation;
+
+      if (NodeClass) {
+        // Class-based node - instantiate directly
+        node = new NodeClass(nodeId, graph);
+      } else {
+        // Fallback: create base Computation for custom/function-based nodes
+        node = new Computation(nodeId, shortType, graph);
+      }
+
+      // Store full module path for source tracking
+      (node as any).modulePath = nodeType;
+      (node as any).sourceType = source;
+
       // Support both array [x, y] and object { x, y } formats for backward compatibility
       if (Array.isArray(nodeData.position)) {
         node.position = { x: nodeData.position[0] || 0, y: nodeData.position[1] || 0 };
@@ -855,7 +1034,7 @@ export class Graph {
       node.code = nodeCode;
       node.comment = nodeData.comment || '';
       graph.addElement(node);
-      
+
       // Ports (inputs/outputs) are no longer serialized - they are defined in node code
       // and will be created when the node code executes. For backward compatibility,
       // we still support restoring ports from old saved files if they exist.
@@ -871,7 +1050,7 @@ export class Graph {
           }
         });
       }
-      
+
       if (nodeData.outputs && Array.isArray(nodeData.outputs)) {
         nodeData.outputs.forEach((portData: any) => {
           // Create port using the stored metadata
@@ -882,7 +1061,7 @@ export class Graph {
           }
         });
       }
-      
+
       // Restore props
       if (nodeData.props) {
         Object.entries(nodeData.props).forEach(([key, value]: [string, any]) => {
@@ -896,7 +1075,7 @@ export class Graph {
               ? { r: normalized.r, g: normalized.g, b: normalized.b, a: normalized.a }
               : { r: normalized.r, g: normalized.g, b: normalized.b };
           }
-          
+
           // Props will be defined when node code executes
           // For now, we store the values to restore later
           if (!node.props[key]) {
@@ -906,7 +1085,7 @@ export class Graph {
           }
         });
       }
-      
+
       // Restore behavior toggles (support both old and new field names)
       const bypassValue = nodeData.bypass !== undefined ? nodeData.bypass : nodeData.bypassed;
       if (bypassValue !== undefined) {
@@ -916,14 +1095,12 @@ export class Graph {
       if (cookValue !== undefined) {
         node.setCooking(cookValue);
       }
-      
-      // Restore node function if code exists
-      if (node.code) {
+
+      // Set up node function - class-based nodes don't need this (they use setup())
+      // Only compile function for custom nodes with code
+      if (!NodeClass && node.code) {
         try {
-          // Wrap code in async function to support top-level await
-          // The function should return a promise that resolves when the async code completes
-          const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
-          const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
+          const nodeFunction = compileCustomNode(node.code);
           node.setFunction(nodeFunction);
         } catch (err) {
           console.warn('Failed to compile node ' + node.id + ':', err);
@@ -945,18 +1122,18 @@ export class Graph {
 
         switch (annData.type) {
           case ElementType.IMAGE:
-            annotation = new ImageAnnotation(annData.id);
+            annotation = new ImageAnnotation(annData.id, graph);
             (annotation as ImageAnnotation).src = annData.src;
             break;
           case ElementType.TEXT:
-            annotation = new TextAnnotation(annData.id);
+            annotation = new TextAnnotation(annData.id, graph);
             (annotation as TextAnnotation).content = annData.content;
             break;
           case ElementType.GROUP:
-            annotation = new GroupAnnotation(annData.id);
+            annotation = new GroupAnnotation(annData.id, graph);
             break;
           case ElementType.LINE:
-            annotation = new LineAnnotation(annData.id);
+            annotation = new LineAnnotation(annData.id, graph);
             if (annData.endPosition) {
               (annotation as LineAnnotation).endPosition = Array.isArray(annData.endPosition)
                 ? { x: annData.endPosition[0] || 0, y: annData.endPosition[1] || 0 }
@@ -964,7 +1141,7 @@ export class Graph {
             }
             break;
           case ElementType.POLYLINE:
-            annotation = new PolylineAnnotation(annData.id);
+            annotation = new PolylineAnnotation(annData.id, graph);
             if (annData.points) {
               (annotation as PolylineAnnotation).points = annData.points.map((p: any) =>
                 Array.isArray(p)
@@ -974,7 +1151,7 @@ export class Graph {
             }
             break;
           default:
-            annotation = new Annotation(annData.id, annData.type);
+            annotation = new Annotation(annData.id, annData.type, graph);
         }
 
         annotation.position = position;

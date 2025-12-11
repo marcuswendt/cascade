@@ -5,7 +5,7 @@
   import type { Node } from '@/core/engine/Node';
   import type { Connection } from '@/types/node.types';
   import { marked } from 'marked';
-  import { getNodeTemplateCode, packagePathToType } from '@/utils/nodeTypeUtils';
+  import { packagePathToType, getNodeClass, compileCustomNode } from '@/utils/nodeTypeUtils';
   import { getPortColor } from '@/utils/portColors';
   import { recordSnapshotImmediate } from './stores/historyStore';
   
@@ -1893,19 +1893,22 @@ node.onReady = () => {
     }
 
     const newNode = graph.addNode(nodeType, { x: centerX, y: centerY });
-    
-    // Get default code template and initialize the node
-    const defaultCode = getDefaultNodeCode(nodeType);
-    if (defaultCode) {
+
+    // Class-based nodes (stdlib) are already initialized by their constructor
+    // Custom nodes need code and compilation
+    const isClassBased = getNodeClass(nodeType) !== null;
+
+    if (!isClassBased) {
+      // Custom node: set default code template and compile
+      const defaultCode = getDefaultNodeCode(nodeType);
       newNode.code = defaultCode;
-      
+
       // Compile and execute the node code to initialize props and ports
       try {
         newNode.resetPortTracking();
-        const wrappedCode = `return (async function(node, graph) {\n${defaultCode}\n})(node, graph);`;
-        const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
+        const nodeFunction = compileCustomNode(defaultCode);
         newNode.setFunction(nodeFunction);
-        
+
         // Ensure node can execute (not bypassed and temporarily cooking)
         // This is necessary because shouldExecute() checks if node is cooking when there are other cooking nodes
         const wasBypassed = newNode.bypassed;
@@ -1988,32 +1991,37 @@ node.onReady = () => {
     dispatch('nodeSelect', { node: newNode });
   }
   
-  // Helper function to get default node code template
+  // Helper function to get default code template for custom nodes
   function getDefaultNodeCode(type: string): string {
-    // Type is now a package path (e.g., "cascade.lens.Color")
-    // Use the utility to get template code
-    const templateCode = getNodeTemplateCode(type);
-    if (templateCode) {
-      return templateCode;
-    }
-    
-    // Fallback: extract short type name for default template
     const shortType = packagePathToType(type);
-    return `// ${shortType} node
-const trigger = node.in('trigger', null, { type: 'trigger' });
+    return `// ${shortType} - Custom Node
+//
+// Define inputs
+const input = node.in('input', null);
+
+// Define properties (shown in inspector)
+node.defineProp('value', {
+  value: 1.0,
+  params: { min: 0, max: 10, step: 0.1 },
+  displayName: 'Value'
+});
+
+// Define outputs
 const output = node.out('output');
 
-// Handle triggers
-if (trigger) {
-  trigger.onTrigger = () => {
-    // Your code here
-    output.setValue('Hello World');
-  };
-}
+// React to input changes
+input.onChange = (value) => {
+  output.setValue(value);
+};
 
-// Lifecycle
+// React to property changes
+node.watchProp('value', (newValue) => {
+  output.setValue(newValue);
+});
+
+// Called once when node is ready
 node.onReady = () => {
-  console.log('Node ready');
+  output.setValue(node.props.value.value);
 };
 `;
   }

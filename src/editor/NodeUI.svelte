@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { Computation } from '@/core/engine/Computation';
+  import type { Computation } from '@/core/engine/Node';
   import { getNodeIcon } from './nodeTemplates';
   import Icon from './Icon.svelte';
   import { getPortColor } from '@/utils/portColors';

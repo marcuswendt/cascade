@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
-  import type { Computation } from '@/core/engine/Computation';
+  import type { Computation } from '@/core/engine/Node';
   import Icon from './Icon.svelte';
   import { ChevronDown, FileText, FolderOpen, Save, Copy, Package, Info } from 'lucide-svelte';
 

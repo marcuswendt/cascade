@@ -1,29 +1,19 @@
-import { Node } from '../../core/engine/Node.js';
+import { Node, type AnnotationStyle } from '../../core/engine/Node.js';
+import type { Graph } from '../../core/engine/Graph.js';
 import type { OutputPort } from '../../types/node.types.js';
+
+// Re-export for convenience
+export type { AnnotationStyle };
 
 /**
  * Base class for all annotation types
+ *
+ * Annotations are visual elements on the canvas that don't execute code.
+ * They can optionally have ports for data flow visualization.
  */
 export class Annotation extends Node {
-  size?: { width: number; height: number };
-  style?: {
-    fontSize?: number;
-    fontWeight?: 'normal' | 'bold' | '600' | '700';
-    fontStyle?: 'normal' | 'italic';
-    textAlign?: 'left' | 'center' | 'right';
-    color?: string;
-    backgroundColor?: string;
-    padding?: number;
-    borderRadius?: number;
-    borderLeft?: string;
-    strokeWidth?: number;
-    strokeColor?: string;
-  };
-  caption?: string;
-  containedElements?: string[];
-
-  constructor(id: string, type: string) {
-    super(id, 'annotation', type);
+  constructor(id: string, type: string, graph: Graph) {
+    super(id, type, graph, 'annotation');
   }
 
   /**
@@ -33,4 +23,3 @@ export class Annotation extends Node {
     return this.getOutputPort(0);
   }
 }
-

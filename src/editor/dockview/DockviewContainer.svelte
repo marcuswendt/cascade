@@ -4,7 +4,7 @@
   import { registerPanelComponent, setSharedContext } from './renderer';
   import type { PanelContext, PanelType } from './types';
   import type { Graph } from '@/core/engine/Graph';
-  import type { Computation } from '@/core/engine/Computation';
+  import type { Computation } from '@/core/engine/Node';
 
   // Import panel components
   import GraphPanel from '../panels/GraphPanel.svelte';

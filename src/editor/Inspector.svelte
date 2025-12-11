@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { Computation } from '@/core/engine/Computation';
+  import type { Computation } from '@/core/engine/Node';
   import type { InputPort, Prop, OutputPort } from '@/types/node.types';
   import type { Graph, CanvasAnnotation } from '@/core/engine/Graph';
   import type { Annotation } from '@/nodes/annotations/Annotation';
