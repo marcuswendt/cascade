@@ -943,11 +943,74 @@ node.onReady = () => {
               // Find ports by ID
               const fromPort = fromElement.outputs.find(p => p.id === from.portId);
               const toPort = toElement.inputs.find(p => p.id === toPortId);
-              
+
               if (fromPort && toPort) {
                 try {
                   recordHistory();
+
+                  // Check if connecting to a variadic port and there are multiple selected elements
+                  const isVariadicTarget = toPort.variadic === true;
+                  const otherSelectedElements: Array<{ element: any; output: any }> = [];
+
+                  if (isVariadicTarget) {
+                    // Collect other selected nodes (excluding the one being connected from)
+                    selectedNodes.forEach(nodeId => {
+                      if (nodeId !== from.nodeId) {
+                        const node = graph.getNode(nodeId);
+                        if (node && node.outputs.length > 0) {
+                          otherSelectedElements.push({ element: node, output: node.outputs[0] });
+                        }
+                      }
+                    });
+
+                    // Collect selected annotations with outputs
+                    selectedAnnotations.forEach(annId => {
+                      if (annId !== from.nodeId) {
+                        const ann = graph.getAnnotation(annId);
+                        if (ann && ann.outputs && ann.outputs.length > 0) {
+                          otherSelectedElements.push({ element: ann, output: ann.outputs[0] });
+                        }
+                      }
+                    });
+                  }
+
+                  // Make the primary connection
                   graph.connect(fromPort, toPort);
+
+                  // If there are other selected elements and target is variadic, connect them too
+                  if (isVariadicTarget && otherSelectedElements.length > 0) {
+                    // Extract variadic base name from port name (e.g., "image_0" -> "image")
+                    const portNameMatch = toPort.name.match(/^(.+)_(\d+)$/);
+                    if (portNameMatch && toElement.syncVariadicPorts) {
+                      const baseName = portNameMatch[1];
+                      let currentIndex = parseInt(portNameMatch[2], 10) + 1;
+
+                      for (const { output } of otherSelectedElements) {
+                        // Sync variadic ports to ensure enough exist
+                        toElement.syncVariadicPorts(baseName);
+
+                        // Find or create the next variadic port
+                        const nextPortName = `${baseName}_${currentIndex}`;
+                        let nextPort = toElement.inputs.find((p: any) => p.name === nextPortName && !p.options?.hidden);
+
+                        if (!nextPort) {
+                          // Sync again and try to find it
+                          toElement.syncVariadicPorts(baseName);
+                          nextPort = toElement.inputs.find((p: any) => p.name === nextPortName && !p.options?.hidden);
+                        }
+
+                        if (nextPort) {
+                          try {
+                            graph.connect(output, nextPort);
+                            currentIndex++;
+                          } catch (err) {
+                            console.warn('Failed to connect additional element:', err);
+                          }
+                        }
+                      }
+                    }
+                  }
+
                   graph.connections = [...graph.connections];
                 } catch (err) {
                   console.error('Failed to connect:', err);
@@ -2291,8 +2354,8 @@ node.onReady = () => {
         
         // console.log("getPortPosition "+ rect +" --> "+ canvasRect)
 
-        // Get the center of the port dot
-        const dotElement = portElement.querySelector('.port-dot');
+        // Get the center of the port dot or pill
+        const dotElement = portElement.querySelector('.port-dot, .port-pill');
         if (dotElement) {
           const dotRect = dotElement.getBoundingClientRect();
           return {
@@ -2300,7 +2363,7 @@ node.onReady = () => {
             y: (dotRect.top + dotRect.height / 2 - canvasRect.top - internalTransform.y) / internalTransform.zoom
           };
         }
-        
+
         // Fallback to port element center
         return {
           x: (rect.left + rect.width / 2 - canvasRect.left - internalTransform.x) / internalTransform.zoom,
@@ -2374,11 +2437,11 @@ node.onReady = () => {
     
     const rect = portElement.getBoundingClientRect();
     const canvasRect = canvas.getBoundingClientRect();
-    
-    // Get the center of the port dot
+
+    // Get the center of the port dot or pill
     // For vertical layout: input dots at top, output dots at bottom
-    const dotElement = portElement.querySelector('.port-dot');
-    
+    const dotElement = portElement.querySelector('.port-dot, .port-pill');
+
     if (dotElement) {
       const dotRect = dotElement.getBoundingClientRect();
       return {
@@ -2386,7 +2449,7 @@ node.onReady = () => {
         y: (dotRect.top + dotRect.height / 2 - canvasRect.top - internalTransform.y) / internalTransform.zoom
       };
     }
-    
+
     // Fallback if dot element not found - use port element center
     return {
       x: (rect.left + rect.width / 2 - canvasRect.left - internalTransform.x) / internalTransform.zoom,
@@ -2503,20 +2566,84 @@ node.onReady = () => {
       // Complete connection
       const from = connectingFrom;
       if (from.nodeId !== nodeId && from.portType !== portType) {
-        const fromNode = graph.getNode(from.nodeId);
+        const fromElement = graph.getElement(from.nodeId) || graph.getElement(from.nodeId.replace('ann_', ''));
         const fromPort = from.portType === 'output'
-          ? fromNode?.outputs.find(p => p.id === from.portId)
-          : fromNode?.inputs.find(p => p.id === from.portId);
-        
+          ? fromElement?.outputs.find((p: any) => p.id === from.portId)
+          : fromElement?.inputs.find((p: any) => p.id === from.portId);
+
         if (fromPort && port) {
           // Only allow output -> input connections
           if (from.portType === 'output' && portType === 'input') {
+            recordHistory();
+
+            // Check if connecting to a variadic port and there are multiple selected elements
+            const isVariadicTarget = port.variadic === true;
+            const otherSelectedElements: Array<{ element: any; output: any }> = [];
+
+            if (isVariadicTarget) {
+              // Collect other selected nodes (excluding the one being connected from)
+              selectedNodes.forEach(selectedNodeId => {
+                if (selectedNodeId !== from.nodeId) {
+                  const selectedNode = graph.getNode(selectedNodeId);
+                  if (selectedNode && selectedNode.outputs.length > 0) {
+                    otherSelectedElements.push({ element: selectedNode, output: selectedNode.outputs[0] });
+                  }
+                }
+              });
+
+              // Collect selected annotations with outputs
+              selectedAnnotations.forEach(annId => {
+                if (annId !== from.nodeId) {
+                  const ann = graph.getAnnotation(annId);
+                  if (ann && ann.outputs && ann.outputs.length > 0) {
+                    otherSelectedElements.push({ element: ann, output: ann.outputs[0] });
+                  }
+                }
+              });
+            }
+
+            // Make the primary connection
             graph.connect(fromPort, port);
+
+            // If there are other selected elements and target is variadic, connect them too
+            if (isVariadicTarget && otherSelectedElements.length > 0) {
+              // Extract variadic base name from port name (e.g., "image_0" -> "image")
+              const portNameMatch = port.name.match(/^(.+)_(\d+)$/);
+              if (portNameMatch && node.syncVariadicPorts) {
+                const baseName = portNameMatch[1];
+                let currentIndex = parseInt(portNameMatch[2], 10) + 1;
+
+                for (const { output } of otherSelectedElements) {
+                  // Sync variadic ports to ensure enough exist
+                  node.syncVariadicPorts(baseName);
+
+                  // Find or create the next variadic port
+                  const nextPortName = `${baseName}_${currentIndex}`;
+                  let nextPort = node.inputs.find((p: any) => p.name === nextPortName && !p.options?.hidden);
+
+                  if (!nextPort) {
+                    // Sync again and try to find it
+                    node.syncVariadicPorts(baseName);
+                    nextPort = node.inputs.find((p: any) => p.name === nextPortName && !p.options?.hidden);
+                  }
+
+                  if (nextPort) {
+                    try {
+                      graph.connect(output, nextPort);
+                      currentIndex++;
+                    } catch (err) {
+                      console.warn('Failed to connect additional element:', err);
+                    }
+                  }
+                }
+              }
+            }
+
             graph.connections = [...graph.connections];
           }
         }
       }
-      
+
       connectingFrom = null;
       connectingPosition = null;
       draggingFromConnectedPort = null; // Reset when connection is completed
