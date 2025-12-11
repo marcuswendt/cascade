@@ -277,7 +277,8 @@ export class Node {
     const targetCount = Math.max(config.minCount, Math.min(usedCount + 1, config.maxCount ?? Infinity));
 
     for (let i = 0; i < targetCount; i++) {
-      this.in(`${baseName}_${i}`, config.defaultValue, { ...config.portOptions, hidden: false });
+      const port = this.in(`${baseName}_${i}`, config.defaultValue, { ...config.portOptions, hidden: false });
+      port.variadic = true;  // Mark as variadic port
     }
 
     for (let i = targetCount; i < existingPorts.length; i++) {

@@ -915,22 +915,23 @@ node.onReady = () => {
       if (portElement) {
         // Extract port information from data attributes
         const toNodeId = portElement.getAttribute('data-node-id');
-        const toPortId = portElement.getAttribute('data-port-id');
+        let toPortId = portElement.getAttribute('data-port-id');
         const toPortType = portElement.getAttribute('data-port-type') as 'input' | 'output' | null;
-        
+        const variadicBase = portElement.getAttribute('data-variadic-base');
+
         if (toNodeId && toPortId && toPortType) {
           const from = connectingFrom;
-          
+
           // Only allow output -> input connections
           if (from.portType === 'output' && toPortType === 'input' && from.nodeId !== toNodeId) {
             // Unified connection handling - works for any element type
             let fromElementId = from.nodeId;
             let toElementId = toNodeId;
-            
+
             // Try to get elements directly first (handles IDs that already have "ann_" prefix)
             let fromElement = graph.getElement(fromElementId);
             let toElement = graph.getElement(toElementId);
-            
+
             // If not found and IDs start with "ann_", try removing the prefix
             if (!fromElement && fromElementId.startsWith('ann_')) {
               fromElement = graph.getElement(fromElementId.substring(4));
@@ -938,11 +939,36 @@ node.onReady = () => {
             if (!toElement && toElementId.startsWith('ann_')) {
               toElement = graph.getElement(toElementId.substring(4));
             }
-            
+
             if (fromElement && toElement) {
               // Find ports by ID
               const fromPort = fromElement.outputs.find(p => p.id === from.portId);
-              const toPort = toElement.inputs.find(p => p.id === toPortId);
+
+              // For variadic ports, find the first available (unconnected) port in the group
+              let toPort;
+              if (variadicBase) {
+                // Find first unconnected variadic port, or create one if all are connected
+                const variadicPorts = toElement.inputs.filter(
+                  (p: any) => p.variadic && p.name.startsWith(`${variadicBase}_`) && !p.options?.hidden
+                );
+                toPort = variadicPorts.find((p: any) => p.connections.length === 0);
+
+                // If all ports are connected, sync to create a new one
+                if (!toPort && toElement.syncVariadicPorts) {
+                  toElement.syncVariadicPorts(variadicBase);
+                  const updatedPorts = toElement.inputs.filter(
+                    (p: any) => p.variadic && p.name.startsWith(`${variadicBase}_`) && !p.options?.hidden
+                  );
+                  toPort = updatedPorts.find((p: any) => p.connections.length === 0);
+                }
+
+                // Fallback to the first port if somehow no empty port found
+                if (!toPort) {
+                  toPort = toElement.inputs.find((p: any) => p.id === toPortId);
+                }
+              } else {
+                toPort = toElement.inputs.find((p: any) => p.id === toPortId);
+              }
 
               if (fromPort && toPort) {
                 try {
@@ -1350,7 +1376,14 @@ node.onReady = () => {
 
     graph.nodes = [...graph.nodes]; // Force reactivity
   }
-  
+
+  function handleVariadicDisconnect(connectionId: string) {
+    recordHistory();
+    graph.disconnect(connectionId);
+    graph.connections = [...graph.connections];
+    graph.nodes = [...graph.nodes]; // Force reactivity for node UI update
+  }
+
   // Annotation state
   let editingAnnotation: string | null = null;
   let annotationInput: HTMLInputElement | HTMLTextAreaElement | null = null;
@@ -2339,7 +2372,22 @@ node.onReady = () => {
   
   function getPortElement(nodeId: string, portId: string): HTMLElement | null {
     if (!canvas) return null;
-    return canvas.querySelector(`[data-node-id="${nodeId}"][data-port-id="${portId}"]`) as HTMLElement;
+
+    // First try to find the element directly
+    let element = canvas.querySelector(`[data-node-id="${nodeId}"][data-port-id="${portId}"]`) as HTMLElement;
+    if (element) return element;
+
+    // If not found, check if this is a variadic port - look for a variadic group that contains this port
+    // The portId would be in the data-variadic-ports attribute
+    const variadicElements = canvas.querySelectorAll(`[data-node-id="${nodeId}"][data-variadic-ports]`);
+    for (const el of variadicElements) {
+      const variadicPorts = el.getAttribute('data-variadic-ports');
+      if (variadicPorts && variadicPorts.split(',').includes(portId)) {
+        return el as HTMLElement;
+      }
+    }
+
+    return null;
   }
   
   function getPortPosition(nodeId: string, portId: string, portType: 'input' | 'output'): { x: number; y: number } | null {
@@ -3371,7 +3419,7 @@ node.onReady = () => {
     style="transform: translate({internalTransform.x}px, {internalTransform.y}px) scale({internalTransform.zoom})"
   >
     {#each nodes as node (node.id)}
-      <NodeUI 
+      <NodeUI
         {node}
         selected={selectedNodes.includes(node.id)}
         on:portClick={(e) => handlePortClick(e.detail.nodeId, e.detail.portId, e.detail.portType, e.detail.event)}
@@ -3381,6 +3429,7 @@ node.onReady = () => {
         on:edit={handleNodeEdit}
         on:bypassToggle={(e) => handleBypassToggle(e.detail.nodeId, e.detail.event)}
         on:cookToggle={(e) => handleCookToggle(e.detail.nodeId, e.detail.event)}
+        on:disconnect={(e) => handleVariadicDisconnect(e.detail.connectionId)}
       />
     {/each}
   </div>

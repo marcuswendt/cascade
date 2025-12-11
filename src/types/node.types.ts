@@ -128,6 +128,7 @@ export interface InputPort<T = any> {
   defaultValue: T;
   options: PortOptions;
   connections: Connection[];
+  variadic?: boolean;  // True if this port belongs to a variadic group
   onChange?: (value: T) => void;
   onTrigger?: (props?: any) => void;
 }

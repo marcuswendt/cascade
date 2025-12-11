@@ -18,6 +18,81 @@
   // Reactive statements to track port changes
   $: inputs = node.inputs;
   $: outputs = node.outputs;
+
+  // Group variadic inputs by base name, showing only one pill per group
+  // Non-variadic inputs are shown individually
+  type DisplayPort = {
+    type: 'single';
+    port: typeof inputs[0];
+  } | {
+    type: 'variadic';
+    baseName: string;
+    ports: typeof inputs;  // All ports in the variadic group
+    firstPort: typeof inputs[0];  // First port for color/id reference
+  };
+
+  // Check if this node has variadic inputs (show list-style UI)
+  $: hasVariadicInputs = inputs.some(p => p.variadic);
+
+  $: displayInputs = (() => {
+    const result: DisplayPort[] = [];
+    const seenVariadicGroups = new Set<string>();
+
+    for (const port of inputs) {
+      if (port.variadic) {
+        // Extract base name (e.g., "image" from "image_0")
+        const match = port.name.match(/^(.+)_\d+$/);
+        const baseName = match ? match[1] : port.name;
+
+        if (!seenVariadicGroups.has(baseName)) {
+          seenVariadicGroups.add(baseName);
+          // Get all ports in this variadic group
+          const groupPorts = inputs.filter(p => p.variadic && p.name.startsWith(`${baseName}_`));
+          result.push({
+            type: 'variadic',
+            baseName,
+            ports: groupPorts,
+            firstPort: groupPorts[0]
+          });
+        }
+      } else {
+        result.push({ type: 'single', port });
+      }
+    }
+    return result;
+  })();
+
+  // Get connected variadic inputs with their source info
+  $: variadicConnections = (() => {
+    if (!hasVariadicInputs) return [];
+
+    const connections: Array<{
+      portId: string;
+      portName: string;
+      connectionId: string;
+      sourceNodeId: string;
+    }> = [];
+
+    for (const port of inputs) {
+      if (port.variadic && port.connections.length > 0) {
+        for (const conn of port.connections) {
+          connections.push({
+            portId: port.id,
+            portName: port.name,
+            connectionId: conn.id,
+            sourceNodeId: conn.from.nodeId
+          });
+        }
+      }
+    }
+    return connections;
+  })();
+
+  function handleDisconnect(connectionId: string, e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    dispatch('disconnect', { connectionId });
+  }
   
   let isDragging = false;
   let tooltip: { text: string; x: number; y: number; type: 'input' | 'output' } | null = null;
@@ -201,26 +276,69 @@
     <div class="node-content">
       <!-- Input ports (top) -->
       <div class="port-row inputs">
-        {#each inputs as port}
-          {@const portColor = getPortColor(port)}
-          <div 
-            class="port port-{port.portType}"
-            role="button"
-            tabindex="0"
-            on:click={(e) => handlePortClick(port.id, 'input', e)}
-            on:mousedown={(e) => handlePortMouseDown(port.id, 'input', e)}
-            on:keydown={(e) => handleKeyDown(port.id, 'input', e)}
-            on:mouseenter={(e) => showPortTooltip(e, port.name, 'input')}
-            on:mouseleave={hidePortTooltip}
-            data-node-id={node.id}
-            data-port-id={port.id}
-            data-port-type="input"
-          >
-            <span class="port-dot" style="background-color: {portColor};"></span>
-          </div>
+        {#each displayInputs as displayPort}
+          {#if displayPort.type === 'single'}
+            {@const port = displayPort.port}
+            {@const portColor = getPortColor(port)}
+            <div
+              class="port port-{port.portType}"
+              role="button"
+              tabindex="0"
+              on:click={(e) => handlePortClick(port.id, 'input', e)}
+              on:mousedown={(e) => handlePortMouseDown(port.id, 'input', e)}
+              on:keydown={(e) => handleKeyDown(port.id, 'input', e)}
+              on:mouseenter={(e) => showPortTooltip(e, port.name, 'input')}
+              on:mouseleave={hidePortTooltip}
+              data-node-id={node.id}
+              data-port-id={port.id}
+              data-port-type="input"
+            >
+              <span class="port-dot" style="background-color: {portColor};"></span>
+            </div>
+          {:else}
+            {@const portColor = getPortColor(displayPort.firstPort)}
+            {@const connectedCount = displayPort.ports.filter(p => p.connections.length > 0).length}
+            {#if hasVariadicInputs}
+              <!-- List-style variadic with connections list -->
+              <div
+                class="port port-{displayPort.firstPort.portType} variadic"
+                role="button"
+                tabindex="0"
+                on:click={(e) => handlePortClick(displayPort.firstPort.id, 'input', e)}
+                on:mousedown={(e) => handlePortMouseDown(displayPort.firstPort.id, 'input', e)}
+                on:keydown={(e) => handleKeyDown(displayPort.firstPort.id, 'input', e)}
+                on:mouseenter={(e) => showPortTooltip(e, `Drop connections here`, 'input')}
+                on:mouseleave={hidePortTooltip}
+                data-node-id={node.id}
+                data-port-id={displayPort.firstPort.id}
+                data-port-type="input"
+                data-variadic-base={displayPort.baseName}
+                data-variadic-ports={displayPort.ports.map(p => p.id).join(',')}
+              >
+                <span class="port-pill" style="background-color: {portColor};"></span>
+              </div>
+            {/if}
+          {/if}
         {/each}
       </div>
-      
+
+      <!-- Variadic connections list (between pill and body) -->
+      {#if hasVariadicInputs && variadicConnections.length > 0}
+        <div class="variadic-list" on:mousedown|stopPropagation>
+          {#each variadicConnections as conn}
+            <div class="variadic-item">
+              <span class="variadic-source">{conn.sourceNodeId}</span>
+              <button
+                class="variadic-remove"
+                title="Disconnect"
+                on:click={(e) => handleDisconnect(conn.connectionId, e)}
+                on:mousedown|stopPropagation
+              >×</button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
       <div class="body">
         <!-- Bypass button (left side) -->
         <button
@@ -249,12 +367,12 @@
         >
         </button>
       </div>
-      
+
       <!-- Output ports (bottom) -->
       <div class="port-row outputs">
         {#each outputs as port}
           {@const portColor = getPortColor(port)}
-          <div 
+          <div
             class="port port-{port.portType}"
             role="button"
             tabindex="0"
@@ -390,7 +508,73 @@
     flex-shrink: 0;
     /* Color is set via inline style based on port dataType */
   }
-  
+
+  .port.variadic {
+    width: auto;
+  }
+
+  .port-pill {
+    width: 80px;
+    height: 8px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    /* Color is set via inline style based on port dataType */
+  }
+
+  /* Variadic connections list */
+  .variadic-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: #1a1a1a;
+    border-radius: 3px;
+    padding: 2px;
+    min-width: 80px;
+    max-width: 150px;
+  }
+
+  .variadic-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    padding: 2px 4px;
+    background: #2a2a2a;
+    border-radius: 2px;
+    font-size: 9px;
+  }
+
+  .variadic-source {
+    color: #aaa;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  .variadic-remove {
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    color: #666;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .variadic-remove:hover {
+    background: #ff4444;
+    color: #fff;
+  }
+
   .body {
     width: 80px;
     height: 36px;
