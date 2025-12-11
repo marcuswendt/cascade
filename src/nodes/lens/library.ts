@@ -15,7 +15,7 @@ export const lensLibrary: Library = {
       nodes: [
         { name: 'Color', icon: 'Square', description: 'Create a solid color canvas', type: 'Color' },
         { name: 'Checkers', icon: 'Grid', description: 'Generate a checkerboard pattern', type: 'Checkers' },
-        { name: 'Simplex Noise', icon: 'Cloud', description: 'Generate Simplex noise pattern', type: 'SimplexNoise' },
+        { name: 'Noise', icon: 'Cloud', description: 'Generate procedural noise patterns', type: 'Noise' },
         { name: 'Ramp', icon: 'Gradient', description: 'Generate color ramps', type: 'Ramp' }
       ]
     },

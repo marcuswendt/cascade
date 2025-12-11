@@ -9,11 +9,11 @@
     {
       "id": "ann_headline_default",
       "type": "text",
-      "position": [-200, -200],
+      "position": [0, 0],
       "content": "Hello World - Connections Test",
       "size": {
-        "width": 200,
-        "height": 60
+        "width": 500,
+        "height": 40
       },
       "style": {
         "fontSize": 32,
@@ -28,10 +28,10 @@
     {
       "id": "ann_copy_default",
       "type": "text",
-      "position": [-200, -100],
+      "position": [0, 120],
       "content": "Cascade is a visual programming framework designed for creative coders who want to build interactive experiences without sacrificing the power of code. Every node is just a TypeScript function, fully inspectable and editable. The visual graph and code are equal partners, not abstractions of each other. This allows you to work visually when it makes sense, and dive into code when you need precision and control.",
       "size": {
-        "width": 540,
+        "width": 500,
         "height": 200
       },
       "style": {

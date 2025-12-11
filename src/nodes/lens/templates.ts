@@ -1249,8 +1249,8 @@ node.onReady = () => {
 `;
   }
   
-  if (type === 'SimplexNoise') {
-    return nodeTemplate`// Simplex Noise node - generates Simplex noise pattern
+  if (type === 'Noise') {
+    return nodeTemplate`// Noise node - generates procedural noise patterns
 node.defineProp('seed', {
   value: 0,
   params: {

@@ -60,7 +60,7 @@ router.post('/:id/assets', upload.single('file'), async (req, res) => {
 router.get('/:id/assets/*', async (req, res) => {
   try {
     const projectId = req.params.id;
-    const assetPath = req.params[0];
+    const assetPath = (req.params as any)[0];
     const fullPath = path.join(PROJECTS_DIR, projectId, 'assets', assetPath);
     
     res.sendFile(fullPath);
@@ -73,7 +73,7 @@ router.get('/:id/assets/*', async (req, res) => {
 router.delete('/:id/assets/*', async (req, res) => {
   try {
     const projectId = req.params.id;
-    const assetPath = req.params[0];
+    const assetPath = (req.params as any)[0];
     const fullPath = path.join(PROJECTS_DIR, projectId, 'assets', assetPath);
     
     await fs.unlink(fullPath);
