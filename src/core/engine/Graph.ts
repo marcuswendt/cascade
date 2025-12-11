@@ -660,7 +660,7 @@ export class Graph {
           port.connections.forEach(conn => {
             const toParsed = parsePortId(conn.to.portId);
             const targetElement = this.getElement(toParsed.elementId);
-            if (targetElement) {
+            if (targetElement && isComputation(targetElement)) {
               const targetPort = targetElement.getInputPort(toParsed.index);
               if (targetPort) {
                 targetPort.value = value;
@@ -723,7 +723,7 @@ export class Graph {
             port.connections.forEach(conn => {
               const toParsed = parsePortId(conn.to.portId);
               const targetElement = this.getElement(toParsed.elementId);
-              if (targetElement) {
+              if (targetElement && isComputation(targetElement)) {
                 const targetPort = targetElement.getInputPort(toParsed.index);
                 if (targetPort) {
                   targetPort.value = value;
@@ -839,9 +839,9 @@ export class Graph {
 
         if (!fromElement || !toElement) return null;
 
-        // Verify port indices match
-        const fromPort = fromElement.getOutputPort(fromParsed.index);
-        const toPort = toElement.getInputPort(toParsed.index);
+        // Verify port indices match - access ports directly from arrays (works for both computations and annotations)
+        const fromPort = fromElement.outputs?.[fromParsed.index];
+        const toPort = toElement.inputs?.[toParsed.index];
 
         if (!fromPort || !toPort) return null;
 
@@ -1215,8 +1215,9 @@ export class Graph {
     const toElement = this.getElement(toNodeId);
     if (!fromElement || !toElement) return false;
 
-    const fromPort = fromElement.getOutputPort(fromPortIndex);
-    const toPort = toElement.getInputPort(toPortIndex);
+    // Access ports directly from arrays (works for both computations and annotations)
+    const fromPort = fromElement.outputs?.[fromPortIndex];
+    const toPort = toElement.inputs?.[toPortIndex];
     if (!fromPort || !toPort) return false;
 
     if (checkDuplicates) {
