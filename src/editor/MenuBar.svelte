@@ -80,6 +80,8 @@
     { type: 'separator' },
     { label: 'Export...', action: 'export', shortcut: '⌘E' },
     { type: 'separator' },
+    { label: 'Settings...', action: 'settings', shortcut: '⌘,' },
+    { type: 'separator' },
     { label: 'About Cascade', action: 'about' }
   ];
 

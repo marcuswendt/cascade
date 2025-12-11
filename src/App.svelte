@@ -5,6 +5,7 @@
   import NodePanel from './editor/NodePanel.svelte';
   import { dockviewStore } from './editor/dockview/dockview-store.svelte';
   import ExportDialog from './editor/ExportDialog.svelte';
+  import SettingsDialog from './editor/SettingsDialog.svelte';
   import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
   import { Graph } from '@/core/engine/Graph';
   import type { Node } from '@/core/engine/Node';
@@ -36,6 +37,7 @@
   let mousePosition = { x: 0, y: 0 };
   let globalMousePosition = { x: 0, y: 0 }; // Track mouse position globally
   let exportDialogOpen = false;
+  let settingsDialogOpen = false;
   let graph: Graph | undefined = undefined;
   let documentName = 'Untitled';
   let currentFilePath: string | null = null;
@@ -115,6 +117,9 @@
         break;
       case 'export':
         exportDialogOpen = true;
+        break;
+      case 'settings':
+        settingsDialogOpen = true;
         break;
       case 'about':
         alert('Cascade - Visual Programming Framework\nVersion 1.0.0');
@@ -726,6 +731,12 @@
         exportDialogOpen = true;
       }
 
+      // ⌘, - Settings
+      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+        e.preventDefault();
+        settingsDialogOpen = true;
+      }
+
       // ⌘N - New project
       if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();
@@ -959,6 +970,11 @@
       on:close={() => exportDialogOpen = false}
     />
   {/if}
+
+  <SettingsDialog
+    bind:open={settingsDialogOpen}
+    on:close={() => settingsDialogOpen = false}
+  />
 </div>
 
 <style>
