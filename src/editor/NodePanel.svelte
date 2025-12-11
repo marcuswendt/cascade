@@ -1,15 +1,18 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { nodeLibraries, getAllNodes, getNodesByLibraryAndCategory, type NodeTemplate, type Category } from './nodeTemplates';
+  import { nodeLibraries, getAllNodes, getNodesByLibraryAndCategory, getNodePathShort, customNodeTemplate, type NodeTemplate, type Category } from './nodeTemplates';
   import Icon from './Icon.svelte';
   import { typeToPackagePath } from '@/utils/nodeTypeUtils';
-  
+  import { nodeHistoryStore } from './stores/nodeHistoryStore';
+
   import { onMount } from 'svelte';
   
   export let libraryId: string | null = null;
   export let categoryId: string | null = null;
   export let position: { x: number; y: number } = { x: 0, y: 0 };
   export let centerPosition: { x: number; y: number } = { x: 0, y: 0 };
+  // When set, positions panel at this exact location (for dropdown menus)
+  export let fixedPosition: { x: number; y: number } | null = null;
   
   const dispatch = createEventDispatcher();
   
@@ -28,6 +31,13 @@
   
   // Calculate position relative to Graph window, centered on cursor, clamped to screen
   function calculatePosition() {
+    // If fixedPosition is set, use it directly (for dropdown menus)
+    if (fixedPosition) {
+      calculatedPosition = { x: fixedPosition.x, y: fixedPosition.y };
+      hasCalculated = true;
+      return;
+    }
+
     if (!panelElement) {
       // Initialize with centerPosition if panel not yet mounted
       if (centerPosition.x !== 0 || centerPosition.y !== 0) {
@@ -35,12 +45,12 @@
       }
       return;
     }
-    
+
     // Get Graph window element
     const graphWindow = document.querySelector('[data-window-id="graph"]');
     if (!graphWindow) {
       // Fallback to viewport positioning centered on cursor
-      const panelWidth = 100;
+      const panelWidth = 160;
       const panelHeight = 400;
       calculatedPosition = {
         x: centerPosition.x - (panelWidth / 2),
@@ -49,29 +59,29 @@
       hasCalculated = true;
       return;
     }
-    
+
     const graphRect = graphWindow.getBoundingClientRect();
-    
+
     // Wait for panel to be measured, then recalculate
     const panelRect = panelElement.getBoundingClientRect();
-      const panelWidth = panelRect.width || 100;
-      const panelHeight = panelRect.height || 400;
-    
+    const panelWidth = panelRect.width || 160;
+    const panelHeight = panelRect.height || 400;
+
     // Calculate centered position on cursor (relative to Graph window)
     // centerPosition is in viewport coordinates
     let x = centerPosition.x - graphRect.left - (panelWidth / 2);
     let y = centerPosition.y - graphRect.top - (panelHeight / 2);
-    
+
     // Clamp to Graph window bounds with padding
     const padding = 10;
     const minX = padding;
     const maxX = graphRect.width - panelWidth - padding;
     const minY = padding;
     const maxY = graphRect.height - panelHeight - padding;
-    
+
     x = Math.max(minX, Math.min(maxX, x));
     y = Math.max(minY, Math.min(maxY, y));
-    
+
     // Convert back to viewport coordinates
     calculatedPosition = {
       x: graphRect.left + x,
@@ -80,16 +90,22 @@
     hasCalculated = true;
   }
   
-  // Recalculate when panel opens or centerPosition changes
-  $: if ((libraryId || categoryId) && centerPosition) {
-    // Use setTimeout to ensure DOM is updated after render
-    setTimeout(() => {
-      calculatePosition();
-      // Recalculate again after a short delay to account for panel content rendering
+  // Recalculate when panel opens or position props change
+  $: if (libraryId || categoryId) {
+    // If fixedPosition is set, use it immediately without recalculation delays
+    if (fixedPosition) {
+      calculatedPosition = { x: fixedPosition.x, y: fixedPosition.y };
+      hasCalculated = true;
+    } else {
+      // Use setTimeout to ensure DOM is updated after render for mouse-based positioning
       setTimeout(() => {
         calculatePosition();
-      }, 50);
-    }, 0);
+        // Recalculate again after a short delay to account for panel content rendering
+        setTimeout(() => {
+          calculatePosition();
+        }, 50);
+      }, 0);
+    }
   }
   
   // Also recalculate on window resize
@@ -168,8 +184,10 @@
           ? getNodesByLibraryAndCategory(libraryId, categoryId).sort((a, b) => a.name.localeCompare(b.name))
           : [];
   
-  // Get available libraries and categories for navigation
-  $: availableLibraries = nodeLibraries.filter(lib => lib.categories.some(cat => cat.nodes.length > 0) && lib.id !== 'custom');
+  // Get available libraries and categories for navigation (sorted alphabetically, excluding custom)
+  $: availableLibraries = nodeLibraries
+    .filter(lib => lib.categories.some(cat => cat.nodes.length > 0))
+    .sort((a, b) => a.label.localeCompare(b.label));
   // Filter categories: show only categories with multiple nodes, single-entry categories are flattened
   $: availableCategories = currentLibrary ? currentLibrary.categories.filter(cat => cat.nodes.length > 1) : [];
   // Get direct nodes from single-entry categories (to be shown when library is selected)
@@ -287,6 +305,10 @@
     const nodeType = node.type.startsWith('annotation:')
       ? node.type
       : typeToPackagePath(node.type);
+
+    // Add to history (store the original node template, not the converted type)
+    nodeHistoryStore.addToHistory({ name: node.name, icon: node.icon, description: node.description, type: node.type });
+
     dispatch('addNode', { type: nodeType, libraryId, categoryId: nodeCategoryId });
   }
   
@@ -304,13 +326,7 @@
       navigationMode = 'node';
     }
   }
-  
-  function handleCustomNodeClick() {
-    // Direct creation of custom node, bypassing library/category
-    // Custom nodes don't have package paths, use as-is
-    dispatch('addNode', { type: 'Custom', libraryId: null, categoryId: null });
-  }
-  
+
   function handleClose() {
     dispatch('close');
   }
@@ -560,16 +576,17 @@
             <Icon name={node.icon} size={16} />
           </span>
           <span class="node-name">{node.name}</span>
+          <span class="node-path">{getNodePathShort(node.type)}</span>
         </button>
       {/each}
-      
+
       {#if nodes.length === 0}
         <div class="empty-state">
           No nodes found
         </div>
       {/if}
     {:else}
-      <!-- Libraries list -->
+      <!-- Libraries list (alphabetically sorted) -->
       {#each availableLibraries as library, index}
         <button
           class="library-item"
@@ -590,7 +607,9 @@
           </span>
         </button>
       {/each}
-      
+
+      <div class="separator"></div>
+
       <!-- All nodes option -->
       <button
         class="library-item"
@@ -610,14 +629,39 @@
           <Icon name="ChevronRight" size={12} />
         </span>
       </button>
-      
+
+      <div class="separator"></div>
+
       <!-- Custom button -->
       <button
-        class="library-item custom-button"
-        on:click={handleCustomNodeClick}
+        class="library-item"
+        on:click={() => handleNodeClick(customNodeTemplate)}
+        title={customNodeTemplate.description}
       >
-        <span class="label">Custom</span>
+        <span class="node-icon">
+          <Icon name={customNodeTemplate.icon} size={16} />
+        </span>
+        <span class="label">{customNodeTemplate.name}</span>
       </button>
+
+      <!-- History section -->
+      {#if $nodeHistoryStore.length > 0}
+        <div class="separator"></div>
+        <div class="section-label">Recent</div>
+        {#each $nodeHistoryStore as node, index}
+          <button
+            class="node-item history-item"
+            on:click={() => handleNodeClick(node)}
+            title={node.description}
+          >
+            <span class="node-icon">
+              <Icon name={node.icon} size={16} />
+            </span>
+            <span class="node-name">{node.name}</span>
+            <span class="node-path">{getNodePathShort(node.type)}</span>
+          </button>
+        {/each}
+      {/if}
     {/if}
   </div>
   
@@ -625,7 +669,7 @@
   {#if !searchQuery && hoveredLibraryId !== undefined && hoveredNodes.length > 0}
     <div 
       class="menu-column submenu-column"
-      style="left: {calculatedPosition.x + 108}px; top: {calculatedPosition.y}px"
+      style="left: {calculatedPosition.x + 164}px; top: {calculatedPosition.y}px"
       on:mouseenter={() => {
         // Keep submenu open when hovering over it
       }}
@@ -656,6 +700,7 @@
             <Icon name={node.icon} size={16} />
           </span>
           <span class="node-name">{node.name}</span>
+          <span class="node-path">{getNodePathShort(node.type)}</span>
         </button>
       {/each}
     </div>
@@ -663,148 +708,182 @@
 {/if}
 
 <style>
-  
   .menu-column {
     position: fixed;
-    width: 100px;
+    min-width: 160px;
     max-height: 400px;
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    background: rgba(30, 30, 30, 0.98);
-    backdrop-filter: blur(20px);
-    border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    background: #252525;
+    border-radius: 6px;
+    border: 1px solid #404040;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     z-index: 200;
-    padding: 2px;
+    padding: 4px 0;
     animation: fadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  
+
   .main-column {
     z-index: 201;
   }
-  
+
   .submenu-column {
     z-index: 200;
+    min-width: 180px;
   }
-  
+
   @keyframes fadeIn {
     from {
       opacity: 0;
-      transform: scale(0.95);
+      transform: translateY(-4px);
     }
     to {
       opacity: 1;
-      transform: scale(1);
+      transform: translateY(0);
     }
   }
-  
+
   .search {
-    padding: 4px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 6px 8px;
+    border-bottom: 1px solid #404040;
     flex-shrink: 0;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
   }
-  
+
   .search-input {
     width: 100%;
-    padding: 2px 4px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 2px;
+    padding: 5px 8px;
+    background: #333;
+    border: 1px solid #404040;
+    border-radius: 4px;
     color: #fff;
-    font-size: 11px;
+    font-size: 13px;
     box-sizing: border-box;
   }
-  
+
   .search-input:focus {
     outline: none;
-    border-color: #4a9eff;
-    background: rgba(255, 255, 255, 0.08);
+    border-color: #0078d4;
+    background: #3a3a3a;
   }
-  
-  
-  
+
+  .search-input::placeholder {
+    color: #888;
+  }
+
   .library-item .arrow-icon {
-    opacity: 0.5;
+    color: #888;
     margin-left: auto;
     display: flex;
     align-items: center;
   }
-  
+
+  .library-item:hover .arrow-icon,
   .library-item.active .arrow-icon {
-    opacity: 0.8;
+    color: #fff;
   }
-  
-  
+
   .library-item,
   .node-item {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 4px;
+    gap: 8px;
+    padding: 6px 12px;
     background: transparent;
     border: none;
-    border-radius: 2px;
     cursor: pointer;
-    transition: all 0.1s ease;
+    transition: background 0.1s;
     text-align: left;
     width: 100%;
-    font-size: 11px;
-    min-height: 18px;
+    font-size: 13px;
+    color: #ccc;
   }
-  
+
   .library-item:hover,
   .node-item:hover {
-    background: rgba(66, 133, 244, 0.15);
+    background: #0078d4;
+    color: #fff;
   }
-  
+
   .library-item.active {
-    background: rgba(66, 133, 244, 0.25);
-    color: #4a9eff;
+    background: #0078d4;
+    color: #fff;
   }
-  
+
   .library-item.keyboard-selected,
   .node-item.keyboard-selected {
-    background: rgba(66, 133, 244, 0.3);
-    outline: 2px solid #4a9eff;
-    outline-offset: -2px;
+    background: #0078d4;
+    color: #fff;
   }
-  
+
   .library-item.keyboard-selected.active {
-    background: rgba(66, 133, 244, 0.35);
+    background: #0078d4;
   }
-  
+
   .node-item .node-icon {
-    font-size: 12px;
-    line-height: 1;
-    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 16px;
+    flex-shrink: 0;
+    color: #888;
+  }
+
+  .node-item:hover .node-icon,
+  .node-item.keyboard-selected .node-icon {
     color: #fff;
   }
-  
+
   .library-item .label,
   .node-item .node-name {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 400;
-    color: #fff;
-    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  
-  .custom-button {
-    margin-top: 0;
-  }
-  
-  .empty-state {
-    padding: 32px;
-    text-align: center;
+
+  .node-path {
+    font-size: 10px;
     color: #666;
-    font-size: 14px;
+    margin-left: auto;
+    padding-left: 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .node-item:hover .node-path,
+  .node-item.keyboard-selected .node-path {
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .separator {
+    height: 1px;
+    background: #404040;
+    margin: 4px 8px;
+  }
+
+  .section-label {
+    font-size: 11px;
+    color: #888;
+    padding: 4px 12px 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .history-item {
+    color: #999;
+  }
+
+  .history-item:hover {
+    color: #fff;
+  }
+
+  .empty-state {
+    padding: 24px 12px;
+    text-align: center;
+    color: #888;
+    font-size: 13px;
   }
 </style>

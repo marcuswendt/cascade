@@ -1783,10 +1783,15 @@ node.onReady = () => {
     if (files.length === 0) return;
     
     const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
-    const y = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
-    
-    files.forEach(async (file) => {
+    const baseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
+    const baseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
+
+    // Cascade offset for multiple files
+    const cascadeOffset = 30;
+
+    files.forEach(async (file, index) => {
+      const x = baseX + (index * cascadeOffset);
+      const y = baseY + (index * cascadeOffset);
       // Check if it's an image
       if (file.type.startsWith('image/')) {
         const reader = new FileReader();
@@ -1843,7 +1848,7 @@ node.onReady = () => {
     }
   }
   
-  export async function handleAddNode(detail: { type: string; category: string | null }) {
+  export async function addNode(detail: { type: string; category: string | null }) {
     // Record history before adding node
     recordHistory();
 
@@ -2079,8 +2084,6 @@ node.onReady = () => {
         maxX = Math.max(maxX, annotation.position.x + width);
         maxY = Math.max(maxY, annotation.position.y + height);
       }
-
-      console.log("size min "+ minX+", "+ minY +" max "+ maxX +","+ maxY)
     });
 
     // If no content found, return null
@@ -2193,7 +2196,47 @@ node.onReady = () => {
     // Trigger reactivity
     internalTransform = { ...internalTransform };
   }
-  
+
+  // Select all nodes and annotations
+  export function selectAll() {
+    selectedNodes = graph.nodes.map(n => n.id);
+    selectedAnnotations = graph.annotations.map(a => a.id);
+    if (graph.nodes.length > 0) {
+      selectedNode = graph.nodes[0];
+      dispatch('nodeSelect', { node: graph.nodes[0] });
+    }
+  }
+
+  // Deselect all nodes and annotations
+  export function deselectAll() {
+    selectedNodes = [];
+    selectedAnnotations = [];
+    selectedNode = null;
+    dispatch('nodeSelect', { node: null });
+    dispatch('annotationSelect', { annotationId: null });
+  }
+
+  // Delete all selected nodes and annotations
+  export function deleteSelected() {
+    if (selectedNodes.length > 0) {
+      recordHistory();
+      selectedNodes.forEach(nodeId => {
+        graph.removeNode(nodeId);
+      });
+      selectedNodes = [];
+      selectedNode = null;
+      graph.nodes = [...graph.nodes];
+      dispatch('nodeSelect', { node: null });
+    } else if (selectedAnnotations.length > 0) {
+      recordHistory();
+      selectedAnnotations.forEach(annotationId => {
+        handleAnnotationDelete(annotationId, true);
+      });
+    } else if (selectedAnnotation) {
+      handleAnnotationDelete(selectedAnnotation);
+    }
+  }
+
   function handleContextMenu(e: MouseEvent) {
     // Prevent default context menu
     e.preventDefault();
@@ -2674,25 +2717,9 @@ node.onReady = () => {
     if (e.key === 'Delete' || e.key === 'Backspace') {
       const target = e.target as HTMLElement;
       if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
-        if (selectedNodes.length > 0) {
+        if (selectedNodes.length > 0 || selectedAnnotations.length > 0 || selectedAnnotation) {
           e.preventDefault();
-          recordHistory();
-          selectedNodes.forEach(nodeId => {
-            graph.removeNode(nodeId);
-          });
-          selectedNodes = [];
-          selectedNode = null;
-          graph.nodes = [...graph.nodes];
-          dispatch('nodeSelect', { node: null });
-        } else if (selectedAnnotations.length > 0) {
-          e.preventDefault();
-          recordHistory();
-          selectedAnnotations.forEach(annotationId => {
-            handleAnnotationDelete(annotationId, true);
-          });
-        } else if (selectedAnnotation) {
-          e.preventDefault();
-          handleAnnotationDelete(selectedAnnotation);
+          deleteSelected();
         }
       }
     }
@@ -2711,12 +2738,7 @@ node.onReady = () => {
       const target = e.target as HTMLElement;
       if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
         e.preventDefault();
-        selectedNodes = graph.nodes.map(n => n.id);
-        selectedAnnotations = graph.annotations.map(a => a.id);
-        if (graph.nodes.length > 0) {
-          selectedNode = graph.nodes[0];
-          dispatch('nodeSelect', { node: graph.nodes[0] });
-        }
+        selectAll();
       }
     }
 

@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import WindowManager from './editor/WindowManager.svelte';
+  import DockviewContainer from './editor/dockview/DockviewContainer.svelte';
+  import MenuBar from './editor/MenuBar.svelte';
   import NodePanel from './editor/NodePanel.svelte';
+  import { dockviewStore } from './editor/dockview/dockview-store.svelte';
   import ExportDialog from './editor/ExportDialog.svelte';
   import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
   import { Graph } from '@/core/engine/Graph';
@@ -29,6 +31,7 @@
   $: shouldSkipAnimation = inspectorWasVisible && inspectorIsVisible;
   $: inspectorWasVisible = inspectorIsVisible;
   let nodePanelPosition = { x: 0, y: 0 };
+  let nodePanelFixedPosition: { x: number; y: number } | null = null; // For dropdown menu positioning
   let activeTool = 'select';
   let mousePosition = { x: 0, y: 0 };
   let globalMousePosition = { x: 0, y: 0 }; // Track mouse position globally
@@ -68,11 +71,11 @@
   }
   
   let canvasRef: any = null;
-  let windowManagerRef: any = null;
-  
+  let dockviewContainerRef: any = null;
+
   function handleAddNode(e: CustomEvent<{ type: string; libraryId: string | null; categoryId: string | null }>) {
-    if (windowManagerRef && windowManagerRef.addNode) {
-      windowManagerRef.addNode({ type: e.detail.type, category: e.detail.categoryId });
+    if (dockviewContainerRef && dockviewContainerRef.addNode) {
+      dockviewContainerRef.addNode({ type: e.detail.type, category: e.detail.categoryId });
     }
     activeLibrary = null;
     activeCategory = null;
@@ -92,8 +95,9 @@
     }
   }
 
-  function handleDocumentAction(action: string) {
+  function handleMenuAction(action: string) {
     switch (action) {
+      // File menu
       case 'new':
         handleNewProject();
         break;
@@ -113,8 +117,81 @@
         exportDialogOpen = true;
         break;
       case 'about':
-        // TODO: Show about dialog
         alert('Cascade - Visual Programming Framework\nVersion 1.0.0');
+        break;
+
+      // Edit menu
+      case 'undo':
+        handleUndo();
+        break;
+      case 'redo':
+        handleRedo();
+        break;
+      case 'selectAll':
+        if (dockviewContainerRef?.selectAll) {
+          dockviewContainerRef.selectAll();
+        }
+        break;
+      case 'deselectAll':
+        if (dockviewContainerRef?.deselectAll) {
+          dockviewContainerRef.deselectAll();
+        }
+        selectedNode = null;
+        selectedAnnotation = null;
+        break;
+      case 'delete':
+        if (dockviewContainerRef?.deleteSelected) {
+          dockviewContainerRef.deleteSelected();
+        }
+        selectedNode = null;
+        selectedAnnotation = null;
+        break;
+
+      // Create menu
+      case 'addNode':
+        nodePanelFixedPosition = null;
+        activeLibrary = 'core';
+        mousePosition = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        break;
+      case 'addText':
+        activeTool = 'text';
+        break;
+      case 'addImage':
+        activeTool = 'image';
+        break;
+      case 'addGroup':
+        activeTool = 'group';
+        break;
+      case 'addLine':
+        activeTool = 'line';
+        break;
+      case 'addPolyline':
+        activeTool = 'polyline';
+        break;
+
+      // View menu
+      case 'centerOnNodes':
+        if (dockviewContainerRef?.centerOnNodes) {
+          dockviewContainerRef.centerOnNodes();
+        }
+        break;
+      case 'resetLayout':
+        dockviewStore.resetLayout();
+        break;
+      case 'presentationMode':
+        togglePresentationMode();
+        break;
+      case 'focusGraph':
+        dockviewStore.focusPanel('graph-main');
+        break;
+      case 'focusViewer':
+        dockviewStore.focusPanel('viewer-main');
+        break;
+      case 'focusInspector':
+        dockviewStore.focusPanel('inspector-main');
+        break;
+      case 'focusLog':
+        dockviewStore.focusPanel('log-main');
         break;
     }
   }
@@ -182,8 +259,8 @@
       
       // Center canvas on nodes after loading
       setTimeout(() => {
-        if (windowManagerRef && windowManagerRef.centerOnNodes) {
-          windowManagerRef.centerOnNodes();
+        if (dockviewContainerRef && dockviewContainerRef.centerOnNodes) {
+          dockviewContainerRef.centerOnNodes();
         }
       }, 100);
     } catch (error) {
@@ -252,8 +329,8 @@
 
         // Center canvas on nodes after loading
         setTimeout(() => {
-          if (windowManagerRef && windowManagerRef.centerOnNodes) {
-            windowManagerRef.centerOnNodes();
+          if (dockviewContainerRef && dockviewContainerRef.centerOnNodes) {
+            dockviewContainerRef.centerOnNodes();
           }
         }, 100);
       } catch (error) {
@@ -313,8 +390,8 @@
     
     // Center canvas on nodes after duplicating
     setTimeout(() => {
-      if (windowManagerRef && windowManagerRef.centerOnNodes) {
-        windowManagerRef.centerOnNodes();
+      if (dockviewContainerRef && dockviewContainerRef.centerOnNodes) {
+        dockviewContainerRef.centerOnNodes();
       }
     }, 100);
   }
@@ -462,8 +539,8 @@
 
         // Center canvas on nodes after loading
         setTimeout(() => {
-          if (windowManagerRef && windowManagerRef.centerOnNodes) {
-            windowManagerRef.centerOnNodes();
+          if (dockviewContainerRef && dockviewContainerRef.centerOnNodes) {
+            dockviewContainerRef.centerOnNodes();
           }
         }, 100);
       } catch (error) {
@@ -476,7 +553,7 @@
         updateWindowTitle();
       }
     }
-    
+
     // Track global mouse position
     function handleMouseMove(e: MouseEvent) {
       globalMousePosition = { x: e.clientX, y: e.clientY };
@@ -518,8 +595,8 @@
         // H - Center canvas on home position (same as cmd-0)
         if ((e.key === 'h' || e.key === 'H') && !e.metaKey && !e.ctrlKey && !e.altKey) {
           e.preventDefault();
-          if (windowManagerRef && windowManagerRef.centerOnNodes) {
-            windowManagerRef.centerOnNodes();
+          if (dockviewContainerRef && dockviewContainerRef.centerOnNodes) {
+            dockviewContainerRef.centerOnNodes();
           }
         }
         
@@ -560,7 +637,10 @@
           if (activeLibrary || activeCategory) {
             activeLibrary = null;
             activeCategory = null;
+            nodePanelFixedPosition = null;
           } else {
+            // Clear fixed position - use mouse-based positioning
+            nodePanelFixedPosition = null;
             // Get graph window element and check if mouse is inside it
             const graphWindow = document.querySelector('[data-window-id="graph"]') as HTMLElement;
             if (graphWindow) {
@@ -598,6 +678,7 @@
       if (e.key === 'Escape' && (activeLibrary || activeCategory)) {
         activeLibrary = null;
         activeCategory = null;
+        nodePanelFixedPosition = null;
       }
       
       // Additional keyboard shortcuts
@@ -616,10 +697,12 @@
           if (activeLibrary || activeCategory) {
             activeLibrary = null;
             activeCategory = null;
+            nodePanelFixedPosition = null;
           } else {
-            mousePosition = { 
-              x: window.innerWidth / 2, 
-              y: window.innerHeight / 2 
+            nodePanelFixedPosition = null;
+            mousePosition = {
+              x: window.innerWidth / 2,
+              y: window.innerHeight / 2
             };
             activeLibrary = 'core';
           }
@@ -750,10 +833,42 @@
         const target = e.target as HTMLElement;
         if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
           e.preventDefault();
-          if (windowManagerRef && windowManagerRef.centerOnNodes) {
-            windowManagerRef.centerOnNodes();
+          if (dockviewContainerRef && dockviewContainerRef.centerOnNodes) {
+            dockviewContainerRef.centerOnNodes();
           }
         }
+      }
+
+      // Panel focus shortcuts (Ctrl+1-4)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+        if (e.key === '1') {
+          e.preventDefault();
+          dockviewStore.focusPanel('graph-main');
+        } else if (e.key === '2') {
+          e.preventDefault();
+          dockviewStore.focusPanel('viewer-main');
+        } else if (e.key === '3') {
+          e.preventDefault();
+          dockviewStore.focusPanel('inspector-main');
+        } else if (e.key === '4') {
+          e.preventDefault();
+          dockviewStore.focusPanel('log-main');
+        }
+      }
+
+      // Ctrl+W - Close active panel (except graph-main)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'w' && !e.shiftKey) {
+        const activePanel = dockviewStore.activePanel;
+        if (activePanel && activePanel !== 'graph-main') {
+          e.preventDefault();
+          dockviewStore.removePanel(activePanel);
+        }
+      }
+
+      // Ctrl+Shift+P - Reset layout
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'P') {
+        e.preventDefault();
+        dockviewStore.resetLayout();
       }
     }
     
@@ -767,21 +882,38 @@
 </script>
 
 <div class="app" class:presentation-mode={presentationMode}>
-  <WindowManager
-    bind:this={windowManagerRef}
+  {#if !presentationMode}
+    <MenuBar
+      {documentName}
+      canUndo={$canUndo}
+      canRedo={$canRedo}
+      on:action={(e) => handleMenuAction(e.detail)}
+      on:openNodePanel={(e) => {
+        activeLibrary = 'core';
+        // Position panel directly below the Create button (dropdown mode)
+        nodePanelFixedPosition = { x: e.detail.x, y: e.detail.y };
+      }}
+      on:nameChange={(e) => {
+        documentName = e.detail;
+        updateWindowTitle();
+      }}
+    />
+  {/if}
+  <DockviewContainer
+    bind:this={dockviewContainerRef}
     {graph}
     {selectedNode}
     {selectedAnnotation}
-    bind:activeTool={activeTool}
-    bind:activeLibrary={activeLibrary}
-    bind:documentName={documentName}
+    {activeTool}
+    {activeLibrary}
+    {documentName}
     {presentationMode}
     onRecordHistory={recordHistory}
     on:nodeSelect={(e) => handleNodeSelect(e.detail.node)}
     on:annotationSelect={(e) => handleAnnotationSelect(e)}
     on:libraryToggle={(e) => handleLibraryToggle(e.detail)}
     on:toolChange={(e) => handleToolChange(e.detail)}
-    on:action={(e) => handleDocumentAction(e.detail)}
+    on:action={(e) => handleMenuAction(e.detail)}
     on:nameChange={(e) => {
       documentName = e.detail;
       updateWindowTitle();
@@ -808,12 +940,14 @@
       categoryId={activeCategory}
       position={nodePanelPosition}
       centerPosition={mousePosition}
+      fixedPosition={nodePanelFixedPosition}
       on:addNode={handleAddNode}
       on:selectCategory={handleCategorySelect}
       on:selectLibrary={handleLibrarySelect}
       on:close={() => {
         activeLibrary = null;
         activeCategory = null;
+        nodePanelFixedPosition = null;
       }}
     />
   {/if}
@@ -834,7 +968,7 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overflow: hidden;
   }
-  
+
   .app {
     width: 100vw;
     height: 100vh;
@@ -842,10 +976,13 @@
     flex-direction: column;
     position: relative;
   }
-  
-  
-  .app.presentation-mode :global(.window-manager) {
+
+  .app :global(.dockview-container) {
+    flex: 1;
     width: 100%;
+  }
+
+  .app.presentation-mode :global(.dockview-container) {
     height: 100vh;
   }
 </style>

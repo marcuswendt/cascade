@@ -96,21 +96,15 @@ export const nodeLibraries: Library[] = [
       }
     ]
   },
-  {
-    id: 'custom',
-    label: 'Custom',
-    icon: 'Zap',
-    categories: [
-      {
-        id: 'user',
-        label: 'User',
-        nodes: [
-          { name: 'Custom Node', icon: 'Zap', description: 'Create custom node', type: 'Custom' }
-        ]
-      }
-    ]
-  }
 ];
+
+// Custom node template - shown as standalone button in menu, not in library hierarchy
+export const customNodeTemplate: NodeTemplate = {
+  name: 'Custom',
+  icon: 'Zap',
+  description: 'Create custom node with your own code',
+  type: 'Custom'
+};
 
 // Get all available libraries that have nodes
 export function getAvailableLibraries(): Library[] {
@@ -153,5 +147,38 @@ export function getNodeIcon(nodeType: string): string {
     }
   }
   return 'Settings'; // Default icon if not found
+}
+
+// Generate full node path (e.g., "cascade.core.math.Add")
+export function getNodePath(nodeType: string, libraryId?: string, categoryId?: string): string {
+  // Handle annotation types
+  if (nodeType.startsWith('annotation:')) {
+    const annotationType = nodeType.split(':')[1];
+    return `cascade.annotations.${annotationType}`;
+  }
+
+  // Search through libraries to find the node
+  for (const library of nodeLibraries) {
+    for (const category of library.categories) {
+      const node = category.nodes.find(n => n.type === nodeType);
+      if (node) {
+        return `cascade.${library.id}.${category.id}.${node.name}`;
+      }
+    }
+  }
+
+  // If not found in templates, try to construct from provided ids
+  if (libraryId && categoryId) {
+    return `cascade.${libraryId}.${categoryId}.${nodeType}`;
+  }
+
+  // Fallback for custom nodes
+  return `custom.${nodeType}`;
+}
+
+// Get node path for display (shorter version without "cascade." prefix)
+export function getNodePathShort(nodeType: string): string {
+  const fullPath = getNodePath(nodeType);
+  return fullPath.startsWith('cascade.') ? fullPath.substring(8) : fullPath;
 }
 

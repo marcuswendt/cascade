@@ -13,6 +13,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
+    "dockview-core": "^4.11.0",
     "lucide-svelte": "^0.511.0",
     "marked": "^17.0.0",
     "monaco-editor": "^0.55.0",
