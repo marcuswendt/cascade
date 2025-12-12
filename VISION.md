@@ -20,6 +20,11 @@ Cascade is open source, built on open web standards. Creative work made with Cas
 
 Currently a single-user standalone app. Future versions will introduce server-based collaborative features.
 
+## Thanks & Inspiration
+
+- [Variable Nodes.IO](https://nodes.io)
+- [SideFX Houdini](https://www.sidefx.com)
+
 ---
 
 *This document captures our guiding principles. Refer back to it as the project evolves to ensure we stay true to the core vision.*
