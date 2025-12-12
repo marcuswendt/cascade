@@ -138,7 +138,7 @@
     
     // Add default annotations
     const headlineAnnotation: any = {
-      id: `ann_headline_${Date.now()}`,
+      id: `headline_${Date.now().toString(36)}`,
       type: 'text',
       content: 'Hello World',
       position: { x: -200, y: -200 },
@@ -155,7 +155,7 @@
     };
     
     const copyAnnotation: any = {
-      id: `ann_copy_${Date.now()}`,
+      id: `copy_${Date.now().toString(36)}`,
       type: 'text',
       content: 'Cascade is a visual programming framework designed for creative coders who want to build interactive experiences without sacrificing the power of code. Every node is just a TypeScript function, fully inspectable and editable. The visual graph and code are equal partners, not abstractions of each other. This allows you to work visually when it makes sense, and dive into code when you need precision and control.',
       position: { x: -200, y: -100 },
@@ -430,7 +430,7 @@ node.onReady = () => {
       const x = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
       const y = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
       
-      const id = `ann_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const id = `line_${Date.now().toString(36)}`;
       const annotation: any = {
         id,
         type: 'line',
@@ -456,7 +456,7 @@ node.onReady = () => {
       const x = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
       const y = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
       
-      const id = `ann_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const id = `polyline_${Date.now().toString(36)}`;
       const annotation: any = {
         id,
         type: 'polyline',
@@ -925,20 +925,8 @@ node.onReady = () => {
           // Only allow output -> input connections
           if (from.portType === 'output' && toPortType === 'input' && from.nodeId !== toNodeId) {
             // Unified connection handling - works for any element type
-            let fromElementId = from.nodeId;
-            let toElementId = toNodeId;
-
-            // Try to get elements directly first (handles IDs that already have "ann_" prefix)
-            let fromElement = graph.getElement(fromElementId);
-            let toElement = graph.getElement(toElementId);
-
-            // If not found and IDs start with "ann_", try removing the prefix
-            if (!fromElement && fromElementId.startsWith('ann_')) {
-              fromElement = graph.getElement(fromElementId.substring(4));
-            }
-            if (!toElement && toElementId.startsWith('ann_')) {
-              toElement = graph.getElement(toElementId.substring(4));
-            }
+            const fromElement = graph.getElement(from.nodeId);
+            const toElement = graph.getElement(toNodeId);
 
             if (fromElement && toElement) {
               // Find ports by ID
@@ -979,9 +967,12 @@ node.onReady = () => {
                   const otherSelectedElements: Array<{ element: any; output: any }> = [];
 
                   if (isVariadicTarget) {
-                    // Collect other selected nodes (excluding the one being connected from)
+                    // Get the target element's ID
+                    const targetId = toElement.id;
+
+                    // Collect other selected nodes (excluding the one being connected from AND the target)
                     selectedNodes.forEach(nodeId => {
-                      if (nodeId !== from.nodeId) {
+                      if (nodeId !== from.nodeId && nodeId !== targetId) {
                         const node = graph.getNode(nodeId);
                         if (node && node.outputs.length > 0) {
                           otherSelectedElements.push({ element: node, output: node.outputs[0] });
@@ -989,9 +980,9 @@ node.onReady = () => {
                       }
                     });
 
-                    // Collect selected annotations with outputs
+                    // Collect selected annotations with outputs (excluding source and target)
                     selectedAnnotations.forEach(annId => {
-                      if (annId !== from.nodeId) {
+                      if (annId !== from.nodeId && annId !== targetId) {
                         const ann = graph.getAnnotation(annId);
                         if (ann && ann.outputs && ann.outputs.length > 0) {
                           otherSelectedElements.push({ element: ann, output: ann.outputs[0] });
@@ -1464,7 +1455,7 @@ node.onReady = () => {
   }
   
   function createAnnotation(type: string, x: number, y: number) {
-    const id = `ann_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = `${type}_${Date.now().toString(36)}`;
 
     // Record history before creating annotation
     recordHistory();
@@ -1893,7 +1884,9 @@ node.onReady = () => {
         const reader = new FileReader();
         reader.onload = (event) => {
           const dataUrl = event.target?.result as string;
-          const id = `ann_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          // Use filename (without extension) as base for ID
+          const baseName = file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+          const id = `${baseName}_${Date.now().toString(36)}`;
           const annotation: any = {
             id,
             type: 'image',
@@ -2391,16 +2384,17 @@ node.onReady = () => {
   }
   
   function getPortPosition(nodeId: string, portId: string, portType: 'input' | 'output'): { x: number; y: number } | null {
-    
+    // Check if this is an annotation by looking up the element
+    const element = graph.getElement(nodeId);
+    const isAnnotation = element?.kind === 'annotation';
+
     // Handle annotation ports - try to get actual DOM element position first
-    if (nodeId.startsWith('ann_')) {
+    if (isAnnotation) {
       const portElement = getPortElement(nodeId, portId);
       if (portElement && canvas) {
         // Get actual DOM position of the port element
         const rect = portElement.getBoundingClientRect();
         const canvasRect = canvas.getBoundingClientRect();
-        
-        // console.log("getPortPosition "+ rect +" --> "+ canvasRect)
 
         // Get the center of the port dot or pill
         const dotElement = portElement.querySelector('.port-dot, .port-pill');
@@ -2418,24 +2412,18 @@ node.onReady = () => {
           y: (rect.top + rect.height / 2 - canvasRect.top - internalTransform.y) / internalTransform.zoom
         };
       }
-        
-      
+
       // Fallback to calculated position if element not found
-      // Try to get element directly first (handles IDs that already have "ann_" prefix)
-      let annotation = graph.getElement(nodeId);
-      if (!annotation || annotation.kind === 'computation') {
-        const annotationId = nodeId.substring(4);
-        annotation = graph.getAnnotation(annotationId) || graph.getElement(annotationId);
-      }
+      const annotation = element;
       if (!annotation || !annotation.outputs) return null;
-      
+
       const port = annotation.outputs.find(p => p.id === portId);
       if (!port) return null;
-      
+
       // For all annotations, output ports are at the bottom center
       const annotationWidth = annotation.size?.width || (annotation.type === 'text' ? 540 : annotation.type === 'image' ? 200 : 300);
       const annotationHeight = annotation.size?.height || (annotation.type === 'text' ? 60 : annotation.type === 'image' ? 150 : 200);
-      
+
       // Bottom center for all annotation types
       return {
         x: annotation.position.x + annotationWidth / 2,
@@ -2507,18 +2495,14 @@ node.onReady = () => {
   
   function handlePortMouseDown(nodeId: string, portId: string, portType: 'input' | 'output', e: MouseEvent) {
     e.stopPropagation();
-    
+
+    // Check if this is an annotation
+    const element = graph.getElement(nodeId);
+    const isAnnotation = element?.kind === 'annotation';
+
     // Handle annotation ports
-    if (nodeId.startsWith('ann_')) {
-      // The nodeId might be "ann_ann_image_cascade" (if annotation.id already has "ann_")
-      // or "ann_image_cascade" (if annotation.id doesn't have "ann_")
-      // Try to get the annotation using the nodeId directly first (in case ID already has "ann_")
-      let annotation = graph.getElement(nodeId);
-      // If not found, try removing the "ann_" prefix
-      if (!annotation || annotation.kind === 'computation') {
-        const annotationId = nodeId.substring(4); // Remove 'ann_' prefix
-        annotation = graph.getAnnotation(annotationId) || graph.getElement(annotationId);
-      }
+    if (isAnnotation) {
+      const annotation = element;
       if (!annotation || !annotation.outputs) return;
       
       const port = annotation.outputs.find(p => p.id === portId);
@@ -2614,7 +2598,7 @@ node.onReady = () => {
       // Complete connection
       const from = connectingFrom;
       if (from.nodeId !== nodeId && from.portType !== portType) {
-        const fromElement = graph.getElement(from.nodeId) || graph.getElement(from.nodeId.replace('ann_', ''));
+        const fromElement = graph.getElement(from.nodeId);
         const fromPort = from.portType === 'output'
           ? fromElement?.outputs.find((p: any) => p.id === from.portId)
           : fromElement?.inputs.find((p: any) => p.id === from.portId);
@@ -2629,9 +2613,12 @@ node.onReady = () => {
             const otherSelectedElements: Array<{ element: any; output: any }> = [];
 
             if (isVariadicTarget) {
-              // Collect other selected nodes (excluding the one being connected from)
+              // Get the target node's ID
+              const targetId = nodeId;
+
+              // Collect other selected nodes (excluding the one being connected from AND the target)
               selectedNodes.forEach(selectedNodeId => {
-                if (selectedNodeId !== from.nodeId) {
+                if (selectedNodeId !== from.nodeId && selectedNodeId !== targetId) {
                   const selectedNode = graph.getNode(selectedNodeId);
                   if (selectedNode && selectedNode.outputs.length > 0) {
                     otherSelectedElements.push({ element: selectedNode, output: selectedNode.outputs[0] });
@@ -2639,9 +2626,9 @@ node.onReady = () => {
                 }
               });
 
-              // Collect selected annotations with outputs
+              // Collect selected annotations with outputs (excluding source and target)
               selectedAnnotations.forEach(annId => {
-                if (annId !== from.nodeId) {
+                if (annId !== from.nodeId && annId !== targetId) {
                   const ann = graph.getAnnotation(annId);
                   if (ann && ann.outputs && ann.outputs.length > 0) {
                     otherSelectedElements.push({ element: ann, output: ann.outputs[0] });
@@ -3114,8 +3101,7 @@ node.onReady = () => {
     <!-- Connection preview (while dragging) -->
     {#if connectingFrom && connectingPosition}
       {@const from = connectingFrom}
-      {@const fromElementId = from.nodeId.startsWith('ann_') ? from.nodeId.substring(4) : from.nodeId}
-      {@const fromElement = graph.getElement(fromElementId)}
+      {@const fromElement = graph.getElement(from.nodeId)}
       {@const fromNode = fromElement?.kind === 'computation' ? fromElement : null}
       {@const fromAnnotation = fromElement && fromElement.kind !== 'computation' ? fromElement : null}
       {@const fromPort = from.portType === 'output' 
@@ -3205,7 +3191,7 @@ node.onReady = () => {
           {/if}
           {#if annotation.outputs && annotation.outputs.length > 0}
             {#each annotation.outputs as port (port.id)}
-              {@const annotationNodeId = annotation.id.startsWith('ann_') ? annotation.id : `ann_${annotation.id}`}
+              {@const annotationNodeId = annotation.id}
               {@const annotationWidth = annotation.size?.width || 540}
               {@const annotationHeight = typeof annotation.size?.height === 'number' ? annotation.size.height : 60}
               {@const portColor = getPortColor(port)}
@@ -3252,7 +3238,7 @@ node.onReady = () => {
           {/if}
           {#if annotation.outputs && annotation.outputs.length > 0}
             {#each annotation.outputs as port (port.id)}
-              {@const annotationNodeId = annotation.id.startsWith('ann_') ? annotation.id : `ann_${annotation.id}`}
+              {@const annotationNodeId = annotation.id}
               {@const annotationWidth = annotation.size?.width || 200}
               {@const annotationHeight = annotation.size?.height || 150}
               {@const portColor = getPortColor(port)}

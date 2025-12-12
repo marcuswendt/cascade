@@ -9,7 +9,7 @@
  * - Image filters (Blur, NormalMap)
  */
 
-import { registerNodeClasses, type NodeClass } from '@/utils/nodeTypeUtils';
+import { registerNodeClasses, registerNodeSource, type NodeClass } from '@/utils/nodeTypeUtils';
 
 // Import node classes
 import { ColorNode } from './nodes/ColorNode';
@@ -21,6 +21,17 @@ import { NormalMapNode } from './nodes/NormalMapNode';
 import { RampNode } from './nodes/RampNode';
 import { NoiseNode } from './nodes/NoiseNode';
 import { BlurNode } from './nodes/BlurNode';
+
+// Import source code for nodes (using Vite's ?raw imports)
+import ColorNodeSource from './nodes/ColorNode.ts?raw';
+import ImageNodeSource from './nodes/ImageNode.ts?raw';
+import CompositeNodeSource from './nodes/CompositeNode.ts?raw';
+import CheckersNodeSource from './nodes/CheckersNode.ts?raw';
+import ResizeNodeSource from './nodes/ResizeNode.ts?raw';
+import NormalMapNodeSource from './nodes/NormalMapNode.ts?raw';
+import RampNodeSource from './nodes/RampNode.ts?raw';
+import NoiseNodeSource from './nodes/NoiseNode.ts?raw';
+import BlurNodeSource from './nodes/BlurNode.ts?raw';
 
 // Node class registry: type -> class constructor
 export const lensNodeClasses: Record<string, NodeClass> = {
@@ -37,6 +48,17 @@ export const lensNodeClasses: Record<string, NodeClass> = {
 
 // Register nodes with the central registry
 registerNodeClasses('lens', lensNodeClasses);
+
+// Register source code for each node type
+registerNodeSource('Color', ColorNodeSource);
+registerNodeSource('Image', ImageNodeSource);
+registerNodeSource('Composite', CompositeNodeSource);
+registerNodeSource('Checkers', CheckersNodeSource);
+registerNodeSource('Resize', ResizeNodeSource);
+registerNodeSource('NormalMap', NormalMapNodeSource);
+registerNodeSource('Ramp', RampNodeSource);
+registerNodeSource('Noise', NoiseNodeSource);
+registerNodeSource('Blur', BlurNodeSource);
 
 // Re-export library metadata
 export { lensLibrary } from './library';
