@@ -20,7 +20,7 @@ import type {
 } from '../../types/node.types.js';
 import { packagePathToType, isStandardLibraryNode, getNodeClass, compileCustomNode } from '../../utils/nodeTypeUtils.js';
 import { normalizeColor, isColorValue } from '../../utils/colorUtils.js';
-import { ElementType, isComputation, isAnnotation } from '../../types/element.types.js';
+import { ElementType } from '../../types/element.types.js';
 
 // Current file format version
 export const GRAPH_FORMAT_VERSION = '0.2';
@@ -103,28 +103,28 @@ export class Graph {
    * Get all computations
    */
   get nodes(): Node[] {
-    return this._elements.filter(isComputation) as Node[];
+    return this._elements.filter(e => e.kind === 'computation');
   }
 
   /**
    * Set computations (triggers Svelte reactivity)
    */
   set nodes(value: Node[]) {
-    this._elements = [...this._elements.filter(isAnnotation), ...value];
+    this._elements = [...this._elements.filter(e => e.kind === 'annotation'), ...value];
   }
 
   /**
    * Get all annotations
    */
   get annotations(): CanvasAnnotation[] {
-    return this._elements.filter(isAnnotation) as CanvasAnnotation[];
+    return this._elements.filter(e => e.kind === 'annotation') as CanvasAnnotation[];
   }
 
   /**
    * Set annotations (triggers Svelte reactivity)
    */
   set annotations(value: CanvasAnnotation[]) {
-    this._elements = [...this._elements.filter(isComputation), ...value];
+    this._elements = [...this._elements.filter(e => e.kind === 'computation'), ...value];
   }
   
   /**
@@ -166,7 +166,7 @@ export class Graph {
    */
   getNode(nodeId: string): Node | null {
     const element = this.getElement(nodeId);
-    return element && isComputation(element) ? element as Node : null;
+    return element?.kind === 'computation' ? element : null;
   }
 
   /**
@@ -174,7 +174,7 @@ export class Graph {
    */
   getAnnotation(id: string): Annotation | null {
     const element = this.getElement(id);
-    return element && isAnnotation(element) ? element as Annotation : null;
+    return element?.kind === 'annotation' ? element as Annotation : null;
   }
 
   /**
@@ -194,7 +194,7 @@ export class Graph {
       const element = this._elements[index];
       
       // Call onDestroy if it's a computation and has the method
-      if (isComputation(element) && element.onDestroy) {
+      if (element.kind === 'computation' && element.onDestroy) {
         element.onDestroy();
       }
       
@@ -266,7 +266,7 @@ export class Graph {
     
     // For node-to-node connections, use GraphValidator
     // For annotation-to-node or other combinations, allow them
-    if (isComputation(fromElement) && isComputation(toElement)) {
+    if (fromElement.kind === 'computation' && toElement.kind === 'computation') {
       const error = GraphValidator.validateConnection(
         this,
         fromElementId,
@@ -386,7 +386,7 @@ export class Graph {
    */
   private syncVariadicPortsOnNode(nodeId: string): void {
     const node = this.getNode(nodeId);
-    if (node && isComputation(node)) {
+    if (node) {
       const configs = node.getVariadicConfigs();
       configs.forEach((_, baseName) => {
         node.syncVariadicPorts(baseName);
@@ -668,7 +668,7 @@ export class Graph {
           port.connections.forEach(conn => {
             const toParsed = parsePortId(conn.to.portId);
             const targetElement = this.getElement(toParsed.elementId);
-            if (targetElement && isComputation(targetElement)) {
+            if (targetElement?.kind === 'computation') {
               const targetPort = targetElement.getInputPort(toParsed.index);
               if (targetPort) {
                 targetPort.value = value;
@@ -683,7 +683,7 @@ export class Graph {
           port.connections.forEach(conn => {
             const toParsed = parsePortId(conn.to.portId);
             const targetElement = this.getElement(toParsed.elementId);
-            if (targetElement && isComputation(targetElement)) {
+            if (targetElement?.kind === 'computation') {
               const targetPort = targetElement.getInputPort(toParsed.index);
               if (targetPort?.onTrigger) {
                 targetPort.onTrigger(props);
@@ -731,7 +731,7 @@ export class Graph {
             port.connections.forEach(conn => {
               const toParsed = parsePortId(conn.to.portId);
               const targetElement = this.getElement(toParsed.elementId);
-              if (targetElement && isComputation(targetElement)) {
+              if (targetElement?.kind === 'computation') {
                 const targetPort = targetElement.getInputPort(toParsed.index);
                 if (targetPort) {
                   targetPort.value = value;
@@ -744,7 +744,7 @@ export class Graph {
             port.connections.forEach(conn => {
               const toParsed = parsePortId(conn.to.portId);
               const targetElement = this.getElement(toParsed.elementId);
-              if (targetElement && isComputation(targetElement)) {
+              if (targetElement?.kind === 'computation') {
                 const targetPort = targetElement.getInputPort(toParsed.index);
                 targetPort?.onTrigger?.(props);
               }
