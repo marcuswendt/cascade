@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import * as monaco from 'monaco-editor';
-  import type { Computation } from '@/core/engine/Node';
+  import type { Node } from '@/core/engine/Node';
   import type { Graph } from '@/core/engine/Graph';
   import PackageSearch from './PackageSearch.svelte';
   import type { PackageManager } from '@/core/engine/PackageManager';
   import Icon from './Icon.svelte';
   import { Clock, Check, XCircle, Copy, FileOutput, History, Lock, FolderOpen, Sparkles, Loader2 } from 'lucide-svelte';
-  import { isStandardLibraryNode, typeToPackagePath, getNodeClass } from '@/utils/nodeTypeUtils';
+  import { isStandardLibraryNode, typeToPackagePath, getNodeClass, getNodeSource } from '@/utils/nodeTypeUtils';
   import type { NodeSource, FileStatus } from '@/types/node.types';
   import { getAICodeGenerator, AICodeGenerator } from './ai/AICodeGenerator';
   import type { AIProvider } from './ai/types';
@@ -139,7 +139,7 @@ declare const graph: any;
 `.trim();
 
   // Props
-  export let node: Computation;
+  export let node: Node;
   export let graph: Graph | null = null;
   export let packageManager: PackageManager | null = null;
   export let onClose: () => void;
@@ -375,11 +375,16 @@ declare const graph: any;
     const packagePath = typeToPackagePath(type);
     const NodeClass = getNodeClass(packagePath);
     if (NodeClass) {
-      // Class-based nodes have their logic in the class, not in code
+      // Try to get the source code from the registry
+      const source = getNodeSource(type);
+      if (source) {
+        return source;
+      }
+      // Fallback if source not registered
       return `// Standard Library Node: ${type}
 //
 // This node is implemented as a class (${NodeClass.name}).
-// Standard library nodes are read-only.
+// Source code not available.
 //
 // To customize: click "Duplicate as Custom" to create an editable copy.
 `;

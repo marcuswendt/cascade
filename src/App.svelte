@@ -9,7 +9,6 @@
   import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
   import { Graph } from '@/core/engine/Graph';
   import type { Node } from '@/core/engine/Node';
-  import type { Computation } from '@/core/engine/Computation';
   import { GraphEditorAdapter } from './editor/GraphEditorAdapter';
   import {
     recordSnapshotImmediate,
@@ -24,7 +23,7 @@
   let presentationMode = false;
   let activeLibrary: string | null = null;
   let activeCategory: string | null = null;
-  let selectedNode: Computation | null = null;
+  let selectedNode: Node | null = null;
   let selectedAnnotation: string | null = null;
   let inspectorWasVisible = false;
   
@@ -789,7 +788,7 @@
               // Shift+C - Multi-cook (cook this chain)
               selectedNode.setCooking(true);
               // Cook all downstream nodes
-              const cookDownstream = (node: Computation) => {
+              const cookDownstream = (node: Node) => {
                 node.outputs.forEach((output) => {
                   output.connections.forEach((conn) => {
                     const downstreamNode = graph?.getNode(conn.to.nodeId);

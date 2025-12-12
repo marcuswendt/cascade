@@ -1,4 +1,3 @@
-import { Computation } from './Node.js';
 import { Node } from './Node.js';
 import { Annotation } from '../../nodes/annotations/Annotation.js';
 import { ImageAnnotation } from '../../nodes/annotations/Image.js';
@@ -86,7 +85,7 @@ export class Graph {
   }
 
   // Execution Control
-  cookingNodes: Set<Computation> = new Set();
+  cookingNodes: Set<Node> = new Set();
 
   // Execution state
   executionState: ExecutionState = 'idle';
@@ -103,14 +102,14 @@ export class Graph {
   /**
    * Get all computations
    */
-  get nodes(): Computation[] {
-    return this._elements.filter(isComputation) as Computation[];
+  get nodes(): Node[] {
+    return this._elements.filter(isComputation) as Node[];
   }
 
   /**
    * Set computations (triggers Svelte reactivity)
    */
-  set nodes(value: Computation[]) {
+  set nodes(value: Node[]) {
     this._elements = [...this._elements.filter(isAnnotation), ...value];
   }
 
@@ -165,9 +164,9 @@ export class Graph {
   /**
    * Get a computation by ID (type-safe)
    */
-  getNode(nodeId: string): Computation | null {
+  getNode(nodeId: string): Node | null {
     const element = this.getElement(nodeId);
-    return element && isComputation(element) ? element as Computation : null;
+    return element && isComputation(element) ? element as Node : null;
   }
 
   /**
@@ -195,7 +194,7 @@ export class Graph {
       const element = this._elements[index];
       
       // Call onDestroy if it's a computation and has the method
-      if (element instanceof Computation && element.onDestroy) {
+      if (isComputation(element) && element.onDestroy) {
         element.onDestroy();
       }
       
@@ -211,7 +210,7 @@ export class Graph {
     }
   }
   
-  addNode(type: string, position: { x: number; y: number }): Computation {
+  addNode(type: string, position: { x: number; y: number }): Node {
     // Type should be a package path, but we'll convert to short type for internal use
     const shortType = packagePathToType(type);
 
@@ -220,20 +219,20 @@ export class Graph {
 
     // Try to get a class-based node first (for stdlib nodes)
     const NodeClass = getNodeClass(type);
-    let computation: Computation;
+    let node: Node;
 
     if (NodeClass) {
       // Class-based node - instantiate directly
-      computation = new NodeClass(id, this);
+      node = new NodeClass(id, this);
     } else {
-      // Fallback: create base Computation for custom/function-based nodes
-      computation = new Computation(id, shortType, this);
+      // Fallback: create base Node for custom/function-based nodes
+      node = new Node(id, shortType, this);
     }
 
-    computation.position = position;
-    this.addElement(computation);
+    node.position = position;
+    this.addElement(node);
 
-    return computation;
+    return node;
   }
   
   removeNode(nodeId: string) {
@@ -290,7 +289,16 @@ export class Graph {
     if (!validation.valid) {
       throw new Error(`Invalid connection: ${validation.error}`);
     }
-    
+
+    // For non-variadic input ports, remove existing connections first (replacement behavior)
+    if (!toPort.variadic && toPort.connections && toPort.connections.length > 0) {
+      // Get connection IDs to remove
+      const connectionsToRemove = [...toPort.connections];
+      for (const conn of connectionsToRemove) {
+        this.disconnect(conn.id);
+      }
+    }
+
     // Parse port IDs to get element IDs
     const fromParsed = parsePortId(fromPort.id);
     const toParsed = parsePortId(toPort.id);
@@ -378,7 +386,7 @@ export class Graph {
    */
   private syncVariadicPortsOnNode(nodeId: string): void {
     const node = this.getNode(nodeId);
-    if (node instanceof Computation) {
+    if (node && isComputation(node)) {
       const configs = node.getVariadicConfigs();
       configs.forEach((_, baseName) => {
         node.syncVariadicPorts(baseName);
@@ -396,7 +404,7 @@ export class Graph {
   /**
    * Execute graph using topological sort for proper ordering
    */
-  async execute(entryNode?: Computation) {
+  async execute(entryNode?: Node) {
     if (this.executionState === 'running') {
       console.warn('Graph execution already in progress');
       return;
@@ -449,12 +457,12 @@ export class Graph {
   /**
    * Execute from a specific entry computation using topological sort
    */
-  private async executeFromEntry(entryNode: Computation) {
+  private async executeFromEntry(entryNode: Node) {
     // Build dependency graph starting from entry computation
-    const nodesToExecute = new Set<Computation>();
+    const nodesToExecute = new Set<Node>();
     const visited = new Set<string>();
-    
-    const collectDownstream = (node: Computation) => {
+
+    const collectDownstream = (node: Node) => {
       if (visited.has(node.id)) return;
       visited.add(node.id);
       nodesToExecute.add(node);
@@ -485,7 +493,7 @@ export class Graph {
     const sortedNodeIds = GraphValidator.topologicalSort(subgraph);
     
     // Group computations by dependency level for parallel execution
-    const nodeLevels: Computation[][] = [];
+    const nodeLevels: Node[][] = [];
     const nodeToLevel = new Map<string, number>();
     
     // Calculate level for each computation (distance from entry point)
@@ -541,7 +549,7 @@ export class Graph {
   }
   
   // Behavior Control (v1.2)
-  clearCookingNodes(except?: Computation): void {
+  clearCookingNodes(except?: Node): void {
     if (except) {
       this.cookingNodes.forEach(comp => {
         if (comp !== except) {
@@ -555,11 +563,11 @@ export class Graph {
     }
   }
   
-  isDownstreamOfCooking(node: Computation): boolean {
+  isDownstreamOfCooking(node: Node): boolean {
     // Check if computation is downstream of any cooking computation
     const visited = new Set<string>();
     
-    const checkUpstream = (n: Computation): boolean => {
+    const checkUpstream = (n: Node): boolean => {
       if (visited.has(n.id)) return false;
       visited.add(n.id);
       
@@ -862,7 +870,7 @@ export class Graph {
   /**
    * Serialize a node with v0.2 source information
    */
-  private nodeToJSON(node: Computation): any {
+  private nodeToJSON(node: Node): any {
     const fullType = node.type.includes('.') ? node.type : `cascade.lens.${node.type}`;
     const isStdlib = isStandardLibraryNode(fullType);
 
@@ -1009,14 +1017,14 @@ export class Graph {
 
       // Try to get a class-based node first (for stdlib nodes)
       const NodeClass = getNodeClass(nodeType);
-      let node: Computation;
+      let node: Node;
 
       if (NodeClass) {
         // Class-based node - instantiate directly
         node = new NodeClass(nodeId, graph);
       } else {
-        // Fallback: create base Computation for custom/function-based nodes
-        node = new Computation(nodeId, shortType, graph);
+        // Fallback: create base Node for custom/function-based nodes
+        node = new Node(nodeId, shortType, graph);
       }
 
       // Store full module path for source tracking

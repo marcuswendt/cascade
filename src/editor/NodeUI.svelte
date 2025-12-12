@@ -1,11 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { Computation } from '@/core/engine/Node';
+  import type { Node } from '@/core/engine/Node';
   import { getNodeIcon } from './nodeTemplates';
   import Icon from './Icon.svelte';
   import { getPortColor } from '@/utils/portColors';
-  
-  export let node: Computation;
+
+  export let node: Node;
   export let selected = false;
   
   const dispatch = createEventDispatcher();
@@ -496,11 +496,20 @@
     height: 12px;
     position: relative;
   }
-  
+
+  /* Invisible extended hit area for easier clicking/dragging */
+  .port::before {
+    content: '';
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+  }
+
   .port:hover {
     opacity: 0.8;
   }
-  
+
   .port-dot {
     width: 8px;
     height: 8px;

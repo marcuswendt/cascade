@@ -4,7 +4,7 @@
   import { registerPanelComponent, setSharedContext } from './renderer';
   import type { PanelContext, PanelType } from './types';
   import type { Graph } from '@/core/engine/Graph';
-  import type { Computation } from '@/core/engine/Node';
+  import type { Node } from '@/core/engine/Node';
 
   // Import panel components
   import GraphPanel from '../panels/GraphPanel.svelte';
@@ -25,7 +25,7 @@
 
   // Props from parent
   export let graph: Graph | undefined = undefined;
-  export let selectedNode: Computation | null = null;
+  export let selectedNode: Node | null = null;
   export let selectedAnnotation: string | null = null;
   export let activeTool: string = 'select';
   export let activeLibrary: string | null = null;
@@ -46,7 +46,7 @@
     documentName,
     presentationMode,
     onRecordHistory,
-    onNodeSelect: (node: Computation | null) => {
+    onNodeSelect: (node: Node | null) => {
       dispatch('nodeSelect', { node });
     },
     onAnnotationSelect: (annotationId: string | null) => {

@@ -1,5 +1,5 @@
 import type { Graph } from './Graph.js';
-import type { Computation } from './Node.js';
+import type { Node } from './Node.js';
 import type { Connection } from '../../types/node.types.js';
 
 export interface ValidationError {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { Computation } from '@/core/engine/Node';
+  import type { Node } from '@/core/engine/Node';
   import type { InputPort, Prop, OutputPort } from '@/types/node.types';
   import type { Graph, CanvasAnnotation } from '@/core/engine/Graph';
   import type { Annotation } from '@/nodes/annotations/Annotation';
@@ -16,8 +16,8 @@
   import ColorRampEditor from './components/ColorRampEditor.svelte';
   import { propUpdateCounters } from './stores/propUpdateStore';
   import { normalizeColor, colorToHex } from '@/utils/colorUtils';
-  
-  export let node: Computation | null = null;
+
+  export let node: Node | null = null;
   export let annotation: CanvasAnnotation | null = null;
   export let graph: Graph | null = null;
   export let position: 'right' | 'left' = 'right';
@@ -63,9 +63,9 @@
     const counters = $propUpdateCounters;
     propsUpdateCounter = node ? (counters.get(node.id) || 0) : 0;
   }
-  // Create a stringified version of all prop values to force reactivity when values change
+  // Create a stringified version of all prop values AND params to force reactivity when either change
   // CRITICAL: Include propsUpdateCounter in the calculation to force recalculation when props update
-  $: propsValueKey = (nodeProps && propsUpdateCounter >= 0) ? Object.entries(nodeProps).map(([k, p]) => `${k}:${JSON.stringify(p.value)}`).join('|') + `|counter:${propsUpdateCounter}` : '';
+  $: propsValueKey = (nodeProps && propsUpdateCounter >= 0) ? Object.entries(nodeProps).map(([k, p]) => `${k}:${JSON.stringify(p.value)}:${JSON.stringify(p.params)}`).join('|') + `|counter:${propsUpdateCounter}` : '';
   // Make props reactive to nodeProps, propsCount, propsValueKey, and propsUpdateCounter to ensure updates are detected
   let props: Array<[string, Prop]> = [];
   $: {
@@ -963,11 +963,13 @@
                   {/if}
                   
                   {#if controlType === 'number' || controlType === 'slider' || controlType === 'int'}
-                    <NumberInput
-                      {prop}
-                      id={inputId}
-                      onValueChange={(value) => handlePropChange([key, prop], value)}
-                    />
+                    {#key `${key}-${prop.value}-${JSON.stringify(prop.params)}`}
+                      <NumberInput
+                        {prop}
+                        id={inputId}
+                        onValueChange={(value) => handlePropChange([key, prop], value)}
+                      />
+                    {/key}
                   {:else if isVector}
                     {#key `${key}-${JSON.stringify(prop.value)}-${propsValueKey}-${propsUpdateCounter}`}
                       <VectorInput

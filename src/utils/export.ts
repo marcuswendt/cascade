@@ -1,5 +1,5 @@
 import type { Graph } from '@/core/engine/Graph';
-import type { Computation } from '@/core/engine/Node';
+import type { Node } from '@/core/engine/Node';
 import type { Asset } from '@/core/engine/AssetManager';
 
 export interface ExportOptions {
@@ -15,7 +15,7 @@ export function compileGraph(graph: Graph): string {
   const nodes = graph.elements
     .filter(e => e.kind === 'computation')
     .map(node => {
-      const comp = node as Computation;
+      const comp = node as Node;
       return {
         id: comp.id,
         type: comp.type,
@@ -49,7 +49,7 @@ export function compileGraph(graph: Graph): string {
   // Find entry points (computations with no input connections)
   const entryPoints = graph.elements
     .filter(e => e.kind === 'computation')
-    .map(e => e as Computation)
+    .map(e => e as Node)
     .filter(comp => comp.inputs.every(p => p.connections.length === 0))
     .map(comp => comp.id);
 

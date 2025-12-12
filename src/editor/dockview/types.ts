@@ -4,7 +4,7 @@ import type {
   IDockviewPanel
 } from 'dockview-core';
 import type { Graph } from '@/core/engine/Graph';
-import type { Computation } from '@/core/engine/Node';
+import type { Node } from '@/core/engine/Node';
 
 // Panel type identifiers
 export type PanelType = 'graph' | 'inspector' | 'viewer' | 'log' | 'code';
@@ -22,14 +22,14 @@ export interface CascadePanelParams {
 // Shared context passed to all panels
 export interface PanelContext {
   graph: Graph | undefined;
-  selectedNode: Computation | null;
+  selectedNode: Node | null;
   selectedAnnotation: string | null;
   activeTool: string;
   activeLibrary: string | null;
   documentName: string;
   presentationMode: boolean;
   onRecordHistory?: () => void;
-  onNodeSelect?: (node: Computation | null) => void;
+  onNodeSelect?: (node: Node | null) => void;
   onAnnotationSelect?: (annotationId: string | null) => void;
   onToolChange?: (tool: string) => void;
   onLibraryToggle?: (libraryId: string | null) => void;

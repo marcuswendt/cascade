@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { CascadePanelParams } from '../dockview/types';
   import type { Graph, CanvasAnnotation } from '@/core/engine/Graph';
-  import type { Computation } from '@/core/engine/Node';
+  import type { Node } from '@/core/engine/Node';
   import Inspector from '../Inspector.svelte';
   import { sharedContextStore, panelLockStore } from '../dockview/renderer';
 
@@ -12,7 +12,7 @@
 
   // Props from shared context
   export let graph: Graph | undefined = undefined;
-  export let selectedNode: Computation | null = null;
+  export let selectedNode: Node | null = null;
   export let selectedAnnotation: string | null = null;
   export let onRecordHistory: (() => void) | undefined = undefined;
 

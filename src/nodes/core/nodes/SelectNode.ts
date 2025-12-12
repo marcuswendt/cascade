@@ -3,11 +3,11 @@
  * Connect multiple inputs and use the index parameter to select which one passes through
  */
 
-import { Computation } from '@/core/engine/Node';
+import { Node } from '@/core/engine/Node';
 import type { Graph } from '@/core/engine/Graph';
 import type { OutputPort } from '@/types/node.types';
 
-export class SelectNode extends Computation {
+export class SelectNode extends Node {
   private output!: OutputPort<any>;
 
   constructor(id: string, graph: Graph) {
@@ -44,9 +44,9 @@ export class SelectNode extends Computation {
   private update(): void {
     const inputs = this.getVariadicInputs('input');
 
-    // Update index max based on connected inputs
+    // Update index max based on connected inputs (triggers UI reactivity)
     const connectedCount = inputs.filter(p => p.connections.length > 0).length;
-    this.props.index.params!.max = Math.max(0, connectedCount - 1);
+    this.updatePropParams('index', { max: Math.max(0, connectedCount - 1) });
 
     const idx = Math.min(this.props.index.value, inputs.length - 1);
     const selectedInput = inputs[idx];

@@ -3,11 +3,11 @@
  * Connect multiple inputs to create an array of values
  */
 
-import { Computation } from '@/core/engine/Node';
+import { Node } from '@/core/engine/Node';
 import type { Graph } from '@/core/engine/Graph';
 import type { OutputPort } from '@/types/node.types';
 
-export class MergeNode extends Computation {
+export class MergeNode extends Node {
   private output!: OutputPort<any[]>;
 
   constructor(id: string, graph: Graph) {
@@ -17,7 +17,7 @@ export class MergeNode extends Computation {
   protected setup(): void {
     // Define variadic inputs - automatically grows as connections are made
     this.defineVariadicInput('input', {
-      minCount: 2,
+      minCount: 1,
       defaultValue: null
     });
 

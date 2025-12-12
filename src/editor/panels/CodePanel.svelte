@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { CascadePanelParams } from '../dockview/types';
   import type { Graph } from '@/core/engine/Graph';
-  import type { Computation } from '@/core/engine/Node';
+  import type { Node } from '@/core/engine/Node';
   import CodeEditor from '../CodeEditor.svelte';
   import { sharedContextStore } from '../dockview/renderer';
 
@@ -15,7 +15,7 @@
   export let onRecordHistory: (() => void) | undefined = undefined;
 
   // Get the node from the graph using nodeId from params
-  let node: Computation | null = null;
+  let node: Node | null = null;
   const nodeId = panelParams?.nodeId;
 
   // Subscribe to context store for reactive updates

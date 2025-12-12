@@ -2,6 +2,7 @@ import type { InputPort, OutputPort, PortOptions, PortType, Prop, VariadicConfig
 import type { Graph } from './Graph.js';
 import { typeToPackagePath, isStandardLibraryNode } from '../../utils/nodeTypeUtils.js';
 import { normalizeColor, isColorValue } from '../../utils/colorUtils.js';
+import { incrementPropUpdateCounter } from '../../editor/stores/propUpdateStore.js';
 
 export type ElementKind = 'computation' | 'annotation';
 
@@ -242,6 +243,21 @@ export class Node {
     this.markDirty();
   }
 
+  /**
+   * Update prop params (e.g., min, max) and trigger UI reactivity
+   */
+  updatePropParams(name: string, params: Partial<Prop['params']>): void {
+    if (!this.props[name]) return;
+
+    this.props[name] = {
+      ...this.props[name],
+      params: { ...this.props[name].params, ...params }
+    };
+    this.props = { ...this.props };
+    // Trigger Svelte store reactivity for Inspector
+    incrementPropUpdateCounter(this.id);
+  }
+
   watchProp(name: string, callback: Function): void {
     if (!this.propWatchers.has(name)) this.propWatchers.set(name, []);
     this.propWatchers.get(name)!.push(callback);
@@ -279,6 +295,14 @@ export class Node {
     for (let i = 0; i < targetCount; i++) {
       const port = this.in(`${baseName}_${i}`, config.defaultValue, { ...config.portOptions, hidden: false });
       port.variadic = true;  // Mark as variadic port
+      // Set up onChange to trigger node update when variadic input changes
+      if (!port.onChange) {
+        port.onChange = () => {
+          if (this.onUpdate) {
+            this.onUpdate();
+          }
+        };
+      }
     }
 
     for (let i = targetCount; i < existingPorts.length; i++) {
@@ -545,6 +569,3 @@ export class Node {
     return result;
   }
 }
-
-// Re-export for backwards compatibility during transition
-export { Node as Computation };

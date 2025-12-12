@@ -1,5 +1,5 @@
 import { Graph } from '../core/engine/Graph.js';
-import { Computation } from '../core/engine/Computation.js';
+import { Node } from '../core/engine/Node.js';
 import { AssetManager, NodeAssetLoader } from '../core/engine/AssetManager.js';
 import { PackageManager } from '../core/engine/PackageManager.js';
 import * as fs from 'fs/promises';
@@ -48,9 +48,9 @@ export async function runGraph(options: RunOptions): Promise<void> {
   // Ports should already be restored from JSON metadata (if available)
   // Only execute computations if ports weren't restored from metadata
   // This avoids unnecessary execution just for port discovery
-  const nodesNeedingExecution: Computation[] = [];
+  const nodesNeedingExecution: Node[] = [];
   for (const element of graph.elements.filter(e => e.kind === 'computation')) {
-    const node = element as Computation;
+    const node = element as Node;
     // Check if computation has ports (restored from metadata)
     // If not, we may need to execute to create them
     const hasPorts = node.inputs.length > 0 || node.outputs.length > 0;

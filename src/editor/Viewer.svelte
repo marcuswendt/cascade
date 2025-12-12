@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { Graph } from '@/core/engine/Graph';
-  import type { Computation } from '@/core/engine/Node';
-  
+  import type { Node } from '@/core/engine/Node';
+
   export let graph: Graph | undefined;
-  export let selectedNode: Computation | null = null;
+  export let selectedNode: Node | null = null;
 
   let container: HTMLDivElement;
   let currentViewer: 'canvas' | 'image' | 'text' | 'empty' = 'empty';
-  let displayNode: Computation | null = null;
+  let displayNode: Node | null = null;
   
   // Determine which node to display
   $: {

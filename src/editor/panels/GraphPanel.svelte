@@ -2,7 +2,7 @@
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import type { CascadePanelParams } from '../dockview/types';
   import type { Graph } from '@/core/engine/Graph';
-  import type { Computation } from '@/core/engine/Node';
+  import type { Node } from '@/core/engine/Node';
   import Canvas from '../Canvas.svelte';
   import { sharedContextStore } from '../dockview/renderer';
   import { dockviewStore } from '../dockview/dockview-store.svelte';
@@ -14,12 +14,12 @@
 
   // These props are passed during mount but we'll use the store for reactivity
   export let graph: Graph | undefined = undefined;
-  export let selectedNode: Computation | null = null;
+  export let selectedNode: Node | null = null;
   export let selectedAnnotation: string | null = null;
   export let activeTool: string = 'select';
   export let presentationMode: boolean = false;
   export let onRecordHistory: (() => void) | undefined = undefined;
-  export let onNodeSelect: ((node: Computation | null) => void) | undefined = undefined;
+  export let onNodeSelect: ((node: Node | null) => void) | undefined = undefined;
   export let onAnnotationSelect: ((annotationId: string | null) => void) | undefined = undefined;
   export let onToolChange: ((tool: string) => void) | undefined = undefined;
   export let onOpenNodePanel: ((position?: { x: number; y: number }) => void) | undefined = undefined;
@@ -49,7 +49,7 @@
     onOpenNodePanel = $sharedContextStore.onOpenNodePanel;
   }
 
-  function handleNodeSelect(e: CustomEvent<{ node: Computation | null }>) {
+  function handleNodeSelect(e: CustomEvent<{ node: Node | null }>) {
     if (onNodeSelect) {
       onNodeSelect(e.detail.node);
     }
@@ -71,7 +71,7 @@
     }
   }
 
-  function handleNodeEdit(e: CustomEvent<{ node: Computation }>) {
+  function handleNodeEdit(e: CustomEvent<{ node: Node }>) {
     const node = e.detail.node;
     if (node) {
       dockviewStore.openCodeEditor(node.id, node.type || 'Code');

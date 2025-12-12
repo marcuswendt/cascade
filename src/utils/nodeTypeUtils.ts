@@ -2,17 +2,47 @@
  * Utilities for handling node type names and package paths
  */
 
-import type { Computation } from '@/core/engine/Node';
+import type { Node } from '@/core/engine/Node';
 import type { Graph } from '@/core/engine/Graph';
 
 // Node function type - receives the node instance and graph
-export type NodeFunction = (node: Computation, graph: Graph) => void | Promise<void>;
+export type NodeFunction = (node: Node, graph: Graph) => void | Promise<void>;
 
 // Type for class-based node constructors
-export type NodeClass = new (id: string, graph: Graph) => Computation;
+export type NodeClass = new (id: string, graph: Graph) => Node;
 
 // Class-based node registries (populated by library modules)
 const nodeClassRegistries: Map<string, Record<string, NodeClass>> = new Map();
+
+// Source code registry for stdlib nodes (populated by library modules)
+const nodeSourceRegistry: Map<string, string> = new Map();
+
+/**
+ * Register source code for a node type
+ * Called by library modules during initialization
+ */
+export function registerNodeSource(type: string, source: string): void {
+  nodeSourceRegistry.set(type, source);
+}
+
+/**
+ * Get source code for a node type
+ * Returns null if no source is registered (custom nodes)
+ */
+export function getNodeSource(type: string): string | null {
+  // Try full package path first
+  if (nodeSourceRegistry.has(type)) {
+    return nodeSourceRegistry.get(type) || null;
+  }
+
+  // Try short type name
+  const shortType = packagePathToType(type);
+  if (nodeSourceRegistry.has(shortType)) {
+    return nodeSourceRegistry.get(shortType) || null;
+  }
+
+  return null;
+}
 
 /**
  * Register node classes from a library

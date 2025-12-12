@@ -5,7 +5,7 @@ import type {
 import { mount, unmount, type Component } from 'svelte';
 import { writable, get, type Writable } from 'svelte/store';
 import type { CascadePanelParams, PanelContext } from './types';
-import type { Computation } from '@/core/engine/Node';
+import type { Node } from '@/core/engine/Node';
 
 // Registry of panel components
 export interface PanelComponentEntry {
@@ -21,7 +21,7 @@ export const sharedContextStore: Writable<PanelContext | null> = writable(null);
 // Lock state for panels (panel ID -> locked node)
 export interface PanelLockState {
   isLocked: boolean;
-  lockedNode: Computation | null;
+  lockedNode: Node | null;
   lockedAnnotationId: string | null;
 }
 

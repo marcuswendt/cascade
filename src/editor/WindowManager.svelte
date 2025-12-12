@@ -10,12 +10,12 @@
   import GraphTabs from './GraphTabs.svelte';
   import CodeEditor from './CodeEditor.svelte';
   import type { Graph } from '@/core/engine/Graph';
-  import type { Computation } from '@/core/engine/Node';
+  import type { Node } from '@/core/engine/Node';
 
   import { createEventDispatcher } from 'svelte';
 
   export let graph: Graph | undefined;
-  export let selectedNode: Computation | null = null;
+  export let selectedNode: Node | null = null;
   export let selectedAnnotation: string | null = null;
   export let activeTool: string = 'select';
   export let activeLibrary: string | null = null;
@@ -39,7 +39,7 @@
     type: 'graph' | 'editor' | 'viewer' | 'log' | 'inspector';
     label: string;
     windowId: string; // Which window region this tab belongs to: 'graph', 'viewer', 'log', 'inspector'
-    node?: Computation; // Only for editor tabs
+    node?: Node; // Only for editor tabs
     icon?: string; // Optional icon for the tab
   }
   
@@ -184,7 +184,7 @@
     activeTabIds = new Map(activeTabIds);
   }
   
-  function openEditorTab(node: Computation, targetWindowId: string = 'graph') {
+  function openEditorTab(node: Node, targetWindowId: string = 'graph') {
     // Always ensure default tab exists when opening an editor
     ensureDefaultTab(targetWindowId);
     const tabs = getTabsForWindow(targetWindowId);
@@ -331,7 +331,7 @@
     }
   }
   
-  function handleNodeEdit(e: CustomEvent<{ node: Computation }>) {
+  function handleNodeEdit(e: CustomEvent<{ node: Node }>) {
     openEditorTab(e.detail.node, 'graph');
   }
   
@@ -574,7 +574,7 @@
   $: inspectorActiveTabId = activeTabIds.get('inspector');
   
   // Get currently cooking node for Viewer title
-  let cookingNode: Computation | null = null;
+  let cookingNode: Node | null = null;
   $: {
     // Force reactivity by accessing cookingNodes
     if (graph) {
@@ -593,8 +593,13 @@
     } else if (selectedAnnotation && graph) {
       const annotation = graph.getAnnotation(selectedAnnotation);
       if (annotation) {
-        const annotationName = annotation.type === 'text' ? 'Text' : annotation.type || 'Annotation';
-        inspectorTitle = annotationName;
+        // For image annotations, prefer caption (filename) over type
+        if (annotation.type === 'image' && annotation.caption) {
+          inspectorTitle = annotation.caption;
+        } else {
+          const annotationName = annotation.type === 'text' ? 'Text' : annotation.type || 'Annotation';
+          inspectorTitle = annotationName;
+        }
       } else {
         inspectorTitle = 'Inspector';
       }

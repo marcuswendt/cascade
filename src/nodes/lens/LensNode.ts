@@ -3,12 +3,12 @@
  * Provides common utilities for canvas, image, and pixel manipulation
  */
 
-import { Computation } from '@/core/engine/Node';
+import { Node } from '@/core/engine/Node';
 import type { Graph } from '@/core/engine/Graph';
 
 export type ImageInput = HTMLCanvasElement | HTMLImageElement | null;
 
-export abstract class LensNode extends Computation {
+export abstract class LensNode extends Node {
   constructor(id: string, type: string, graph: Graph) {
     super(id, type, graph);
   }

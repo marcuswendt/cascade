@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { CascadePanelParams } from '../dockview/types';
   import type { Graph } from '@/core/engine/Graph';
-  import type { Computation } from '@/core/engine/Node';
+  import type { Node } from '@/core/engine/Node';
   import Viewer from '../Viewer.svelte';
   import { sharedContextStore, panelLockStore } from '../dockview/renderer';
 
@@ -12,7 +12,7 @@
 
   // Props from shared context
   export let graph: Graph | undefined = undefined;
-  export let selectedNode: Computation | null = null;
+  export let selectedNode: Node | null = null;
 
   // The node to actually display (locked or selected)
   $: lockState = $panelLockStore.get(panelId);
