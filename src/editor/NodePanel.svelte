@@ -123,6 +123,10 @@
     
     // Handle click outside to close menu
     const handleDocumentClick = (e: MouseEvent) => {
+      // Don't close if dialog is open
+      if (showCustomNodeDialog) {
+        return;
+      }
       if (libraryId || categoryId) {
         const target = e.target as HTMLElement;
         // Check if click is outside all menu columns
@@ -133,6 +137,11 @@
             clickedInside = true;
           }
         });
+        // Also check if click is inside the dialog
+        const dialogOverlay = document.querySelector('.dialog-overlay');
+        if (dialogOverlay?.contains(target)) {
+          clickedInside = true;
+        }
         if (!clickedInside) {
           handleClose();
         }
@@ -574,10 +583,12 @@
     tabindex="-1"
     on:keydown={handleKeyDown}
     on:mouseleave|self={(e) => {
-      // Only close if not moving to a submenu
+      // Only close if not moving to a submenu or dialog
       setTimeout(() => {
+        if (showCustomNodeDialog) return;
         const activeHover = document.querySelector('.menu-column:hover');
-        if (!activeHover) {
+        const dialogOpen = document.querySelector('.dialog-overlay');
+        if (!activeHover && !dialogOpen) {
           handleClose();
         }
       }, 100);
