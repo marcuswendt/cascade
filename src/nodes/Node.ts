@@ -777,6 +777,8 @@ export class Node {
 
   setFunction(fn: Function): void {
     this.nodeFunction = fn;
+    // Reset execution state so the new function runs as initialization
+    this.hasExecuted = false;
   }
 
   private createTimeoutPromise(ms: number): Promise<never> {
@@ -786,7 +788,9 @@ export class Node {
   }
 
   async execute(): Promise<void> {
-    if (!this.nodeFunction) return;
+    if (!this.nodeFunction) {
+      return;
+    }
 
     const needsInitialization = !this.hasExecuted;
 
@@ -795,7 +799,9 @@ export class Node {
       return;
     }
 
-    if (!needsInitialization && !this.isDirty) return;
+    if (!needsInitialization && !this.isDirty) {
+      return;
+    }
 
     // Evaluate all expressions before execution
     this.evaluateAllExpressions();

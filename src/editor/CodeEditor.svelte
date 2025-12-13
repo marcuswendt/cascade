@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import * as monaco from 'monaco-editor';
+  import ts from 'typescript';
   import type { Node } from '@/nodes/Node';
   import type { Graph } from '@/nodes/Graph';
   import PackageSearch from './PackageSearch.svelte';
@@ -12,6 +13,25 @@
   import { getAICodeGenerator, AICodeGenerator } from './ai/AICodeGenerator';
   import type { AIProvider } from './ai/types';
   import { settingsStore } from './stores/settingsStore';
+
+  /**
+   * Transpile TypeScript code to JavaScript
+   * Strips type annotations, generics, interfaces, etc.
+   */
+  function transpileTypeScript(code: string): string {
+    const result = ts.transpileModule(code, {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2020,
+        module: ts.ModuleKind.ESNext,
+        removeComments: false,
+        // Don't emit helpers - we want simple output
+        noEmitHelpers: true,
+        // Allow JS features
+        allowJs: true,
+      }
+    });
+    return result.outputText;
+  }
 
   // Node runtime type definitions for Monaco
   // These provide autocomplete for custom node code
@@ -336,15 +356,35 @@ declare const graph: any;
 
       node.resetPortTracking();
 
-      const wrappedCode = `return (async function(node, graph) {\n${code}\n})(node, graph);`;
+      // Transpile TypeScript to JavaScript (strips type annotations, generics, etc.)
+      const jsCode = transpileTypeScript(code);
+
+      const wrappedCode = `return (async function(node, graph) {\n${jsCode}\n})(node, graph);`;
       const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
 
+      // Store original TypeScript code (for editing), but run the transpiled JS
       node.code = code;
       node.setFunction(nodeFunction);
 
+      // Temporarily disable bypass so the code actually runs during compilation
+      // This ensures ports get registered in the tracking set
+      const wasBypassed = node.bypass;
+      if (wasBypassed) {
+        node.setBypass(false);
+      }
+
+      // Mark dirty to force execution even if node was already executed
+      node.markDirty();
+
       await node.execute();
 
+      // Restore bypass state
+      if (wasBypassed) {
+        node.setBypass(true);
+      }
+
       node.cleanupUnusedPorts();
+
       node.restoreState(oldState);
 
       if (node.onReady) {
