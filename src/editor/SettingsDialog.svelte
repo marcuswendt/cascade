@@ -179,11 +179,19 @@
                 <div class="form-group">
                   <label>API Key</label>
                   <div class="key-input-wrapper">
-                    <input
-                      type={showKeyIds.has(entry.id) ? 'text' : 'password'}
-                      bind:value={entry.key}
-                      placeholder="Enter API key"
-                    />
+                    {#if showKeyIds.has(entry.id)}
+                      <input
+                        type="text"
+                        bind:value={entry.key}
+                        placeholder="Enter API key"
+                      />
+                    {:else}
+                      <input
+                        type="password"
+                        bind:value={entry.key}
+                        placeholder="Enter API key"
+                      />
+                    {/if}
                     <button
                       class="toggle-visibility"
                       on:click={() => toggleShowKey(entry.id)}
