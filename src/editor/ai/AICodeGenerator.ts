@@ -34,11 +34,32 @@ export class AICodeGenerator {
   }
 
   /**
-   * Check if a provider is configured
+   * Check if a provider is configured (API key only)
    */
   isConfigured(provider: AIProvider): boolean {
     const config = this.configs.get(provider);
     return !!config?.apiKey;
+  }
+
+  /**
+   * Check if a provider is available (API key or CLI fallback)
+   * For Claude, this also checks if the CLI is available when no API key is set
+   */
+  async isAvailable(provider: AIProvider): Promise<boolean> {
+    // First check if API key is configured
+    if (this.isConfigured(provider)) {
+      return true;
+    }
+
+    // For Claude, check CLI availability
+    if (provider === 'claude') {
+      const claudeProvider = this.providers.get('claude') as any;
+      if (claudeProvider?.checkCliAvailable) {
+        return claudeProvider.checkCliAvailable();
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -67,7 +88,9 @@ export class AICodeGenerator {
       throw new Error(`Unknown provider: ${request.provider}`);
     }
 
-    if (!this.isConfigured(request.provider)) {
+    // For Claude, we allow generation without API key (uses CLI fallback)
+    // For other providers, require API key
+    if (request.provider !== 'claude' && !this.isConfigured(request.provider)) {
       throw new Error(`Provider ${request.provider} is not configured. Please add an API key in Settings.`);
     }
 
@@ -87,7 +110,9 @@ export class AICodeGenerator {
       return;
     }
 
-    if (!this.isConfigured(request.provider)) {
+    // For Claude, we allow generation without API key (uses CLI fallback)
+    // For other providers, require API key
+    if (request.provider !== 'claude' && !this.isConfigured(request.provider)) {
       callbacks.onError(
         new Error(`Provider ${request.provider} is not configured. Please add an API key in Settings.`)
       );

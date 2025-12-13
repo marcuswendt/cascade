@@ -473,9 +473,14 @@ node.onReady = () => {
 
     const generator = getAICodeGenerator();
 
-    // Check if provider is configured
-    if (!generator.isConfigured(aiModel)) {
-      aiError = `${aiModel} is not configured. Add your API key in Settings.`;
+    // Check if provider is available (API key or CLI fallback for Claude)
+    const available = await generator.isAvailable(aiModel);
+    if (!available) {
+      if (aiModel === 'claude') {
+        aiError = 'Claude API key not configured and CLI not available. Add API key in Settings or install claude CLI.';
+      } else {
+        aiError = `${aiModel} is not configured. Add your API key in Settings.`;
+      }
       return;
     }
 

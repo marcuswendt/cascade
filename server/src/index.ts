@@ -4,6 +4,7 @@ import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { projectsRouter } from './routes/projects.js';
 import { assetsRouter } from './routes/assets.js';
+import { aiRouter } from './routes/ai.js';
 import { setupWebSocket } from './services/websocket.js';
 
 const app = express();
@@ -18,6 +19,7 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use('/api/projects', projectsRouter);
 app.use('/api/projects', assetsRouter);
+app.use('/api/ai', aiRouter);
 
 // Health check
 app.get('/health', (req, res) => {
