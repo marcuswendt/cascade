@@ -31,6 +31,14 @@ export class OutputNode extends Node {
       displayName: 'Output Index'
     });
 
+    // Watch for index changes to trigger parent port sync
+    this.watchProp('outputIndex', () => {
+      if (this.parent && (this.parent as any).syncPorts) {
+        (this.parent as any).syncPorts();
+      }
+      this.update();
+    });
+
     this.onUpdate = () => this.update();
     this.onReady = () => this.update();
   }

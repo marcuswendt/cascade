@@ -233,6 +233,19 @@
 
   $: visibleNodes = getVisibleElements(graph.nodes, currentNetwork);
 
+  /**
+   * Add a child node to a parent network, using addChild() if available
+   * This ensures SubnetNode.syncPorts() is called when Input/Output nodes are added
+   */
+  function addChildToNetwork(parent: Node, child: Node): void {
+    if ((parent as any).addChild) {
+      (parent as any).addChild(child);
+    } else {
+      child.parent = parent;
+      (parent as any)._children.push(child);
+    }
+  }
+
   // Collapse selected nodes into a new subnet (Cmd+G)
   function collapseIntoSubnet() {
     if (selectedNodes.length === 0) return;
@@ -289,8 +302,7 @@
 
     // Set parent to current network if we're inside one
     if (currentNetwork) {
-      subnet.parent = currentNetwork;
-      (currentNetwork as any)._children.push(subnet);
+      addChildToNetwork(currentNetwork, subnet);
     }
 
     // Move nodes into the subnet (set parent, adjust positions)
@@ -302,13 +314,12 @@
         if (idx !== -1) parentChildren.splice(idx, 1);
       }
 
-      node.parent = subnet;
       // Adjust position relative to subnet center
       node.position = {
         x: node.position.x - subnet.position.x,
         y: node.position.y - subnet.position.y
       };
-      (subnet as any)._children.push(node);
+      addChildToNetwork(subnet, node);
     });
 
     // Handle incoming connections: create Input nodes
@@ -320,8 +331,7 @@
         y: bounds.minY - subnet.position.y + (index * 80)
       });
       inputNode.id = graph.generateUniqueNodeId('input');
-      inputNode.parent = subnet;
-      (subnet as any)._children.push(inputNode);
+      addChildToNetwork(subnet, inputNode);
 
       // Set input index
       if (inputNode.props.inputIndex) {
@@ -1508,8 +1518,7 @@ node.onReady = () => {
                       y: (toElement.children().length - toElement.children().filter((n: Node) => n.type === 'Input').length) * 80
                     });
                     inputNode.id = graph.generateUniqueNodeId('input');
-                    inputNode.parent = toElement;
-                    (toElement as any)._children.push(inputNode);
+                    addChildToNetwork(toElement, inputNode);
 
                     // Set the input index based on existing Input nodes
                     const existingInputNodes = toElement.children().filter((n: Node) => n.type === 'Input');
@@ -2813,9 +2822,8 @@ node.onReady = () => {
     const newNode = graph.addNode(nodeType, { x: centerX, y: centerY });
 
     // Set parent if we're inside a subnet
-    if (currentNetwork) {
-      newNode.parent = currentNetwork;
-      (currentNetwork as any)._children.push(newNode);
+    if (currentNetwork && currentNetwork.isNetwork()) {
+      addChildToNetwork(currentNetwork, newNode);
     }
 
     // Class-based nodes (stdlib) are already initialized by their constructor

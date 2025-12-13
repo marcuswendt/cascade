@@ -41,6 +41,14 @@ export class InputNode extends Node {
       displayName: 'Input Name'
     });
 
+    // Watch for index changes to trigger parent port sync
+    this.watchProp('inputIndex', () => {
+      if (this.parent && (this.parent as any).syncPorts) {
+        (this.parent as any).syncPorts();
+      }
+      this.update();
+    });
+
     this.onUpdate = () => this.update();
     this.onReady = () => this.update();
   }

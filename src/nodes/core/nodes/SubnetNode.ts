@@ -5,7 +5,7 @@
 
 import { Node } from '../../Node.js';
 import type { Graph } from '../../Graph.js';
-import type { OutputPort } from '@/types/node.types';
+import type { InputPort, OutputPort } from '@/types/node.types';
 
 export const nodeMetadata = {
   type: 'Subnet',
@@ -16,21 +16,18 @@ export const nodeMetadata = {
 };
 
 export class SubnetNode extends Node {
-  private output!: OutputPort<any>;
-
   constructor(id: string, graph: Graph) {
     super(id, 'Subnet', graph);
   }
 
   protected setup(): void {
-    // Subnet has one input (passed to internal Input nodes)
-    this.in('input', null);
-
-    // Subnet has one output (from internal Output node or cooking node)
-    this.output = this.out('output');
-
+    // Ports are dynamically created based on child Input/Output nodes
+    // Start with no ports - they'll be synced when children are added
     this.onUpdate = () => this.update();
-    this.onReady = () => this.update();
+    this.onReady = () => {
+      this.syncPorts();
+      this.update();
+    };
   }
 
   /**
@@ -46,6 +43,10 @@ export class SubnetNode extends Node {
   addChild(node: Node): void {
     node.parent = this;
     this._children.push(node);
+    // Sync ports when Input/Output nodes are added
+    if (node.type === 'Input' || node.type === 'Output') {
+      this.syncPorts();
+    }
   }
 
   /**
@@ -54,9 +55,97 @@ export class SubnetNode extends Node {
   removeChild(node: Node): void {
     const index = this._children.indexOf(node);
     if (index !== -1) {
+      const wasInputOutput = node.type === 'Input' || node.type === 'Output';
       this._children.splice(index, 1);
       node.parent = null;
+      // Sync ports when Input/Output nodes are removed
+      if (wasInputOutput) {
+        this.syncPorts();
+      }
     }
+  }
+
+  /**
+   * Sync input/output ports based on child Input/Output nodes
+   */
+  syncPorts(): void {
+    // Find all Input nodes and determine required input ports
+    const inputNodes = this._children.filter(n => n.type === 'Input');
+    const maxInputIndex = inputNodes.reduce((max, node) => {
+      const idx = (node as any).inputIndex ?? 0;
+      return Math.max(max, idx);
+    }, -1);
+
+    // Find all Output nodes and determine required output ports
+    const outputNodes = this._children.filter(n => n.type === 'Output');
+    const maxOutputIndex = outputNodes.reduce((max, node) => {
+      const idx = (node as any).outputIndex ?? 0;
+      return Math.max(max, idx);
+    }, -1);
+
+    // Sync input ports
+    const requiredInputs = maxInputIndex + 1;
+    const currentInputs = this.inputs.length;
+
+    // Add missing input ports
+    for (let i = currentInputs; i < requiredInputs; i++) {
+      const port = this.in(`input_${i}`, null);
+      // When input value changes, update any Input nodes referencing this index
+      port.onChange = (value: any) => {
+        this._children
+          .filter(n => n.type === 'Input' && (n as any).inputIndex === i)
+          .forEach(n => n.markDirty());
+      };
+    }
+
+    // Hide excess input ports (don't remove to preserve connections)
+    for (let i = requiredInputs; i < currentInputs; i++) {
+      if (this.inputs[i]) {
+        this.inputs[i].options = { ...this.inputs[i].options, hidden: true };
+      }
+    }
+    // Unhide needed ports
+    for (let i = 0; i < requiredInputs; i++) {
+      if (this.inputs[i]) {
+        this.inputs[i].options = { ...this.inputs[i].options, hidden: false };
+      }
+    }
+
+    // Sync output ports
+    const requiredOutputs = Math.max(1, maxOutputIndex + 1); // Always have at least one output
+    const currentOutputs = this.outputs.length;
+
+    // Add missing output ports
+    for (let i = currentOutputs; i < requiredOutputs; i++) {
+      this.out(`output_${i}`);
+    }
+
+    // Hide excess output ports
+    for (let i = requiredOutputs; i < currentOutputs; i++) {
+      if (this.outputs[i]) {
+        this.outputs[i].options = { ...this.outputs[i].options, hidden: true };
+      }
+    }
+    // Unhide needed ports
+    for (let i = 0; i < requiredOutputs; i++) {
+      if (this.outputs[i]) {
+        this.outputs[i].options = { ...this.outputs[i].options, hidden: false };
+      }
+    }
+
+    // If no Input nodes, ensure at least one default input exists (but hidden if no nodes)
+    if (requiredInputs === 0 && this.inputs.length === 0) {
+      // No inputs needed - that's fine
+    }
+
+    // Ensure at least one output if no Output nodes (for cooking node fallback)
+    if (this.outputs.length === 0) {
+      this.out('output');
+    }
+
+    // Trigger reactivity
+    this.inputs = [...this.inputs];
+    this.outputs = [...this.outputs];
   }
 
   /**
@@ -91,18 +180,49 @@ export class SubnetNode extends Node {
   }
 
   private update(): void {
-    // Get output from the output node
-    const outNode = this.outputNode();
-    if (outNode && outNode.outputs.length > 0) {
-      this.output.setValue(outNode.outputs[0].value);
+    // Update each output based on corresponding Output nodes
+    const outputNodes = this._children.filter(n => n.type === 'Output');
 
-      // Pass through preview
-      if (outNode.preview) {
-        this.preview = outNode.preview;
+    // Group output nodes by their outputIndex
+    const outputByIndex = new Map<number, Node>();
+    for (const node of outputNodes) {
+      const idx = (node as any).outputIndex ?? 0;
+      outputByIndex.set(idx, node);
+    }
+
+    // Update each output port
+    for (let i = 0; i < this.outputs.length; i++) {
+      const outNode = outputByIndex.get(i);
+      if (outNode && outNode.inputs.length > 0) {
+        const value = outNode.inputs[0].value;
+        this.outputs[i].setValue(value);
+
+        // Set preview from first output
+        if (i === 0 && (value instanceof HTMLCanvasElement || value instanceof HTMLImageElement)) {
+          this.preview = value;
+        }
+      } else if (i === 0) {
+        // Fallback for first output: use cooking node if no Output node
+        const cookingNode = this._children.find(n => n.cook);
+        if (cookingNode && cookingNode.outputs.length > 0) {
+          this.outputs[i].setValue(cookingNode.outputs[0].value);
+          if (cookingNode.preview) {
+            this.preview = cookingNode.preview;
+          }
+        } else {
+          this.outputs[i].setValue(null);
+        }
+      } else {
+        this.outputs[i].setValue(null);
       }
-    } else {
-      this.output.setValue(null);
-      this.preview = null;
+    }
+
+    // Clear preview if no outputs set it
+    if (this.outputs.length === 0 || !outputByIndex.has(0)) {
+      const cookingNode = this._children.find(n => n.cook);
+      if (!cookingNode?.preview) {
+        this.preview = null;
+      }
     }
   }
 }
