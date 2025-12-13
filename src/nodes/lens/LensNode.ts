@@ -54,11 +54,12 @@ export abstract class LensNode extends Node {
   }
 
   /**
-   * Helper for onChange handlers - marks dirty and schedules execution
+   * Helper for onChange handlers - marks dirty for lazy evaluation
+   * Execution is deferred until output is requested by a consumer (Viewer, etc.)
    */
   protected requestCook(): void {
     this.markDirty();
-    this.scheduleExecution();
+    this.markDownstreamDirty();
   }
 
   // ============ ImageBuffer Utilities ============

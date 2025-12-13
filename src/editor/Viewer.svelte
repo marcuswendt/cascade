@@ -13,6 +13,11 @@
   let displayNode: Node | null = null;
   let displayAnnotation: Annotation | null = null;
 
+  // Track what's currently rendered to avoid unnecessary DOM updates (prevents flickering)
+  let lastRenderedId: string | null = null;
+  let lastRenderedContent: string | null = null;
+  let lastRenderedViewer: string | null = null;
+
   // Determine which node/annotation to display
   $: {
     // Priority: selected annotation > selected node > cooking nodes
@@ -269,6 +274,11 @@
   $: {
     displayNode;
     displayAnnotation;
+    // Reset render cache so change detection triggers fresh render
+    lastRenderedId = null;
+    lastRenderedContent = null;
+    lastRenderedViewer = null;
+
     if (currentViewer === 'canvas') {
       renderCanvas();
     } else if (currentViewer === 'image') {
@@ -280,16 +290,86 @@
     }
   }
 
+  // Generate a key representing current content for change detection
+  function getContentKey(): string | null {
+    if (displayAnnotation) {
+      if (displayAnnotation.type === 'Image') {
+        const outputPort = displayAnnotation.outputs?.find(p => p.name === 'image');
+        if (outputPort?.value instanceof HTMLImageElement) {
+          return `img:${outputPort.value.src}`;
+        }
+        return `img:${(displayAnnotation as any).src || 'none'}`;
+      } else if (displayAnnotation.type === 'Text') {
+        return `text:${(displayAnnotation as any).content || ''}`;
+      }
+      return null;
+    }
+
+    if (!displayNode) return null;
+
+    // For canvas/image content, use a simple fingerprint
+    if (displayNode.preview instanceof HTMLCanvasElement) {
+      // Use dimensions as a lightweight fingerprint (full toDataURL is expensive)
+      return `canvas:${displayNode.preview.width}x${displayNode.preview.height}:${displayNode.id}:${displayNode.isDirty}`;
+    } else if (displayNode.preview instanceof HTMLImageElement) {
+      return `img:${displayNode.preview.src}`;
+    } else if (displayNode.preview) {
+      return `preview:${JSON.stringify(displayNode.preview)}`;
+    }
+
+    // Check output ports
+    const outputPort = displayNode.outputs.find(p => p.name === 'output' || p.name === 'preview');
+    if (outputPort?.value instanceof HTMLCanvasElement) {
+      return `canvas:${outputPort.value.width}x${outputPort.value.height}:${displayNode.id}:${displayNode.isDirty}`;
+    } else if (outputPort?.value instanceof HTMLImageElement) {
+      return `img:${outputPort.value.src}`;
+    } else if (outputPort?.value !== undefined) {
+      return `data:${JSON.stringify(outputPort.value)}`;
+    }
+
+    return null;
+  }
+
   onMount(() => {
-    // Periodically check for preview updates (since preview might be updated asynchronously)
-    const interval = setInterval(() => {
+    // Guard against overlapping async executions
+    let isExecuting = false;
+
+    // Periodically check for preview updates and trigger lazy evaluation
+    const interval = setInterval(async () => {
+      // Lazy evaluation: request output if display node is dirty (not for annotations)
+      // Guard prevents overlapping async executions
+      if (displayNode && displayNode.isDirty && !isExecuting) {
+        isExecuting = true;
+        try {
+          await displayNode.requestOutput();
+        } finally {
+          isExecuting = false;
+        }
+      }
+
+      // Only re-render if content has changed (prevents flickering)
       if ((displayNode || displayAnnotation) && currentViewer !== 'empty') {
-        if (currentViewer === 'canvas') {
-          renderCanvas();
-        } else if (currentViewer === 'image') {
-          renderImage();
-        } else if (currentViewer === 'text') {
-          renderText();
+        const currentId = displayNode?.id || displayAnnotation?.id || null;
+        const contentKey = getContentKey();
+
+        // Check if anything changed that requires re-render
+        const needsRender =
+          currentId !== lastRenderedId ||
+          currentViewer !== lastRenderedViewer ||
+          contentKey !== lastRenderedContent;
+
+        if (needsRender) {
+          lastRenderedId = currentId;
+          lastRenderedViewer = currentViewer;
+          lastRenderedContent = contentKey;
+
+          if (currentViewer === 'canvas') {
+            renderCanvas();
+          } else if (currentViewer === 'image') {
+            renderImage();
+          } else if (currentViewer === 'text') {
+            renderText();
+          }
         }
       }
     }, 100);

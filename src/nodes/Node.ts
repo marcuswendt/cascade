@@ -798,6 +798,76 @@ export class Node {
     return this.calculateInputHash() !== this.lastInputHash;
   }
 
+  /**
+   * Mark all downstream nodes as dirty (lazy propagation)
+   */
+  markDownstreamDirty(): void {
+    const visited = new Set<string>();
+
+    const propagate = (node: Node) => {
+      for (const output of node.outputs) {
+        for (const conn of output.connections) {
+          if (visited.has(conn.to.nodeId)) continue;
+          visited.add(conn.to.nodeId);
+
+          const downstream = this.graph.getNode(conn.to.nodeId);
+          if (downstream) {
+            downstream.manualDirty = true;
+            propagate(downstream);
+          }
+        }
+      }
+    };
+
+    propagate(this);
+  }
+
+  /**
+   * Request this node's output - triggers lazy evaluation
+   * Executes dirty upstream dependencies first, then this node
+   */
+  async requestOutput(): Promise<void> {
+    if (!this.isDirty) return;
+
+    // Collect dirty upstream nodes (depth-first for dependency order)
+    const dirtyUpstream = this.collectDirtyUpstream();
+
+    // Execute upstream in order (already sorted by depth-first collection)
+    for (const node of dirtyUpstream) {
+      if (node.isDirty) {
+        await node.execute();
+      }
+    }
+
+    // Execute this node
+    await this.execute();
+  }
+
+  private collectDirtyUpstream(): Node[] {
+    const result: Node[] = [];
+    const visited = new Set<string>();
+
+    const collect = (node: Node) => {
+      for (const input of node.inputs) {
+        for (const conn of input.connections) {
+          if (visited.has(conn.from.nodeId)) continue;
+          visited.add(conn.from.nodeId);
+
+          const upstream = this.graph.getNode(conn.from.nodeId);
+          if (upstream) {
+            collect(upstream); // Depth-first: go deeper first
+            if (upstream.isDirty) {
+              result.push(upstream);
+            }
+          }
+        }
+      }
+    };
+
+    collect(this);
+    return result;
+  }
+
   // ============ Lifecycle ============
 
   protected setup(): void {
