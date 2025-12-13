@@ -9,7 +9,7 @@ import type {
   GenerationResult,
   StreamCallbacks
 } from '../types.js';
-import { SYSTEM_PROMPT } from '../types.js';
+import { SYSTEM_PROMPT } from '../systemPrompt.js';
 import { AICodeGenerator } from '../AICodeGenerator.js';
 
 const DEFAULT_MODEL = 'gemini-1.5-pro';

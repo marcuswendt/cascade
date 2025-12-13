@@ -180,8 +180,8 @@
       let current: Node | null = null;
       for (const segment of segments) {
         // Find child with this ID at current level
-        const searchIn = current ? current.children() : graph.nodes.filter(n => !n.parent);
-        const found = searchIn.find(n => n.id === segment);
+        const searchIn: Node[] = current ? current.children() : graph.nodes.filter(n => !n.parent);
+        const found: Node | undefined = searchIn.find(n => n.id === segment);
         if (found) {
           current = found;
         } else {
@@ -1058,17 +1058,17 @@ node.onReady = () => {
               // Not being dragged, return unchanged
               return ann;
             }
-            
+
             // Create new position object for this annotation
             const newX = draggedData.startPos.x + deltaX;
             const newY = draggedData.startPos.y + deltaY;
-            
+
             return {
               ...ann,
               position: { x: newX, y: newY },
               style: ann.style ? { ...ann.style } : undefined,
               outputs: ann.outputs ? ann.outputs.map(port => ({ ...port })) : undefined
-            };
+            } as CanvasAnnotation;
           });
         } else {
           // Single node drag
@@ -1095,7 +1095,7 @@ node.onReady = () => {
           if (!draggedAnnotationData) {
             // Fallback to single drag if annotation not found in draggingMultiple
             // Don't mutate - create new object in map
-            graph.annotations = graph.annotations.map(ann => {
+            graph.annotations = graph.annotations.map((ann): CanvasAnnotation => {
               if (ann.id !== annotation.id) {
                 return ann;
               }
@@ -1103,7 +1103,7 @@ node.onReady = () => {
               const oldY = ann.position.y;
               const deltaX = newX - oldX;
               const deltaY = newY - oldY;
-              
+
               if (ann.type === 'Line') {
                 return {
                   ...ann,
@@ -1112,7 +1112,7 @@ node.onReady = () => {
                     x: ann.endPosition.x + deltaX,
                     y: ann.endPosition.y + deltaY
                   } : undefined
-                };
+                } as CanvasAnnotation;
               } else if (ann.type === 'Polyline') {
                 return {
                   ...ann,
@@ -1121,12 +1121,12 @@ node.onReady = () => {
                     x: p.x + deltaX,
                     y: p.y + deltaY
                   })) : undefined
-                };
+                } as CanvasAnnotation;
               } else {
                 return {
                   ...ann,
                   position: { x: newX, y: newY }
-                };
+                } as CanvasAnnotation;
               }
             });
             return;
@@ -1143,13 +1143,13 @@ node.onReady = () => {
           });
           
           // Move all selected annotations - create new objects instead of mutating
-          graph.annotations = graph.annotations.map(ann => {
+          graph.annotations = graph.annotations.map((ann): CanvasAnnotation => {
             const draggedData = draggingMultiple?.annotations.find(a => a.annotationId === ann.id);
             if (!draggedData) {
               // Not being dragged, return unchanged
               return ann;
             }
-            
+
             // Create new position object for this annotation
             const newX = draggedData.startPos.x + deltaX;
             const newY = draggedData.startPos.y + deltaY;
@@ -1157,7 +1157,7 @@ node.onReady = () => {
             const oldY = ann.position.y;
             const annotationDeltaX = newX - oldX;
             const annotationDeltaY = newY - oldY;
-            
+
             // Handle line and polyline annotations specially
             if (ann.type === 'Line') {
               return {
@@ -1167,7 +1167,7 @@ node.onReady = () => {
                   x: ann.endPosition.x + annotationDeltaX,
                   y: ann.endPosition.y + annotationDeltaY
                 } : undefined
-              };
+              } as CanvasAnnotation;
             } else if (ann.type === 'Polyline') {
               return {
                 ...ann,
@@ -1176,12 +1176,12 @@ node.onReady = () => {
                   x: p.x + annotationDeltaX,
                   y: p.y + annotationDeltaY
                 })) : undefined
-              };
+              } as CanvasAnnotation;
             } else {
               return {
                 ...ann,
                 position: { x: newX, y: newY }
-              };
+              } as CanvasAnnotation;
             }
           });
           
@@ -1195,19 +1195,19 @@ node.onReady = () => {
         // Create new annotation object directly without mutating the original
         // This ensures other annotations are completely unaffected
         // Use the annotation from the array, not the one we retrieved (which might be stale)
-        graph.annotations = graph.annotations.map(ann => {
+        graph.annotations = graph.annotations.map((ann): CanvasAnnotation => {
           if (ann.id !== annotation.id) {
             // Return the exact same object reference for unchanged annotations
             return ann;
           }
-          
+
           // Create new object for the annotation being dragged
           // Use ann (from array) not annotation (which might be stale)
           const oldX = ann.position.x;
           const oldY = ann.position.y;
           const deltaX = newX - oldX;
           const deltaY = newY - oldY;
-          
+
           if (ann.type === 'Line') {
             return {
               ...ann,
@@ -1218,7 +1218,7 @@ node.onReady = () => {
               } : undefined,
               style: ann.style ? { ...ann.style } : undefined,
               outputs: ann.outputs ? ann.outputs.map(port => ({ ...port })) : undefined
-            };
+            } as CanvasAnnotation;
           } else if (ann.type === 'Polyline') {
             return {
               ...ann,
@@ -1229,14 +1229,14 @@ node.onReady = () => {
               })) : undefined,
               style: ann.style ? { ...ann.style } : undefined,
               outputs: ann.outputs ? ann.outputs.map(port => ({ ...port })) : undefined
-            };
+            } as CanvasAnnotation;
           } else {
             return {
               ...ann,
               position: { x: newX, y: newY },
               style: ann.style ? { ...ann.style } : undefined,
               outputs: ann.outputs ? ann.outputs.map(port => ({ ...port })) : undefined
-            };
+            } as CanvasAnnotation;
           }
         });
         graph.nodes = [...graph.nodes];
@@ -1288,21 +1288,15 @@ node.onReady = () => {
           }
           // Create a completely new object for the resized annotation
           // Explicitly copy all properties to avoid any shared references
-          const updated: CanvasAnnotation = {
-            id: ann.id,
-            type: ann.type,
+          return {
+            ...ann,
             position: { x: newX, y: newY },
             size: { width: newWidth, height: newHeight },
-            content: ann.content,
-            src: ann.src,
-            caption: ann.caption,
-            containedElements: ann.containedElements ? [...ann.containedElements] : undefined,
             style: ann.style ? { ...ann.style } : undefined,
-            outputs: ann.outputs ? ann.outputs.map(port => ({ ...port })) : undefined,
+            outputs: ann.outputs ? ann.outputs.map(port => ({ ...port })) : ann.outputs,
             points: ann.points ? ann.points.map(p => ({ ...p })) : undefined,
             endPosition: ann.endPosition ? { ...ann.endPosition } : undefined
-          };
-          return updated;
+          } as CanvasAnnotation;
         });
       }
     }
@@ -1317,9 +1311,9 @@ node.onReady = () => {
         const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
         
         // Create new annotation object instead of mutating
-        graph.annotations = graph.annotations.map(ann => 
+        graph.annotations = graph.annotations.map((ann): CanvasAnnotation =>
           ann.id === drawing.annotationId
-            ? { ...ann, endPosition: { x: mouseX, y: mouseY } }
+            ? { ...ann, endPosition: { x: mouseX, y: mouseY } } as CanvasAnnotation
             : ann
         );
       }
@@ -1343,9 +1337,9 @@ node.onReady = () => {
         if (distance > 3) { // Only add point if moved more than 3px
           drawing.points.push({ x: mouseX, y: mouseY });
           // Create new annotation object instead of mutating
-          graph.annotations = graph.annotations.map(ann =>
+          graph.annotations = graph.annotations.map((ann): CanvasAnnotation =>
             ann.id === drawing.annotationId
-              ? { ...ann, points: [...drawing.points] }
+              ? { ...ann, points: [...drawing.points] } as CanvasAnnotation
               : ann
           );
         }
@@ -1470,7 +1464,7 @@ node.onReady = () => {
 
                 // If all ports are connected, sync to create a new one
                 if (!toPort && toElement.syncVariadicPorts) {
-                  toElement.syncVariadicPorts(variadicBase);
+                  toElement.syncVariadicPorts();
                   const updatedPorts = toElement.inputs.filter(
                     (p: any) => p.variadic && p.name.startsWith(`${variadicBase}_`) && !p.options?.hidden
                   );
@@ -1561,7 +1555,7 @@ node.onReady = () => {
 
                       for (const { output } of otherSelectedElements) {
                         // Sync variadic ports to ensure enough exist
-                        toElement.syncVariadicPorts(baseName);
+                        toElement.syncVariadicPorts();
 
                         // Find or create the next variadic port
                         const nextPortName = `${baseName}_${currentIndex}`;
@@ -1569,7 +1563,7 @@ node.onReady = () => {
 
                         if (!nextPort) {
                           // Sync again and try to find it
-                          toElement.syncVariadicPorts(baseName);
+                          toElement.syncVariadicPorts();
                           nextPort = toElement.inputs.find((p: any) => p.name === nextPortName && !p.options?.hidden);
                         }
 
@@ -2574,7 +2568,7 @@ node.onReady = () => {
               const toPort = toNode.inputs.find(p => p.id === conn.to.portId);
 
               if (fromPort && toPort) {
-                graph.connect(fromNode, fromPort, toNode, toPort);
+                graph.connect(fromPort, toPort);
               }
             }
           }
@@ -2622,7 +2616,7 @@ node.onReady = () => {
   }
 
   function handleAnnotationContentChange(annotationId: string, content: string) {
-    const annotation = graph.getAnnotation(annotationId);
+    const annotation = graph.getAnnotation(annotationId) as CanvasAnnotation | null;
     if (annotation) {
       annotation.content = content;
       graph.annotations = [...graph.annotations];
@@ -2929,9 +2923,10 @@ node.onReady = () => {
 
     const previouslySelectedAnnotations = previouslySelectedAnnotationIds
       .map(id => graph.getAnnotation(id))
-      .filter((a): a is Node => a !== null);
+      .filter((a): a is Annotation => a !== null);
 
-    const allSelectedSources = [...previouslySelectedNodes, ...previouslySelectedAnnotations];
+    // Combine nodes and annotations (Annotation extends Node)
+    const allSelectedSources: Node[] = [...previouslySelectedNodes, ...previouslySelectedAnnotations];
 
     if (allSelectedSources.length > 0) {
       autoConnectSelectedNodes(allSelectedSources, newNode);
@@ -3296,15 +3291,15 @@ node.onReady = () => {
       }
 
       // Fallback to calculated position if element not found
-      const annotation = element;
+      const annotation = element as Annotation | null;
       if (!annotation || !annotation.outputs) return null;
 
       const port = annotation.outputs.find(p => p.id === portId);
       if (!port) return null;
 
       // For all annotations, output ports are at the bottom center
-      const annotationWidth = annotation.size?.width || (annotation.type === 'Text' ? 540 : annotation.type === 'Image' ? 200 : 300);
-      const annotationHeight = annotation.size?.height || (annotation.type === 'Text' ? 60 : annotation.type === 'Image' ? 150 : 200);
+      const annotationWidth = annotation.size?.width ?? (annotation.type === 'Text' ? 540 : annotation.type === 'Image' ? 200 : 300);
+      const annotationHeight = annotation.size?.height ?? (annotation.type === 'Text' ? 60 : annotation.type === 'Image' ? 150 : 200);
 
       // Bottom center for all annotation types
       return {
@@ -3491,7 +3486,7 @@ node.onReady = () => {
             recordHistory();
 
             // Check if connecting to a variadic port and there are multiple selected elements
-            const isVariadicTarget = port.variadic === true;
+            const isVariadicTarget = 'variadic' in port && port.variadic === true;
             const otherSelectedElements: Array<{ element: any; output: any }> = [];
 
             if (isVariadicTarget) {
@@ -3532,7 +3527,7 @@ node.onReady = () => {
 
                 for (const { output } of otherSelectedElements) {
                   // Sync variadic ports to ensure enough exist
-                  node.syncVariadicPorts(baseName);
+                  node.syncVariadicPorts();
 
                   // Find or create the next variadic port
                   const nextPortName = `${baseName}_${currentIndex}`;
@@ -3540,7 +3535,7 @@ node.onReady = () => {
 
                   if (!nextPort) {
                     // Sync again and try to find it
-                    node.syncVariadicPorts(baseName);
+                    node.syncVariadicPorts();
                     nextPort = node.inputs.find((p: any) => p.name === nextPortName && !p.options?.hidden);
                   }
 
@@ -4152,9 +4147,9 @@ node.onReady = () => {
           {isSelected}
           {isEditing}
           {isDragging}
-          on:click={(e) => handleAnnotationClick(e.detail.id, e.detail.event)}
-          on:dblclick={(e) => handleAnnotationDoubleClick(e.detail.id, e.detail.event)}
-          on:mousedown={(e) => {
+          on:click={(e: CustomEvent<{id: string; event: MouseEvent}>) => handleAnnotationClick(e.detail.id, e.detail.event)}
+          on:dblclick={(e: CustomEvent<{id: string; event: MouseEvent}>) => handleAnnotationDoubleClick(e.detail.id, e.detail.event)}
+          on:mousedown={(e: CustomEvent<{id: string; event: MouseEvent; width?: number; height?: number}>) => {
             const { id, event, width, height } = e.detail;
             if (annotation instanceof TextAnnotation) {
               handleAnnotationMouseDownForText(id, event, width || 540, height || 60);
@@ -4162,14 +4157,14 @@ node.onReady = () => {
               handleAnnotationMouseDown(id, event);
             }
           }}
-          on:mousemove={(e) => {
+          on:mousemove={(e: CustomEvent<{id: string; event: MouseEvent; width?: number; height?: number}>) => {
             const { id, event, width, height } = e.detail;
             handleAnnotationMouseMove(id, event, width || 540, height || 60);
           }}
-          on:keydown={(e) => handleAnnotationKeyDown(e.detail.id, e.detail.event)}
+          on:keydown={(e: CustomEvent<{id: string; event: KeyboardEvent}>) => handleAnnotationKeyDown(e.detail.id, e.detail.event)}
           on:finishEdit={finishEditingAnnotation}
-          on:delete={(e) => handleAnnotationDelete(e.detail.id)}
-          on:input={(e) => {
+          on:delete={(e: CustomEvent<{id: string}>) => handleAnnotationDelete(e.detail.id)}
+          on:input={(e: CustomEvent<{id: string; event: Event}>) => {
             const { id, event } = e.detail;
             if (annotation instanceof TextAnnotation) {
               handleTextareaInput(id, event);
@@ -4177,8 +4172,8 @@ node.onReady = () => {
               handleInputInput(id, event);
             }
           }}
-          on:portMouseDown={(e) => handlePortMouseDown(e.detail.nodeId, e.detail.portId, e.detail.portType, e.detail.event)}
-          on:resizeStart={(e) => handleResizeHandleMouseDown(e.detail.id, e.detail.handle, e.detail.event)}
+          on:portMouseDown={(e: CustomEvent<{nodeId: string; portId: string; portType: 'input' | 'output'; event: MouseEvent}>) => handlePortMouseDown(e.detail.nodeId, e.detail.portId, e.detail.portType, e.detail.event)}
+          on:resizeStart={(e: CustomEvent<{id: string; handle: 'se' | 'sw' | 'ne' | 'nw' | 'e' | 'w' | 'n' | 's'; event: MouseEvent}>) => handleResizeHandleMouseDown(e.detail.id, e.detail.handle, e.detail.event)}
         />
       {:else}
         <!-- Debug fallback for unmapped annotation type -->

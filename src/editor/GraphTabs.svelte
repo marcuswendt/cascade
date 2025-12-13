@@ -133,8 +133,8 @@
   }
 
   function handleClickOutside(event: MouseEvent) {
-    if (menuButton && !menuButton.contains(event.target as Node)) {
-      if (menuDropdown && !menuDropdown.contains(event.target as Node)) {
+    if (menuButton && !menuButton.contains(event.target as globalThis.Node)) {
+      if (menuDropdown && !menuDropdown.contains(event.target as globalThis.Node)) {
         menuOpen = false;
       }
     }

@@ -502,13 +502,14 @@
   }
 
   // Set initial window title
-  onMount(async () => {
+  onMount(() => {
     // Wire up Node's prop params change callback to editor's store
     Node.onPropParamsChanged = incrementPropUpdateCounter;
 
     updateWindowTitle();
 
-    // Load default graph on startup
+    // Load default graph on startup (async IIFE to avoid onMount return type issues)
+    (async () => {
     if (!graph) {
       try {
         const response = await fetch('/graphs/default.cascade');
@@ -567,6 +568,7 @@
         updateWindowTitle();
       }
     }
+    })(); // End of async IIFE for graph loading
 
     // Track global mouse position
     function handleMouseMove(e: MouseEvent) {

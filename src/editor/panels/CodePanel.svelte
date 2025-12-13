@@ -36,7 +36,7 @@
   // Update panel title with node name
   $: {
     if (panelApi?.setTitle && node) {
-      panelApi.setTitle(`Code: ${node.name}`);
+      panelApi.setTitle(`Code: ${node.id}`);
     }
   }
 

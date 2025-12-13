@@ -127,7 +127,7 @@
             {:else}
               <button
                 class="dropdown-item"
-                on:click={() => handleMenuItemClick(item.action)}
+                on:click={() => item.action && handleMenuItemClick(item.action)}
               >
                 <span class="item-label">{item.label}</span>
                 {#if item.shortcut}
@@ -155,7 +155,7 @@
                 class="dropdown-item"
                 class:disabled={item.disabled}
                 disabled={item.disabled}
-                on:click={() => !item.disabled && handleMenuItemClick(item.action)}
+                on:click={() => !item.disabled && item.action && handleMenuItemClick(item.action)}
               >
                 <span class="item-label">{item.label}</span>
                 {#if item.shortcut}
@@ -192,7 +192,7 @@
             {:else}
               <button
                 class="dropdown-item"
-                on:click={() => handleMenuItemClick(item.action)}
+                on:click={() => item.action && handleMenuItemClick(item.action)}
               >
                 <span class="item-label">{item.label}</span>
                 {#if item.shortcut}

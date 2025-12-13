@@ -11,12 +11,13 @@ import GroupAnnotationUI from './GroupAnnotationUI.svelte';
 import LineAnnotationUI from './LineAnnotationUI.svelte';
 import PolylineAnnotationUI from './PolylineAnnotationUI.svelte';
 
-import type { ComponentType, SvelteComponent } from 'svelte';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyComponent = any;
 
 // Registry maps annotation type names to UI components
 // Uses annotation.type (e.g., 'Text') rather than constructor.name
 // Includes both PascalCase and lowercase for compatibility
-export const annotationRegistry: Map<string, ComponentType<SvelteComponent>> = new Map([
+export const annotationRegistry = new Map<string, AnyComponent>([
   ['Text', TextAnnotationUI],
   ['text', TextAnnotationUI],
   ['Image', ImageAnnotationUI],
