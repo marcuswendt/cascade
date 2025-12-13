@@ -22,6 +22,25 @@ export class SwitchNode extends Node {
     super(id, 'Switch', graph);
   }
 
+  /**
+   * Get the index of the currently active input
+   * Used by connection rendering to grey out inactive wires
+   */
+  get activeInputIndex(): number {
+    const inputs = this.getVariadicInputs();
+    return Math.min(this.props.index?.value ?? 0, inputs.length - 1);
+  }
+
+  /**
+   * Check if a specific input port is active (for connection coloring)
+   */
+  isInputActive(portId: string): boolean {
+    const inputs = this.getVariadicInputs();
+    const activeIdx = this.activeInputIndex;
+    const portIndex = inputs.findIndex(p => p.id === portId);
+    return portIndex === activeIdx;
+  }
+
   protected setup(): void {
     this.setVariadic();
     this.output = this.out('output');

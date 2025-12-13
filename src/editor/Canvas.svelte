@@ -9,7 +9,7 @@
   import type { Connection } from '@/types/node.types';
   import { marked } from 'marked';
   import { packagePathToType, getNodeClass, compileCustomNode } from '@/utils/nodeTypeUtils';
-  import { getPortColor } from '@/utils/portColors';
+  import { getPortColor, getConnectionColor, DATA_TYPE_COLORS } from '@/utils/portColors';
   import { recordSnapshotImmediate } from './stores/historyStore';
   
   // Configure marked for safe rendering
@@ -4057,10 +4057,13 @@ node.onReady = () => {
       {@const toPos = getPortPosition(conn.to.nodeId, conn.to.portId, 'input')}
       {#if fromPos && toPos}
         {@const fromElement = graph.getElement(conn.from.nodeId)}
+        {@const toElement = graph.getElement(conn.to.nodeId)}
         {@const fromNode = fromElement && !(fromElement as any)?.isAnnotation ? fromElement : null}
+        {@const toNode = toElement && !(toElement as any)?.isAnnotation ? toElement : null}
         {@const fromAnnotation = (fromElement as any)?.isAnnotation ? fromElement : null}
         {@const fromPort = fromNode?.outputs.find(p => p.id === conn.from.portId) || fromAnnotation?.outputs?.find(p => p.id === conn.from.portId)}
-        {@const connectionColor = fromPort ? getPortColor(fromPort) : '#888'}
+        {@const isActive = !(toNode as any)?.isInputActive || (toNode as any).isInputActive(conn.to.portId)}
+        {@const connectionColor = isActive ? (fromPort ? getPortColor(fromPort) : '#888') : DATA_TYPE_COLORS.inactive}
         {@const midY = (fromPos.y + toPos.y) / 2}
         {@const curveOffset = Math.abs(toPos.y - fromPos.y) * 0.5}
         {@const isTrigger = conn.type === 'trigger'}
@@ -4082,6 +4085,7 @@ node.onReady = () => {
           stroke-dasharray={isTrigger ? "3 3" : "none"}
           class="connection"
           class:trigger-connection={isTrigger}
+          class:inactive={!isActive}
         />
       {/if}
     {/each}
@@ -4346,7 +4350,11 @@ node.onReady = () => {
   .connection.trigger-connection {
     stroke-dasharray: 3 3;
   }
-  
+
+  .connection.inactive {
+    opacity: 0.5;
+  }
+
   .connection-preview {
     pointer-events: none;
     opacity: 0.7;
