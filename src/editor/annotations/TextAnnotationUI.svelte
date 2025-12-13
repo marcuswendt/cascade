@@ -78,8 +78,6 @@
     <div class="annotation-content">
       {#if annotation.content}
         {@html marked.parse(annotation.content)}
-      {:else}
-        <span style="color: yellow;">[No content - annotation.content is: {JSON.stringify(annotation.content)}]</span>
       {/if}
     </div>
   {/if}
@@ -109,13 +107,11 @@
   .annotation {
     position: absolute;
     cursor: move;
+    pointer-events: auto;
   }
 
   .annotation-text {
     user-select: none;
-    /* Debug: add visible background */
-    background: rgba(255, 0, 0, 0.1);
-    border: 1px dashed rgba(255, 255, 255, 0.3);
   }
 
   .annotation-text.editing {

@@ -13,6 +13,7 @@
 
   $: width = annotation.size?.width || 300;
   $: height = annotation.size?.height || 200;
+  $: content = annotation.content || 'Group';
 
   export function focusInput() {
     inputElement?.focus();
@@ -48,7 +49,7 @@
       type="text"
       class="annotation-input"
       bind:this={inputElement}
-      value={(annotation as any).content || 'Group'}
+      value={content}
       on:blur={() => dispatch('finishEdit')}
       on:keydown={(e) => {
         if (e.key === 'Enter') {
@@ -63,7 +64,7 @@
       placeholder="Group name..."
     />
   {:else}
-    <div class="group-header">{(annotation as any).content || 'Group'}</div>
+    <div class="group-header">{content}</div>
   {/if}
   {#if isSelected && !isEditing}
     <div
@@ -101,6 +102,7 @@
   .annotation {
     position: absolute;
     cursor: move;
+    pointer-events: auto;
   }
 
   .annotation-group {

@@ -11,6 +11,8 @@
 
   $: width = annotation.size?.width || 200;
   $: height = annotation.size?.height || 150;
+  $: src = annotation.src || '';
+  $: caption = annotation.caption || '';
 </script>
 
 <div
@@ -33,9 +35,9 @@
   on:dragstart={(e) => e.preventDefault()}
   on:keydown={(e) => dispatch('keydown', { id: annotation.id, event: e })}
 >
-  <img src={(annotation as any).src} alt={annotation.caption || ''} draggable="false" on:dragstart={(e) => e.preventDefault()} />
-  {#if annotation.caption}
-    <div class="annotation-caption">{annotation.caption}</div>
+  <img src={src} alt={caption} draggable="false" on:dragstart={(e) => e.preventDefault()} />
+  {#if caption}
+    <div class="annotation-caption">{caption}</div>
   {/if}
   {#if annotation.outputs && annotation.outputs.length > 0}
     {#each annotation.outputs as port (port.id)}
@@ -61,6 +63,7 @@
   .annotation {
     position: absolute;
     cursor: move;
+    pointer-events: auto;
   }
 
   .annotation-image {

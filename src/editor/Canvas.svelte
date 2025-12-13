@@ -815,18 +815,23 @@ node.onReady = () => {
   $: nodes = visibleNodes;
   
   // Force reactivity when node ports change
-  $: nodePorts = nodes.map(n => ({ 
-    id: n.id, 
-    inputs: n.inputs.length, 
-    outputs: n.outputs.length 
-  }));
-  
+  // Guard against undefined nodes/ports during reactive updates
+  $: nodePorts = nodes
+    .filter(n => n && n.inputs && n.outputs)
+    .map(n => ({
+      id: n.id,
+      inputs: n.inputs.length,
+      outputs: n.outputs.length
+    }));
+
   // Track node positions to force connection re-renders when nodes move
-  $: nodePositions = nodes.map(n => ({ 
-    id: n.id, 
-    x: n.position.x, 
-    y: n.position.y 
-  }));
+  $: nodePositions = nodes
+    .filter(n => n && n.position)
+    .map(n => ({
+      id: n.id,
+      x: n.position.x,
+      y: n.position.y
+    }));
   
   // Track annotation positions to force connection re-renders when annotations move or load
   // Create independent objects to prevent any reference sharing issues
@@ -845,16 +850,19 @@ node.onReady = () => {
   // Filter connections to only show those between visible nodes
   // Also filter out duplicates and depend on nodePositions/nodePorts for reactivity
   $: {
-    // Reference nodePositions, nodePorts to make connections reactive to changes
+    // Reference nodePositions, nodePorts, annotations to make connections reactive to changes
     nodePositions;
     nodePorts;
-    // Get IDs of visible nodes for filtering connections
+    annotations;
+    // Get IDs of visible nodes AND annotations for filtering connections
     const visibleNodeIds = new Set(nodes.map(n => n.id));
+    const visibleAnnotationIds = new Set(annotations.map(a => a.id));
+    const visibleElementIds = new Set([...visibleNodeIds, ...visibleAnnotationIds]);
     connections = graph.connections.filter((conn, index, self) =>
       // Remove duplicates
       self.findIndex(c => c.id === conn.id) === index &&
-      // Only show connections between visible nodes
-      visibleNodeIds.has(conn.from.nodeId) && visibleNodeIds.has(conn.to.nodeId)
+      // Only show connections between visible elements (nodes or annotations)
+      visibleElementIds.has(conn.from.nodeId) && visibleElementIds.has(conn.to.nodeId)
     );
   }
 
@@ -2110,7 +2118,6 @@ node.onReady = () => {
   }
   
   function handleAnnotationMouseDown(annotationId: string, e: MouseEvent) {
-    console.log('[handleAnnotationMouseDown] called:', annotationId, 'button:', e.button, 'target:', (e.target as HTMLElement)?.tagName);
     e.stopPropagation();
     if (activeTool === 'select' && !editingAnnotation && e.button === 0) {
       // Don't start drag if clicking on input/button/resize handle
@@ -3162,7 +3169,7 @@ node.onReady = () => {
   function getPortPosition(nodeId: string, portId: string, portType: 'input' | 'output'): { x: number; y: number } | null {
     // Check if this is an annotation by looking up the element
     const element = graph.getElement(nodeId);
-    const isAnnotationElement = element instanceof Annotation;
+    const isAnnotationElement = (element as any)?.isAnnotation === true;
 
     // Handle annotation ports - try to get actual DOM element position first
     if (isAnnotationElement) {
@@ -3274,7 +3281,7 @@ node.onReady = () => {
 
     // Check if this is an annotation
     const element = graph.getElement(nodeId);
-    const isAnnotationElement = element instanceof Annotation;
+    const isAnnotationElement = (element as any)?.isAnnotation === true;
 
     // Handle annotation ports
     if (isAnnotationElement) {
@@ -3947,8 +3954,8 @@ node.onReady = () => {
       {@const toPos = getPortPosition(conn.to.nodeId, conn.to.portId, 'input')}
       {#if fromPos && toPos}
         {@const fromElement = graph.getElement(conn.from.nodeId)}
-        {@const fromNode = fromElement && !(fromElement instanceof Annotation) ? fromElement : null}
-        {@const fromAnnotation = fromElement instanceof Annotation ? fromElement : null}
+        {@const fromNode = fromElement && !(fromElement as any)?.isAnnotation ? fromElement : null}
+        {@const fromAnnotation = (fromElement as any)?.isAnnotation ? fromElement : null}
         {@const fromPort = fromNode?.outputs.find(p => p.id === conn.from.portId) || fromAnnotation?.outputs?.find(p => p.id === conn.from.portId)}
         {@const connectionColor = fromPort ? getPortColor(fromPort) : '#888'}
         {@const midY = (fromPos.y + toPos.y) / 2}
@@ -3996,8 +4003,8 @@ node.onReady = () => {
     {#if connectingFrom && connectingPosition}
       {@const from = connectingFrom}
       {@const fromElement = graph.getElement(from.nodeId)}
-      {@const fromNode = fromElement && !(fromElement instanceof Annotation) ? fromElement : null}
-      {@const fromAnnotation = fromElement instanceof Annotation ? fromElement : null}
+      {@const fromNode = fromElement && !(fromElement as any)?.isAnnotation ? fromElement : null}
+      {@const fromAnnotation = (fromElement as any)?.isAnnotation ? fromElement : null}
       {@const fromPort = from.portType === 'output' 
         ? (fromNode?.outputs.find(p => p.id === from.portId) || fromAnnotation?.outputs?.find(p => p.id === from.portId))
         : fromNode?.inputs.find(p => p.id === from.portId)}
@@ -4040,7 +4047,6 @@ node.onReady = () => {
           on:click={(e) => handleAnnotationClick(e.detail.id, e.detail.event)}
           on:dblclick={(e) => handleAnnotationDoubleClick(e.detail.id, e.detail.event)}
           on:mousedown={(e) => {
-            console.log('[Canvas on:mousedown] received from annotation:', annotation.id, 'type:', annotation.type, 'detail:', e.detail);
             const { id, event, width, height } = e.detail;
             if (annotation instanceof TextAnnotation) {
               handleAnnotationMouseDownForText(id, event, width || 540, height || 60);
@@ -4260,118 +4266,6 @@ node.onReady = () => {
     z-index: 15;
   }
   
-  .annotation {
-    position: absolute;
-    pointer-events: auto;
-  }
-  
-  .annotation-text {
-    color: #fff;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    overflow: visible;
-  }
-  
-  .annotation-image {
-    border-radius: 4px;
-    overflow: visible;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  
-  .annotation-image img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-    border-radius: 4px;
-  }
-  
-  .annotation-caption {
-    padding: 4px 8px;
-    background: rgba(0, 0, 0, 0.7);
-    color: #fff;
-    font-size: 12px;
-    text-align: center;
-  }
-  
-  .annotation-group {
-    padding: 8px 12px;
-    background: rgba(74, 158, 255, 0.1);
-    border: 2px dashed #4a9eff;
-    border-radius: 4px;
-  }
-  
-  .group-header {
-    font-weight: 600;
-    color: #4a9eff;
-  }
-  
-  .annotation.selected {
-    outline: 2px solid #4a9eff;
-    outline-offset: 2px;
-  }
-  
-  .annotation.editing {
-    z-index: 1000;
-  }
-  
-  .annotation-input {
-    width: 100%;
-    background: rgba(0, 0, 0, 0.8);
-    border: 1px dashed #ffffff;
-    border-radius: 4px;
-    color: #fff;
-    font-family: inherit;
-    font-size: inherit;
-    padding: 8px;
-    outline: none;
-    resize: none;
-  }
-  
-  .annotation-input:focus {
-    border: 1px dashed #ffffff;
-  }
-  
-  .resize-handle {
-    position: absolute;
-    width: 12px;
-    height: 12px;
-    background: #4a9eff;
-    border: 2px solid #fff;
-    border-radius: 50%;
-    cursor: nwse-resize;
-    z-index: 20;
-    pointer-events: auto;
-  }
-  
-  .resize-handle:hover {
-    background: #6bb6ff;
-    transform: scale(1.2);
-  }
-  
-  .resize-se {
-    bottom: -6px;
-    right: -6px;
-    cursor: nwse-resize;
-  }
-  
-  .resize-sw {
-    bottom: -6px;
-    left: -6px;
-    cursor: nesw-resize;
-  }
-  
-  .resize-ne {
-    top: -6px;
-    right: -6px;
-    cursor: nesw-resize;
-  }
-  
-  .resize-nw {
-    top: -6px;
-    left: -6px;
-    cursor: nwse-resize;
-  }
-  
   .selection-rectangle {
     position: absolute;
     border: 1px dashed #4a9eff;
@@ -4379,126 +4273,6 @@ node.onReady = () => {
     pointer-events: none;
     z-index: 100;
     transform-origin: top left;
-  }
-  
-  .annotation.dragging {
-    opacity: 0.8;
-  }
-  
-  .annotation-content {
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    line-height: 1.6;
-  }
-  
-  .annotation-content :global(h1) {
-    font-size: 1.8em;
-    font-weight: bold;
-    margin: 0.5em 0;
-  }
-  
-  .annotation-content :global(h2) {
-    font-size: 1.5em;
-    font-weight: bold;
-    margin: 0.4em 0;
-  }
-  
-  .annotation-content :global(h3) {
-    font-size: 1.2em;
-    font-weight: bold;
-    margin: 0.3em 0;
-  }
-  
-  .annotation-content :global(p) {
-    margin: 0.5em 0;
-  }
-  
-  .annotation-content :global(ul),
-  .annotation-content :global(ol) {
-    margin: 0.5em 0;
-    padding-left: 1.5em;
-  }
-  
-  .annotation-content :global(li) {
-    margin: 0.2em 0;
-  }
-  
-  .annotation-content :global(code) {
-    background: rgba(255, 255, 255, 0.1);
-    padding: 2px 4px;
-    border-radius: 3px;
-    font-family: 'Monaco', 'Courier New', monospace;
-    font-size: 0.9em;
-  }
-  
-  .annotation-content :global(pre) {
-    background: rgba(0, 0, 0, 0.3);
-    padding: 8px;
-    border-radius: 4px;
-    overflow-x: auto;
-    margin: 0.5em 0;
-  }
-  
-  .annotation-content :global(pre code) {
-    background: none;
-    padding: 0;
-  }
-  
-  .annotation-content :global(strong) {
-    font-weight: bold;
-  }
-  
-  .annotation-content :global(em) {
-    font-style: italic;
-  }
-  
-  .annotation-content :global(a) {
-    color: #4a9eff;
-    text-decoration: underline;
-  }
-  
-  .annotation-content :global(blockquote) {
-    border-left: 3px solid #4a9eff;
-    padding-left: 1em;
-    margin: 0.5em 0;
-    opacity: 0.8;
-  }
-  
-  .annotation-line,
-  .annotation-polyline {
-    width: 100%;
-    height: 100%;
-    overflow: visible;
-  }
-  
-  .annotation-line.selected line,
-  .annotation-polyline.selected path {
-    stroke: #4a9eff;
-    stroke-width: 3;
-  }
-  
-  .annotation-port {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    width: 12px;
-    height: 12px;
-    position: absolute;
-    z-index: 25;
-    pointer-events: auto;
-  }
-  
-  .annotation-port:hover {
-    opacity: 0.8;
-  }
-  
-  .annotation-port .port-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    /* Color is set via inline style based on port dataType */
   }
 </style>
 

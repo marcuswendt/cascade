@@ -99,31 +99,39 @@ export class Graph {
   }
   
   /**
+   * Helper to check if an element is an annotation
+   * Uses marker property for reliability (survives HMR and serialization)
+   */
+  private isAnnotation(element: Node): element is CanvasAnnotation {
+    return (element as any).isAnnotation === true;
+  }
+
+  /**
    * Get all computations (non-annotation nodes)
    */
   get nodes(): Node[] {
-    return this._elements.filter(e => !(e instanceof Annotation)) as Node[];
+    return this._elements.filter(e => !this.isAnnotation(e)) as Node[];
   }
 
   /**
    * Set computations (triggers Svelte reactivity)
    */
   set nodes(value: Node[]) {
-    this._elements = [...this._elements.filter(e => e instanceof Annotation), ...value];
+    this._elements = [...this._elements.filter(e => this.isAnnotation(e)), ...value];
   }
 
   /**
    * Get all annotations
    */
   get annotations(): CanvasAnnotation[] {
-    return this._elements.filter(e => e instanceof Annotation) as CanvasAnnotation[];
+    return this._elements.filter(e => this.isAnnotation(e)) as CanvasAnnotation[];
   }
 
   /**
    * Set annotations (triggers Svelte reactivity)
    */
   set annotations(value: CanvasAnnotation[]) {
-    this._elements = [...this._elements.filter(e => !(e instanceof Annotation)), ...value];
+    this._elements = [...this._elements.filter(e => !this.isAnnotation(e)), ...value];
   }
   
   /**
@@ -165,7 +173,7 @@ export class Graph {
    */
   getNode(nodeId: string): Node | null {
     const element = this.getElement(nodeId);
-    return element && !(element instanceof Annotation) ? element : null;
+    return element && !this.isAnnotation(element) ? element : null;
   }
 
   /**
@@ -173,7 +181,7 @@ export class Graph {
    */
   getAnnotation(id: string): Annotation | null {
     const element = this.getElement(id);
-    return element instanceof Annotation ? element : null;
+    return element && this.isAnnotation(element) ? element as Annotation : null;
   }
 
   /**
@@ -280,7 +288,7 @@ export class Graph {
     
     // For node-to-node connections, use GraphValidator
     // For annotation-to-node or other combinations, allow them
-    if (!(fromElement instanceof Annotation) && !(toElement instanceof Annotation)) {
+    if (!this.isAnnotation(fromElement) && !this.isAnnotation(toElement)) {
       const error = GraphValidator.validateConnection(
         this,
         fromElementId,
@@ -681,7 +689,7 @@ export class Graph {
   addAnnotation(annotation: Annotation | any): void {
     let annotationInstance: Annotation;
 
-    if (annotation instanceof Annotation) {
+    if (this.isAnnotation(annotation)) {
       annotationInstance = annotation;
     } else {
       const annData = annotation;
@@ -761,7 +769,7 @@ export class Graph {
           port.connections.forEach(conn => {
             const toParsed = parsePortId(conn.to.portId);
             const targetElement = this.getElement(toParsed.elementId);
-            if (targetElement && !(targetElement instanceof Annotation)) {
+            if (targetElement && !this.isAnnotation(targetElement)) {
               const targetPort = targetElement.getInputPort(toParsed.index);
               if (targetPort) {
                 targetPort.value = value;
@@ -774,7 +782,7 @@ export class Graph {
           port.connections.forEach(conn => {
             const toParsed = parsePortId(conn.to.portId);
             const targetElement = this.getElement(toParsed.elementId);
-            if (targetElement && !(targetElement instanceof Annotation)) {
+            if (targetElement && !this.isAnnotation(targetElement)) {
               const targetPort = targetElement.getInputPort(toParsed.index);
               targetPort?.onTrigger?.(props);
             }
@@ -815,7 +823,7 @@ export class Graph {
             port.connections.forEach(conn => {
               const toParsed = parsePortId(conn.to.portId);
               const targetElement = this.getElement(toParsed.elementId);
-              if (targetElement && !(targetElement instanceof Annotation)) {
+              if (targetElement && !this.isAnnotation(targetElement)) {
                 const targetPort = targetElement.getInputPort(toParsed.index);
                 if (targetPort) {
                   targetPort.value = value;
@@ -828,7 +836,7 @@ export class Graph {
             port.connections.forEach(conn => {
               const toParsed = parsePortId(conn.to.portId);
               const targetElement = this.getElement(toParsed.elementId);
-              if (targetElement && !(targetElement instanceof Annotation)) {
+              if (targetElement && !this.isAnnotation(targetElement)) {
                 const targetPort = targetElement.getInputPort(toParsed.index);
                 targetPort?.onTrigger?.(props);
               }

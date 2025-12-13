@@ -26,6 +26,9 @@ export interface AnnotationStyle {
  * They can optionally have ports for data flow visualization.
  */
 export class Annotation extends Node {
+  // Marker property for reliable type checking (survives HMR and serialization)
+  readonly isAnnotation: true = true;
+
   // Annotation-specific properties
   size?: { width: number; height: number };
   style?: AnnotationStyle;
