@@ -8,11 +8,17 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Use jsdom for component and workflow tests
+    environmentMatchGlobs: [
+      ['tests/components/**', 'jsdom'],
+      ['tests/workflows/**', 'jsdom'],
+    ],
+    setupFiles: ['./tests/setup.ts'],
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      include: ['src/nodes/**/*.ts', 'src/engine/**/*.ts'],
+      include: ['src/nodes/**/*.ts', 'src/engine/**/*.ts', 'src/editor/**/*.ts'],
       exclude: ['**/*.test.ts', '**/index.ts']
     }
   },
