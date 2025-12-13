@@ -127,8 +127,8 @@ declare namespace Cascade {
     code?: string;
     bypassed?: boolean;
     cooking?: boolean;
-    setBypassed?(value: boolean): void;
-    setCooking?(value: boolean): void;
+    setBypass?(value: boolean): void;
+    setCook?(value: boolean): void;
     require?(packageName: string): Promise<any>;
   }
 }

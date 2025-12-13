@@ -69,7 +69,7 @@ export class SubnetNode extends Node {
     if (outputNode) return outputNode;
 
     // 2. Use cooking node
-    const cookingNode = this._children.find(n => n.cooking);
+    const cookingNode = this._children.find(n => n.cook);
     if (cookingNode) return cookingNode;
 
     // 3. Fall back to last node
@@ -80,7 +80,7 @@ export class SubnetNode extends Node {
    * Get the cooking (display) node in this subnet
    */
   displayNode(): Node | null {
-    return this._children.find(n => n.cooking) ?? null;
+    return this._children.find(n => n.cook) ?? null;
   }
 
   /**

@@ -12,8 +12,8 @@
   
   $: hasError = node.error !== null;
   $: nodeIcon = getNodeIcon(node.type);
-  $: isBypassed = node.bypassed;
-  $: isCooking = node.cooking;
+  $: isBypassed = node.bypass;
+  $: isCooking = node.cook;
   
   // Reactive statements to track port changes
   $: inputs = node.inputs;
@@ -267,7 +267,7 @@
   class:dragging={isDragging}
   class:bypassed={isBypassed}
   class:cooking={isCooking}
-  style="left: {node.position.x}px; top: {node.position.y}px; opacity: {node.bypassed ? 0.5 : 1}"
+  style="left: {node.position.x}px; top: {node.position.y}px; opacity: {node.bypass ? 0.5 : 1}"
   data-node-id={node.id}
   on:click={(e) => {
     e.stopPropagation();

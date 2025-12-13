@@ -360,11 +360,11 @@
     if (outgoingConnections.length > 0) {
       // Use the source of the first outgoing connection as the output
       outputSourceNode = outgoingConnections[0].sourceNode;
-      outputSourceNode.setCooking(true);
+      outputSourceNode.setCook(true);
     } else if (nodesToCollapse.length > 0) {
       // No outgoing - set the last node as cooking
       const lastNode = nodesToCollapse[nodesToCollapse.length - 1];
-      lastNode.setCooking(true);
+      lastNode.setCook(true);
       outputSourceNode = lastNode;
     }
 
@@ -458,7 +458,7 @@
     let outputSourceNode: Node | null = null;
     let outputSourcePort: any = null;
 
-    const cookingNode = subnetNode.children().find(n => n.cooking);
+    const cookingNode = subnetNode.children().find(n => n.cook);
     const outputNode = outputNodes[0];
 
     if (outputNode) {
@@ -620,7 +620,7 @@
     const blurNode = graph.addNode('Blur', { x: 200, y: 750 });
     const normalMapNode = graph.addNode('NormalMap', { x: 400, y: 950 });
     // Only set cook flag on Composite node
-    compositeNode.setCooking(true);
+    compositeNode.setCook(true);
     
     // Add default annotations
     const headlineAnnotation: any = {
@@ -1861,7 +1861,7 @@ node.onReady = () => {
   function handleBypassToggle(nodeId: string, e: MouseEvent) {
     const node = graph.getNode(nodeId);
     if (node) {
-      node.setBypassed(!node.bypassed);
+      node.setBypass(!node.bypass);
       graph.nodes = [...graph.nodes]; // Force reactivity
     }
   }
@@ -1872,7 +1872,7 @@ node.onReady = () => {
 
     if (e.shiftKey) {
       // Shift+click: Multi-cook mode - cook this node and all downstream nodes
-      node.setCooking(true);
+      node.setCook(true);
 
       // Cook all downstream nodes
       const cookDownstream = (n: Node) => {
@@ -1880,7 +1880,7 @@ node.onReady = () => {
           output.connections.forEach(conn => {
             const downstreamNode = graph.getNode(conn.to.nodeId);
             if (downstreamNode) {
-              downstreamNode.setCooking(true);
+              downstreamNode.setCook(true);
               cookDownstream(downstreamNode);
             }
           });
@@ -1889,11 +1889,11 @@ node.onReady = () => {
       cookDownstream(node);
     } else {
       // Normal click: Toggle cook state
-      if (node.cooking) {
-        node.setCooking(false);
+      if (node.cook) {
+        node.setCook(false);
       } else {
         graph.clearCookingNodes();
-        node.setCooking(true);
+        node.setCook(true);
       }
     }
 
@@ -2110,6 +2110,7 @@ node.onReady = () => {
   }
   
   function handleAnnotationMouseDown(annotationId: string, e: MouseEvent) {
+    console.log('[handleAnnotationMouseDown] called:', annotationId, 'button:', e.button, 'target:', (e.target as HTMLElement)?.tagName);
     e.stopPropagation();
     if (activeTool === 'select' && !editingAnnotation && e.button === 0) {
       // Don't start drag if clicking on input/button/resize handle
@@ -2775,14 +2776,14 @@ node.onReady = () => {
 
         // Ensure node can execute (not bypassed and temporarily cooking)
         // This is necessary because shouldExecute() checks if node is cooking when there are other cooking nodes
-        const wasBypassed = newNode.bypassed;
-        const wasCooking = newNode.cooking;
+        const wasBypassed = newNode.bypass;
+        const wasCooking = newNode.cook;
         if (wasBypassed) {
-          newNode.setBypassed(false);
+          newNode.setBypass(false);
         }
         // Temporarily set cooking to ensure execution happens during initialization
         if (!wasCooking) {
-          newNode.setCooking(true);
+          newNode.setCook(true);
         }
         
         // Execute the node code to define props
@@ -2795,10 +2796,10 @@ node.onReady = () => {
         
         // Restore bypass and cooking state
         if (wasBypassed) {
-          newNode.setBypassed(true);
+          newNode.setBypass(true);
         }
         if (!wasCooking) {
-          newNode.setCooking(false);
+          newNode.setCook(false);
         }
         
         newNode.cleanupUnusedPorts();
@@ -3799,7 +3800,7 @@ node.onReady = () => {
       if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         if (selectedNode) {
           e.preventDefault();
-          selectedNode.setCooking(!selectedNode.cooking);
+          selectedNode.setCook(!selectedNode.cook);
           graph.nodes = [...graph.nodes];
         }
       }
@@ -3808,7 +3809,7 @@ node.onReady = () => {
       if (e.key === 'b' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         if (selectedNode) {
           e.preventDefault();
-          selectedNode.setBypassed(!selectedNode.bypassed);
+          selectedNode.setBypass(!selectedNode.bypass);
           graph.nodes = [...graph.nodes];
         }
       }
@@ -4039,6 +4040,7 @@ node.onReady = () => {
           on:click={(e) => handleAnnotationClick(e.detail.id, e.detail.event)}
           on:dblclick={(e) => handleAnnotationDoubleClick(e.detail.id, e.detail.event)}
           on:mousedown={(e) => {
+            console.log('[Canvas on:mousedown] received from annotation:', annotation.id, 'type:', annotation.type, 'detail:', e.detail);
             const { id, event, width, height } = e.detail;
             if (annotation instanceof TextAnnotation) {
               handleAnnotationMouseDownForText(id, event, width || 540, height || 60);

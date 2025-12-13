@@ -241,7 +241,7 @@ describe('Path System', () => {
     });
 
     it('should return cooking node as outputNode', () => {
-      node1.cooking = true;
+      node1.cook = true;
       expect(subnet.outputNode()).toBe(node1);
     });
 
@@ -250,7 +250,7 @@ describe('Path System', () => {
     });
 
     it('should return cooking node for displayNode', () => {
-      node1.cooking = true;
+      node1.cook = true;
       expect(subnet.displayNode()).toBe(node1);
     });
   });
@@ -268,22 +268,22 @@ describe('Path System', () => {
       subnet.addChild(node3);
 
       // Set node1 as cooking
-      node1.setCooking(true);
-      expect(node1.cooking).toBe(true);
-      expect(node2.cooking).toBe(false);
-      expect(node3.cooking).toBe(false);
+      node1.setCook(true);
+      expect(node1.cook).toBe(true);
+      expect(node2.cook).toBe(false);
+      expect(node3.cook).toBe(false);
 
       // Set node2 as cooking - should clear node1
-      node2.setCooking(true);
-      expect(node1.cooking).toBe(false);
-      expect(node2.cooking).toBe(true);
-      expect(node3.cooking).toBe(false);
+      node2.setCook(true);
+      expect(node1.cook).toBe(false);
+      expect(node2.cook).toBe(true);
+      expect(node3.cook).toBe(false);
 
       // Set node3 as cooking - should clear node2
-      node3.setCooking(true);
-      expect(node1.cooking).toBe(false);
-      expect(node2.cooking).toBe(false);
-      expect(node3.cooking).toBe(true);
+      node3.setCook(true);
+      expect(node1.cook).toBe(false);
+      expect(node2.cook).toBe(false);
+      expect(node3.cook).toBe(true);
     });
   });
 });

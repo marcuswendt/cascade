@@ -39,8 +39,8 @@ export class Node {
 
   // Computation-specific
   code: string = '';
-  bypassed: boolean = false;
-  cooking: boolean = false;
+  bypass: boolean = false;
+  cook: boolean = false;
 
   // Path system - hierarchical node organization
   parent: Node | null = null;
@@ -691,20 +691,20 @@ export class Node {
 
   // ============ Behavior Toggles ============
 
-  setBypassed(value: boolean): void {
-    this.bypassed = value;
+  setBypass(value: boolean): void {
+    this.bypass = value;
     this.markDirty();
   }
 
-  setCooking(value: boolean): void {
-    // Exclusive per network: setting cooking on one node clears it from siblings
+  setCook(value: boolean): void {
+    // Exclusive per network: setting cook on one node clears it from siblings
     if (value && this.parent) {
       this.parent.children()
-        .filter(n => n !== this && n.cooking)
-        .forEach(n => n.setCooking(false));
+        .filter(n => n !== this && n.cook)
+        .forEach(n => n.setCook(false));
     }
 
-    this.cooking = value;
+    this.cook = value;
     if (value) this.graph.cookingNodes.add(this);
     else this.graph.cookingNodes.delete(this);
     this.markDirty();
@@ -729,9 +729,9 @@ export class Node {
   }
 
   shouldExecute(): boolean {
-    if (this.bypassed) return false;
+    if (this.bypass) return false;
     if (this.graph.cookingNodes.size > 0) {
-      return this.cooking || this.graph.isDownstreamOfCooking(this);
+      return this.cook || this.graph.isDownstreamOfCooking(this);
     }
     return true;
   }
@@ -887,8 +887,8 @@ export class Node {
       inputs: this.inputs.map(p => ({ id: p.id, name: p.name, value: p.value, connections: p.connections.map(c => c.id) })),
       outputs: this.outputs.map(p => ({ id: p.id, name: p.name, value: p.value, connections: p.connections.map(c => c.id) })),
       props: Object.fromEntries(Object.entries(this.props).map(([k, p]) => [k, p.value])),
-      bypassed: this.bypassed,
-      cooking: this.cooking
+      bypass: this.bypass,
+      cook: this.cook
     };
   }
 
@@ -906,8 +906,8 @@ export class Node {
         if (this.props[k]) this.props[k].value = v;
       });
     }
-    if (state.bypassed !== undefined) this.setBypassed(state.bypassed);
-    if (state.cooking !== undefined) this.setCooking(state.cooking);
+    if (state.bypass !== undefined) this.setBypass(state.bypass);
+    if (state.cook !== undefined) this.setCook(state.cook);
   }
 
   // ============ Port Cleanup ============
@@ -966,8 +966,8 @@ export class Node {
     );
     if (Object.keys(props).length > 0) result.props = props;
 
-    if (this.bypassed) result.bypass = true;
-    if (this.cooking) result.cook = true;
+    if (this.bypass) result.bypass = true;
+    if (this.cook) result.cook = true;
 
     return result;
   }

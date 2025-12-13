@@ -640,12 +640,12 @@ export class Graph {
     if (except) {
       this.cookingNodes.forEach(comp => {
         if (comp !== except) {
-          comp.setCooking(false);
+          comp.setCook(false);
         }
       });
     } else {
       this.cookingNodes.forEach(comp => {
-        comp.setCooking(false);
+        comp.setCook(false);
       });
     }
   }
@@ -1118,10 +1118,10 @@ export class Graph {
     }
 
     // Behavior toggles
-    if (node.bypassed) {
+    if (node.bypass) {
       result.bypass = true;
     }
-    if (node.cooking) {
+    if (node.cook) {
       result.cook = true;
     }
 
@@ -1305,14 +1305,12 @@ export class Graph {
         });
       }
 
-      // Restore behavior toggles (support both old and new field names)
-      const bypassValue = nodeData.bypass !== undefined ? nodeData.bypass : nodeData.bypassed;
-      if (bypassValue !== undefined) {
-        node.setBypassed(bypassValue);
+      // Restore behavior toggles
+      if (nodeData.bypass !== undefined) {
+        node.setBypass(nodeData.bypass);
       }
-      const cookValue = nodeData.cook !== undefined ? nodeData.cook : nodeData.cooking;
-      if (cookValue !== undefined) {
-        node.setCooking(cookValue);
+      if (nodeData.cook !== undefined) {
+        node.setCook(nodeData.cook);
       }
 
       // Set up node function - class-based nodes don't need this (they use setup())
@@ -1339,7 +1337,10 @@ export class Graph {
           ? { x: annData.position[0] || 0, y: annData.position[1] || 0 }
           : { x: annData.position?.x || 0, y: annData.position?.y || 0 };
 
-        switch (annData.type) {
+        // Normalize type to PascalCase for switch matching
+        const normalizedType = annData.type.charAt(0).toUpperCase() + annData.type.slice(1).toLowerCase();
+
+        switch (normalizedType) {
           case 'Image':
             annotation = new ImageAnnotation(annData.id, graph);
             (annotation as ImageAnnotation).src = annData.src;
@@ -1350,6 +1351,7 @@ export class Graph {
             break;
           case 'Group':
             annotation = new GroupAnnotation(annData.id, graph);
+            (annotation as any).content = annData.content;
             break;
           case 'Line':
             annotation = new LineAnnotation(annData.id, graph);

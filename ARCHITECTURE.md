@@ -1,5 +1,13 @@
 # Cascade Architecture
 
+> **Important:** This project requires Svelte 5 and compatible tooling:
+> - `svelte`: ^5.0.0
+> - `@sveltejs/vite-plugin-svelte`: ^5.0.0 (must match Svelte major version)
+> - `vite`: ^6.0.0
+> - `svelte-check`: ^4.0.0
+>
+> Do NOT downgrade these versions - older versions are incompatible.
+
 ## Source Directory Structure
 
 ```
@@ -94,6 +102,20 @@ import { SubnetNode } from './nodes/SubnetNode.js';
 ```
 
 ## Design Principles
+
+### Naming Conventions
+
+Prefer concise, short names over verbose ones:
+
+- `node.bypass` not `node.bypassed`
+- `node.cook` not `node.cooking`
+- `setBypass()` not `setBypassed()`
+
+This applies to properties, methods, and serialization keys.
+
+### No Backwards Compatibility (Development Phase)
+
+During active development, we prioritize clean architecture over backwards compatibility. Breaking changes to serialization formats, APIs, and property names are acceptable. This keeps the codebase streamlined and avoids accumulating compatibility shims.
 
 ### Prefer Polymorphism Over Type Discrimination
 

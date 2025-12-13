@@ -241,6 +241,9 @@
       currentFilePath = null;
       updateWindowTitle();
       
+      // Wait for annotation ports to be initialized (especially image annotations)
+      await graph.waitForAnnotationPorts();
+
       // Execute all nodes to initialize them
       for (const node of graph.nodes) {
         if (node.code) {
@@ -255,7 +258,7 @@
           }
         }
       }
-      
+
       // Restore connections now that ports exist
       graph.restoreConnections();
       // Wait for DOM to update before forcing reactivity
@@ -780,7 +783,7 @@
         if (e.key === 'b' || e.key === 'B') {
           if (!e.metaKey && !e.ctrlKey && !e.altKey) {
             e.preventDefault();
-            selectedNode.setBypassed(!selectedNode.bypassed);
+            selectedNode.setBypass(!selectedNode.bypass);
           }
         }
         
@@ -790,14 +793,14 @@
             e.preventDefault();
             if (e.shiftKey) {
               // Shift+C - Multi-cook (cook this chain)
-              selectedNode.setCooking(true);
+              selectedNode.setCook(true);
               // Cook all downstream nodes
               const cookDownstream = (node: Node) => {
                 node.outputs.forEach((output) => {
                   output.connections.forEach((conn) => {
                     const downstreamNode = graph?.getNode(conn.to.nodeId);
                     if (downstreamNode) {
-                      downstreamNode.setCooking(true);
+                      downstreamNode.setCook(true);
                       cookDownstream(downstreamNode);
                     }
                   });
@@ -806,11 +809,11 @@
               cookDownstream(selectedNode);
             } else {
               // Normal C: Always clear other cooking nodes first, then toggle this one
-              if (selectedNode.cooking) {
-                selectedNode.setCooking(false);
+              if (selectedNode.cook) {
+                selectedNode.setCook(false);
               } else {
                 graph.clearCookingNodes();
-                selectedNode.setCooking(true);
+                selectedNode.setCook(true);
               }
             }
           }
@@ -820,8 +823,8 @@
         if (e.altKey && (e.key === 'b' || e.key === 'B')) {
           e.preventDefault();
           graph.nodes.forEach(node => {
-            if (node.bypassed) {
-              node.setBypassed(false);
+            if (node.bypass) {
+              node.setBypass(false);
             }
           });
         }

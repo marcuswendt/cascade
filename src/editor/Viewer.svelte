@@ -16,7 +16,7 @@
       displayNode = selectedNode;
     } else if (graph) {
       // Try to get first cooking node
-      const cookingNodesArray = Array.from(graph.cookingNodes || []);
+      const cookingNodesArray = Array.from(graph.cookNodes || []);
       if (cookingNodesArray.length > 0) {
         displayNode = cookingNodesArray[0];
       } else {
@@ -30,7 +30,7 @@
   // Watch for cooking nodes changes
   $: if (graph) {
     // Force reactivity when cooking nodes change
-    const _ = graph.cookingNodes?.size;
+    const _ = graph.cookNodes?.size;
   }
   
   // Determine viewer type based on node preview/output
