@@ -1,11 +1,15 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { nodeLibraries, getAllNodes, getNodesByLibraryAndCategory, getNodePathShort, customNodeTemplate, type NodeTemplate, type Category } from './nodeTemplates';
+  import { nodeLibraries, getAllNodes, getNodesByLibraryAndCategory, getNodePathShort, customNodeTemplate, codeTemplates, type NodeTemplate, type Category } from './nodeTemplates';
   import Icon from './Icon.svelte';
   import { typeToPackagePath } from '@/utils/nodeTypeUtils';
   import { nodeHistoryStore } from './stores/nodeHistoryStore';
+  import CustomNodeDialog from './CustomNodeDialog.svelte';
 
   import { onMount } from 'svelte';
+
+  // Custom node dialog state
+  let showCustomNodeDialog = false;
   
   export let libraryId: string | null = null;
   export let categoryId: string | null = null;
@@ -314,6 +318,38 @@
   
   function handleCategoryClick(libId: string, catId: string) {
     dispatch('selectCategory', { libraryId: libId, categoryId: catId });
+  }
+
+  function handleCustomNodeCreate(e: CustomEvent<{ name: string; modulePath: string; baseClass: string; template: string }>) {
+    const { name, modulePath, baseClass, template } = e.detail;
+
+    // Get the code template for the selected base class
+    const templateFn = codeTemplates[template] || codeTemplates.node;
+    const code = templateFn(name);
+
+    // Add to history
+    nodeHistoryStore.addToHistory({
+      name,
+      icon: 'Zap',
+      description: `Custom node based on ${baseClass}`,
+      type: modulePath
+    });
+
+    // Dispatch with custom node config
+    dispatch('addNode', {
+      type: modulePath,
+      libraryId: null,
+      categoryId: null,
+      customConfig: {
+        name,
+        modulePath,
+        baseClass,
+        code
+      }
+    });
+
+    showCustomNodeDialog = false;
+    handleClose();
   }
   
   function handleLibraryClick(libId: string) {
@@ -635,7 +671,9 @@
       <!-- Custom button -->
       <button
         class="library-item"
-        on:click={() => handleNodeClick(customNodeTemplate)}
+        on:click={() => {
+          showCustomNodeDialog = true;
+        }}
         title={customNodeTemplate.description}
       >
         <span class="node-icon">
@@ -706,6 +744,13 @@
     </div>
   {/if}
 {/if}
+
+<!-- Custom Node Creation Dialog -->
+<CustomNodeDialog
+  bind:open={showCustomNodeDialog}
+  on:create={handleCustomNodeCreate}
+  on:close={() => showCustomNodeDialog = false}
+/>
 
 <style>
   .menu-column {

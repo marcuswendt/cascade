@@ -40,6 +40,123 @@ export const customNodeTemplate: NodeTemplate = {
   type: 'Custom'
 };
 
+// Code templates for different base classes
+export const codeTemplates: Record<string, (name: string) => string> = {
+  node: (name: string) => `// ${name} - Custom Node
+//
+// Define inputs
+const input = node.in('input', null);
+
+// Define properties (shown in inspector)
+node.defineProp('value', {
+  value: 1.0,
+  type: 'slider',
+  params: { min: 0, max: 10, step: 0.1 },
+  displayName: 'Value'
+});
+
+// Define outputs
+const output = node.out('output');
+
+// React to input changes
+input.onChange = (value) => {
+  // Process input and set output
+  output.setValue(value);
+};
+
+// React to property changes
+node.watchProp('value', (newValue) => {
+  output.setValue(newValue);
+});
+
+// Called once when node is ready
+node.onReady = () => {
+  output.setValue(node.props.value.value);
+};
+`,
+
+  lens: (name: string) => `// ${name} - Image Processing Node
+// Extends LensNode for canvas/image utilities
+//
+// Available helpers from LensNode:
+//   this.createCanvas(width, height) - Create a canvas
+//   this.getImageSize(img) - Get {width, height} from image/canvas
+//   this.getImageData(img, w?, h?) - Get ImageData from image
+//   this.putImageData(imageData) - Create canvas from ImageData
+//   this.colorToCss(color) - Convert {r,g,b,a} to CSS string
+//   this.normalizeColor(color) - Normalize color values to 0-1
+//   this.setOutputAndPreview(output, canvas) - Set output and preview
+
+// Define image input
+const imageInput = node.in('image', null);
+
+// Define properties
+node.defineProp('intensity', {
+  value: 1.0,
+  type: 'slider',
+  params: { min: 0, max: 2, step: 0.01 },
+  displayName: 'Intensity'
+});
+
+node.defineProp('width', {
+  value: 512,
+  type: 'int',
+  params: { min: 1, max: 4096, step: 1 },
+  displayName: 'Width'
+});
+
+node.defineProp('height', {
+  value: 512,
+  type: 'int',
+  params: { min: 1, max: 4096, step: 1 },
+  displayName: 'Height'
+});
+
+// Define output
+const output = node.out('image');
+
+// Process function
+function process() {
+  const width = node.props.width.value;
+  const height = node.props.height.value;
+  const intensity = node.props.intensity.value;
+
+  // Create output canvas
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  // If we have an input image, process it
+  const inputImage = imageInput.value;
+  if (inputImage) {
+    ctx.drawImage(inputImage, 0, 0, width, height);
+    // Add your image processing here
+  } else {
+    // Generate pattern if no input
+    // Example: simple gradient
+    const gradient = ctx.createLinearGradient(0, 0, width, height);
+    gradient.addColorStop(0, \`rgba(255, 0, 0, \${intensity})\`);
+    gradient.addColorStop(1, \`rgba(0, 0, 255, \${intensity})\`);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  output.setValue(canvas);
+  node.preview = canvas;
+}
+
+// React to changes
+imageInput.onChange = process;
+node.watchProp('intensity', process);
+node.watchProp('width', process);
+node.watchProp('height', process);
+
+node.onReady = process;
+`
+};
+
 // Get all available libraries that have nodes
 export function getAvailableLibraries(): Library[] {
   return nodeLibraries.filter(library => {

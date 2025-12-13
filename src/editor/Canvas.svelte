@@ -952,12 +952,15 @@ node.onReady = () => {
           strokeColor: '#ffffff'
         }
       };
-      if (currentNetwork) {
-        annotation.parent = currentNetwork;
-        (currentNetwork as any)._children.push(annotation);
-      }
       recordHistory();
       graph.addAnnotation(annotation);
+      // Set parent after annotation is added
+      if (currentNetwork) {
+        const addedAnnotation = graph.getAnnotation(id);
+        if (addedAnnotation) {
+          addChildToNetwork(currentNetwork, addedAnnotation);
+        }
+      }
       graph.annotations = [...graph.annotations];
       drawingLine = { annotationId: id, startPos: { x, y } };
       e.stopPropagation();
@@ -982,12 +985,15 @@ node.onReady = () => {
           strokeColor: '#ffffff'
         }
       };
-      if (currentNetwork) {
-        annotation.parent = currentNetwork;
-        (currentNetwork as any)._children.push(annotation);
-      }
       recordHistory();
       graph.addAnnotation(annotation);
+      // Set parent after annotation is added
+      if (currentNetwork) {
+        const addedAnnotation = graph.getAnnotation(id);
+        if (addedAnnotation) {
+          addChildToNetwork(currentNetwork, addedAnnotation);
+        }
+      }
       graph.annotations = [...graph.annotations];
       drawingPolyline = { annotationId: id, points: [{ x, y }] };
       e.stopPropagation();
@@ -2009,11 +2015,13 @@ node.onReady = () => {
     // Record history before creating annotation
     recordHistory();
 
-    // Helper to set parent if we're inside a subnet
-    const setAnnotationParent = (annotation: any) => {
+    // Helper to set parent after annotation is added (addAnnotation creates new instance)
+    const setAnnotationParentAfterAdd = (annotationId: string) => {
       if (currentNetwork) {
-        annotation.parent = currentNetwork;
-        (currentNetwork as any)._children.push(annotation);
+        const addedAnnotation = graph.getAnnotation(annotationId);
+        if (addedAnnotation) {
+          addChildToNetwork(currentNetwork, addedAnnotation);
+        }
       }
     };
 
@@ -2035,8 +2043,8 @@ node.onReady = () => {
               position: { x, y },
               size: { width: 200, height: 150 }
             };
-            setAnnotationParent(annotation);
             graph.addAnnotation(annotation);
+            setAnnotationParentAfterAdd(id);
             graph.annotations = [...graph.annotations];
           };
           reader.readAsDataURL(file);
@@ -2051,8 +2059,8 @@ node.onReady = () => {
         position: { x, y },
         containedElements: []
       };
-      setAnnotationParent(annotation);
       graph.addAnnotation(annotation);
+      setAnnotationParentAfterAdd(id);
       graph.annotations = [...graph.annotations];
       // Start editing immediately
       editingAnnotation = id;
@@ -2087,8 +2095,8 @@ node.onReady = () => {
           borderRadius: 0
         }
       };
-      setAnnotationParent(annotation);
       graph.addAnnotation(annotation);
+      setAnnotationParentAfterAdd(id);
       graph.annotations = [...graph.annotations];
       // Start editing immediately
       editingAnnotation = id;
@@ -2677,11 +2685,15 @@ node.onReady = () => {
             size: { width: 200, height: 150 },
             caption: file.name
           };
-          if (currentNetwork) {
-            annotation.parent = currentNetwork;
-            (currentNetwork as any)._children.push(annotation);
-          }
           graph.addAnnotation(annotation);
+
+          // Set parent after annotation is added (addAnnotation creates a new instance)
+          if (currentNetwork) {
+            const addedAnnotation = graph.getAnnotation(id);
+            if (addedAnnotation) {
+              addChildToNetwork(currentNetwork, addedAnnotation);
+            }
+          }
           graph.annotations = [...graph.annotations];
           
           // Also add to asset manager
@@ -2771,7 +2783,16 @@ node.onReady = () => {
     }
   }
 
-  export async function addNode(detail: { type: string; category: string | null }) {
+  export async function addNode(detail: {
+    type: string;
+    category: string | null;
+    customConfig?: {
+      name: string;
+      modulePath: string;
+      baseClass: string;
+      code: string;
+    };
+  }) {
     // Record history before adding node
     recordHistory();
 
@@ -2780,6 +2801,7 @@ node.onReady = () => {
     const previouslySelectedAnnotationIds = [...selectedAnnotations];
 
     const nodeType = detail.type;
+    const customConfig = detail.customConfig;
     const rect = canvas.getBoundingClientRect();
 
     // Calculate the center of the visible viewport in screen coordinates
@@ -2832,7 +2854,8 @@ node.onReady = () => {
 
     if (!isClassBased) {
       // Custom node: set default code template and compile
-      const defaultCode = getDefaultNodeCode(nodeType);
+      // Use custom config code if provided, otherwise use default template
+      const defaultCode = customConfig?.code || getDefaultNodeCode(nodeType);
       newNode.code = defaultCode;
 
       // Compile and execute the node code to initialize props and ports
