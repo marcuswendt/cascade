@@ -2,6 +2,7 @@
   import type { CascadePanelParams } from '../dockview/types';
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
+  import type { Annotation } from '@/nodes/annotations/Annotation';
   import Viewer from '../Viewer.svelte';
   import { sharedContextStore, panelLockStore } from '../dockview/renderer';
 
@@ -13,24 +14,38 @@
   // Props from shared context
   export let graph: Graph | undefined = undefined;
   export let selectedNode: Node | null = null;
+  export let selectedAnnotationId: string | null = null;
 
   // The node to actually display (locked or selected)
   $: lockState = $panelLockStore.get(panelId);
   $: isLocked = lockState?.isLocked ?? false;
   $: displayNode = isLocked ? lockState?.lockedNode : selectedNode;
 
+  // Resolve the selected annotation
+  let resolvedAnnotation: Annotation | null = null;
+  $: {
+    if (selectedAnnotationId && graph) {
+      resolvedAnnotation = graph.getAnnotation(selectedAnnotationId);
+    } else {
+      resolvedAnnotation = null;
+    }
+  }
+
   // Subscribe to context store for reactive updates
   $: if ($sharedContextStore) {
     graph = $sharedContextStore.graph;
     selectedNode = $sharedContextStore.selectedNode;
+    selectedAnnotationId = $sharedContextStore.selectedAnnotation;
   }
 
-  // Update panel title when display node changes
+  // Update panel title when display node/annotation changes
   $: {
     if (panelApi?.setTitle) {
       const lockPrefix = isLocked ? '~ ' : '';
       if (displayNode) {
         panelApi.setTitle(`${lockPrefix}Viewer: ${displayNode.id}`);
+      } else if (resolvedAnnotation) {
+        panelApi.setTitle(`${lockPrefix}Viewer: ${resolvedAnnotation.caption || resolvedAnnotation.type}`);
       } else {
         panelApi.setTitle(`${lockPrefix}Viewer`);
       }
@@ -39,7 +54,7 @@
 </script>
 
 <div class="panel-wrapper">
-  <Viewer {graph} selectedNode={displayNode} />
+  <Viewer {graph} selectedNode={displayNode} selectedAnnotation={resolvedAnnotation} />
 </div>
 
 <style>

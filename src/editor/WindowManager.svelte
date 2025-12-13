@@ -11,6 +11,7 @@
   import CodeEditor from './CodeEditor.svelte';
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
+  import type { Annotation } from '@/nodes/annotations/Annotation';
 
   import { createEventDispatcher } from 'svelte';
 
@@ -573,6 +574,16 @@
   $: inspectorTabsCount = inspectorTabs.length;
   $: inspectorActiveTabId = activeTabIds.get('inspector');
   
+  // Resolve selected annotation for Viewer
+  let resolvedAnnotation: Annotation | null = null;
+  $: {
+    if (selectedAnnotation && graph) {
+      resolvedAnnotation = graph.getAnnotation(selectedAnnotation);
+    } else {
+      resolvedAnnotation = null;
+    }
+  }
+
   // Get currently cooking node for Viewer title
   let cookingNode: Node | null = null;
   $: {
@@ -582,9 +593,13 @@
     }
     cookingNode = graph ? Array.from(graph.cookingNodes)[0] || null : null;
   }
-  // Viewer title: show selected node if selected, otherwise show cooking node
-  $: viewerTitle = selectedNode ? selectedNode.id : (cookingNode ? cookingNode.id : 'Viewer');
-  
+  // Viewer title: show selected node/annotation if selected, otherwise show cooking node
+  $: viewerTitle = selectedNode
+    ? selectedNode.id
+    : (resolvedAnnotation
+      ? (resolvedAnnotation.caption || resolvedAnnotation.type || 'Annotation')
+      : (cookingNode ? cookingNode.id : 'Viewer'));
+
   // Get Inspector title based on selected node/annotation
   let inspectorTitle = 'Inspector';
   $: {
@@ -720,7 +735,7 @@
         {:else if graphActiveTab && graphActiveTab.type === 'viewer'}
           <!-- Viewer Tab -->
           <div class="tab-content">
-            <Viewer {graph} {selectedNode} />
+            <Viewer {graph} {selectedNode} selectedAnnotation={resolvedAnnotation} />
           </div>
         {:else if graphActiveTab && graphActiveTab.type === 'log'}
           <!-- Log Tab -->
@@ -859,11 +874,11 @@
         {:else if viewerActiveTab && viewerActiveTab.type === 'viewer'}
           <!-- Viewer Tab (default) -->
           <div class="tab-content">
-            <Viewer {graph} {selectedNode} />
+            <Viewer {graph} {selectedNode} selectedAnnotation={resolvedAnnotation} />
           </div>
         {:else}
           <!-- No tabs - show Viewer -->
-          <Viewer {graph} {selectedNode} />
+          <Viewer {graph} {selectedNode} selectedAnnotation={resolvedAnnotation} />
         {/if}
       </Window>
       
@@ -941,7 +956,7 @@
           </div>
         {:else if logActiveTab && logActiveTab.type === 'viewer'}
           <div class="tab-content">
-            <Viewer {graph} {selectedNode} />
+            <Viewer {graph} {selectedNode} selectedAnnotation={resolvedAnnotation} />
           </div>
         {:else if logActiveTab && logActiveTab.type === 'inspector'}
           <div class="tab-content">
@@ -1029,7 +1044,7 @@
           </div>
         {:else if inspectorActiveTab && inspectorActiveTab.type === 'viewer'}
           <div class="tab-content">
-            <Viewer {graph} {selectedNode} />
+            <Viewer {graph} {selectedNode} selectedAnnotation={resolvedAnnotation} />
           </div>
         {:else if inspectorActiveTab && inspectorActiveTab.type === 'log'}
           <div class="tab-content">
@@ -1112,7 +1127,7 @@
             </div>
           {:else if inspectorActiveTab && inspectorActiveTab.type === 'viewer'}
             <div class="tab-content">
-              <Viewer {graph} {selectedNode} />
+              <Viewer {graph} {selectedNode} selectedAnnotation={resolvedAnnotation} />
             </div>
           {:else if inspectorActiveTab && inspectorActiveTab.type === 'log'}
             <div class="tab-content">
@@ -1197,7 +1212,7 @@
           </div>
         {:else if inspectorActiveTab && inspectorActiveTab.type === 'viewer'}
           <div class="tab-content">
-            <Viewer {graph} {selectedNode} />
+            <Viewer {graph} {selectedNode} selectedAnnotation={resolvedAnnotation} />
           </div>
         {:else if inspectorActiveTab && inspectorActiveTab.type === 'log'}
           <div class="tab-content">

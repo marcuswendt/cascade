@@ -2,40 +2,69 @@
   import { onMount, onDestroy } from 'svelte';
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
+  import type { Annotation } from '@/nodes/annotations/Annotation';
 
   export let graph: Graph | undefined;
   export let selectedNode: Node | null = null;
+  export let selectedAnnotation: Annotation | null = null;
 
   let container: HTMLDivElement;
   let currentViewer: 'canvas' | 'image' | 'text' | 'empty' = 'empty';
   let displayNode: Node | null = null;
-  
-  // Determine which node to display
+  let displayAnnotation: Annotation | null = null;
+
+  // Determine which node/annotation to display
   $: {
-    if (selectedNode) {
+    // Priority: selected annotation > selected node > cooking nodes
+    if (selectedAnnotation) {
+      displayAnnotation = selectedAnnotation;
+      displayNode = null;
+    } else if (selectedNode) {
       displayNode = selectedNode;
+      displayAnnotation = null;
     } else if (graph) {
       // Try to get first cooking node
-      const cookingNodesArray = Array.from(graph.cookNodes || []);
+      const cookingNodesArray = Array.from(graph.cookingNodes || []) as Node[];
       if (cookingNodesArray.length > 0) {
         displayNode = cookingNodesArray[0];
       } else {
         displayNode = null;
       }
+      displayAnnotation = null;
     } else {
       displayNode = null;
+      displayAnnotation = null;
     }
   }
-  
+
   // Watch for cooking nodes changes
   $: if (graph) {
     // Force reactivity when cooking nodes change
-    const _ = graph.cookNodes?.size;
+    const _ = graph.cookingNodes?.size;
   }
-  
-  // Determine viewer type based on node preview/output
+
+  // Determine viewer type based on node/annotation
   $: {
-    if (!displayNode) {
+    if (displayAnnotation) {
+      // Handle annotation display
+      const annType = displayAnnotation.type;
+      if (annType === 'Image') {
+        // Check if image annotation has loaded image in output port
+        const outputPort = displayAnnotation.outputs?.find(p => p.name === 'image');
+        if (outputPort?.value instanceof HTMLImageElement) {
+          currentViewer = 'image';
+        } else if ((displayAnnotation as any).src) {
+          // Has src but image not loaded yet - still show as image
+          currentViewer = 'image';
+        } else {
+          currentViewer = 'empty';
+        }
+      } else if (annType === 'Text') {
+        currentViewer = 'text';
+      } else {
+        currentViewer = 'empty';
+      }
+    } else if (!displayNode) {
       currentViewer = 'empty';
     } else if (displayNode.preview) {
       // Check preview property
@@ -62,15 +91,15 @@
       }
     }
   }
-  
+
   // Render canvas viewer
   function renderCanvas() {
     if (!container || !displayNode) return;
-    
+
     container.innerHTML = '';
-    
+
     let canvas: HTMLCanvasElement | null = null;
-    
+
     if (displayNode.preview instanceof HTMLCanvasElement) {
       canvas = displayNode.preview;
     } else {
@@ -79,7 +108,7 @@
         canvas = outputPort.value;
       }
     }
-    
+
     if (canvas) {
       const wrapper = document.createElement('div');
       wrapper.className = 'canvas-viewer';
@@ -89,72 +118,97 @@
       wrapper.style.alignItems = 'center';
       wrapper.style.justifyContent = 'center';
       wrapper.style.background = '#0a0a0a';
-      
+
       const img = document.createElement('img');
       img.src = canvas.toDataURL();
       img.style.maxWidth = '100%';
       img.style.maxHeight = '100%';
       img.style.objectFit = 'contain';
       wrapper.appendChild(img);
-      
+
       container.appendChild(wrapper);
     }
   }
-  
+
   // Render image viewer
   function renderImage() {
-    if (!container || !displayNode) return;
-    
+    if (!container) return;
+
     container.innerHTML = '';
-    
+
     let image: HTMLImageElement | null = null;
-    
-    if (displayNode.preview instanceof HTMLImageElement) {
-      image = displayNode.preview;
-    } else {
-      const outputPort = displayNode.outputs.find(p => p.name === 'output' || p.name === 'preview');
+    let imageSrc: string | null = null;
+
+    // Check if displaying an annotation
+    if (displayAnnotation && displayAnnotation.type === 'Image') {
+      const outputPort = displayAnnotation.outputs?.find(p => p.name === 'image');
       if (outputPort?.value instanceof HTMLImageElement) {
         image = outputPort.value;
+      } else {
+        // Try to load from src
+        imageSrc = (displayAnnotation as any).src;
+      }
+    } else if (displayNode) {
+      if (displayNode.preview instanceof HTMLImageElement) {
+        image = displayNode.preview;
+      } else {
+        const outputPort = displayNode.outputs.find(p => p.name === 'output' || p.name === 'preview');
+        if (outputPort?.value instanceof HTMLImageElement) {
+          image = outputPort.value;
+        }
       }
     }
-    
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'image-viewer';
+    wrapper.style.width = '100%';
+    wrapper.style.height = '100%';
+    wrapper.style.display = 'flex';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.justifyContent = 'center';
+    wrapper.style.background = '#0a0a0a';
+
     if (image) {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'image-viewer';
-      wrapper.style.width = '100%';
-      wrapper.style.height = '100%';
-      wrapper.style.display = 'flex';
-      wrapper.style.alignItems = 'center';
-      wrapper.style.justifyContent = 'center';
-      wrapper.style.background = '#0a0a0a';
-      
       const img = image.cloneNode(true) as HTMLImageElement;
       img.style.maxWidth = '100%';
       img.style.maxHeight = '100%';
       img.style.objectFit = 'contain';
       wrapper.appendChild(img);
-      
-      container.appendChild(wrapper);
+    } else if (imageSrc) {
+      const img = document.createElement('img');
+      img.src = imageSrc.startsWith('/') || imageSrc.startsWith('http') || imageSrc.startsWith('data:')
+        ? imageSrc : `/${imageSrc}`;
+      img.style.maxWidth = '100%';
+      img.style.maxHeight = '100%';
+      img.style.objectFit = 'contain';
+      wrapper.appendChild(img);
     }
+
+    container.appendChild(wrapper);
   }
-  
+
   // Render text viewer
   function renderText() {
-    if (!container || !displayNode) return;
-    
+    if (!container) return;
+
     container.innerHTML = '';
-    
+
     let content: any = null;
-    
-    if (displayNode.preview && !(displayNode.preview instanceof HTMLElement)) {
-      content = displayNode.preview;
-    } else {
-      const outputPort = displayNode.outputs.find(p => p.name === 'output' || p.name === 'preview' || p.name === 'data');
-      if (outputPort?.value !== undefined) {
-        content = outputPort.value;
+
+    // Check if displaying an annotation
+    if (displayAnnotation && displayAnnotation.type === 'Text') {
+      content = (displayAnnotation as any).content || '';
+    } else if (displayNode) {
+      if (displayNode.preview && !(displayNode.preview instanceof HTMLElement)) {
+        content = displayNode.preview;
+      } else {
+        const outputPort = displayNode.outputs.find(p => p.name === 'output' || p.name === 'preview' || p.name === 'data');
+        if (outputPort?.value !== undefined) {
+          content = outputPort.value;
+        }
       }
     }
-    
+
     if (content !== null) {
       const wrapper = document.createElement('div');
       wrapper.className = 'text-viewer';
@@ -167,7 +221,7 @@
       wrapper.style.fontFamily = 'Monaco, Menlo, monospace';
       wrapper.style.fontSize = '12px';
       wrapper.style.lineHeight = '1.6';
-      
+
       let textContent = '';
       if (typeof content === 'object') {
         try {
@@ -178,41 +232,43 @@
       } else {
         textContent = String(content);
       }
-      
+
       const pre = document.createElement('pre');
       pre.style.margin = '0';
       pre.style.whiteSpace = 'pre-wrap';
       pre.style.wordBreak = 'break-word';
       pre.textContent = textContent;
       wrapper.appendChild(pre);
-      
+
       container.appendChild(wrapper);
     }
   }
-  
+
   // Render empty viewer
   function renderEmpty() {
     if (!container) return;
-    
+
     container.innerHTML = '';
-    
+
     const wrapper = document.createElement('div');
     wrapper.className = 'empty-viewer';
-    
+
     const p1 = document.createElement('p');
     p1.textContent = 'No preview available';
     wrapper.appendChild(p1);
-    
+
     const p2 = document.createElement('p');
     p2.className = 'hint';
-    p2.textContent = 'Select a node with output to view its content';
+    p2.textContent = 'Select a node or annotation to view its content';
     wrapper.appendChild(p2);
-    
+
     container.appendChild(wrapper);
   }
-  
-  // Update viewer when node or type changes
+
+  // Update viewer when node/annotation or type changes
   $: {
+    displayNode;
+    displayAnnotation;
     if (currentViewer === 'canvas') {
       renderCanvas();
     } else if (currentViewer === 'image') {
@@ -223,11 +279,11 @@
       renderEmpty();
     }
   }
-  
+
   onMount(() => {
     // Periodically check for preview updates (since preview might be updated asynchronously)
     const interval = setInterval(() => {
-      if (displayNode && currentViewer !== 'empty') {
+      if ((displayNode || displayAnnotation) && currentViewer !== 'empty') {
         if (currentViewer === 'canvas') {
           renderCanvas();
         } else if (currentViewer === 'image') {
@@ -237,7 +293,7 @@
         }
       }
     }, 100);
-    
+
     return () => {
       clearInterval(interval);
     };
@@ -254,7 +310,7 @@
     overflow: hidden;
     background: #0a0a0a;
   }
-  
+
   :global(.empty-viewer) {
     width: 100%;
     height: 100%;
@@ -267,25 +323,24 @@
     text-align: center;
     padding: 32px;
   }
-  
+
   :global(.empty-viewer p) {
     margin: 8px 0;
   }
-  
+
   :global(.empty-viewer .hint) {
     font-size: 12px;
     color: #444;
   }
-  
+
   :global(.canvas-viewer),
   :global(.image-viewer) {
     width: 100%;
     height: 100%;
   }
-  
+
   :global(.text-viewer) {
     width: 100%;
     height: 100%;
   }
 </style>
-

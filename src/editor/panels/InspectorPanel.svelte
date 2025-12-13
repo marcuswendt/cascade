@@ -36,7 +36,7 @@
   // Get annotation when displayAnnotationId changes
   $: {
     if (graph && displayAnnotationId) {
-      annotation = graph.elements.find(el => el.id === displayAnnotationId) || null;
+      annotation = graph.getAnnotation(displayAnnotationId);
     } else {
       annotation = null;
     }
