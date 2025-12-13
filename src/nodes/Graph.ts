@@ -685,7 +685,10 @@ export class Graph {
       annotationInstance = annotation;
     } else {
       const annData = annotation;
-      switch (annData.type) {
+      // Normalize type to PascalCase for switch matching
+      const normalizedType = annData.type.charAt(0).toUpperCase() + annData.type.slice(1).toLowerCase();
+
+      switch (normalizedType) {
         case 'Image':
           annotationInstance = new ImageAnnotation(annData.id, this);
           (annotationInstance as ImageAnnotation).src = annData.src;
@@ -696,6 +699,7 @@ export class Graph {
           break;
         case 'Group':
           annotationInstance = new GroupAnnotation(annData.id, this);
+          (annotationInstance as any).content = annData.content;
           break;
         case 'Line':
           annotationInstance = new LineAnnotation(annData.id, this);
@@ -710,7 +714,12 @@ export class Graph {
           }
           break;
         default:
+          // Fallback: create base Annotation and copy all type-specific properties
           annotationInstance = new Annotation(annData.id, annData.type, this);
+          if (annData.content !== undefined) (annotationInstance as any).content = annData.content;
+          if (annData.src !== undefined) (annotationInstance as any).src = annData.src;
+          if (annData.endPosition) (annotationInstance as any).endPosition = annData.endPosition;
+          if (annData.points) (annotationInstance as any).points = annData.points;
       }
 
       annotationInstance.position = annData.position || { x: 0, y: 0 };

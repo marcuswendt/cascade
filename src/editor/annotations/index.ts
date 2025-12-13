@@ -13,13 +13,20 @@ import PolylineAnnotationUI from './PolylineAnnotationUI.svelte';
 
 import type { ComponentType, SvelteComponent } from 'svelte';
 
-// Registry maps annotation constructor names to UI components
+// Registry maps annotation type names to UI components
+// Uses annotation.type (e.g., 'Text') rather than constructor.name
+// Includes both PascalCase and lowercase for compatibility
 export const annotationRegistry: Map<string, ComponentType<SvelteComponent>> = new Map([
-  ['TextAnnotation', TextAnnotationUI],
-  ['ImageAnnotation', ImageAnnotationUI],
-  ['GroupAnnotation', GroupAnnotationUI],
-  ['LineAnnotation', LineAnnotationUI],
-  ['PolylineAnnotation', PolylineAnnotationUI],
+  ['Text', TextAnnotationUI],
+  ['text', TextAnnotationUI],
+  ['Image', ImageAnnotationUI],
+  ['image', ImageAnnotationUI],
+  ['Group', GroupAnnotationUI],
+  ['group', GroupAnnotationUI],
+  ['Line', LineAnnotationUI],
+  ['line', LineAnnotationUI],
+  ['Polyline', PolylineAnnotationUI],
+  ['polyline', PolylineAnnotationUI],
 ]);
 
 // Re-export components for direct import if needed

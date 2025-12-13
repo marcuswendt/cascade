@@ -92,3 +92,32 @@ import { cascade } from '@/engine/cascade';
 // Relative imports (within same package)
 import { SubnetNode } from './nodes/SubnetNode.js';
 ```
+
+## Design Principles
+
+### Prefer Polymorphism Over Type Discrimination
+
+Instead of checking types with string literals or switch statements:
+
+```typescript
+// Avoid
+if (element.type === 'Text') { ... }
+else if (element.type === 'Image') { ... }
+```
+
+Use polymorphic behavior via:
+
+1. **Method overrides** - Subclasses override behavior (e.g., `Annotation.execute()` is a no-op)
+2. **`instanceof` checks** - When type discrimination is necessary
+3. **Component registries** - Map class names to UI components
+
+```typescript
+// Preferred
+if (element instanceof Annotation) { ... }
+
+// For UI rendering, use registries keyed by type
+const Component = annotationRegistry.get(annotation.type);
+<svelte:component this={Component} {annotation} />
+```
+
+This keeps the codebase maintainable as new types are added - just create the class and register it.

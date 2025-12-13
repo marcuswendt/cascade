@@ -75,7 +75,13 @@
       placeholder="Enter text..."
     ></textarea>
   {:else}
-    <div class="annotation-content">{@html marked.parse(annotation.content || '')}</div>
+    <div class="annotation-content">
+      {#if annotation.content}
+        {@html marked.parse(annotation.content)}
+      {:else}
+        <span style="color: yellow;">[No content - annotation.content is: {JSON.stringify(annotation.content)}]</span>
+      {/if}
+    </div>
   {/if}
   {#if annotation.outputs && annotation.outputs.length > 0}
     {#each annotation.outputs as port (port.id)}
@@ -107,6 +113,9 @@
 
   .annotation-text {
     user-select: none;
+    /* Debug: add visible background */
+    background: rgba(255, 0, 0, 0.1);
+    border: 1px dashed rgba(255, 255, 255, 0.3);
   }
 
   .annotation-text.editing {

@@ -2,6 +2,7 @@
   import { onMount, tick, createEventDispatcher } from 'svelte';
   import { Graph, type CanvasAnnotation } from '@/nodes/Graph';
   import { Annotation } from '@/nodes/annotations/Annotation';
+  import { TextAnnotation } from '@/nodes/annotations/Text';
   import { annotationRegistry } from './annotations';
   import NodeUI from './NodeUI.svelte';
   import type { Node } from '@/nodes/Node';
@@ -4025,268 +4026,52 @@ node.onReady = () => {
     {#each annotations as annotation (annotation.id)}
       {@const isEditing = editingAnnotation === annotation.id}
       {@const isSelected = selectedAnnotations.includes(annotation.id) || selectedAnnotation === annotation.id}
-      
-      {#if annotation.type === 'Text'}
-        {@const style = annotation.style || {}}
-        {@const width = annotation.size?.width || 540}
-        {@const height = annotation.size?.height || 'auto'}
-        {@const styleStr = [
-          `font-size: ${style.fontSize || 14}px`,
-          `font-weight: ${style.fontWeight || 'normal'}`,
-          `font-style: ${style.fontStyle || 'normal'}`,
-          `text-align: ${style.textAlign || 'left'}`,
-          `color: ${style.color || '#ffffff'}`,
-          style.backgroundColor ? `background-color: ${style.backgroundColor}` : '',
-          `padding: ${style.padding || 0}px`,
-          `border-radius: ${style.borderRadius || 0}px`,
-          style.borderLeft ? `border-left: ${style.borderLeft}` : '',
-          `width: ${width}px`,
-          typeof height === 'number' ? `min-height: ${height}px` : ''
-        ].filter(Boolean).join('; ')}
-        <div
-          class="annotation annotation-text"
-          class:selected={isSelected}
-          class:editing={isEditing}
-          class:dragging={draggingAnnotation?.annotationId === annotation.id}
-          data-annotation-id={annotation.id}
-          role="textbox"
-          aria-label="Text annotation"
-          tabindex="0"
-          style="left: {annotation.position.x}px; top: {annotation.position.y}px; {styleStr}"
-          on:click={(e) => handleAnnotationClick(annotation.id, e)}
-          on:dblclick={(e) => handleAnnotationDoubleClick(annotation.id, e)}
-          on:mousedown={(e) => handleAnnotationMouseDownForText(annotation.id, e, width, typeof height === 'number' ? height : 60)}
-          on:mousemove={(e) => handleAnnotationMouseMove(annotation.id, e, width, typeof height === 'number' ? height : 60)}
-          on:keydown={(e) => handleAnnotationKeyDown(annotation.id, e)}
-        >
-          {#if isEditing}
-            <textarea
-              class="annotation-input"
-              bind:this={annotationInput}
-              value={annotation.content || ''}
-              style="width: {width - (style.padding || 8) * 2}px; min-height: {typeof height === 'number' ? height - (style.padding || 8) * 2 : 60}px"
-              on:blur={finishEditingAnnotation}
-              on:keydown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                  finishEditingAnnotation();
-                } else if (e.key === 'Escape') {
-                  finishEditingAnnotation();
-                } else if (e.key === 'Delete' && (e.metaKey || e.ctrlKey)) {
-                  handleAnnotationDelete(annotation.id);
-                }
-              }}
-              on:input={(e) => handleTextareaInput(annotation.id, e)}
-              placeholder="Enter text..."
-            ></textarea>
-          {:else}
-            <div class="annotation-content">{@html marked.parse(annotation.content || '')}</div>
-          {/if}
-          {#if annotation.outputs && annotation.outputs.length > 0}
-            {#each annotation.outputs as port (port.id)}
-              {@const annotationNodeId = annotation.id}
-              {@const annotationWidth = annotation.size?.width || 540}
-              {@const annotationHeight = typeof annotation.size?.height === 'number' ? annotation.size.height : 60}
-              {@const portColor = getPortColor(port)}
-              <div
-                class="port annotation-port"
-                data-node-id={annotationNodeId}
-                data-port-id={port.id}
-                data-port-type="output"
-                style="position: absolute; left: {annotationWidth / 2}px; top: {annotationHeight}px; transform: translate(-50%, -50%);"
-                on:mousedown={(e) => handlePortMouseDown(annotationNodeId, port.id, 'output', e)}
-                role="button"
-                aria-label="Output port {port.name}"
-                tabindex="0"
-              >
-                <div class="port-dot" style="background-color: {portColor};"></div>
-              </div>
-            {/each}
-          {/if}
-        </div>
-      {:else if annotation.type === 'Image'}
-        <div
-          class="annotation annotation-image"
-          class:selected={isSelected}
-          class:dragging={draggingAnnotation?.annotationId === annotation.id}
-          data-annotation-id={annotation.id}
-          role="button"
-          aria-label="Image annotation"
-          tabindex="0"
-          style="left: {annotation.position.x}px; top: {annotation.position.y}px; width: {annotation.size?.width || 200}px; height: {annotation.size?.height || 150}px"
-          on:click={(e) => handleAnnotationClick(annotation.id, e)}
-          on:dblclick={(e) => handleAnnotationDoubleClick(annotation.id, e)}
+      {@const isDragging = draggingAnnotation?.annotationId === annotation.id}
+      {@const Component = annotationRegistry.get(annotation.type)}
+
+      {#if Component}
+        <svelte:component
+          this={Component}
+          {annotation}
+          {isSelected}
+          {isEditing}
+          {isDragging}
+          on:click={(e) => handleAnnotationClick(e.detail.id, e.detail.event)}
+          on:dblclick={(e) => handleAnnotationDoubleClick(e.detail.id, e.detail.event)}
           on:mousedown={(e) => {
-            if (e.button === 0) {
-              e.preventDefault();
-              handleAnnotationMouseDown(annotation.id, e);
+            const { id, event, width, height } = e.detail;
+            if (annotation instanceof TextAnnotation) {
+              handleAnnotationMouseDownForText(id, event, width || 540, height || 60);
+            } else {
+              handleAnnotationMouseDown(id, event);
             }
           }}
-          on:dragstart={(e) => e.preventDefault()}
-          on:keydown={(e) => handleAnnotationKeyDown(annotation.id, e)}
-        >
-          <img src={annotation.src} alt={annotation.caption || ''} draggable="false" on:dragstart={(e) => e.preventDefault()} />
-          {#if annotation.caption}
-            <div class="annotation-caption">{annotation.caption}</div>
-          {/if}
-          {#if annotation.outputs && annotation.outputs.length > 0}
-            {#each annotation.outputs as port (port.id)}
-              {@const annotationNodeId = annotation.id}
-              {@const annotationWidth = annotation.size?.width || 200}
-              {@const annotationHeight = annotation.size?.height || 150}
-              {@const portColor = getPortColor(port)}
-              <div
-                class="port annotation-port"
-                data-node-id={annotationNodeId}
-                data-port-id={port.id}
-                data-port-type="output"
-                style="position: absolute; left: {annotationWidth / 2}px; top: {annotationHeight}px; transform: translate(-50%, -50%);"
-                on:mousedown={(e) => handlePortMouseDown(annotationNodeId, port.id, 'output', e)}
-                role="button"
-                aria-label="Output port {port.name}"
-                tabindex="0"
-              >
-                <div class="port-dot" style="background-color: {portColor};"></div>
-              </div>
-            {/each}
-          {/if}
-        </div>
-      {:else if annotation.type === 'Group'}
-        <div
-          class="annotation annotation-group"
-          class:selected={isSelected}
-          class:editing={isEditing}
-          class:dragging={draggingAnnotation?.annotationId === annotation.id}
-          data-annotation-id={annotation.id}
-          role="button"
-          aria-label="Group annotation"
-          tabindex="0"
-          style="left: {annotation.position.x}px; top: {annotation.position.y}px; width: {annotation.size?.width || 300}px; height: {annotation.size?.height || 200}px"
-          on:click={(e) => handleAnnotationClick(annotation.id, e)}
-          on:dblclick={(e) => handleAnnotationDoubleClick(annotation.id, e)}
-          on:mousedown={(e) => {
-            if (e.button === 0) {
-              handleAnnotationMouseDown(annotation.id, e);
+          on:mousemove={(e) => {
+            const { id, event, width, height } = e.detail;
+            handleAnnotationMouseMove(id, event, width || 540, height || 60);
+          }}
+          on:keydown={(e) => handleAnnotationKeyDown(e.detail.id, e.detail.event)}
+          on:finishEdit={finishEditingAnnotation}
+          on:delete={(e) => handleAnnotationDelete(e.detail.id)}
+          on:input={(e) => {
+            const { id, event } = e.detail;
+            if (annotation instanceof TextAnnotation) {
+              handleTextareaInput(id, event);
+            } else {
+              handleInputInput(id, event);
             }
           }}
-          on:keydown={(e) => handleAnnotationKeyDown(annotation.id, e)}
+          on:portMouseDown={(e) => handlePortMouseDown(e.detail.nodeId, e.detail.portId, e.detail.portType, e.detail.event)}
+          on:resizeStart={(e) => handleResizeHandleMouseDown(e.detail.id, e.detail.handle, e.detail.event)}
+        />
+      {:else}
+        <!-- Debug fallback for unmapped annotation type -->
+        <div
+          class="annotation-debug"
+          style="position: absolute; left: {annotation.position.x}px; top: {annotation.position.y}px; background: #ff4444; color: white; padding: 8px; border-radius: 4px; font-size: 12px;"
         >
-          {#if isEditing}
-            <input
-              type="text"
-              class="annotation-input"
-              bind:this={annotationInput}
-              value={annotation.content || 'Group'}
-              on:blur={finishEditingAnnotation}
-              on:keydown={(e) => {
-                if (e.key === 'Enter') {
-                  finishEditingAnnotation();
-                } else if (e.key === 'Escape') {
-                  finishEditingAnnotation();
-                } else if (e.key === 'Delete' && (e.metaKey || e.ctrlKey)) {
-                  handleAnnotationDelete(annotation.id);
-                }
-              }}
-              on:input={(e) => handleInputInput(annotation.id, e)}
-              placeholder="Group name..."
-            />
-          {:else}
-            <div class="group-header">{annotation.content || 'Group'}</div>
-          {/if}
-          {#if isSelected && !isEditing}
-            <div
-              class="resize-handle resize-se"
-              role="button"
-              aria-label="Resize southeast"
-              tabindex="0"
-              on:mousedown={(e) => handleResizeHandleMouseDown(annotation.id, 'se', e)}
-              on:keydown={(e) => handleResizeHandleKeyDown(annotation.id, 'se', e)}
-            ></div>
-            <div
-              class="resize-handle resize-sw"
-              role="button"
-              aria-label="Resize southwest"
-              tabindex="0"
-              on:mousedown={(e) => handleResizeHandleMouseDown(annotation.id, 'sw', e)}
-              on:keydown={(e) => handleResizeHandleKeyDown(annotation.id, 'sw', e)}
-            ></div>
-            <div
-              class="resize-handle resize-ne"
-              role="button"
-              aria-label="Resize northeast"
-              tabindex="0"
-              on:mousedown={(e) => handleResizeHandleMouseDown(annotation.id, 'ne', e)}
-              on:keydown={(e) => handleResizeHandleKeyDown(annotation.id, 'ne', e)}
-            ></div>
-            <div
-              class="resize-handle resize-nw"
-              role="button"
-              aria-label="Resize northwest"
-              tabindex="0"
-              on:mousedown={(e) => handleResizeHandleMouseDown(annotation.id, 'nw', e)}
-              on:keydown={(e) => handleResizeHandleKeyDown(annotation.id, 'nw', e)}
-            ></div>
-          {/if}
+          Unknown type: {annotation.type}
         </div>
-      {:else if annotation.type === 'Line'}
-        {@const style = annotation.style || {}}
-        {@const startX = annotation.position.x}
-        {@const startY = annotation.position.y}
-        {@const endX = annotation.endPosition?.x || annotation.position.x}
-        {@const endY = annotation.endPosition?.y || annotation.position.y}
-        {@const strokeWidth = style.strokeWidth || 2}
-        {@const strokeColor = style.strokeColor || '#ffffff'}
-        <svg
-          class="annotation annotation-line"
-          class:selected={isSelected}
-          data-annotation-id={annotation.id}
-          role="button"
-          aria-label="Line annotation"
-          tabindex="0"
-          style="position: absolute; left: 0; top: 0; pointer-events: none;"
-          on:click={(e) => handleAnnotationClick(annotation.id, e)}
-          on:mousedown={(e) => handleAnnotationMouseDown(annotation.id, e)}
-          on:keydown={(e) => handleAnnotationKeyDown(annotation.id, e)}
-        >
-          <line
-            x1={startX}
-            y1={startY}
-            x2={endX}
-            y2={endY}
-            stroke={strokeColor}
-            stroke-width={strokeWidth}
-            pointer-events="stroke"
-            style="cursor: pointer;"
-          />
-        </svg>
-      {:else if annotation.type === 'Polyline'}
-        {@const style = annotation.style || {}}
-        {@const points = annotation.points || []}
-        {@const strokeWidth = style.strokeWidth || 2}
-        {@const strokeColor = style.strokeColor || '#ffffff'}
-        {#if points.length > 0}
-          {@const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')}
-          <svg
-            class="annotation annotation-polyline"
-            class:selected={isSelected}
-            data-annotation-id={annotation.id}
-            role="button"
-            aria-label="Polyline annotation"
-            tabindex="0"
-            style="position: absolute; left: 0; top: 0; pointer-events: none;"
-            on:click={(e) => handleAnnotationClick(annotation.id, e)}
-            on:mousedown={(e) => handleAnnotationMouseDown(annotation.id, e)}
-            on:keydown={(e) => handleAnnotationKeyDown(annotation.id, e)}
-          >
-            <path
-              d={pathData}
-              fill="none"
-              stroke={strokeColor}
-              stroke-width={strokeWidth}
-              pointer-events="stroke"
-              style="cursor: pointer;"
-            />
-          </svg>
-          {/if}
       {/if}
     {/each}
   </div>
