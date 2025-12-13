@@ -2713,10 +2713,62 @@ node.onReady = () => {
       dispatch('openNodePanel', { x: e.clientX, y: e.clientY });
     }
   }
-  
+
+  /**
+   * Auto-connect selected nodes/annotations to a newly created node.
+   * For variadic inputs: connects all selected sources
+   * For regular inputs: connects sources in order to available inputs
+   */
+  function autoConnectSelectedNodes(sourceNodes: Node[], targetNode: Node): void {
+    if (!graph) return;
+
+    // Get outputs from source nodes (prefer 'output' named port, otherwise first output)
+    const sourceOutputs = sourceNodes
+      .map(node => node.outputs.find(p => p.name === 'output') || node.outputs[0])
+      .filter(Boolean);
+
+    if (sourceOutputs.length === 0) return;
+
+    if (targetNode.variadic) {
+      // Connect all sources to variadic inputs
+      sourceOutputs.forEach((output, index) => {
+        targetNode.syncVariadicPorts();
+        const inputs = targetNode.getVariadicInputs();
+        const input = inputs[index];
+        if (input && output) {
+          try {
+            graph.connect(output, input);
+          } catch (e) {
+            // Skip failed connections (type mismatch, etc.)
+          }
+        }
+      });
+    } else {
+      // Connect to regular inputs (non-hidden, unconnected)
+      const availableInputs = targetNode.inputs.filter(p =>
+        p.connections.length === 0 && !p.options?.hidden
+      );
+
+      sourceOutputs.forEach((output, index) => {
+        const input = availableInputs[index];
+        if (input && output) {
+          try {
+            graph.connect(output, input);
+          } catch (e) {
+            // Skip failed connections (type mismatch, etc.)
+          }
+        }
+      });
+    }
+  }
+
   export async function addNode(detail: { type: string; category: string | null }) {
     // Record history before adding node
     recordHistory();
+
+    // Capture currently selected nodes AND annotations before creating the new node
+    const previouslySelectedNodeIds = [...selectedNodes];
+    const previouslySelectedAnnotationIds = [...selectedAnnotations];
 
     const nodeType = detail.type;
     const rect = canvas.getBoundingClientRect();
@@ -2836,7 +2888,22 @@ node.onReady = () => {
         newNode.error = err as Error;
       }
     }
-    
+
+    // Auto-connect previously selected nodes and annotations to the new node
+    const previouslySelectedNodes = previouslySelectedNodeIds
+      .map(id => graph.getNode(id))
+      .filter((n): n is Node => n !== null);
+
+    const previouslySelectedAnnotations = previouslySelectedAnnotationIds
+      .map(id => graph.getAnnotation(id))
+      .filter((a): a is Node => a !== null);
+
+    const allSelectedSources = [...previouslySelectedNodes, ...previouslySelectedAnnotations];
+
+    if (allSelectedSources.length > 0) {
+      autoConnectSelectedNodes(allSelectedSources, newNode);
+    }
+
     graph.nodes = [...graph.nodes];
     // Force connections to re-render by updating the array reference
     graph.connections = [...graph.connections];
