@@ -165,11 +165,12 @@
                   bind:group={baseClassSelection}
                 />
                 <div class="radio-content">
-                  <span class="radio-label">{base.label}</span>
-                  {#if base.id !== 'custom'}
-                    <span class="radio-path">{base.id}</span>
-                  {/if}
-                  <span class="radio-description">{base.description}</span>
+                  <div class="radio-header">
+                    <span class="radio-label">{base.label}</span>
+                    {#if base.id !== 'custom'}
+                      <span class="radio-path">{base.id}</span>
+                    {/if}
+                  </div>
                   {#if base.id === 'custom' && baseClassSelection === 'custom'}
                     <input
                       type="text"
@@ -225,7 +226,7 @@
     border-radius: 8px;
     border: 1px solid #404040;
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
-    width: 420px;
+    width: 380px;
     max-width: 90vw;
     max-height: 90vh;
     overflow: hidden;
@@ -247,13 +248,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 20px;
+    padding: 12px 16px;
     border-bottom: 1px solid #404040;
   }
 
   .dialog-header h2 {
     margin: 0;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
     color: #fff;
   }
@@ -277,31 +278,31 @@
   }
 
   form {
-    padding: 20px;
+    padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 14px;
   }
 
   .form-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
   }
 
   .form-group > label {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
-    color: #ccc;
+    color: #aaa;
   }
 
   .form-group input[type="text"] {
-    padding: 10px 12px;
+    padding: 8px 10px;
     background: #1e1e1e;
     border: 1px solid #404040;
     border-radius: 4px;
     color: #fff;
-    font-size: 14px;
+    font-size: 13px;
     font-family: 'SF Mono', Monaco, monospace;
     transition: border-color 0.15s;
   }
@@ -336,17 +337,17 @@
   .base-class-options {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
   }
 
   .radio-option {
     display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 12px;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
     background: #1e1e1e;
     border: 1px solid #404040;
-    border-radius: 6px;
+    border-radius: 4px;
     cursor: pointer;
     transition: all 0.15s;
   }
@@ -362,33 +363,39 @@
   }
 
   .radio-option input[type="radio"] {
-    margin-top: 2px;
+    margin: 0;
     accent-color: #0078d4;
+    flex-shrink: 0;
   }
 
   .radio-content {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 0;
     flex: 1;
+    min-width: 0;
+  }
+
+  .radio-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
   }
 
   .radio-label {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
     color: #fff;
   }
 
   .radio-path {
-    font-size: 11px;
+    font-size: 10px;
     font-family: 'SF Mono', Monaco, monospace;
-    color: #888;
+    color: #666;
   }
 
   .radio-description {
-    font-size: 12px;
-    color: #888;
-    margin-top: 4px;
+    display: none;
   }
 
   .custom-base-input {
