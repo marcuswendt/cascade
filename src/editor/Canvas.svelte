@@ -3003,30 +3003,29 @@ node.onReady = () => {
     selectedNodes = [selectedNode.id];
   }
 
-  // Helper function to calculate the center of all nodes and annotations
+  // Helper function to calculate the center of visible nodes in current network
   function getNodesCenter(): { x: number; y: number } | null {
-    if (graph.nodes.length === 0 && graph.annotations.length === 0) return null;
 
-    // Calculate bounding box of all nodes and annotations
+    // Calculate bounding box of visible nodes and annotations
     // Approximate node size: 120px width, 80px height (can be adjusted)
     const nodeWidth = 120;
     const nodeHeight = 80;
-    
+
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
 
-    // Include nodes in bounding box
-    graph.nodes.forEach(node => {
+    // Include visible nodes in bounding box
+    visibleNodes.forEach(node => {
       minX = Math.min(minX, node.position.x);
       minY = Math.min(minY, node.position.y);
       maxX = Math.max(maxX, node.position.x + nodeWidth);
       maxY = Math.max(maxY, node.position.y + nodeHeight);
     });
 
-    // Include annotations in bounding box
-    graph.annotations.forEach(annotation => {
+    // Include visible annotations in bounding box
+    annotations.forEach(annotation => {
       if (annotation.type === 'Line') {
         // Line: use position and endPosition
         const startX = annotation.position.x;
@@ -3076,13 +3075,13 @@ node.onReady = () => {
     return { x: centerX, y: centerY };
   }
 
-  // Function to center canvas on all nodes and annotations
+  // Function to center canvas on visible nodes in current network
   export function centerOnNodes() {
-    if (!canvas || (graph.nodes.length === 0 && graph.annotations.length === 0)) return;
+    if (!canvas) return;
 
     const center = getNodesCenter();
     if (!center) return;
-    
+
     const centerX = center.x;
     const centerY = center.y;
 
@@ -3091,25 +3090,25 @@ node.onReady = () => {
     const viewportWidth = rect.width;
     const viewportHeight = rect.height;
 
-    // Calculate bounding box of all nodes and annotations
+    // Calculate bounding box of visible nodes and annotations
     const nodeWidth = 120;
     const nodeHeight = 80;
-    
+
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
 
-    // Include nodes in bounding box
-    graph.nodes.forEach(node => {
+    // Include visible nodes in bounding box
+    visibleNodes.forEach(node => {
       minX = Math.min(minX, node.position.x);
       minY = Math.min(minY, node.position.y);
       maxX = Math.max(maxX, node.position.x + nodeWidth);
       maxY = Math.max(maxY, node.position.y + nodeHeight);
     });
 
-    // Include annotations in bounding box
-    graph.annotations.forEach(annotation => {
+    // Include visible annotations in bounding box
+    annotations.forEach(annotation => {
       if (annotation.type === 'Line') {
         const startX = annotation.position.x;
         const startY = annotation.position.y;
@@ -3759,7 +3758,16 @@ node.onReady = () => {
       e.preventDefault();
       centerOnNodes();
     }
-    
+
+    // H - Home/center on visible nodes (same as ⌘0)
+    if (e.key === 'h' || e.key === 'H') {
+      const target = e.target as HTMLElement;
+      if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        centerOnNodes();
+      }
+    }
+
     // Escape - Deselect annotations or exit editing mode
     if (e.key === 'Escape') {
       const target = e.target as HTMLElement;
