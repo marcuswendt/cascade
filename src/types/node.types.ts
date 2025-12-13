@@ -125,6 +125,7 @@ export interface OutputPort<T = any> {
   dataType: DataType;
   value: T;
   connections: Connection[];
+  options?: PortOptions;
   setValue: (value: T) => void;
   trigger: (props?: any) => void;
 }

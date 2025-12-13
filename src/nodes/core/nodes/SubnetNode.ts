@@ -111,8 +111,8 @@ export class SubnetNode extends Node {
       }
     }
 
-    // Sync output ports
-    const requiredOutputs = Math.max(1, maxOutputIndex + 1); // Always have at least one output
+    // Sync output ports - only create if there are Output nodes
+    const requiredOutputs = maxOutputIndex + 1; // 0 if no Output nodes
     const currentOutputs = this.outputs.length;
 
     // Add missing output ports
@@ -131,16 +131,6 @@ export class SubnetNode extends Node {
       if (this.outputs[i]) {
         this.outputs[i].options = { ...this.outputs[i].options, hidden: false };
       }
-    }
-
-    // If no Input nodes, ensure at least one default input exists (but hidden if no nodes)
-    if (requiredInputs === 0 && this.inputs.length === 0) {
-      // No inputs needed - that's fine
-    }
-
-    // Ensure at least one output if no Output nodes (for cooking node fallback)
-    if (this.outputs.length === 0) {
-      this.out('output');
     }
 
     // Trigger reactivity

@@ -145,6 +145,7 @@ export class Node {
       dataType: 'any',
       value: undefined as T,
       connections: [],
+      options: {},
 
       setValue: (value: T) => {
         port.value = value;
