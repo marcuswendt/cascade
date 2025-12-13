@@ -83,7 +83,7 @@ export function getNodeIcon(nodeType: string): string {
   return 'Settings'; // Default icon if not found
 }
 
-// Generate full node path (e.g., "cascade.core.math.Add")
+// Generate full node path (e.g., "cascade.lens.color.Levels")
 export function getNodePath(nodeType: string, libraryId?: string, categoryId?: string): string {
   // Handle annotation types
   if (nodeType.startsWith('annotation:')) {
@@ -96,6 +96,10 @@ export function getNodePath(nodeType: string, libraryId?: string, categoryId?: s
     for (const category of library.categories) {
       const node = category.nodes.find(n => n.type === nodeType);
       if (node) {
+        // Core library uses flat namespace (no category in path)
+        if (library.id === 'core') {
+          return `cascade.core.${node.name}`;
+        }
         return `cascade.${library.id}.${category.id}.${node.name}`;
       }
     }
@@ -103,6 +107,10 @@ export function getNodePath(nodeType: string, libraryId?: string, categoryId?: s
 
   // If not found in templates, try to construct from provided ids
   if (libraryId && categoryId) {
+    // Core library uses flat namespace
+    if (libraryId === 'core') {
+      return `cascade.core.${nodeType}`;
+    }
     return `cascade.${libraryId}.${categoryId}.${nodeType}`;
   }
 
