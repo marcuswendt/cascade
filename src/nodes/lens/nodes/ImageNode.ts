@@ -1,16 +1,17 @@
 /**
  * ImageNode - loads an image file or accepts image input
+ * Converts to ImageBuffer for the processing pipeline
  */
 
-import { LensNode, type ImageInput } from '../LensNode';
+import { LensNode, ImageBuffer, type ImageInput } from '../LensNode';
 import type { Graph } from '@/nodes/Graph';
 import type { InputPort, OutputPort } from '@/types/node.types';
 
-type ImageInputValue = HTMLCanvasElement | HTMLImageElement | string | null;
+type ImageInputValue = HTMLCanvasElement | HTMLImageElement | ImageBuffer | string | null;
 
 export class ImageNode extends LensNode {
   private imageInput!: InputPort<ImageInputValue>;
-  private output!: OutputPort<ImageInput>;
+  private output!: OutputPort<ImageBuffer>;
 
   constructor(id: string, graph: Graph) {
     super(id, 'Image', graph);
@@ -26,9 +27,9 @@ export class ImageNode extends LensNode {
         accept: 'image/*'
       },
       displayName: 'File',
-      onChange: async () => {
+      onChange: () => {
         if (this.props.file.value && !this.imageInput.value) {
-          await this.render();
+          this.requestCook();
         }
       }
     });
@@ -43,9 +44,9 @@ export class ImageNode extends LensNode {
         ]
       },
       displayName: 'Resolution Mode',
-      onChange: async () => {
+      onChange: () => {
         if (this.props.file.value || this.imageInput.value) {
-          await this.render();
+          this.requestCook();
         }
       }
     });
@@ -58,9 +59,9 @@ export class ImageNode extends LensNode {
       },
       displayName: 'Max Resolution',
       hidden: () => this.props.resolutionMode.value !== 'max',
-      onChange: async () => {
+      onChange: () => {
         if ((this.props.file.value || this.imageInput.value) && this.props.resolutionMode.value === 'max') {
-          await this.render();
+          this.requestCook();
         }
       }
     });
@@ -73,80 +74,70 @@ export class ImageNode extends LensNode {
       },
       displayName: 'Fixed Resolution',
       hidden: () => this.props.resolutionMode.value !== 'fixed',
-      onChange: async () => {
+      onChange: () => {
         if ((this.props.file.value || this.imageInput.value) && this.props.resolutionMode.value === 'fixed') {
-          await this.render();
+          this.requestCook();
         }
       }
     });
 
     this.output = this.out('image');
 
-    this.imageInput.onChange = () => {
-      this.render().catch(err => {
-        console.error('Image render error in input onChange:', err);
-      });
-    };
+    this.imageInput.onChange = () => this.requestCook();
 
-    this.onReady = async () => {
+    this.onReady = () => {
       if (this.props.file.value || this.imageInput.value) {
-        await this.render();
+        this.requestCook();
       }
     };
   }
 
-  private async render(): Promise<void> {
-    let img: HTMLImageElement | null = null;
+  protected async render(): Promise<void> {
+    let sourceBuffer: ImageBuffer | null = null;
 
-    // First check input port (from annotation or other node)
+    // First check input port
     if (this.imageInput.value) {
-      if (this.imageInput.value instanceof HTMLImageElement) {
-        img = this.imageInput.value;
-      } else if (this.imageInput.value instanceof HTMLCanvasElement) {
-        // Convert canvas to image
-        img = new Image();
-        img.src = this.imageInput.value.toDataURL();
-        await new Promise<void>((resolve, reject) => {
-          img!.onload = () => resolve();
-          img!.onerror = reject;
-        });
+      if (this.imageInput.value instanceof ImageBuffer) {
+        sourceBuffer = this.imageInput.value;
+      } else if (this.imageInput.value instanceof HTMLImageElement ||
+                 this.imageInput.value instanceof HTMLCanvasElement) {
+        sourceBuffer = ImageBuffer.fromCanvas(this.imageInput.value);
       } else if (typeof this.imageInput.value === 'string') {
-        // String might be an image path
-        img = new Image();
+        const img = new Image();
         img.crossOrigin = 'anonymous';
-        const srcPath = this.imageInput.value;
         await new Promise<void>((resolve, reject) => {
-          img!.onload = () => resolve();
-          img!.onerror = reject;
-          img!.src = srcPath;
+          img.onload = () => resolve();
+          img.onerror = reject;
+          img.src = this.imageInput.value as string;
         });
+        sourceBuffer = ImageBuffer.fromCanvas(img);
       }
     } else if (this.props.file.value) {
-      // Fall back to file prop
-      img = new Image();
+      const img = new Image();
       img.crossOrigin = 'anonymous';
       await new Promise<void>((resolve, reject) => {
-        img!.onload = () => resolve();
-        img!.onerror = reject;
-        img!.src = this.props.file.value;
+        img.onload = () => resolve();
+        img.onerror = reject;
+        img.src = this.props.file.value;
       });
+      sourceBuffer = ImageBuffer.fromCanvas(img);
     }
 
-    if (!img) {
+    if (!sourceBuffer) {
       return;
     }
 
     try {
       const mode = this.props.resolutionMode.value;
+      let outputBuffer: ImageBuffer;
 
       if (mode === 'original') {
-        this.output.setValue(img);
-        this.preview = img;
+        outputBuffer = sourceBuffer;
       } else if (mode === 'max') {
         const [maxWidth, maxHeight] = this.props.maxResolution.value;
-        const aspectRatio = img.naturalWidth / img.naturalHeight;
-        let newWidth = img.naturalWidth;
-        let newHeight = img.naturalHeight;
+        const aspectRatio = sourceBuffer.width / sourceBuffer.height;
+        let newWidth = sourceBuffer.width;
+        let newHeight = sourceBuffer.height;
 
         if (newWidth > maxWidth) {
           newWidth = maxWidth;
@@ -157,24 +148,47 @@ export class ImageNode extends LensNode {
           newWidth = maxHeight * aspectRatio;
         }
 
-        const canvas = this.createCanvas(Math.round(newWidth), Math.round(newHeight));
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        newWidth = Math.round(newWidth);
+        newHeight = Math.round(newHeight);
+
+        if (newWidth !== sourceBuffer.width || newHeight !== sourceBuffer.height) {
+          outputBuffer = this.resizeBuffer(sourceBuffer, newWidth, newHeight);
+        } else {
+          outputBuffer = sourceBuffer;
         }
-        this.setOutputAndPreview(this.output, canvas);
-      } else if (mode === 'fixed') {
+      } else {
         const [width, height] = this.props.fixedResolution.value;
-        const canvas = this.createCanvas(width, height);
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-        }
-        this.setOutputAndPreview(this.output, canvas);
+        outputBuffer = this.resizeBuffer(sourceBuffer, width, height);
       }
+
+      this.setOutput(this.output, outputBuffer);
     } catch (error) {
       this.error = error as Error;
       console.error('Failed to process image:', error);
     }
+  }
+
+  private resizeBuffer(source: ImageBuffer, newWidth: number, newHeight: number): ImageBuffer {
+    const result = ImageBuffer.rgba(newWidth, newHeight);
+    const scaleX = source.width / newWidth;
+    const scaleY = source.height / newHeight;
+
+    for (let c = 0; c < Math.min(source.channelCount, 4); c++) {
+      const dstChannel = result.channels[c];
+
+      for (let y = 0; y < newHeight; y++) {
+        for (let x = 0; x < newWidth; x++) {
+          const srcX = x * scaleX;
+          const srcY = y * scaleY;
+          dstChannel[y * newWidth + x] = source.sample(srcX, srcY, c);
+        }
+      }
+    }
+
+    if (source.channelCount < 4) {
+      result.fill(3, 1);
+    }
+
+    return result;
   }
 }

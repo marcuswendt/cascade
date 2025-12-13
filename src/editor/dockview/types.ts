@@ -7,7 +7,7 @@ import type { Graph } from '@/nodes/Graph';
 import type { Node } from '@/nodes/Node';
 
 // Panel type identifiers
-export type PanelType = 'graph' | 'inspector' | 'viewer' | 'log' | 'code';
+export type PanelType = 'graph' | 'inspector' | 'viewer' | 'log' | 'code' | 'info';
 
 // Parameters passed to each panel
 export interface CascadePanelParams {

@@ -19,6 +19,7 @@ export const PANEL_TYPES: { type: PanelType; label: string; icon: string }[] = [
   { type: 'graph', label: 'Graph', icon: '⬡' },
   { type: 'viewer', label: 'Viewer', icon: '👁' },
   { type: 'inspector', label: 'Inspector', icon: '⚙' },
+  { type: 'info', label: 'Node Info', icon: 'ℹ' },
   { type: 'log', label: 'Log', icon: '📋' },
 ];
 

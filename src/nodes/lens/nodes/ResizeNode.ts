@@ -1,14 +1,14 @@
 /**
- * ResizeNode - scales or resizes an image
+ * ResizeNode - scales or resizes an ImageBuffer with bilinear interpolation
  */
 
-import { LensNode, type ImageInput } from '../LensNode';
+import { LensNode, ImageBuffer, type ImageInput } from '../LensNode';
 import type { Graph } from '@/nodes/Graph';
 import type { InputPort, OutputPort } from '@/types/node.types';
 
 export class ResizeNode extends LensNode {
   private image!: InputPort<ImageInput>;
-  private output!: OutputPort<HTMLCanvasElement>;
+  private output!: OutputPort<ImageBuffer>;
 
   constructor(id: string, graph: Graph) {
     super(id, 'Resize', graph);
@@ -26,7 +26,7 @@ export class ResizeNode extends LensNode {
         ]
       },
       displayName: 'Mode',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('scale', {
@@ -38,7 +38,7 @@ export class ResizeNode extends LensNode {
       },
       displayName: 'Scale',
       hidden: () => this.props.mode.value !== 'scale',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('width', {
@@ -50,7 +50,7 @@ export class ResizeNode extends LensNode {
       },
       displayName: 'Width',
       hidden: () => this.props.mode.value !== 'fixed',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('height', {
@@ -62,25 +62,45 @@ export class ResizeNode extends LensNode {
       },
       displayName: 'Height',
       hidden: () => this.props.mode.value !== 'fixed',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.output = this.out('image');
 
-    this.image.onChange = () => this.render();
+    this.image.onChange = () => this.requestCook();
 
-    this.onReady = () => this.render();
+    this.onReady = () => this.requestCook();
   }
 
-  private render(): void {
-    if (!this.image.value) {
-      return;
+  private resizeBuffer(source: ImageBuffer, newWidth: number, newHeight: number): ImageBuffer {
+    const result = ImageBuffer.rgba(newWidth, newHeight);
+    const scaleX = source.width / newWidth;
+    const scaleY = source.height / newHeight;
+
+    // Process each channel using bilinear interpolation
+    for (let c = 0; c < Math.min(source.channelCount, 4); c++) {
+      const dstChannel = result.channels[c];
+
+      for (let y = 0; y < newHeight; y++) {
+        for (let x = 0; x < newWidth; x++) {
+          const srcX = x * scaleX;
+          const srcY = y * scaleY;
+          dstChannel[y * newWidth + x] = source.sample(srcX, srcY, c);
+        }
+      }
     }
 
-    const img = this.image.value;
-    const { width: srcWidth, height: srcHeight } = this.getImageSize(img);
+    // Fill alpha if source doesn't have it
+    if (source.channelCount < 4) {
+      result.fill(3, 1);
+    }
 
-    if (srcWidth === 0 || srcHeight === 0) {
+    return result;
+  }
+
+  protected render(): void {
+    const buffer = this.toImageBuffer(this.image.value);
+    if (!buffer) {
       return;
     }
 
@@ -88,19 +108,14 @@ export class ResizeNode extends LensNode {
 
     if (this.props.mode.value === 'scale') {
       const scale = this.props.scale.value;
-      newWidth = Math.round(srcWidth * scale);
-      newHeight = Math.round(srcHeight * scale);
+      newWidth = Math.round(buffer.width * scale);
+      newHeight = Math.round(buffer.height * scale);
     } else {
       newWidth = this.props.width.value;
       newHeight = this.props.height.value;
     }
 
-    const canvas = this.createCanvas(newWidth, newHeight);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.drawImage(img, 0, 0, newWidth, newHeight);
-
-    this.setOutputAndPreview(this.output, canvas);
+    const resized = this.resizeBuffer(buffer, newWidth, newHeight);
+    this.setOutput(this.output, resized);
   }
 }

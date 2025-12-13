@@ -1,8 +1,8 @@
 /**
- * RampNode - generates color ramps
+ * RampNode - generates color ramps as ImageBuffer
  */
 
-import { LensNode } from '../LensNode';
+import { LensNode, ImageBuffer } from '../LensNode';
 import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
 
@@ -20,7 +20,7 @@ interface RampPoint {
 }
 
 export class RampNode extends LensNode {
-  private output!: OutputPort<HTMLCanvasElement>;
+  private output!: OutputPort<ImageBuffer>;
 
   constructor(id: string, graph: Graph) {
     super(id, 'Ramp', graph);
@@ -38,7 +38,7 @@ export class RampNode extends LensNode {
         ]
       },
       displayName: 'Type',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('points', {
@@ -48,7 +48,7 @@ export class RampNode extends LensNode {
       ],
       type: 'colorramp',
       displayName: 'Ramp',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('resolution', {
@@ -59,20 +59,19 @@ export class RampNode extends LensNode {
         integer: true
       },
       displayName: 'Resolution',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.output = this.out('image');
 
-    this.watchProp('type', () => this.render());
-    this.watchProp('points', () => this.render());
-    this.watchProp('resolution', () => this.render());
+    this.watchProp('type', () => this.requestCook());
+    this.watchProp('points', () => this.requestCook());
+    this.watchProp('resolution', () => this.requestCook());
 
-    this.onReady = () => this.render();
+    this.onReady = () => this.requestCook();
   }
 
   private normalizeRampColor(color: ColorValue | number[] | string): ColorValue {
-    // Already an object with r, g, b
     if (typeof color === 'object' && color !== null && 'r' in color && 'g' in color && 'b' in color) {
       const isNormalized = color.r <= 1.0 && color.g <= 1.0 && color.b <= 1.0;
       return {
@@ -83,7 +82,6 @@ export class RampNode extends LensNode {
       };
     }
 
-    // Array input
     if (Array.isArray(color)) {
       const isNormalized = color.every(v => v <= 1.0);
       return {
@@ -94,7 +92,6 @@ export class RampNode extends LensNode {
       };
     }
 
-    // String input (rgb(r,g,b) or #hex)
     if (typeof color === 'string') {
       const rgbMatch = color.match(/rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
       if (rgbMatch) {
@@ -136,7 +133,8 @@ export class RampNode extends LensNode {
     return {
       r: color1.r + (color2.r - color1.r) * t,
       g: color1.g + (color2.g - color1.g) * t,
-      b: color1.b + (color2.b - color1.b) * t
+      b: color1.b + (color2.b - color1.b) * t,
+      a: (color1.a ?? 1) + ((color2.a ?? 1) - (color1.a ?? 1)) * t
     };
   }
 
@@ -159,7 +157,7 @@ export class RampNode extends LensNode {
 
     if (!before && after) return this.normalizeRampColor(after.color);
     if (before && !after) return this.normalizeRampColor(before.color);
-    if (!before && !after) return { r: 0, g: 0, b: 0 };
+    if (!before && !after) return { r: 0, g: 0, b: 0, a: 1 };
 
     if (before!.position === position) return this.normalizeRampColor(before!.color);
     if (after!.position === position) return this.normalizeRampColor(after!.color);
@@ -172,7 +170,7 @@ export class RampNode extends LensNode {
     return this.interpolateColor(color1, color2, t, interpolation);
   }
 
-  private render(): void {
+  protected render(): void {
     const [width, height] = this.props.resolution.value;
     const rampType = this.props.type.value;
     const points: RampPoint[] = this.props.points.value || [];
@@ -181,12 +179,12 @@ export class RampNode extends LensNode {
       return;
     }
 
-    const canvas = this.createCanvas(width, height);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const buffer = this.createRGBA(width, height);
+    const r = buffer.r();
+    const g = buffer.g();
+    const b = buffer.b();
+    const a = buffer.a();
 
-    const imageData = ctx.createImageData(width, height);
-    const data = imageData.data;
     const centerX = width / 2;
     const centerY = height / 2;
     const maxDist = Math.sqrt(centerX * centerX + centerY * centerY);
@@ -212,15 +210,15 @@ export class RampNode extends LensNode {
         }
 
         const color = this.getColorAtPosition(points, position);
-        const idx = (y * width + x) * 4;
-        data[idx] = Math.round(color.r * 255);
-        data[idx + 1] = Math.round(color.g * 255);
-        data[idx + 2] = Math.round(color.b * 255);
-        data[idx + 3] = 255;
+        const idx = y * width + x;
+        r[idx] = color.r;
+        g[idx] = color.g;
+        b[idx] = color.b;
+        a[idx] = color.a ?? 1;
       }
     }
 
-    ctx.putImageData(imageData, 0, 0);
-    this.setOutputAndPreview(this.output, canvas);
+    buffer.markDirty();
+    this.setOutput(this.output, buffer);
   }
 }

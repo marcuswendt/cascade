@@ -1,13 +1,13 @@
 /**
- * ColorNode - creates a solid color canvas
+ * ColorNode - creates a solid color ImageBuffer
  */
 
-import { LensNode } from '../LensNode';
+import { LensNode, ImageBuffer } from '../LensNode';
 import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
 
 export class ColorNode extends LensNode {
-  private output!: OutputPort<HTMLCanvasElement>;
+  private output!: OutputPort<ImageBuffer>;
 
   constructor(id: string, graph: Graph) {
     super(id, 'Color', graph);
@@ -32,22 +32,17 @@ export class ColorNode extends LensNode {
 
     this.output = this.out('image');
 
-    this.watchProp('color', () => this.render());
-    this.watchProp('resolution', () => this.render());
+    this.watchProp('color', () => this.requestCook());
+    this.watchProp('resolution', () => this.requestCook());
 
-    this.onReady = () => this.render();
+    this.onReady = () => this.requestCook();
   }
 
-  private render(): void {
+  protected render(): void {
     const [width, height] = this.props.resolution.value;
-    const canvas = this.createCanvas(width, height);
-    const ctx = canvas.getContext('2d');
+    const color = this.normalizeColor(this.props.color.value);
 
-    if (ctx) {
-      ctx.fillStyle = this.colorToCss(this.props.color.value);
-      ctx.fillRect(0, 0, width, height);
-    }
-
-    this.setOutputAndPreview(this.output, canvas);
+    const buffer = this.createSolid(width, height, color);
+    this.setOutput(this.output, buffer);
   }
 }

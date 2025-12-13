@@ -1,13 +1,13 @@
 /**
- * CheckersNode - generates a checkerboard pattern
+ * CheckersNode - generates a checkerboard pattern as ImageBuffer
  */
 
-import { LensNode } from '../LensNode';
+import { LensNode, ImageBuffer } from '../LensNode';
 import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
 
 export class CheckersNode extends LensNode {
-  private output!: OutputPort<HTMLCanvasElement>;
+  private output!: OutputPort<ImageBuffer>;
 
   constructor(id: string, graph: Graph) {
     super(id, 'Checkers', graph);
@@ -18,14 +18,14 @@ export class CheckersNode extends LensNode {
       value: { r: 1.0, g: 1.0, b: 1.0 },
       type: 'color',
       displayName: 'Color 1',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('color2', {
       value: { r: 0.0, g: 0.0, b: 0.0 },
       type: 'color',
       displayName: 'Color 2',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('mode', {
@@ -37,7 +37,7 @@ export class CheckersNode extends LensNode {
         ]
       },
       displayName: 'Mode',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('size', {
@@ -49,7 +49,7 @@ export class CheckersNode extends LensNode {
       },
       displayName: 'Size',
       hidden: () => this.props.mode.value !== 'size',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('divisions', {
@@ -62,7 +62,7 @@ export class CheckersNode extends LensNode {
       },
       displayName: 'Divisions',
       hidden: () => this.props.mode.value !== 'divisions',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('resolution', {
@@ -73,42 +73,47 @@ export class CheckersNode extends LensNode {
         integer: true
       },
       displayName: 'Resolution',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.output = this.out('image');
 
-    this.onReady = () => this.render();
+    this.onReady = () => this.requestCook();
   }
 
-  private render(): void {
+  protected render(): void {
     const [width, height] = this.props.resolution.value;
     const mode = this.props.mode.value;
-    const color1 = this.props.color1.value;
-    const color2 = this.props.color2.value;
+    const color1 = this.normalizeColor(this.props.color1.value);
+    const color2 = this.normalizeColor(this.props.color2.value);
 
-    // Calculate checker size based on mode
     let checkerSize: number;
     if (mode === 'size') {
       checkerSize = this.props.size.value;
     } else {
-      // divisions mode: divide width by divisions
       checkerSize = width / this.props.divisions.value;
     }
 
-    const canvas = this.createCanvas(width, height);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const buffer = this.createRGBA(width, height);
+    const r = buffer.r();
+    const g = buffer.g();
+    const b = buffer.b();
+    const a = buffer.a();
 
-    // Draw checkerboard pattern
-    for (let y = 0; y < height; y += checkerSize) {
-      for (let x = 0; x < width; x += checkerSize) {
-        const isEven = Math.floor(x / checkerSize) + Math.floor(y / checkerSize);
-        ctx.fillStyle = isEven % 2 === 0 ? this.colorToCss(color1) : this.colorToCss(color2);
-        ctx.fillRect(x, y, checkerSize, checkerSize);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
+        const isEven = (Math.floor(x / checkerSize) + Math.floor(y / checkerSize)) % 2 === 0;
+        const color = isEven ? color1 : color2;
+
+        r[idx] = color.r;
+        g[idx] = color.g;
+        b[idx] = color.b;
+        a[idx] = color.a;
       }
     }
 
-    this.setOutputAndPreview(this.output, canvas);
+    buffer.markDirty();
+    this.setOutput(this.output, buffer);
   }
 }

@@ -52,6 +52,23 @@ export class Node {
   protected manualDirty: boolean = false;
   executionTimeout: number = 30000;
 
+  // Cook info - performance tracking
+  cookInfo: {
+    lastCookTime: number;        // Duration of last execution (ms)
+    totalCookTime: number;       // Cumulative cook time
+    cookCount: number;           // Number of times cooked
+    averageCookTime: number;     // Average cook time
+    lastCookTimestamp: number;   // When last cooked (Date.now())
+    peakMemory: number;          // Peak memory during cook (if measurable)
+  } = {
+    lastCookTime: 0,
+    totalCookTime: 0,
+    cookCount: 0,
+    averageCookTime: 0,
+    lastCookTimestamp: 0,
+    peakMemory: 0
+  };
+
   // Time dependency tracking (for expression engine)
   isTimeDependent: boolean = false;
 
@@ -788,13 +805,16 @@ export class Node {
   }
 
   async execute(): Promise<void> {
-    if (!this.nodeFunction) {
+    // Check if this node has any execution logic
+    const hasExecution = !!this.nodeFunction || this.onCook !== Node.prototype.onCook;
+
+    if (!hasExecution) {
       return;
     }
 
     const needsInitialization = !this.hasExecuted;
 
-    if (!this.shouldExecute() && !needsInitialization) {
+    if (!this.shouldExecute() && !needsInitialization && !this.manualDirty) {
       this.executeBypass();
       return;
     }
@@ -806,9 +826,14 @@ export class Node {
     // Evaluate all expressions before execution
     this.evaluateAllExpressions();
 
+    // Track cook time
+    const startTime = performance.now();
+    const startMemory = (performance as any).memory?.usedJSHeapSize ?? 0;
+
     try {
+      // Single entry point: onCook() handles both code-based and class-based nodes
       await Promise.race([
-        this.nodeFunction(this, this.graph),
+        Promise.resolve(this.onCook()),
         this.createTimeoutPromise(this.executionTimeout)
       ]);
 
@@ -818,13 +843,83 @@ export class Node {
       this.manualDirty = false;
 
       await this.callLifecycleHooks(needsInitialization);
+
+      // Update cook info on success
+      this.updateCookInfo(startTime, startMemory);
     } catch (err: any) {
       this.error = err as Error;
       this.manualDirty = true;
+      // Still update cook info on error
+      this.updateCookInfo(startTime, startMemory);
       if (!err.message?.includes('timeout')) {
         console.error(`Error executing node ${this.id}:`, err);
       }
     }
+  }
+
+  /**
+   * Override this method in class-based nodes to implement cooking logic.
+   * Base implementation calls nodeFunction if set (for code-based nodes).
+   * Cook timing is handled automatically by execute().
+   */
+  protected onCook(): void | Promise<void> {
+    // Base implementation calls nodeFunction for code-based nodes
+    if (this.nodeFunction) {
+      return this.nodeFunction(this, this.graph);
+    }
+  }
+
+  /**
+   * Update cook info after execution
+   * Protected so subclasses can call it for manual cook tracking
+   */
+  protected updateCookInfo(startTime: number, startMemory: number = 0): void {
+    const endTime = performance.now();
+    const cookTime = endTime - startTime;
+
+    this.cookInfo.lastCookTime = cookTime;
+    this.cookInfo.totalCookTime += cookTime;
+    this.cookInfo.cookCount++;
+    this.cookInfo.averageCookTime = this.cookInfo.totalCookTime / this.cookInfo.cookCount;
+    this.cookInfo.lastCookTimestamp = Date.now();
+
+    // Track memory if available (Chrome only)
+    const endMemory = (performance as any).memory?.usedJSHeapSize ?? 0;
+    if (startMemory && endMemory) {
+      const memoryUsed = endMemory - startMemory;
+      if (memoryUsed > this.cookInfo.peakMemory) {
+        this.cookInfo.peakMemory = memoryUsed;
+      }
+    }
+  }
+
+  /**
+   * Start cook timing - returns start time to pass to endCook()
+   * Use for class-based nodes that don't go through execute()
+   */
+  protected startCook(): number {
+    return performance.now();
+  }
+
+  /**
+   * End cook timing - call with the value returned from startCook()
+   */
+  protected endCook(startTime: number): void {
+    this.updateCookInfo(startTime, 0);
+  }
+
+  /**
+   * Reset cook statistics
+   */
+  resetCookInfo(): void {
+    this.cookInfo = {
+      lastCookTime: 0,
+      totalCookTime: 0,
+      cookCount: 0,
+      averageCookTime: 0,
+      lastCookTimestamp: 0,
+      peakMemory: 0
+    };
   }
 
   private async callLifecycleHooks(isFirstRun: boolean): Promise<void> {

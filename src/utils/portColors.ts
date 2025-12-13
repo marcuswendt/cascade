@@ -1,4 +1,5 @@
 import type { InputPort, OutputPort, DataType } from '@/types/node.types';
+import { ImageBuffer } from '@/nodes/lens/ImageBuffer';
 
 /**
  * Color palette for data types
@@ -36,8 +37,9 @@ export function getPortColor(port: InputPort | OutputPort): string {
     return DATA_TYPE_COLORS.trigger;
   }
 
-  // Check if the value is an image (HTMLCanvasElement, HTMLImageElement, OffscreenCanvas)
-  if (port.value instanceof HTMLCanvasElement ||
+  // Check if the value is an image (ImageBuffer, HTMLCanvasElement, HTMLImageElement, OffscreenCanvas)
+  if (port.value instanceof ImageBuffer ||
+      port.value instanceof HTMLCanvasElement ||
       port.value instanceof HTMLImageElement ||
       port.value instanceof OffscreenCanvas) {
     return DATA_TYPE_COLORS.image;
@@ -75,7 +77,8 @@ export function getPortColor(port: InputPort | OutputPort): string {
         if (Array.isArray(port.value)) {
           return DATA_TYPE_COLORS.array;
         }
-        if (port.value instanceof HTMLCanvasElement ||
+        if (port.value instanceof ImageBuffer ||
+            port.value instanceof HTMLCanvasElement ||
             port.value instanceof HTMLImageElement ||
             port.value instanceof OffscreenCanvas) {
           return DATA_TYPE_COLORS.image;

@@ -1,14 +1,14 @@
 /**
- * NormalMapNode - computes normal map from height map (red channel)
+ * NormalMapNode - computes normal map from height map (red/grayscale channel)
  */
 
-import { LensNode, type ImageInput } from '../LensNode';
+import { LensNode, ImageBuffer, type ImageInput } from '../LensNode';
 import type { Graph } from '@/nodes/Graph';
 import type { InputPort, OutputPort } from '@/types/node.types';
 
 export class NormalMapNode extends LensNode {
   private image!: InputPort<ImageInput>;
-  private output!: OutputPort<HTMLCanvasElement>;
+  private output!: OutputPort<ImageBuffer>;
 
   constructor(id: string, graph: Graph) {
     super(id, 'NormalMap', graph);
@@ -25,59 +25,56 @@ export class NormalMapNode extends LensNode {
         step: 0.1
       },
       displayName: 'Scale',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('flipX', {
       value: false,
       type: 'boolean',
       displayName: 'Flip X',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('flipY', {
       value: false,
       type: 'boolean',
       displayName: 'Flip Y',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.output = this.out('image');
 
-    this.image.onChange = () => this.render();
+    this.image.onChange = () => this.requestCook();
 
-    this.watchProp('scale', () => this.render());
-    this.watchProp('flipX', () => this.render());
-    this.watchProp('flipY', () => this.render());
+    this.watchProp('scale', () => this.requestCook());
+    this.watchProp('flipX', () => this.requestCook());
+    this.watchProp('flipY', () => this.requestCook());
 
-    this.onReady = () => this.render();
+    this.onReady = () => this.requestCook();
   }
 
-  private computeNormalMap(imageData: ImageData, scale: number, flipX: boolean, flipY: boolean): ImageData {
-    const width = imageData.width;
-    const height = imageData.height;
-    const data = imageData.data;
-    const result = new ImageData(width, height);
-    const resultData = result.data;
+  private computeNormalMap(source: ImageBuffer, scale: number, flipX: boolean, flipY: boolean): ImageBuffer {
+    const { width, height } = source;
+    const result = ImageBuffer.rgba(width, height);
 
-    // Extract red channel (height values)
-    const heightMap = new Float32Array(width * height);
-    for (let i = 0; i < data.length; i += 4) {
-      const idx = i / 4;
-      heightMap[idx] = data[i] / 255.0; // Red channel as height
-    }
+    // Use first channel as height (works for grayscale or red channel)
+    const heightMap = source.channels[0];
 
-    // Compute gradients using finite differences
+    const rOut = result.channels[0];
+    const gOut = result.channels[1];
+    const bOut = result.channels[2];
+    const aOut = result.channels[3];
+
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const idx = y * width + x;
 
         // Get neighboring heights with clamping
-        const h00 = heightMap[idx]; // Current
-        const h10 = heightMap[Math.min(x + 1, width - 1) + y * width]; // Right
-        const h01 = heightMap[x + Math.min(y + 1, height - 1) * width]; // Down
+        const h00 = heightMap[idx];
+        const h10 = heightMap[Math.min(x + 1, width - 1) + y * width];
+        const h01 = heightMap[x + Math.min(y + 1, height - 1) * width];
 
-        // Compute gradients (Sobel-like)
+        // Compute gradients
         const dx = (h10 - h00) * scale;
         const dy = (h01 - h00) * scale;
 
@@ -96,44 +93,27 @@ export class NormalMapNode extends LensNode {
         const normalizedZ = nz / length;
 
         // Map from [-1, 1] to [0, 1] for normal map format
-        const r = (normalizedX * 0.5 + 0.5) * 255;
-        const g = (normalizedY * 0.5 + 0.5) * 255;
-        const b = (normalizedZ * 0.5 + 0.5) * 255;
-
-        const resultIdx = idx * 4;
-        resultData[resultIdx] = Math.round(Math.max(0, Math.min(255, r)));
-        resultData[resultIdx + 1] = Math.round(Math.max(0, Math.min(255, g)));
-        resultData[resultIdx + 2] = Math.round(Math.max(0, Math.min(255, b)));
-        resultData[resultIdx + 3] = 255; // Alpha
+        rOut[idx] = normalizedX * 0.5 + 0.5;
+        gOut[idx] = normalizedY * 0.5 + 0.5;
+        bOut[idx] = normalizedZ * 0.5 + 0.5;
+        aOut[idx] = 1.0;
       }
     }
 
     return result;
   }
 
-  private render(): void {
-    if (!this.image.value) {
-      return;
-    }
-
-    const img = this.image.value;
-    const { width, height } = this.getImageSize(img);
-
-    if (width === 0 || height === 0) {
-      return;
-    }
-
-    const imageData = this.getImageData(img, width, height);
-    if (!imageData) {
+  protected render(): void {
+    const buffer = this.toImageBuffer(this.image.value);
+    if (!buffer) {
       return;
     }
 
     const scale = this.props.scale.value;
     const flipX = this.props.flipX.value;
     const flipY = this.props.flipY.value;
-    const normalData = this.computeNormalMap(imageData, scale, flipX, flipY);
 
-    const canvas = this.putImageData(normalData);
-    this.setOutputAndPreview(this.output, canvas);
+    const normalMap = this.computeNormalMap(buffer, scale, flipX, flipY);
+    this.setOutput(this.output, normalMap);
   }
 }

@@ -1,15 +1,15 @@
 /**
- * NoiseNode - generates procedural noise patterns
+ * NoiseNode - generates procedural noise patterns as ImageBuffer
  */
 
-import { LensNode } from '../LensNode';
+import { LensNode, ImageBuffer } from '../LensNode';
 import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
 
 type Noise2DFunction = (x: number, y: number) => number;
 
 export class NoiseNode extends LensNode {
-  private output!: OutputPort<HTMLCanvasElement>;
+  private output!: OutputPort<ImageBuffer>;
   private noise2D: Noise2DFunction | null = null;
   private currentSeed: number | null = null;
 
@@ -27,7 +27,7 @@ export class NoiseNode extends LensNode {
         integer: true
       },
       displayName: 'Seed',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('scale', {
@@ -38,7 +38,7 @@ export class NoiseNode extends LensNode {
         step: 0.001
       },
       displayName: 'Scale',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('iterations', {
@@ -50,7 +50,7 @@ export class NoiseNode extends LensNode {
         integer: true
       },
       displayName: 'Iterations',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.defineProp('resolution', {
@@ -61,7 +61,7 @@ export class NoiseNode extends LensNode {
         integer: true
       },
       displayName: 'Resolution',
-      onChange: () => this.render()
+      onChange: () => this.requestCook()
     });
 
     this.output = this.out('image');
@@ -69,18 +69,18 @@ export class NoiseNode extends LensNode {
     this.watchProp('seed', () => {
       this.initNoise().then(() => {
         if (this.noise2D) {
-          this.render();
+          this.requestCook();
         }
       });
     });
-    this.watchProp('scale', () => this.render());
-    this.watchProp('iterations', () => this.render());
-    this.watchProp('resolution', () => this.render());
+    this.watchProp('scale', () => this.requestCook());
+    this.watchProp('iterations', () => this.requestCook());
+    this.watchProp('resolution', () => this.requestCook());
 
     this.onReady = async () => {
       await this.initNoise();
       if (this.noise2D) {
-        this.render();
+        this.requestCook();
       }
     };
   }
@@ -91,7 +91,6 @@ export class NoiseNode extends LensNode {
       const { createNoise2D } = simplexNoise;
       const seed = this.props.seed.value;
 
-      // Create a seeded random function
       let rng = seed;
       function seededRandom() {
         rng = (rng * 9301 + 49297) % 233280;
@@ -106,11 +105,11 @@ export class NoiseNode extends LensNode {
     }
   }
 
-  private render(): void {
+  protected render(): void {
     if (!this.noise2D) {
       this.initNoise().then(() => {
         if (this.noise2D) {
-          this.render();
+          this.requestCook();
         }
       });
       return;
@@ -121,24 +120,20 @@ export class NoiseNode extends LensNode {
     const iterations = this.props.iterations.value;
     const seed = this.props.seed.value;
 
-    // Recreate noise function with new seed if needed
     if (seed !== this.currentSeed) {
       this.initNoise().then(() => {
         if (this.noise2D) {
-          this.render();
+          this.requestCook();
         }
       });
       return;
     }
 
-    const canvas = this.createCanvas(width, height);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    // Create grayscale buffer (single channel for efficiency)
+    const buffer = this.createGrayscale(width, height);
+    const gray = buffer.r();
 
-    const imageData = ctx.createImageData(width, height);
-    const data = imageData.data;
-
-    // Generate fractal noise (multiple octaves)
+    // Generate fractal noise
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         let value = 0;
@@ -146,7 +141,6 @@ export class NoiseNode extends LensNode {
         let frequency = scale;
         let maxValue = 0;
 
-        // Sum multiple octaves
         for (let i = 0; i < iterations; i++) {
           const nx = x * frequency;
           const ny = y * frequency;
@@ -159,18 +153,11 @@ export class NoiseNode extends LensNode {
 
         // Normalize to [0, 1]
         value = (value / maxValue + 1) * 0.5;
-
-        // Map to grayscale
-        const gray = Math.round(value * 255);
-        const idx = (y * width + x) * 4;
-        data[idx] = gray;
-        data[idx + 1] = gray;
-        data[idx + 2] = gray;
-        data[idx + 3] = 255;
+        gray[y * width + x] = value;
       }
     }
 
-    ctx.putImageData(imageData, 0, 0);
-    this.setOutputAndPreview(this.output, canvas);
+    buffer.markDirty();
+    this.setOutput(this.output, buffer);
   }
 }

@@ -1,97 +1,145 @@
 /**
  * LensNode - Base class for all image processing nodes
- * Provides common utilities for canvas, image, and pixel manipulation
+ *
+ * Provides utilities for working with ImageBuffer - the high-performance
+ * planar Float32Array image format used throughout the Lens library.
  */
 
 import { Node } from '@/nodes/Node';
 import type { Graph } from '@/nodes/Graph';
+import { ImageBuffer } from './ImageBuffer';
 
-export type ImageInput = HTMLCanvasElement | HTMLImageElement | null;
+// Accept ImageBuffer, canvas, or image as input (for backwards compatibility)
+export type ImageInput = ImageBuffer | HTMLCanvasElement | HTMLImageElement | null;
 
 export abstract class LensNode extends Node {
+  // Preview update throttling
+  private _previewPending = false;
+  private _previewBuffer: ImageBuffer | null = null;
+  private _lastPreviewTime = 0;
+  private static readonly PREVIEW_INTERVAL = 33; // ~30fps
+
+  // Execution scheduling
+  private _executionScheduled = false;
+
   constructor(id: string, type: string, graph: Graph) {
     super(id, type, graph);
   }
 
-  // ============ Image Size Utilities ============
+  /**
+   * Override onCook() to call the abstract render() method
+   * Cook timing is handled by Node.execute()
+   */
+  protected onCook(): void | Promise<void> {
+    return this.render();
+  }
 
   /**
-   * Get dimensions from an image or canvas
+   * Abstract render method - subclasses implement their rendering logic here
+   * Called by onCook() when the node needs to cook
    */
-  protected getImageSize(img: ImageInput): { width: number; height: number } {
-    if (img instanceof HTMLCanvasElement) {
-      return { width: img.width, height: img.height };
-    } else if (img instanceof HTMLImageElement) {
+  protected abstract render(): void | Promise<void>;
+
+  /**
+   * Schedule execution on next microtask
+   * Call this from onChange handlers instead of calling cook/render directly
+   */
+  protected scheduleExecution(): void {
+    if (this._executionScheduled) return;
+    this._executionScheduled = true;
+    queueMicrotask(() => {
+      this._executionScheduled = false;
+      this.execute();
+    });
+  }
+
+  /**
+   * Helper for onChange handlers - marks dirty and schedules execution
+   */
+  protected requestCook(): void {
+    this.markDirty();
+    this.scheduleExecution();
+  }
+
+  // ============ ImageBuffer Utilities ============
+
+  /**
+   * Convert any image input to ImageBuffer
+   * Returns null if input is null/invalid
+   */
+  protected toImageBuffer(input: ImageInput): ImageBuffer | null {
+    if (!input) return null;
+
+    if (input instanceof ImageBuffer) {
+      return input;
+    }
+
+    if (input instanceof HTMLCanvasElement || input instanceof HTMLImageElement) {
+      return ImageBuffer.fromCanvas(input);
+    }
+
+    return null;
+  }
+
+  /**
+   * Get dimensions from any image input
+   */
+  protected getImageSize(input: ImageInput): { width: number; height: number } {
+    if (!input) return { width: 0, height: 0 };
+
+    if (input instanceof ImageBuffer) {
+      return { width: input.width, height: input.height };
+    }
+
+    if (input instanceof HTMLCanvasElement) {
+      return { width: input.width, height: input.height };
+    }
+
+    if (input instanceof HTMLImageElement) {
       return {
-        width: img.naturalWidth || img.width,
-        height: img.naturalHeight || img.height
+        width: input.naturalWidth || input.width,
+        height: input.naturalHeight || input.height
       };
     }
+
     return { width: 0, height: 0 };
   }
 
-  // ============ Canvas Creation ============
+  // ============ ImageBuffer Creation ============
 
   /**
-   * Create a canvas with specified dimensions
+   * Create a grayscale buffer
    */
-  protected createCanvas(width: number, height: number): HTMLCanvasElement {
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    return canvas;
-  }
-
-  // ============ Image Data Utilities ============
-
-  /**
-   * Get ImageData from an image, optionally resized to target dimensions
-   */
-  protected getImageData(
-    img: ImageInput,
-    targetWidth?: number,
-    targetHeight?: number
-  ): ImageData | null {
-    if (!img) return null;
-
-    const { width: srcWidth, height: srcHeight } = this.getImageSize(img);
-    if (srcWidth === 0 || srcHeight === 0) return null;
-
-    const width = targetWidth ?? srcWidth;
-    const height = targetHeight ?? srcHeight;
-
-    const tempCanvas = this.createCanvas(width, height);
-    const tempCtx = tempCanvas.getContext('2d');
-    if (!tempCtx) return null;
-
-    tempCtx.drawImage(img, 0, 0, srcWidth, srcHeight, 0, 0, width, height);
-    return tempCtx.getImageData(0, 0, width, height);
+  protected createGrayscale(width: number, height: number): ImageBuffer {
+    return ImageBuffer.grayscale(width, height);
   }
 
   /**
-   * Create a canvas from ImageData
+   * Create an RGB buffer
    */
-  protected putImageData(imageData: ImageData): HTMLCanvasElement {
-    const canvas = this.createCanvas(imageData.width, imageData.height);
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.putImageData(imageData, 0, 0);
-    }
-    return canvas;
+  protected createRGB(width: number, height: number): ImageBuffer {
+    return ImageBuffer.rgb(width, height);
+  }
+
+  /**
+   * Create an RGBA buffer
+   */
+  protected createRGBA(width: number, height: number): ImageBuffer {
+    return ImageBuffer.rgba(width, height);
+  }
+
+  /**
+   * Create a solid color buffer
+   */
+  protected createSolid(
+    width: number,
+    height: number,
+    color: { r: number; g: number; b: number; a?: number }
+  ): ImageBuffer {
+    return ImageBuffer.solid(width, height, color);
   }
 
   // ============ Color Utilities ============
-
-  /**
-   * Convert a normalized color object to CSS string
-   */
-  protected colorToCss(color: { r: number; g: number; b: number; a?: number }): string {
-    const r = Math.round(color.r * 255);
-    const g = Math.round(color.g * 255);
-    const b = Math.round(color.b * 255);
-    const a = color.a !== undefined ? color.a : 1.0;
-    return a < 1.0 ? `rgba(${r},${g},${b},${a})` : `rgb(${r},${g},${b})`;
-  }
 
   /**
    * Normalize color values to 0-1 range
@@ -122,33 +170,62 @@ export abstract class LensNode extends Node {
     return { r: 0, g: 0, b: 0, a: 1.0 };
   }
 
-  // ============ Drawing Utilities ============
+  /**
+   * Convert a normalized color object to CSS string
+   */
+  protected colorToCss(color: { r: number; g: number; b: number; a?: number }): string {
+    const r = Math.round(color.r * 255);
+    const g = Math.round(color.g * 255);
+    const b = Math.round(color.b * 255);
+    const a = color.a !== undefined ? color.a : 1.0;
+    return a < 1.0 ? `rgba(${r},${g},${b},${a})` : `rgb(${r},${g},${b})`;
+  }
+
+  // ============ Output Utilities ============
 
   /**
-   * Draw an image onto a canvas context, optionally scaled
+   * Set output value and preview from an ImageBuffer
+   * This is the standard way to output from a Lens node
+   * Preview updates are throttled to ~30fps to avoid excessive canvas conversions
    */
-  protected drawImage(
-    ctx: CanvasRenderingContext2D,
-    img: ImageInput,
-    x = 0,
-    y = 0,
-    width?: number,
-    height?: number
+  protected setOutput(
+    output: { setValue: (value: ImageBuffer) => void },
+    buffer: ImageBuffer
   ): void {
-    if (!img) return;
-    const { width: srcW, height: srcH } = this.getImageSize(img);
-    ctx.drawImage(img, 0, 0, srcW, srcH, x, y, width ?? srcW, height ?? srcH);
+    output.setValue(buffer);
+    this._previewBuffer = buffer;
+    this.updatePreviewThrottled();
   }
 
   /**
-   * Set output and preview from a canvas
-   * Common pattern used by most image processing nodes
+   * Throttled preview update - avoids excessive canvas conversions
    */
-  protected setOutputAndPreview(
-    output: { setValue: (value: HTMLCanvasElement) => void },
-    canvas: HTMLCanvasElement
-  ): void {
-    output.setValue(canvas);
-    this.preview = canvas;
+  private updatePreviewThrottled(): void {
+    const now = performance.now();
+    const elapsed = now - this._lastPreviewTime;
+
+    if (elapsed >= LensNode.PREVIEW_INTERVAL) {
+      // Enough time has passed, update immediately
+      this._lastPreviewTime = now;
+      if (this._previewBuffer) {
+        this.preview = this._previewBuffer.toCanvas();
+      }
+      this._previewPending = false;
+    } else if (!this._previewPending) {
+      // Schedule an update
+      this._previewPending = true;
+      const remaining = LensNode.PREVIEW_INTERVAL - elapsed;
+      setTimeout(() => {
+        this._previewPending = false;
+        this._lastPreviewTime = performance.now();
+        if (this._previewBuffer) {
+          this.preview = this._previewBuffer.toCanvas();
+        }
+      }, remaining);
+    }
+    // If pending, the scheduled update will handle it
   }
 }
+
+// Re-export ImageBuffer for convenience
+export { ImageBuffer };

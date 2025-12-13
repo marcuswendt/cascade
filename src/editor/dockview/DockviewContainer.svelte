@@ -12,6 +12,7 @@
   import ViewerPanel from '../panels/ViewerPanel.svelte';
   import LogPanel from '../panels/LogPanel.svelte';
   import CodePanel from '../panels/CodePanel.svelte';
+  import CookInfoPanel from '../panels/CookInfoPanel.svelte';
 
   // Import Dockview styles
   import 'dockview-core/dist/styles/dockview.css';
@@ -143,6 +144,7 @@
     registerPanelComponent('viewer', ViewerPanel, 'Viewer');
     registerPanelComponent('log', LogPanel, 'Log');
     registerPanelComponent('code', CodePanel, 'Code');
+    registerPanelComponent('info', CookInfoPanel, 'Node Info');
 
     // Set callback for add panel button
     dockviewStore.onAddPanelClick = handleAddPanelClick;
