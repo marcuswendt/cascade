@@ -8,7 +8,7 @@
  * - Diff generation
  */
 
-import type { CodeVersion } from '../../types/node.types.js';
+import type { CodeVersion } from '../types/node.types.js';
 
 export interface HistoryEntry extends CodeVersion {
   id: string;

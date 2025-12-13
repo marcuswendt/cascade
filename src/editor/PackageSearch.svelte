@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { PackageManager, type PackageInfo } from '@/core/engine/PackageManager';
+  import { PackageManager, type PackageInfo } from '@/engine/PackageManager';
 
   export let open = false;
   export let packageManager: PackageManager;

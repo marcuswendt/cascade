@@ -104,21 +104,6 @@ export interface PortOptions {
   multiline?: boolean;
 }
 
-// ============================================================================
-// Variadic Inputs (v1.3)
-// ============================================================================
-
-/**
- * Configuration for variadic (auto-growing) input ports
- */
-export interface VariadicConfig {
-  baseName: string;
-  minCount: number;
-  maxCount?: number;
-  defaultValue: any;
-  portOptions: PortOptions;
-}
-
 export interface InputPort<T = any> {
   id: string;
   name: string;
@@ -183,4 +168,8 @@ export interface Prop<T = any> {
   // Organization
   folder?: string;
   group?: string;
+
+  // Expression support (for path-based parameter references)
+  expression?: string;           // TypeScript expression (e.g., "ch('../timer1/value') * 2")
+  expressionError?: string;      // Validation error message if expression is invalid
 }

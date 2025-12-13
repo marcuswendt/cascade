@@ -9,8 +9,8 @@
   import Tabs from './Tabs.svelte';
   import GraphTabs from './GraphTabs.svelte';
   import CodeEditor from './CodeEditor.svelte';
-  import type { Graph } from '@/core/engine/Graph';
-  import type { Node } from '@/core/engine/Node';
+  import type { Graph } from '@/nodes/Graph';
+  import type { Node } from '@/nodes/Node';
 
   import { createEventDispatcher } from 'svelte';
 

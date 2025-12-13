@@ -1,5 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
-import type { Graph } from '@/core/engine/Graph';
+import type { Graph } from '@/nodes/Graph';
 
 /**
  * Snapshot of the graph state for undo/redo

@@ -1,6 +1,7 @@
-import type { Graph } from '@/core/engine/Graph';
-import type { Node } from '@/core/engine/Node';
-import type { Asset } from '@/core/engine/AssetManager';
+import type { Graph } from '@/nodes/Graph';
+import type { Node } from '@/nodes/Node';
+import { Annotation } from '@/nodes/annotations/Annotation';
+import type { Asset } from '@/engine/AssetManager';
 
 export interface ExportOptions {
   embedAssets?: boolean; // Embed assets as base64 (default: true for single HTML)
@@ -13,7 +14,7 @@ export interface ExportOptions {
  */
 export function compileGraph(graph: Graph): string {
   const nodes = graph.elements
-    .filter(e => e.kind === 'computation')
+    .filter(e => !(e instanceof Annotation))
     .map(node => {
       const comp = node as Node;
       return {
@@ -48,7 +49,7 @@ export function compileGraph(graph: Graph): string {
 
   // Find entry points (computations with no input connections)
   const entryPoints = graph.elements
-    .filter(e => e.kind === 'computation')
+    .filter(e => !(e instanceof Annotation))
     .map(e => e as Node)
     .filter(comp => comp.inputs.every(p => p.connections.length === 0))
     .map(comp => comp.id);
@@ -259,7 +260,6 @@ function getMinimalRuntime(): string {
       class Node {
         constructor(id, type) {
           this.id = id;
-          this.kind = 'computation';
           this.type = type;
           this.inputs = [];
           this.outputs = [];

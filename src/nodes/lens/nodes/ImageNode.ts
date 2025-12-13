@@ -3,7 +3,7 @@
  */
 
 import { LensNode, type ImageInput } from '../LensNode';
-import type { Graph } from '@/core/engine/Graph';
+import type { Graph } from '@/nodes/Graph';
 import type { InputPort, OutputPort } from '@/types/node.types';
 
 type ImageInputValue = HTMLCanvasElement | HTMLImageElement | string | null;

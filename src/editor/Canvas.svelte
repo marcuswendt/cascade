@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount, tick, createEventDispatcher } from 'svelte';
-  import { Graph, type CanvasAnnotation } from '@/core/engine/Graph';
+  import { Graph, type CanvasAnnotation } from '@/nodes/Graph';
+  import { Annotation } from '@/nodes/annotations/Annotation';
+  import { annotationRegistry } from './annotations';
   import NodeUI from './NodeUI.svelte';
-  import type { Node } from '@/core/engine/Node';
+  import type { Node } from '@/nodes/Node';
   import type { Connection } from '@/types/node.types';
   import { marked } from 'marked';
   import { packagePathToType, getNodeClass, compileCustomNode } from '@/utils/nodeTypeUtils';
@@ -79,6 +81,489 @@
   let isPanning = false;
   let selectedNodes: string[] = [];
   let selectedAnnotations: string[] = [];
+
+  // Network navigation state
+  // currentNetwork is the subnet we're "inside" of (null = root level)
+  let currentNetwork: Node | null = null;
+
+  // Computed: breadcrumb segments for navigation
+  $: breadcrumbs = getBreadcrumbs(currentNetwork);
+
+  function getBreadcrumbs(network: Node | null): { id: string; label: string; node: Node | null }[] {
+    const crumbs: { id: string; label: string; node: Node | null }[] = [
+      { id: 'root', label: '/', node: null }
+    ];
+
+    if (!network) return crumbs;
+
+    // Walk up the parent chain to build breadcrumbs
+    const path: Node[] = [];
+    let current: Node | null = network;
+    while (current) {
+      path.unshift(current);
+      current = current.parent;
+    }
+
+    for (const node of path) {
+      crumbs.push({ id: node.id, label: node.id, node });
+    }
+
+    return crumbs;
+  }
+
+  // Navigate into a subnet (dive in)
+  function diveIntoSubnet(subnet: Node) {
+    if (subnet.isNetwork()) {
+      currentNetwork = subnet;
+      // Clear selection when navigating
+      selectedNodes = [];
+      selectedNode = null;
+      dispatch('nodeSelect', { node: null });
+    }
+  }
+
+  // Navigate up one level (jump out)
+  function jumpOut() {
+    if (currentNetwork) {
+      currentNetwork = currentNetwork.parent;
+      selectedNodes = [];
+      selectedNode = null;
+      dispatch('nodeSelect', { node: null });
+    }
+  }
+
+  // Navigate to a specific breadcrumb
+  function navigateToBreadcrumb(node: Node | null) {
+    currentNetwork = node;
+    selectedNodes = [];
+    selectedNode = null;
+    dispatch('nodeSelect', { node: null });
+  }
+
+  // Path input navigation
+  let showPathInput = false;
+  let pathInputValue = '';
+  let pathInputElement: HTMLInputElement | null = null;
+
+  function openPathInput() {
+    // Initialize with current path
+    pathInputValue = currentNetwork ? currentNetwork.path() : '/';
+    showPathInput = true;
+    // Focus input after it renders
+    setTimeout(() => {
+      pathInputElement?.focus();
+      pathInputElement?.select();
+    }, 10);
+  }
+
+  function closePathInput() {
+    showPathInput = false;
+    pathInputValue = '';
+  }
+
+  function navigateToPath(path: string) {
+    if (!path || path === '/') {
+      // Navigate to root
+      currentNetwork = null;
+    } else {
+      // Try to find the node at this path
+      // Use the graph's node resolution if available, otherwise walk manually
+      let targetNode: Node | null = null;
+
+      // Remove leading slash and split into segments
+      const segments = path.replace(/^\//, '').split('/').filter(s => s);
+
+      // Start from root and walk down
+      let current: Node | null = null;
+      for (const segment of segments) {
+        // Find child with this ID at current level
+        const searchIn = current ? current.children() : graph.nodes.filter(n => !n.parent);
+        const found = searchIn.find(n => n.id === segment);
+        if (found) {
+          current = found;
+        } else {
+          // Path not found
+          console.warn(`Path segment not found: ${segment}`);
+          return;
+        }
+      }
+      targetNode = current;
+
+      // If found and it's a network, navigate into it
+      if (targetNode && targetNode.isNetwork()) {
+        currentNetwork = targetNode;
+      } else if (targetNode) {
+        // Navigate to its parent and select it
+        currentNetwork = targetNode.parent;
+        selectedNodes = [targetNode.id];
+        selectedNode = targetNode;
+        dispatch('nodeSelect', { node: targetNode });
+        closePathInput();
+        return;
+      }
+    }
+
+    selectedNodes = [];
+    selectedNode = null;
+    dispatch('nodeSelect', { node: null });
+    closePathInput();
+  }
+
+  function handlePathInputKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      navigateToPath(pathInputValue);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closePathInput();
+    }
+  }
+
+  // Get visible elements (only children of current network)
+  // Works for both nodes and annotations since they're all Node instances
+  function getVisibleElements<T extends Node>(allElements: T[], network: Node | null): T[] {
+    if (!network) {
+      // At root level, show elements without parent
+      return allElements.filter(el => !el.parent);
+    }
+    // Inside a subnet, show elements that are children of this network
+    return allElements.filter(el => el.parent === network);
+  }
+
+  $: visibleNodes = getVisibleElements(graph.nodes, currentNetwork);
+
+  // Collapse selected nodes into a new subnet (Cmd+G)
+  function collapseIntoSubnet() {
+    if (selectedNodes.length === 0) return;
+
+    recordHistory();
+
+    // Get the nodes to collapse
+    const nodesToCollapse = selectedNodes.map(id => graph.getNode(id)).filter(Boolean) as Node[];
+    if (nodesToCollapse.length === 0) return;
+
+    const nodeIdsToCollapse = new Set(nodesToCollapse.map(n => n.id));
+
+    // Calculate bounding box to position the subnet
+    const bounds = {
+      minX: Math.min(...nodesToCollapse.map(n => n.position.x)),
+      minY: Math.min(...nodesToCollapse.map(n => n.position.y)),
+      maxX: Math.max(...nodesToCollapse.map(n => n.position.x)),
+      maxY: Math.max(...nodesToCollapse.map(n => n.position.y))
+    };
+
+    // Find connections crossing the boundary
+    const incomingConnections: { conn: any; targetNode: Node; targetPort: any }[] = [];
+    const outgoingConnections: { conn: any; sourceNode: Node; sourcePort: any; targetNode: Node; targetPort: any }[] = [];
+
+    graph.connections.forEach(conn => {
+      const fromInside = nodeIdsToCollapse.has(conn.from.nodeId);
+      const toInside = nodeIdsToCollapse.has(conn.to.nodeId);
+
+      if (!fromInside && toInside) {
+        // Incoming: external -> internal
+        const targetNode = graph.getNode(conn.to.nodeId);
+        const targetPort = targetNode?.inputs.find(p => p.id === conn.to.portId);
+        if (targetNode && targetPort) {
+          incomingConnections.push({ conn, targetNode, targetPort });
+        }
+      } else if (fromInside && !toInside) {
+        // Outgoing: internal -> external
+        const sourceNode = graph.getNode(conn.from.nodeId);
+        const sourcePort = sourceNode?.outputs.find(p => p.id === conn.from.portId);
+        const targetNode = graph.getNode(conn.to.nodeId);
+        const targetPort = targetNode?.inputs.find(p => p.id === conn.to.portId);
+        if (sourceNode && sourcePort && targetNode && targetPort) {
+          outgoingConnections.push({ conn, sourceNode, sourcePort, targetNode, targetPort });
+        }
+      }
+    });
+
+    // Create a new subnet at the center of selected nodes
+    const subnet = graph.addNode('Subnet', {
+      x: (bounds.minX + bounds.maxX) / 2,
+      y: (bounds.minY + bounds.maxY) / 2
+    });
+    subnet.id = graph.generateUniqueNodeId('subnet');
+
+    // Set parent to current network if we're inside one
+    if (currentNetwork) {
+      subnet.parent = currentNetwork;
+      (currentNetwork as any)._children.push(subnet);
+    }
+
+    // Move nodes into the subnet (set parent, adjust positions)
+    nodesToCollapse.forEach(node => {
+      // Remove from current parent's children if it exists
+      if (node.parent && node.parent !== subnet) {
+        const parentChildren = (node.parent as any)._children;
+        const idx = parentChildren.indexOf(node);
+        if (idx !== -1) parentChildren.splice(idx, 1);
+      }
+
+      node.parent = subnet;
+      // Adjust position relative to subnet center
+      node.position = {
+        x: node.position.x - subnet.position.x,
+        y: node.position.y - subnet.position.y
+      };
+      (subnet as any)._children.push(node);
+    });
+
+    // Handle incoming connections: create Input nodes
+    const inputNodeMap = new Map<string, Node>(); // sourcePortId -> Input node
+    incomingConnections.forEach((incoming, index) => {
+      // Create an Input node inside the subnet
+      const inputNode = graph.addNode('Input', {
+        x: bounds.minX - subnet.position.x - 150,
+        y: bounds.minY - subnet.position.y + (index * 80)
+      });
+      inputNode.id = graph.generateUniqueNodeId('input');
+      inputNode.parent = subnet;
+      (subnet as any)._children.push(inputNode);
+
+      // Set input index
+      if (inputNode.props.inputIndex) {
+        inputNode.updateProp('inputIndex', index);
+      }
+
+      // Remove the old connection
+      graph.disconnect(incoming.conn.id);
+
+      // Connect Input node's output to the original target inside subnet
+      const inputNodeOutput = inputNode.outputs[0];
+      if (inputNodeOutput && incoming.targetPort) {
+        graph.connect(inputNodeOutput, incoming.targetPort);
+      }
+
+      inputNodeMap.set(incoming.conn.from.portId, inputNode);
+    });
+
+    // Add input ports to subnet for each incoming connection
+    // and wire external sources to subnet inputs
+    if (incomingConnections.length > 0) {
+      // For now, use the first incoming connection for the subnet's default input
+      // More sophisticated handling would add multiple input ports
+      const firstIncoming = incomingConnections[0];
+      const externalSourceNode = graph.getNode(firstIncoming.conn.from.nodeId);
+      const externalSourcePort = externalSourceNode?.outputs.find(p => p.id === firstIncoming.conn.from.portId);
+
+      if (externalSourcePort && subnet.inputs[0]) {
+        graph.connect(externalSourcePort, subnet.inputs[0]);
+      }
+    }
+
+    // Handle outgoing connections: use the output node of the subnet
+    // Find or set the cooking node
+    let outputSourceNode: Node | null = null;
+    if (outgoingConnections.length > 0) {
+      // Use the source of the first outgoing connection as the output
+      outputSourceNode = outgoingConnections[0].sourceNode;
+      outputSourceNode.setCooking(true);
+    } else if (nodesToCollapse.length > 0) {
+      // No outgoing - set the last node as cooking
+      const lastNode = nodesToCollapse[nodesToCollapse.length - 1];
+      lastNode.setCooking(true);
+      outputSourceNode = lastNode;
+    }
+
+    // Rewire outgoing connections: from subnet's output to external targets
+    outgoingConnections.forEach(outgoing => {
+      // Remove old connection
+      graph.disconnect(outgoing.conn.id);
+
+      // Connect subnet's output to external target
+      const subnetOutput = subnet.outputs[0];
+      if (subnetOutput && outgoing.targetPort) {
+        graph.connect(subnetOutput, outgoing.targetPort);
+      }
+    });
+
+    // Update graph reactivity
+    graph.nodes = [...graph.nodes];
+    graph.connections = [...graph.connections];
+
+    // Select the new subnet
+    selectedNodes = [subnet.id];
+    selectedNode = subnet;
+    dispatch('nodeSelect', { node: subnet });
+  }
+
+  // Extract subnet contents and delete the subnet (inverse of collapseIntoSubnet)
+  function extractAndDelete() {
+    if (selectedNodes.length !== 1) return;
+
+    const subnetNode = graph.getNode(selectedNodes[0]);
+    if (!subnetNode || !subnetNode.isNetwork()) return;
+    if (subnetNode.children().length === 0) return;
+
+    recordHistory();
+
+    const children = [...subnetNode.children()];
+    const subnetParent = subnetNode.parent;
+
+    // Find Input and Output nodes (we'll delete these, not extract them)
+    const inputNodes = children.filter(n => n.type === 'Input');
+    const outputNodes = children.filter(n => n.type === 'Output');
+    const regularNodes = children.filter(n => n.type !== 'Input' && n.type !== 'Output');
+
+    if (regularNodes.length === 0) return;
+
+    // Find connections to the subnet from outside (these feed Input nodes)
+    const subnetInputConnections: { conn: any; inputIndex: number }[] = [];
+    graph.connections.forEach(conn => {
+      if (conn.to.nodeId === subnetNode.id) {
+        // Find which input port index
+        const portIndex = subnetNode.inputs.findIndex(p => p.id === conn.to.portId);
+        if (portIndex !== -1) {
+          subnetInputConnections.push({ conn, inputIndex: portIndex });
+        }
+      }
+    });
+
+    // Find connections from the subnet to outside (these come from Output/cooking node)
+    const subnetOutputConnections: { conn: any; outputIndex: number }[] = [];
+    graph.connections.forEach(conn => {
+      if (conn.from.nodeId === subnetNode.id) {
+        const portIndex = subnetNode.outputs.findIndex(p => p.id === conn.from.portId);
+        if (portIndex !== -1) {
+          subnetOutputConnections.push({ conn, outputIndex: portIndex });
+        }
+      }
+    });
+
+    // Build mapping: inputIndex -> what Input nodes connect to inside
+    const inputToInternalTarget = new Map<number, { node: Node; port: any }[]>();
+    inputNodes.forEach(inputNode => {
+      const inputIndex = inputNode.evalParm('inputIndex') ?? 0;
+      // Find what the Input node's output connects to
+      const targets: { node: Node; port: any }[] = [];
+      graph.connections.forEach(conn => {
+        if (conn.from.nodeId === inputNode.id) {
+          const targetNode = graph.getNode(conn.to.nodeId);
+          const targetPort = targetNode?.inputs.find(p => p.id === conn.to.portId);
+          if (targetNode && targetPort) {
+            targets.push({ node: targetNode, port: targetPort });
+          }
+        }
+      });
+      if (!inputToInternalTarget.has(inputIndex)) {
+        inputToInternalTarget.set(inputIndex, []);
+      }
+      inputToInternalTarget.get(inputIndex)!.push(...targets);
+    });
+
+    // Find the output source node (cooking node or Output node's input)
+    let outputSourceNode: Node | null = null;
+    let outputSourcePort: any = null;
+
+    const cookingNode = subnetNode.children().find(n => n.cooking);
+    const outputNode = outputNodes[0];
+
+    if (outputNode) {
+      // Output node - find what connects to its input
+      graph.connections.forEach(conn => {
+        if (conn.to.nodeId === outputNode.id) {
+          const sourceNode = graph.getNode(conn.from.nodeId);
+          const sourcePort = sourceNode?.outputs.find(p => p.id === conn.from.portId);
+          if (sourceNode && sourcePort) {
+            outputSourceNode = sourceNode;
+            outputSourcePort = sourcePort;
+          }
+        }
+      });
+    } else if (cookingNode) {
+      outputSourceNode = cookingNode;
+      outputSourcePort = cookingNode.outputs[0];
+    }
+
+    // Move regular nodes out of the subnet to its parent
+    regularNodes.forEach(node => {
+      // Remove from subnet's children
+      (subnetNode as any)._children = (subnetNode as any)._children.filter((n: Node) => n !== node);
+
+      // Adjust position back to world coordinates
+      node.position = {
+        x: node.position.x + subnetNode.position.x,
+        y: node.position.y + subnetNode.position.y
+      };
+
+      // Set new parent
+      node.parent = subnetParent;
+      if (subnetParent) {
+        (subnetParent as any)._children.push(node);
+      }
+    });
+
+    // Delete Input/Output nodes and their connections
+    [...inputNodes, ...outputNodes].forEach(node => {
+      // Remove connections involving this node
+      const connectionsToRemove = graph.connections.filter(
+        conn => conn.from.nodeId === node.id || conn.to.nodeId === node.id
+      );
+      connectionsToRemove.forEach(conn => graph.disconnect(conn.id));
+
+      // Remove from subnet children
+      (subnetNode as any)._children = (subnetNode as any)._children.filter((n: Node) => n !== node);
+
+      // Remove from graph
+      graph.removeNode(node.id);
+    });
+
+    // Rewire external inputs to internal nodes
+    subnetInputConnections.forEach(({ conn, inputIndex }) => {
+      const targets = inputToInternalTarget.get(inputIndex) || [];
+      const sourceNode = graph.getNode(conn.from.nodeId);
+      const sourcePort = sourceNode?.outputs.find(p => p.id === conn.from.portId);
+
+      // Remove old connection to subnet
+      graph.disconnect(conn.id);
+
+      // Connect to each internal target
+      if (sourcePort) {
+        targets.forEach(({ port }) => {
+          graph.connect(sourcePort, port);
+        });
+      }
+    });
+
+    // Rewire subnet output to extracted nodes' output
+    subnetOutputConnections.forEach(({ conn }) => {
+      const targetNode = graph.getNode(conn.to.nodeId);
+      const targetPort = targetNode?.inputs.find(p => p.id === conn.to.portId);
+
+      // Remove old connection from subnet
+      graph.disconnect(conn.id);
+
+      // Connect from the output source node
+      if (outputSourcePort && targetPort) {
+        graph.connect(outputSourcePort, targetPort);
+      }
+    });
+
+    // Remove any remaining connections to/from the subnet
+    const remainingConns = graph.connections.filter(
+      conn => conn.from.nodeId === subnetNode.id || conn.to.nodeId === subnetNode.id
+    );
+    remainingConns.forEach(conn => graph.disconnect(conn.id));
+
+    // Remove subnet from its parent's children
+    if (subnetParent) {
+      (subnetParent as any)._children = (subnetParent as any)._children.filter((n: Node) => n !== subnetNode);
+    }
+
+    // Delete the subnet
+    graph.removeNode(subnetNode.id);
+
+    // Update graph reactivity
+    graph.nodes = [...graph.nodes];
+    graph.connections = [...graph.connections];
+
+    // Select the extracted nodes
+    selectedNodes = regularNodes.map(n => n.id);
+    selectedNode = regularNodes[0] ?? null;
+    dispatch('nodeSelect', { node: selectedNode });
+  }
   let spacePressed = false;
   let isSelecting = false;
   let selectionStart: { x: number; y: number } | null = null;
@@ -139,7 +624,7 @@
     // Add default annotations
     const headlineAnnotation: any = {
       id: `headline_${Date.now().toString(36)}`,
-      type: 'text',
+      type: 'Text',
       content: 'Hello World',
       position: { x: -200, y: -200 },
       size: { width: 540, height: 60 },
@@ -156,7 +641,7 @@
     
     const copyAnnotation: any = {
       id: `copy_${Date.now().toString(36)}`,
-      type: 'text',
+      type: 'Text',
       content: 'Cascade is a visual programming framework designed for creative coders who want to build interactive experiences without sacrificing the power of code. Every node is just a TypeScript function, fully inspectable and editable. The visual graph and code are equal partners, not abstractions of each other. This allows you to work visually when it makes sense, and dive into code when you need precision and control.',
       position: { x: -200, y: -100 },
       size: { width: 540, height: 200 },
@@ -323,9 +808,10 @@ node.onReady = () => {
 
 
   // Graph will be loaded from default.cascade file in App.svelte onMount
-  
-  // Reactive statement to ensure nodes array changes are detected
-  $: nodes = graph.nodes;
+
+  // Reactive statement to show only nodes in current network level
+  // At root: show nodes without parent; Inside subnet: show subnet's children
+  $: nodes = visibleNodes;
   
   // Force reactivity when node ports change
   $: nodePorts = nodes.map(n => ({ 
@@ -355,18 +841,24 @@ node.onReady = () => {
   // Declare connections variable
   let connections: Connection[] = [];
   
-  // Filter out duplicate connections by ID to prevent Svelte key errors
-  // Also depend on nodePositions, nodePorts, and annotationPositions to force re-render when nodes/annotations change
+  // Filter connections to only show those between visible nodes
+  // Also filter out duplicates and depend on nodePositions/nodePorts for reactivity
   $: {
-    // Reference nodePositions, nodePorts, and annotationPositions to make connections reactive to changes
+    // Reference nodePositions, nodePorts to make connections reactive to changes
     nodePositions;
     nodePorts;
-    // annotationPositions;
-    connections = graph.connections.filter((conn, index, self) => 
-      self.findIndex(c => c.id === conn.id) === index
+    // Get IDs of visible nodes for filtering connections
+    const visibleNodeIds = new Set(nodes.map(n => n.id));
+    connections = graph.connections.filter((conn, index, self) =>
+      // Remove duplicates
+      self.findIndex(c => c.id === conn.id) === index &&
+      // Only show connections between visible nodes
+      visibleNodeIds.has(conn.from.nodeId) && visibleNodeIds.has(conn.to.nodeId)
     );
   }
-  $: annotations = graph.annotations;
+
+  // Filter annotations to only show those in current network level (uses same logic as nodes)
+  $: annotations = getVisibleElements(graph.annotations, currentNetwork);
   
   function handleMouseDown(e: MouseEvent) {
     if (!canvas) return;
@@ -433,7 +925,7 @@ node.onReady = () => {
       const id = `line_${Date.now().toString(36)}`;
       const annotation: any = {
         id,
-        type: 'line',
+        type: 'Line',
         position: { x, y },
         endPosition: { x, y },
         style: {
@@ -441,6 +933,10 @@ node.onReady = () => {
           strokeColor: '#ffffff'
         }
       };
+      if (currentNetwork) {
+        annotation.parent = currentNetwork;
+        (currentNetwork as any)._children.push(annotation);
+      }
       recordHistory();
       graph.addAnnotation(annotation);
       graph.annotations = [...graph.annotations];
@@ -459,7 +955,7 @@ node.onReady = () => {
       const id = `polyline_${Date.now().toString(36)}`;
       const annotation: any = {
         id,
-        type: 'polyline',
+        type: 'Polyline',
         position: { x, y },
         points: [{ x, y }],
         style: {
@@ -467,6 +963,10 @@ node.onReady = () => {
           strokeColor: '#ffffff'
         }
       };
+      if (currentNetwork) {
+        annotation.parent = currentNetwork;
+        (currentNetwork as any)._children.push(annotation);
+      }
       recordHistory();
       graph.addAnnotation(annotation);
       graph.annotations = [...graph.annotations];
@@ -577,7 +1077,7 @@ node.onReady = () => {
               const deltaX = newX - oldX;
               const deltaY = newY - oldY;
               
-              if (ann.type === 'line') {
+              if (ann.type === 'Line') {
                 return {
                   ...ann,
                   position: { x: newX, y: newY },
@@ -586,7 +1086,7 @@ node.onReady = () => {
                     y: ann.endPosition.y + deltaY
                   } : undefined
                 };
-              } else if (ann.type === 'polyline') {
+              } else if (ann.type === 'Polyline') {
                 return {
                   ...ann,
                   position: { x: newX, y: newY },
@@ -632,7 +1132,7 @@ node.onReady = () => {
             const annotationDeltaY = newY - oldY;
             
             // Handle line and polyline annotations specially
-            if (ann.type === 'line') {
+            if (ann.type === 'Line') {
               return {
                 ...ann,
                 position: { x: newX, y: newY },
@@ -641,7 +1141,7 @@ node.onReady = () => {
                   y: ann.endPosition.y + annotationDeltaY
                 } : undefined
               };
-            } else if (ann.type === 'polyline') {
+            } else if (ann.type === 'Polyline') {
               return {
                 ...ann,
                 position: { x: newX, y: newY },
@@ -681,7 +1181,7 @@ node.onReady = () => {
           const deltaX = newX - oldX;
           const deltaY = newY - oldY;
           
-          if (ann.type === 'line') {
+          if (ann.type === 'Line') {
             return {
               ...ann,
               position: { x: newX, y: newY },
@@ -692,7 +1192,7 @@ node.onReady = () => {
               style: ann.style ? { ...ann.style } : undefined,
               outputs: ann.outputs ? ann.outputs.map(port => ({ ...port })) : undefined
             };
-          } else if (ann.type === 'polyline') {
+          } else if (ann.type === 'Polyline') {
             return {
               ...ann,
               position: { x: newX, y: newY },
@@ -991,8 +1491,39 @@ node.onReady = () => {
                     });
                   }
 
-                  // Make the primary connection
-                  graph.connect(fromPort, toPort);
+                  // Check if connecting INTO a subnet - auto-create Input node
+                  if (toElement.isNetwork && toElement.isNetwork()) {
+                    // Create an Input node inside the subnet
+                    const inputNode = graph.addNode('Input', {
+                      x: -200,
+                      y: (toElement.children().length - toElement.children().filter((n: Node) => n.type === 'Input').length) * 80
+                    });
+                    inputNode.id = graph.generateUniqueNodeId('input');
+                    inputNode.parent = toElement;
+                    (toElement as any)._children.push(inputNode);
+
+                    // Set the input index based on existing Input nodes
+                    const existingInputNodes = toElement.children().filter((n: Node) => n.type === 'Input');
+                    const inputIndex = existingInputNodes.length - 1; // -1 because we just added it
+                    if (inputNode.props.inputIndex) {
+                      inputNode.updateProp('inputIndex', inputIndex);
+                    }
+
+                    // Connect external source to subnet's input
+                    graph.connect(fromPort, toPort);
+
+                    // Update graph reactivity
+                    graph.nodes = [...graph.nodes];
+                  }
+                  // Check if connecting FROM a subnet - use its output
+                  else if (fromElement.isNetwork && fromElement.isNetwork()) {
+                    // Just make the connection - subnet's output is handled by SubnetNode.update()
+                    graph.connect(fromPort, toPort);
+                  }
+                  else {
+                    // Make the primary connection
+                    graph.connect(fromPort, toPort);
+                  }
 
                   // If there are other selected elements and target is variadic, connect them too
                   if (isVariadicTarget && otherSelectedElements.length > 0) {
@@ -1116,7 +1647,7 @@ node.onReady = () => {
       graph.annotations.forEach(annotation => {
         let annotationLeft: number, annotationRight: number, annotationTop: number, annotationBottom: number;
         
-        if (annotation.type === 'line') {
+        if (annotation.type === 'Line') {
           // For lines, check if selection rectangle intersects with the line
           const lineStartX = annotation.position.x;
           const lineStartY = annotation.position.y;
@@ -1136,7 +1667,7 @@ node.onReady = () => {
           annotationRight += padding;
           annotationTop -= padding;
           annotationBottom += padding;
-        } else if (annotation.type === 'polyline') {
+        } else if (annotation.type === 'Polyline') {
           // For polylines, check bounding box of all points
           if (annotation.points && annotation.points.length > 0) {
             const xs = annotation.points.map(p => p.x);
@@ -1157,8 +1688,8 @@ node.onReady = () => {
           }
         } else {
           // For text, image, and group annotations
-          const width = annotation.size?.width || (annotation.type === 'text' ? 540 : annotation.type === 'image' ? 200 : 300);
-          const height = annotation.size?.height || (annotation.type === 'text' ? 60 : annotation.type === 'image' ? 150 : 200);
+          const width = annotation.size?.width || (annotation.type === 'Text' ? 540 : annotation.type === 'Image' ? 200 : 300);
+          const height = annotation.size?.height || (annotation.type === 'Text' ? 60 : annotation.type === 'Image' ? 150 : 200);
           annotationLeft = annotation.position.x;
           annotationRight = annotation.position.x + width;
           annotationTop = annotation.position.y;
@@ -1460,6 +1991,14 @@ node.onReady = () => {
     // Record history before creating annotation
     recordHistory();
 
+    // Helper to set parent if we're inside a subnet
+    const setAnnotationParent = (annotation: any) => {
+      if (currentNetwork) {
+        annotation.parent = currentNetwork;
+        (currentNetwork as any)._children.push(annotation);
+      }
+    };
+
     if (type === 'image') {
       // Create file input for image
       const input = document.createElement('input');
@@ -1473,11 +2012,12 @@ node.onReady = () => {
             const dataUrl = event.target?.result as string;
             const annotation: any = {
               id,
-              type: 'image',
+              type: 'Image',
               src: dataUrl,
               position: { x, y },
               size: { width: 200, height: 150 }
             };
+            setAnnotationParent(annotation);
             graph.addAnnotation(annotation);
             graph.annotations = [...graph.annotations];
           };
@@ -1488,11 +2028,12 @@ node.onReady = () => {
     } else if (type === 'group') {
       const annotation: any = {
         id,
-        type: 'group',
+        type: 'Group',
         content: 'Group',
         position: { x, y },
         containedElements: []
       };
+      setAnnotationParent(annotation);
       graph.addAnnotation(annotation);
       graph.annotations = [...graph.annotations];
       // Start editing immediately
@@ -1514,7 +2055,7 @@ node.onReady = () => {
       const defaultWidth = 540;
       const annotation: any = {
         id,
-        type: 'text',
+        type: 'Text',
         content: '',
         position: { x, y },
         size: { width: defaultWidth, height: 60 }, // Height will auto-grow with content
@@ -1528,6 +2069,7 @@ node.onReady = () => {
           borderRadius: 0
         }
       };
+      setAnnotationParent(annotation);
       graph.addAnnotation(annotation);
       graph.annotations = [...graph.annotations];
       // Start editing immediately
@@ -1544,7 +2086,7 @@ node.onReady = () => {
       }, 10);
     }
   }
-  
+
   function handleAnnotationClick(annotationId: string, e: MouseEvent) {
     e.stopPropagation();
     if (activeTool === 'select' && !editingAnnotation) {
@@ -1828,7 +2370,229 @@ node.onReady = () => {
       console.error('Failed to cut to clipboard:', err);
     }
   }
-  
+
+  async function handleCopy() {
+    const target = document.activeElement as HTMLElement;
+    // Don't copy if focus is in an input or textarea
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+      return;
+    }
+
+    const nodesToCopy: Node[] = [];
+    const annotationsToCopy: CanvasAnnotation[] = [];
+
+    // Collect selected nodes
+    if (selectedNodes.length > 0) {
+      selectedNodes.forEach(nodeId => {
+        const node = graph.getNode(nodeId);
+        if (node) {
+          nodesToCopy.push(node);
+        }
+      });
+    }
+
+    // Collect selected annotations
+    if (selectedAnnotations.length > 0) {
+      selectedAnnotations.forEach(annotationId => {
+        const annotation = graph.getAnnotation(annotationId);
+        if (annotation) {
+          annotationsToCopy.push(annotation);
+        }
+      });
+    } else if (selectedAnnotation) {
+      const annotation = graph.getAnnotation(selectedAnnotation);
+      if (annotation) {
+        annotationsToCopy.push(annotation);
+      }
+    }
+
+    // If nothing is selected, return
+    if (nodesToCopy.length === 0 && annotationsToCopy.length === 0) {
+      return;
+    }
+
+    // Serialize nodes with their properties
+    const nodeData = nodesToCopy.map(node => node.toJSON());
+
+    // Get connections between selected nodes only
+    const selectedNodeIds = new Set(nodesToCopy.map(n => n.id));
+    const connectionsToCopy = graph.connections.filter(conn => {
+      return selectedNodeIds.has(conn.from.nodeId) && selectedNodeIds.has(conn.to.nodeId);
+    });
+
+    // Create clipboard data
+    const clipboardData = {
+      type: 'cascade/copy',
+      nodes: nodeData,
+      connections: connectionsToCopy,
+      annotations: annotationsToCopy
+    };
+
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(clipboardData));
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+    }
+  }
+
+  async function handlePaste() {
+    const target = document.activeElement as HTMLElement;
+    // Don't paste if focus is in an input or textarea
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+      return;
+    }
+
+    try {
+      const text = await navigator.clipboard.readText();
+      const clipboardData = JSON.parse(text);
+
+      // Check if it's our data format
+      if (!clipboardData.type || (!clipboardData.type.startsWith('cascade/'))) {
+        return;
+      }
+
+      recordHistory();
+
+      const nodeIdMap = new Map<string, string>();
+      const newNodes: Node[] = [];
+      const pasteOffset = 50;
+
+      // Paste nodes
+      if (clipboardData.nodes && clipboardData.nodes.length > 0) {
+        for (const nodeData of clipboardData.nodes) {
+          const newNode = graph.addNode(nodeData.type, {
+            x: nodeData.position.x + pasteOffset,
+            y: nodeData.position.y + pasteOffset
+          });
+
+          // Generate unique ID
+          const newId = graph.generateUniqueNodeId(nodeData.id);
+          nodeIdMap.set(nodeData.id, newId);
+          newNode.id = newId;
+
+          // Copy properties
+          newNode.code = nodeData.code || '';
+          newNode.comment = nodeData.comment || '';
+          newNode.bypass = nodeData.bypass || false;
+
+          // Set parent to current network level
+          if (currentNetwork) {
+            newNode.parent = currentNetwork;
+            (currentNetwork as any)._children.push(newNode);
+          }
+
+          newNodes.push(newNode);
+
+          // Execute the node to initialize ports
+          if (newNode.code) {
+            try {
+              await newNode.execute();
+            } catch (e) {
+              console.warn('Failed to execute pasted node:', e);
+            }
+          }
+        }
+
+        // Restore props after all nodes are created (so we can remap paths)
+        for (let i = 0; i < clipboardData.nodes.length; i++) {
+          const nodeData = clipboardData.nodes[i];
+          const newNode = newNodes[i];
+
+          if (nodeData.props) {
+            Object.entries(nodeData.props).forEach(([key, propData]: [string, any]) => {
+              if (newNode.props[key]) {
+                // Handle expression data format: { value, expression }
+                if (propData && typeof propData === 'object' && 'expression' in propData) {
+                  // Remap node IDs in expression paths
+                  let expr = propData.expression as string;
+                  nodeIdMap.forEach((newId, oldId) => {
+                    // Replace node ID references in ch(), chs(), chv() paths
+                    const pathPatterns = [
+                      new RegExp(`(ch[sv]?\\s*\\(\\s*['"][^'"]*/)${oldId}(/[^'"]*['"]\\s*\\))`, 'g'),
+                      new RegExp(`(ch[sv]?\\s*\\(\\s*['"]\\.\\./)${oldId}(['"]\\s*\\))`, 'g'),
+                    ];
+                    pathPatterns.forEach(pattern => {
+                      expr = expr.replace(pattern, `$1${newId}$2`);
+                    });
+                  });
+
+                  newNode.props[key] = {
+                    ...newNode.props[key],
+                    value: propData.value,
+                    expression: expr
+                  };
+                } else {
+                  // Simple value
+                  newNode.updateProp(key, propData);
+                }
+              }
+            });
+          }
+        }
+      }
+
+      // Recreate connections with new IDs
+      if (clipboardData.connections && clipboardData.connections.length > 0) {
+        for (const conn of clipboardData.connections) {
+          const fromId = nodeIdMap.get(conn.from.nodeId);
+          const toId = nodeIdMap.get(conn.to.nodeId);
+
+          if (fromId && toId) {
+            const fromNode = graph.getNode(fromId);
+            const toNode = graph.getNode(toId);
+
+            if (fromNode && toNode) {
+              const fromPort = fromNode.outputs.find(p => p.id === conn.from.portId);
+              const toPort = toNode.inputs.find(p => p.id === conn.to.portId);
+
+              if (fromPort && toPort) {
+                graph.connect(fromNode, fromPort, toNode, toPort);
+              }
+            }
+          }
+        }
+      }
+
+      // Paste annotations
+      if (clipboardData.annotations && clipboardData.annotations.length > 0) {
+        for (const annotationData of clipboardData.annotations) {
+          const newId = `${annotationData.type}_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 5)}`;
+          const newAnnotation: any = {
+            ...annotationData,
+            id: newId,
+            position: {
+              x: annotationData.position.x + pasteOffset,
+              y: annotationData.position.y + pasteOffset
+            }
+          };
+
+          // Set parent to current network level
+          if (currentNetwork) {
+            newAnnotation.parent = currentNetwork;
+            (currentNetwork as any)._children.push(newAnnotation);
+          }
+
+          graph.addAnnotation(newAnnotation);
+        }
+      }
+
+      // Update graph reactivity
+      graph.nodes = [...graph.nodes];
+      graph.annotations = [...graph.annotations];
+
+      // Select pasted nodes
+      if (newNodes.length > 0) {
+        selectedNodes = newNodes.map(n => n.id);
+        selectedNode = newNodes[0];
+        dispatch('nodeSelect', { node: newNodes[0] });
+      }
+
+    } catch (err) {
+      // Not our clipboard data or invalid JSON - ignore
+      console.debug('Paste failed or not Cascade data:', err);
+    }
+  }
+
   function handleAnnotationContentChange(annotationId: string, content: string) {
     const annotation = graph.getAnnotation(annotationId);
     if (annotation) {
@@ -1889,12 +2653,16 @@ node.onReady = () => {
           const id = `${baseName}_${Date.now().toString(36)}`;
           const annotation: any = {
             id,
-            type: 'image',
+            type: 'Image',
             src: dataUrl,
             position: { x, y },
             size: { width: 200, height: 150 },
             caption: file.name
           };
+          if (currentNetwork) {
+            annotation.parent = currentNetwork;
+            (currentNetwork as any)._children.push(annotation);
+          }
           graph.addAnnotation(annotation);
           graph.annotations = [...graph.annotations];
           
@@ -1982,6 +2750,12 @@ node.onReady = () => {
     }
 
     const newNode = graph.addNode(nodeType, { x: centerX, y: centerY });
+
+    // Set parent if we're inside a subnet
+    if (currentNetwork) {
+      newNode.parent = currentNetwork;
+      (currentNetwork as any)._children.push(newNode);
+    }
 
     // Class-based nodes (stdlib) are already initialized by their constructor
     // Custom nodes need code and compilation
@@ -2144,7 +2918,7 @@ node.onReady = () => {
 
     // Include annotations in bounding box
     graph.annotations.forEach(annotation => {
-      if (annotation.type === 'line') {
+      if (annotation.type === 'Line') {
         // Line: use position and endPosition
         const startX = annotation.position.x;
         const startY = annotation.position.y;
@@ -2155,7 +2929,7 @@ node.onReady = () => {
         maxX = Math.max(maxX, startX, endX);
         maxY = Math.max(maxY, startY, endY);
 
-      } else if (annotation.type === 'polyline') {
+      } else if (annotation.type === 'Polyline') {
         // Polyline: use all points
         if (annotation.points && annotation.points.length > 0) {
           annotation.points.forEach(point => {
@@ -2173,8 +2947,8 @@ node.onReady = () => {
         }
       } else {
         // text, image, group: use position and size
-        const width = annotation.size?.width || (annotation.type === 'text' ? 540 : annotation.type === 'image' ? 200 : 300);
-        const height = annotation.size?.height || (annotation.type === 'text' ? 60 : annotation.type === 'image' ? 150 : 200);
+        const width = annotation.size?.width || (annotation.type === 'Text' ? 540 : annotation.type === 'Image' ? 200 : 300);
+        const height = annotation.size?.height || (annotation.type === 'Text' ? 60 : annotation.type === 'Image' ? 150 : 200);
 
         minX = Math.min(minX, annotation.position.x);
         minY = Math.min(minY, annotation.position.y);
@@ -2227,7 +3001,7 @@ node.onReady = () => {
 
     // Include annotations in bounding box
     graph.annotations.forEach(annotation => {
-      if (annotation.type === 'line') {
+      if (annotation.type === 'Line') {
         const startX = annotation.position.x;
         const startY = annotation.position.y;
         const endX = annotation.endPosition?.x ?? annotation.position.x;
@@ -2236,7 +3010,7 @@ node.onReady = () => {
         minY = Math.min(minY, startY, endY);
         maxX = Math.max(maxX, startX, endX);
         maxY = Math.max(maxY, startY, endY);
-      } else if (annotation.type === 'polyline') {
+      } else if (annotation.type === 'Polyline') {
         if (annotation.points && annotation.points.length > 0) {
           annotation.points.forEach(point => {
             minX = Math.min(minX, point.x);
@@ -2251,8 +3025,8 @@ node.onReady = () => {
           maxY = Math.max(maxY, annotation.position.y);
         }
       } else {
-        const width = annotation.size?.width || (annotation.type === 'text' ? 540 : annotation.type === 'image' ? 200 : 300);
-        const height = annotation.size?.height || (annotation.type === 'text' ? 60 : annotation.type === 'image' ? 150 : 200);
+        const width = annotation.size?.width || (annotation.type === 'Text' ? 540 : annotation.type === 'Image' ? 200 : 300);
+        const height = annotation.size?.height || (annotation.type === 'Text' ? 60 : annotation.type === 'Image' ? 150 : 200);
         minX = Math.min(minX, annotation.position.x);
         minY = Math.min(minY, annotation.position.y);
         maxX = Math.max(maxX, annotation.position.x + width);
@@ -2386,10 +3160,10 @@ node.onReady = () => {
   function getPortPosition(nodeId: string, portId: string, portType: 'input' | 'output'): { x: number; y: number } | null {
     // Check if this is an annotation by looking up the element
     const element = graph.getElement(nodeId);
-    const isAnnotation = element?.kind === 'annotation';
+    const isAnnotationElement = element instanceof Annotation;
 
     // Handle annotation ports - try to get actual DOM element position first
-    if (isAnnotation) {
+    if (isAnnotationElement) {
       const portElement = getPortElement(nodeId, portId);
       if (portElement && canvas) {
         // Get actual DOM position of the port element
@@ -2421,8 +3195,8 @@ node.onReady = () => {
       if (!port) return null;
 
       // For all annotations, output ports are at the bottom center
-      const annotationWidth = annotation.size?.width || (annotation.type === 'text' ? 540 : annotation.type === 'image' ? 200 : 300);
-      const annotationHeight = annotation.size?.height || (annotation.type === 'text' ? 60 : annotation.type === 'image' ? 150 : 200);
+      const annotationWidth = annotation.size?.width || (annotation.type === 'Text' ? 540 : annotation.type === 'Image' ? 200 : 300);
+      const annotationHeight = annotation.size?.height || (annotation.type === 'Text' ? 60 : annotation.type === 'Image' ? 150 : 200);
 
       // Bottom center for all annotation types
       return {
@@ -2498,10 +3272,10 @@ node.onReady = () => {
 
     // Check if this is an annotation
     const element = graph.getElement(nodeId);
-    const isAnnotation = element?.kind === 'annotation';
+    const isAnnotationElement = element instanceof Annotation;
 
     // Handle annotation ports
-    if (isAnnotation) {
+    if (isAnnotationElement) {
       const annotation = element;
       if (!annotation || !annotation.outputs) return;
       
@@ -2913,7 +3687,25 @@ node.onReady = () => {
         handleCut();
       }
     }
-    
+
+    // ⌘C - Copy selected nodes or annotations
+    if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
+      const target = e.target as HTMLElement;
+      if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        handleCopy();
+      }
+    }
+
+    // ⌘V - Paste nodes or annotations
+    if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
+      const target = e.target as HTMLElement;
+      if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        handlePaste();
+      }
+    }
+
     // ⌘A - Select all nodes and annotations
     if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
       const target = e.target as HTMLElement;
@@ -2930,7 +3722,7 @@ node.onReady = () => {
         recordHistory();
         const nodesToDuplicate = selectedNodes.map(id => graph.getNode(id)).filter(Boolean) as Node[];
         const newNodes: Node[] = [];
-        
+
         nodesToDuplicate.forEach(node => {
           const newNode = graph.addNode(node.type, {
             x: node.position.x + 50,
@@ -2940,9 +3732,15 @@ node.onReady = () => {
           // Generate unique ID based on the original node's ID
           newNode.id = graph.generateUniqueNodeId(node.id);
           newNode.comment = node.comment;
+          newNode.bypass = node.bypass;
+          // Set parent to current network level
+          if (currentNetwork) {
+            newNode.parent = currentNetwork;
+            (currentNetwork as any)._children.push(newNode);
+          }
           newNodes.push(newNode);
         });
-        
+
         graph.nodes = [...graph.nodes];
         if (newNodes.length > 0) {
           selectedNodes = newNodes.map(n => n.id);
@@ -2951,8 +3749,71 @@ node.onReady = () => {
         }
       }
     }
+
+    // Subnet Navigation Shortcuts
+    const navTarget = e.target as HTMLElement;
+    if (navTarget.tagName !== 'INPUT' && navTarget.tagName !== 'TEXTAREA') {
+      // Enter or i - Dive into selected subnet
+      if ((e.key === 'Enter' || e.key === 'i') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (selectedNode && selectedNode.isNetwork()) {
+          e.preventDefault();
+          diveIntoSubnet(selectedNode);
+        }
+      }
+
+      // o or u - Jump out of current subnet
+      if ((e.key === 'o' || e.key === 'u') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (currentNetwork) {
+          e.preventDefault();
+          jumpOut();
+        }
+      }
+
+      // ⌘G - Collapse selected nodes into subnet
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'g') {
+        if (selectedNodes.length > 0) {
+          e.preventDefault();
+          collapseIntoSubnet();
+        }
+      }
+
+      // ⌘⇧G - Extract subnet contents (inverse of collapse)
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'G') {
+        if (selectedNodes.length === 1) {
+          const node = graph.getNode(selectedNodes[0]);
+          if (node?.isNetwork()) {
+            e.preventDefault();
+            extractAndDelete();
+          }
+        }
+      }
+
+      // / - Open path input for direct navigation
+      if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        openPathInput();
+      }
+
+      // C - Toggle cooking on selected node (subnet output designation)
+      if (e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (selectedNode) {
+          e.preventDefault();
+          selectedNode.setCooking(!selectedNode.cooking);
+          graph.nodes = [...graph.nodes];
+        }
+      }
+
+      // B - Toggle bypass on selected node
+      if (e.key === 'b' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (selectedNode) {
+          e.preventDefault();
+          selectedNode.setBypassed(!selectedNode.bypassed);
+          graph.nodes = [...graph.nodes];
+        }
+      }
+    }
   }
-  
+
   function handleKeyUp(e: KeyboardEvent) {
     if (e.code === 'Space') {
       spacePressed = false;
@@ -3013,6 +3874,37 @@ node.onReady = () => {
   on:keydown={handleCanvasKeyDown}
   on:keyup={handleCanvasKeyUp}
 >
+  <!-- Network Path Navigation Bar -->
+  <div class="network-path-bar">
+    {#if showPathInput}
+      <input
+        type="text"
+        class="path-input"
+        bind:this={pathInputElement}
+        bind:value={pathInputValue}
+        on:keydown={handlePathInputKeydown}
+        on:blur={closePathInput}
+        placeholder="Enter path (e.g., /subnet1/node1)"
+      />
+    {:else}
+      {#each breadcrumbs as crumb, i}
+        {#if i > 0}
+          <span class="path-separator">›</span>
+        {/if}
+        <button
+          class="path-segment"
+          class:current={i === breadcrumbs.length - 1}
+          on:click={() => navigateToBreadcrumb(crumb.node)}
+        >
+          {crumb.label}
+        </button>
+      {/each}
+      <button class="path-edit-btn" on:click={openPathInput} title="Press / to navigate by path">
+        /
+      </button>
+    {/if}
+  </div>
+
   <!-- Selection rectangle -->
   {#if isSelecting && selectionStart && selectionStartScreen && selectionScreenPos}
     {@const screenRect = {
@@ -3053,8 +3945,8 @@ node.onReady = () => {
       {@const toPos = getPortPosition(conn.to.nodeId, conn.to.portId, 'input')}
       {#if fromPos && toPos}
         {@const fromElement = graph.getElement(conn.from.nodeId)}
-        {@const fromNode = fromElement?.kind === 'computation' ? fromElement : null}
-        {@const fromAnnotation = fromElement && fromElement.kind !== 'computation' ? fromElement : null}
+        {@const fromNode = fromElement && !(fromElement instanceof Annotation) ? fromElement : null}
+        {@const fromAnnotation = fromElement instanceof Annotation ? fromElement : null}
         {@const fromPort = fromNode?.outputs.find(p => p.id === conn.from.portId) || fromAnnotation?.outputs?.find(p => p.id === conn.from.portId)}
         {@const connectionColor = fromPort ? getPortColor(fromPort) : '#888'}
         {@const midY = (fromPos.y + toPos.y) / 2}
@@ -3102,8 +3994,8 @@ node.onReady = () => {
     {#if connectingFrom && connectingPosition}
       {@const from = connectingFrom}
       {@const fromElement = graph.getElement(from.nodeId)}
-      {@const fromNode = fromElement?.kind === 'computation' ? fromElement : null}
-      {@const fromAnnotation = fromElement && fromElement.kind !== 'computation' ? fromElement : null}
+      {@const fromNode = fromElement && !(fromElement instanceof Annotation) ? fromElement : null}
+      {@const fromAnnotation = fromElement instanceof Annotation ? fromElement : null}
       {@const fromPort = from.portType === 'output' 
         ? (fromNode?.outputs.find(p => p.id === from.portId) || fromAnnotation?.outputs?.find(p => p.id === from.portId))
         : fromNode?.inputs.find(p => p.id === from.portId)}
@@ -3134,7 +4026,7 @@ node.onReady = () => {
       {@const isEditing = editingAnnotation === annotation.id}
       {@const isSelected = selectedAnnotations.includes(annotation.id) || selectedAnnotation === annotation.id}
       
-      {#if annotation.type === 'text'}
+      {#if annotation.type === 'Text'}
         {@const style = annotation.style || {}}
         {@const width = annotation.size?.width || 540}
         {@const height = annotation.size?.height || 'auto'}
@@ -3211,7 +4103,7 @@ node.onReady = () => {
             {/each}
           {/if}
         </div>
-      {:else if annotation.type === 'image'}
+      {:else if annotation.type === 'Image'}
         <div
           class="annotation annotation-image"
           class:selected={isSelected}
@@ -3258,7 +4150,7 @@ node.onReady = () => {
             {/each}
           {/if}
         </div>
-      {:else if annotation.type === 'group'}
+      {:else if annotation.type === 'Group'}
         <div
           class="annotation annotation-group"
           class:selected={isSelected}
@@ -3335,7 +4227,7 @@ node.onReady = () => {
             ></div>
           {/if}
         </div>
-      {:else if annotation.type === 'line'}
+      {:else if annotation.type === 'Line'}
         {@const style = annotation.style || {}}
         {@const startX = annotation.position.x}
         {@const startY = annotation.position.y}
@@ -3366,7 +4258,7 @@ node.onReady = () => {
             style="cursor: pointer;"
           />
         </svg>
-      {:else if annotation.type === 'polyline'}
+      {:else if annotation.type === 'Polyline'}
         {@const style = annotation.style || {}}
         {@const points = annotation.points || []}
         {@const strokeWidth = style.strokeWidth || 2}
@@ -3413,6 +4305,7 @@ node.onReady = () => {
         on:nodeMouseDown={(e) => handleNodeMouseDown(e.detail.nodeId, e.detail.event)}
         on:click={(e) => handleNodeClick(node.id, e.detail)}
         on:edit={handleNodeEdit}
+        on:diveInto={(e) => diveIntoSubnet(e.detail.node)}
         on:bypassToggle={(e) => handleBypassToggle(e.detail.nodeId, e.detail.event)}
         on:cookToggle={(e) => handleCookToggle(e.detail.nodeId, e.detail.event)}
         on:disconnect={(e) => handleVariadicDisconnect(e.detail.connectionId)}
@@ -3447,7 +4340,87 @@ node.onReady = () => {
   .canvas.hand-tool:active {
     cursor: grabbing;
   }
-  
+
+  /* Network Path Navigation Bar */
+  .network-path-bar {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: rgba(30, 30, 30, 0.9);
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(8px);
+    font-size: 12px;
+  }
+
+  .path-segment {
+    background: none;
+    border: none;
+    color: #888;
+    padding: 2px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    transition: all 0.15s ease;
+  }
+
+  .path-segment:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
+
+  .path-segment.current {
+    color: #fff;
+    font-weight: 500;
+  }
+
+  .path-separator {
+    color: #555;
+    font-size: 11px;
+  }
+
+  .path-input {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(100, 160, 255, 0.5);
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 12px;
+    width: 250px;
+    outline: none;
+  }
+
+  .path-input:focus {
+    border-color: rgba(100, 160, 255, 0.8);
+    box-shadow: 0 0 0 2px rgba(100, 160, 255, 0.2);
+  }
+
+  .path-edit-btn {
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #666;
+    padding: 2px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 11px;
+    margin-left: 4px;
+    transition: all 0.15s ease;
+  }
+
+  .path-edit-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #aaa;
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+
   .grid {
     position: absolute;
     top: 0;

@@ -3,9 +3,17 @@
  * Connect multiple inputs and use the index parameter to select which one passes through
  */
 
-import { Node } from '@/core/engine/Node';
-import type { Graph } from '@/core/engine/Graph';
+import { Node } from '../../Node.js';
+import type { Graph } from '../../Graph.js';
 import type { OutputPort } from '@/types/node.types';
+
+export const nodeMetadata = {
+  type: 'Select',
+  name: 'Select',
+  icon: 'GitBranch',
+  description: 'Select one of multiple inputs by index',
+  category: 'routing'
+};
 
 export class SelectNode extends Node {
   private output!: OutputPort<any>;
@@ -15,23 +23,13 @@ export class SelectNode extends Node {
   }
 
   protected setup(): void {
-    // Define variadic inputs - automatically grows as connections are made
-    this.defineVariadicInput('input', {
-      minCount: 2,
-      defaultValue: null
-    });
-
+    this.setVariadic();
     this.output = this.out('output');
 
-    // Index property - selects which input to route to output
     this.defineProp('index', {
       value: 0,
       type: 'int',
-      params: {
-        min: 0,
-        max: 1,
-        step: 1
-      },
+      params: { min: 0, max: 0, step: 1 },
       displayName: 'Index'
     });
 
@@ -42,7 +40,7 @@ export class SelectNode extends Node {
   }
 
   private update(): void {
-    const inputs = this.getVariadicInputs('input');
+    const inputs = this.getVariadicInputs();
 
     // Update index max based on connected inputs (triggers UI reactivity)
     const connectedCount = inputs.filter(p => p.connections.length > 0).length;

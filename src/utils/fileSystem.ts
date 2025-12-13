@@ -2,7 +2,7 @@
  * File system utilities for saving and loading graphs
  */
 
-import type { Graph } from '@/core/engine/Graph';
+import type { Graph } from '@/nodes/Graph';
 
 /**
  * Format JSON string with compact arrays (keeps small arrays on single lines)

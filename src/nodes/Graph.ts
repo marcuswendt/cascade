@@ -1,14 +1,14 @@
 import { Node } from './Node.js';
-import { Annotation } from '../../nodes/annotations/Annotation.js';
-import { ImageAnnotation } from '../../nodes/annotations/Image.js';
-import { TextAnnotation } from '../../nodes/annotations/Text.js';
-import { GroupAnnotation } from '../../nodes/annotations/Group.js';
-import { LineAnnotation } from '../../nodes/annotations/Line.js';
-import { PolylineAnnotation } from '../../nodes/annotations/Polyline.js';
-import { AssetManager } from './AssetManager.js';
-import { PackageManager } from './PackageManager.js';
-import { ModuleResolver, createModuleResolver } from './ModuleResolver.js';
-import { GraphValidator, type ValidationResult } from './GraphValidator.js';
+import { Annotation } from './annotations/Annotation.js';
+import { ImageAnnotation } from './annotations/Image.js';
+import { TextAnnotation } from './annotations/Text.js';
+import { GroupAnnotation } from './annotations/Group.js';
+import { LineAnnotation } from './annotations/Line.js';
+import { PolylineAnnotation } from './annotations/Polyline.js';
+import { AssetManager } from '../engine/AssetManager.js';
+import { PackageManager } from '../engine/PackageManager.js';
+import { ModuleResolver, createModuleResolver } from '../engine/ModuleResolver.js';
+import { GraphValidator, type ValidationResult } from '../engine/GraphValidator.js';
 import type {
   Connection,
   OutputPort,
@@ -17,10 +17,9 @@ import type {
   ExternalModule,
   ProjectConfig,
   NodeSource
-} from '../../types/node.types.js';
-import { packagePathToType, isStandardLibraryNode, getNodeClass, compileCustomNode } from '../../utils/nodeTypeUtils.js';
-import { normalizeColor, isColorValue } from '../../utils/colorUtils.js';
-import { ElementType, isComputation, isAnnotation } from '../../types/element.types.js';
+} from '../types/node.types.js';
+import { packagePathToType, isStandardLibraryNode, getNodeClass, compileCustomNode } from '../utils/nodeTypeUtils.js';
+import { normalizeColor, isColorValue } from '../utils/colorUtils.js';
 
 // Current file format version
 export const GRAPH_FORMAT_VERSION = '0.2';
@@ -100,31 +99,31 @@ export class Graph {
   }
   
   /**
-   * Get all computations
+   * Get all computations (non-annotation nodes)
    */
   get nodes(): Node[] {
-    return this._elements.filter(isComputation) as Node[];
+    return this._elements.filter(e => !(e instanceof Annotation)) as Node[];
   }
 
   /**
    * Set computations (triggers Svelte reactivity)
    */
   set nodes(value: Node[]) {
-    this._elements = [...this._elements.filter(isAnnotation), ...value];
+    this._elements = [...this._elements.filter(e => e instanceof Annotation), ...value];
   }
 
   /**
    * Get all annotations
    */
   get annotations(): CanvasAnnotation[] {
-    return this._elements.filter(isAnnotation) as CanvasAnnotation[];
+    return this._elements.filter(e => e instanceof Annotation) as CanvasAnnotation[];
   }
 
   /**
    * Set annotations (triggers Svelte reactivity)
    */
   set annotations(value: CanvasAnnotation[]) {
-    this._elements = [...this._elements.filter(isComputation), ...value];
+    this._elements = [...this._elements.filter(e => !(e instanceof Annotation)), ...value];
   }
   
   /**
@@ -166,7 +165,7 @@ export class Graph {
    */
   getNode(nodeId: string): Node | null {
     const element = this.getElement(nodeId);
-    return element && isComputation(element) ? element as Node : null;
+    return element && !(element instanceof Annotation) ? element : null;
   }
 
   /**
@@ -174,7 +173,22 @@ export class Graph {
    */
   getAnnotation(id: string): Annotation | null {
     const element = this.getElement(id);
-    return element && isAnnotation(element) ? element as Annotation : null;
+    return element instanceof Annotation ? element : null;
+  }
+
+  /**
+   * Get a node by absolute path (e.g., "/effects/blur1")
+   */
+  nodeByPath(path: string): Node | null {
+    if (!path.startsWith('/')) return null;
+
+    const segments = path.slice(1).split('/').filter(s => s.length > 0);
+    if (segments.length === 0) return null;
+
+    // For now, flat graph - just find by ID (last segment)
+    // When subnets are implemented, this will traverse the hierarchy
+    const nodeId = segments[segments.length - 1];
+    return this.getNode(nodeId);
   }
 
   /**
@@ -193,8 +207,8 @@ export class Graph {
     if (index >= 0) {
       const element = this._elements[index];
       
-      // Call onDestroy if it's a computation and has the method
-      if (isComputation(element) && element.onDestroy) {
+      // Call onDestroy if element has the method
+      if (element.onDestroy) {
         element.onDestroy();
       }
       
@@ -266,7 +280,7 @@ export class Graph {
     
     // For node-to-node connections, use GraphValidator
     // For annotation-to-node or other combinations, allow them
-    if (isComputation(fromElement) && isComputation(toElement)) {
+    if (!(fromElement instanceof Annotation) && !(toElement instanceof Annotation)) {
       const error = GraphValidator.validateConnection(
         this,
         fromElementId,
@@ -282,7 +296,77 @@ export class Graph {
     
     return { valid: true };
   }
-  
+
+  /**
+   * Check data type compatibility between ports
+   * Returns a warning message if types don't match, or null if compatible
+   */
+  checkDataTypeCompatibility(fromPort: any, toPort: any): string | null {
+    const fromType = fromPort.dataType || 'any';
+    const toType = toPort.dataType || 'any';
+
+    // 'any' type is compatible with everything
+    if (fromType === 'any' || toType === 'any') {
+      return null;
+    }
+
+    // Exact match
+    if (fromType === toType) {
+      return null;
+    }
+
+    // Allowed implicit conversions
+    const implicitConversions: Record<string, string[]> = {
+      'number': ['number[]', 'string'],      // number can become array or string
+      'int': ['number', 'number[]', 'string'],
+      'float': ['number', 'number[]', 'string'],
+      'boolean': ['number', 'string'],
+      'string': ['number'],                   // string can be parsed as number
+    };
+
+    const allowed = implicitConversions[fromType];
+    if (allowed && allowed.includes(toType)) {
+      return null; // Implicit conversion allowed
+    }
+
+    // Type mismatch - return warning
+    return `Type mismatch: connecting ${fromType} to ${toType}`;
+  }
+
+  /**
+   * Update type mismatch warnings on a node based on its input connections
+   */
+  updateTypeMismatchWarnings(nodeId: string): void {
+    const node = this.getNode(nodeId);
+    if (!node) return;
+
+    const warnings: string[] = [];
+
+    // Check each input port's connections
+    for (const inputPort of node.inputs) {
+      for (const conn of inputPort.connections) {
+        const fromNode = this.getNode(conn.from.nodeId);
+        if (!fromNode) continue;
+
+        const fromPort = fromNode.outputs.find(p => p.id === conn.from.portId);
+        if (!fromPort) continue;
+
+        const warning = this.checkDataTypeCompatibility(fromPort, inputPort);
+        if (warning) {
+          warnings.push(warning);
+        }
+      }
+    }
+
+    // Set or clear the warning on the node
+    if (warnings.length > 0) {
+      node.warning = warnings.join('; ');
+    } else if (node.warning?.startsWith('Type mismatch')) {
+      // Only clear if it was a type mismatch warning
+      node.warning = null;
+    }
+  }
+
   connect(fromPort: any, toPort: any): Connection {
     // Validate connection first
     const validation = this.validateConnection(fromPort, toPort);
@@ -353,6 +437,9 @@ export class Graph {
     // Sync variadic ports on the target node
     this.syncVariadicPortsOnNode(toParsed.elementId);
 
+    // Check for type mismatches and set warnings on the target node
+    this.updateTypeMismatchWarnings(toParsed.elementId);
+
     return connection;
   }
 
@@ -378,6 +465,9 @@ export class Graph {
 
       // Sync variadic ports on the target node
       this.syncVariadicPortsOnNode(conn.to.nodeId);
+
+      // Re-check type mismatches after disconnection
+      this.updateTypeMismatchWarnings(conn.to.nodeId);
     }
   }
 
@@ -386,11 +476,8 @@ export class Graph {
    */
   private syncVariadicPortsOnNode(nodeId: string): void {
     const node = this.getNode(nodeId);
-    if (node && isComputation(node)) {
-      const configs = node.getVariadicConfigs();
-      configs.forEach((_, baseName) => {
-        node.syncVariadicPorts(baseName);
-      });
+    if (node) {
+      node.syncVariadicPorts();
     }
   }
 
@@ -599,24 +686,24 @@ export class Graph {
     } else {
       const annData = annotation;
       switch (annData.type) {
-        case ElementType.IMAGE:
+        case 'Image':
           annotationInstance = new ImageAnnotation(annData.id, this);
           (annotationInstance as ImageAnnotation).src = annData.src;
           break;
-        case ElementType.TEXT:
+        case 'Text':
           annotationInstance = new TextAnnotation(annData.id, this);
           (annotationInstance as TextAnnotation).content = annData.content;
           break;
-        case ElementType.GROUP:
+        case 'Group':
           annotationInstance = new GroupAnnotation(annData.id, this);
           break;
-        case ElementType.LINE:
+        case 'Line':
           annotationInstance = new LineAnnotation(annData.id, this);
           if (annData.endPosition) {
             (annotationInstance as LineAnnotation).endPosition = annData.endPosition;
           }
           break;
-        case ElementType.POLYLINE:
+        case 'Polyline':
           annotationInstance = new PolylineAnnotation(annData.id, this);
           if (annData.points) {
             (annotationInstance as PolylineAnnotation).points = annData.points;
@@ -650,10 +737,8 @@ export class Graph {
   async initializeAnnotationPorts(annotation: Annotation): Promise<void> {
     annotation.outputs = [];
 
-    if (annotation.type === ElementType.IMAGE) {
+    if (annotation.type === 'Image') {
       const imageAnnotation = annotation as ImageAnnotation;
-      // Always create the port, even if src is not set yet
-      // Create image output port with index-based ID
       const portId = createPortId(annotation.id, 'output', 0);
       const port: OutputPort<HTMLImageElement> = {
         id: portId,
@@ -664,17 +749,14 @@ export class Graph {
         connections: [],
         setValue: (value: HTMLImageElement) => {
           port.value = value;
-          // Propagate to connected inputs
           port.connections.forEach(conn => {
             const toParsed = parsePortId(conn.to.portId);
             const targetElement = this.getElement(toParsed.elementId);
-            if (targetElement && isComputation(targetElement)) {
+            if (targetElement && !(targetElement instanceof Annotation)) {
               const targetPort = targetElement.getInputPort(toParsed.index);
               if (targetPort) {
                 targetPort.value = value;
-                if (targetPort.onChange) {
-                  targetPort.onChange(value);
-                }
+                targetPort.onChange?.(value);
               }
             }
           });
@@ -683,11 +765,9 @@ export class Graph {
           port.connections.forEach(conn => {
             const toParsed = parsePortId(conn.to.portId);
             const targetElement = this.getElement(toParsed.elementId);
-            if (targetElement && isComputation(targetElement)) {
+            if (targetElement && !(targetElement instanceof Annotation)) {
               const targetPort = targetElement.getInputPort(toParsed.index);
-              if (targetPort?.onTrigger) {
-                targetPort.onTrigger(props);
-              }
+              targetPort?.onTrigger?.(props);
             }
           });
         }
@@ -700,22 +780,17 @@ export class Graph {
         try {
           const img = new Image();
           img.crossOrigin = 'anonymous';
-
           await new Promise<void>((resolve, reject) => {
-            img.onload = () => {
-              port.setValue(img);
-              resolve();
-            };
+            img.onload = () => { port.setValue(img); resolve(); };
             img.onerror = reject;
             img.src = imageSrc.startsWith('/') || imageSrc.startsWith('http') || imageSrc.startsWith('data:')
-              ? imageSrc
-              : `/${imageSrc}`;
+              ? imageSrc : `/${imageSrc}`;
           });
         } catch (error) {
           console.error(`Failed to load image for annotation ${annotation.id}:`, error);
         }
       }
-    } else if (annotation.type === ElementType.TEXT) {
+    } else if (annotation.type === 'Text') {
       const textAnnotation = annotation as TextAnnotation;
       if (textAnnotation.content !== undefined) {
         const portId = createPortId(annotation.id, 'output', 0);
@@ -731,7 +806,7 @@ export class Graph {
             port.connections.forEach(conn => {
               const toParsed = parsePortId(conn.to.portId);
               const targetElement = this.getElement(toParsed.elementId);
-              if (targetElement && isComputation(targetElement)) {
+              if (targetElement && !(targetElement instanceof Annotation)) {
                 const targetPort = targetElement.getInputPort(toParsed.index);
                 if (targetPort) {
                   targetPort.value = value;
@@ -744,19 +819,122 @@ export class Graph {
             port.connections.forEach(conn => {
               const toParsed = parsePortId(conn.to.portId);
               const targetElement = this.getElement(toParsed.elementId);
-              if (targetElement && isComputation(targetElement)) {
+              if (targetElement && !(targetElement instanceof Annotation)) {
                 const targetPort = targetElement.getInputPort(toParsed.index);
                 targetPort?.onTrigger?.(props);
               }
             });
           }
         };
-
         annotation.outputs.push(port);
       }
     }
   }
-  
+
+  // ============ Path Validation ============
+
+  /**
+   * Validate all expressions in the graph for broken paths
+   * Returns warnings for any expressions referencing non-existent nodes or parameters
+   */
+  validateExpressionPaths(): { valid: boolean; warnings: { location: string; expression: string; brokenPath: string; suggestion?: string }[] } {
+    type PathWarning = { location: string; expression: string; brokenPath: string; suggestion?: string };
+    const warnings: PathWarning[] = [];
+
+    // Regex to extract path references from ch(), chs(), chv() calls
+    const pathRefPattern = /\b(?:ch|chs|chv)\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+
+    for (const node of this.nodes) {
+      for (const [propName, prop] of Object.entries(node.props)) {
+        if (!prop.expression) continue;
+
+        const location = `${node.path()}/${propName}`;
+        const matches = prop.expression.matchAll(pathRefPattern);
+
+        for (const match of matches) {
+          const referencedPath = match[1];
+          const resolvedNode = this.resolvePathFromNode(node, referencedPath);
+
+          if (!resolvedNode.node) {
+            warnings.push({
+              location,
+              expression: prop.expression,
+              brokenPath: referencedPath,
+              suggestion: this.suggestPathFix(node, referencedPath)
+            });
+          } else if (resolvedNode.parmName && !resolvedNode.node.props[resolvedNode.parmName]) {
+            // Path resolved to a node but parameter doesn't exist
+            warnings.push({
+              location,
+              expression: prop.expression,
+              brokenPath: referencedPath,
+              suggestion: `Parameter "${resolvedNode.parmName}" not found on node "${resolvedNode.node.id}"`
+            });
+          }
+        }
+      }
+    }
+
+    return {
+      valid: warnings.length === 0,
+      warnings
+    };
+  }
+
+  /**
+   * Resolve a path from a node's context, returning both the node and optional parameter name
+   */
+  private resolvePathFromNode(fromNode: Node, path: string): { node: Node | null; parmName?: string } {
+    // Split path into node path and optional parameter
+    const lastSlash = path.lastIndexOf('/');
+    let nodePath: string;
+    let parmName: string | undefined;
+
+    // Check if the last segment could be a parameter (not a node)
+    if (lastSlash > 0) {
+      const possibleParm = path.substring(lastSlash + 1);
+      const possibleNodePath = path.substring(0, lastSlash);
+
+      // Try to resolve as node first
+      const asNode = fromNode.node(path);
+      if (asNode) {
+        return { node: asNode };
+      }
+
+      // Try as node path + parameter
+      const parentNode = fromNode.node(possibleNodePath);
+      if (parentNode) {
+        return { node: parentNode, parmName: possibleParm };
+      }
+    }
+
+    // Try resolving the whole path as a node
+    return { node: fromNode.node(path) };
+  }
+
+  /**
+   * Try to suggest a fix for a broken path
+   */
+  private suggestPathFix(fromNode: Node, brokenPath: string): string | undefined {
+    // Extract the target node name from the path
+    const segments = brokenPath.replace(/^\.?\.?\//, '').split('/');
+    const targetName = segments[segments.length - 1];
+
+    // Search for nodes with similar names in the graph
+    const allNodes = this.nodes;
+    const similar = allNodes.filter(n =>
+      n.id.toLowerCase().includes(targetName.toLowerCase()) ||
+      targetName.toLowerCase().includes(n.id.toLowerCase())
+    );
+
+    if (similar.length > 0) {
+      const suggestion = similar[0];
+      return `Did you mean "${suggestion.path()}"?`;
+    }
+
+    return undefined;
+  }
+
   toJSON() {
     const result: any = {
       version: GRAPH_FORMAT_VERSION,
@@ -910,14 +1088,20 @@ export class Graph {
       result.comment = node.comment;
     }
 
-    // Serialize props
+    // Serialize props (value and expression if present)
     const props = Object.entries(node.props).reduce((acc, [key, prop]) => {
       let value = prop.value;
       if (prop.type === 'color' && isColorValue(value)) {
         const normalized = normalizeColor(value as any);
         value = [normalized.r, normalized.g, normalized.b, normalized.a ?? 1.0];
       }
-      acc[key] = value;
+
+      // If prop has an expression, save both value and expression
+      if (prop.expression) {
+        acc[key] = { value, expression: prop.expression };
+      } else {
+        acc[key] = value;
+      }
       return acc;
     }, {} as Record<string, any>);
     if (Object.keys(props).length > 0) {
@@ -1072,7 +1256,20 @@ export class Graph {
 
       // Restore props
       if (nodeData.props) {
-        Object.entries(nodeData.props).forEach(([key, value]: [string, any]) => {
+        Object.entries(nodeData.props).forEach(([key, propData]: [string, any]) => {
+          // Check if propData is an object with value/expression or just a raw value
+          let value: any;
+          let expression: string | undefined;
+
+          if (propData && typeof propData === 'object' && 'value' in propData) {
+            // New format: { value: ..., expression?: ... }
+            value = propData.value;
+            expression = propData.expression;
+          } else {
+            // Old format: just the value
+            value = propData;
+          }
+
           // Normalize color values (support array format [r,g,b,a] and object format for backward compatibility)
           // Colors are stored internally as ColorObject, so normalizeColor handles the conversion
           let normalizedValue = value;
@@ -1090,6 +1287,11 @@ export class Graph {
             node.props[key] = { value: normalizedValue } as any;
           } else {
             node.props[key].value = normalizedValue;
+          }
+
+          // Restore expression if present
+          if (expression) {
+            node.props[key].expression = expression;
           }
         });
       }
@@ -1129,18 +1331,18 @@ export class Graph {
           : { x: annData.position?.x || 0, y: annData.position?.y || 0 };
 
         switch (annData.type) {
-          case ElementType.IMAGE:
+          case 'Image':
             annotation = new ImageAnnotation(annData.id, graph);
             (annotation as ImageAnnotation).src = annData.src;
             break;
-          case ElementType.TEXT:
+          case 'Text':
             annotation = new TextAnnotation(annData.id, graph);
             (annotation as TextAnnotation).content = annData.content;
             break;
-          case ElementType.GROUP:
+          case 'Group':
             annotation = new GroupAnnotation(annData.id, graph);
             break;
-          case ElementType.LINE:
+          case 'Line':
             annotation = new LineAnnotation(annData.id, graph);
             if (annData.endPosition) {
               (annotation as LineAnnotation).endPosition = Array.isArray(annData.endPosition)
@@ -1148,7 +1350,7 @@ export class Graph {
                 : { x: annData.endPosition.x || 0, y: annData.endPosition.y || 0 };
             }
             break;
-          case ElementType.POLYLINE:
+          case 'Polyline':
             annotation = new PolylineAnnotation(annData.id, graph);
             if (annData.points) {
               (annotation as PolylineAnnotation).points = annData.points.map((p: any) =>

@@ -5,7 +5,7 @@ import type {
 import { mount, unmount, type Component } from 'svelte';
 import { writable, get, type Writable } from 'svelte/store';
 import type { CascadePanelParams, PanelContext } from './types';
-import type { Node } from '@/core/engine/Node';
+import type { Node } from '@/nodes/Node';
 
 // Registry of panel components
 export interface PanelComponentEntry {

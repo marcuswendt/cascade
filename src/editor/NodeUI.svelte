@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { Node } from '@/core/engine/Node';
+  import type { Node } from '@/nodes/Node';
   import { getNodeIcon } from './nodeTemplates';
   import Icon from './Icon.svelte';
   import { getPortColor } from '@/utils/portColors';
@@ -166,7 +166,13 @@
       return;
     }
     e.stopPropagation();
-    dispatch('edit', { node });
+
+    // For subnet nodes, dive into them instead of opening code editor
+    if (node.isNetwork()) {
+      dispatch('diveInto', { node });
+    } else {
+      dispatch('edit', { node });
+    }
   }
   
   function handleKeyDown(portId: string, portType: 'input' | 'output', e: KeyboardEvent) {
@@ -261,7 +267,7 @@
   class:dragging={isDragging}
   class:bypassed={isBypassed}
   class:cooking={isCooking}
-  style="left: {node.position.x}px; top: {node.position.y}px; opacity: {node.bypassOpacity}"
+  style="left: {node.position.x}px; top: {node.position.y}px; opacity: {node.bypassed ? 0.5 : 1}"
   data-node-id={node.id}
   on:click={(e) => {
     e.stopPropagation();

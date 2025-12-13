@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { exportSingleHTML, exportFolder, downloadFile } from '@/utils/export';
-  import type { Graph } from '@/core/engine/Graph';
+  import type { Graph } from '@/nodes/Graph';
 
   export let graph: Graph;
   export let open = false;

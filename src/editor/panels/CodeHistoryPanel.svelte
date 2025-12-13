@@ -2,7 +2,7 @@
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import * as monaco from 'monaco-editor';
   import type { CodeVersion } from '@/types/node.types';
-  import { CodeHistory as CodeHistoryManager } from '@/core/engine/CodeHistory';
+  import { CodeHistory as CodeHistoryManager } from '../CodeHistory';
   import Icon from '../Icon.svelte';
   import { X, History, RotateCcw, User, Sparkles, ChevronRight, GitCompare } from 'lucide-svelte';
 

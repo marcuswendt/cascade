@@ -3,8 +3,8 @@ import type {
   SerializedDockview,
   IDockviewPanel
 } from 'dockview-core';
-import type { Graph } from '@/core/engine/Graph';
-import type { Node } from '@/core/engine/Node';
+import type { Graph } from '@/nodes/Graph';
+import type { Node } from '@/nodes/Node';
 
 // Panel type identifiers
 export type PanelType = 'graph' | 'inspector' | 'viewer' | 'log' | 'code';

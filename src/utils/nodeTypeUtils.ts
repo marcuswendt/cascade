@@ -2,8 +2,8 @@
  * Utilities for handling node type names and package paths
  */
 
-import type { Node } from '@/core/engine/Node';
-import type { Graph } from '@/core/engine/Graph';
+import type { Node } from '@/nodes/Node';
+import type { Graph } from '@/nodes/Graph';
 
 // Node function type - receives the node instance and graph
 export type NodeFunction = (node: Node, graph: Graph) => void | Promise<void>;

@@ -3,9 +3,17 @@
  * Connect multiple inputs to create an array of values
  */
 
-import { Node } from '@/core/engine/Node';
-import type { Graph } from '@/core/engine/Graph';
+import { Node } from '../../Node.js';
+import type { Graph } from '../../Graph.js';
 import type { OutputPort } from '@/types/node.types';
+
+export const nodeMetadata = {
+  type: 'Merge',
+  name: 'Merge',
+  icon: 'GitMerge',
+  description: 'Combine multiple inputs into an array',
+  category: 'routing'
+};
 
 export class MergeNode extends Node {
   private output!: OutputPort<any[]>;
@@ -15,12 +23,7 @@ export class MergeNode extends Node {
   }
 
   protected setup(): void {
-    // Define variadic inputs - automatically grows as connections are made
-    this.defineVariadicInput('input', {
-      minCount: 1,
-      defaultValue: null
-    });
-
+    this.setVariadic();
     this.output = this.out('output');
 
     // Append mode - when first input is an array, append others to it
@@ -29,7 +32,7 @@ export class MergeNode extends Node {
       type: 'boolean',
       displayName: 'Append Mode',
       hidden: () => {
-        const inputs = this.getVariadicInputs('input');
+        const inputs = this.getVariadicInputs();
         return !Array.isArray(inputs[0]?.value);
       }
     });
@@ -41,7 +44,7 @@ export class MergeNode extends Node {
   }
 
   private update(): void {
-    const inputs = this.getVariadicInputs('input');
+    const inputs = this.getVariadicInputs();
 
     // Collect non-null values
     const values = inputs

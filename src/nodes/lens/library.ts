@@ -1,4 +1,4 @@
-import type { Library } from '@/editor/nodeTemplates';
+import type { Library } from '@/types/library.types';
 
 /**
  * Lens library definition

@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import * as monaco from 'monaco-editor';
-  import type { Node } from '@/core/engine/Node';
-  import type { Graph } from '@/core/engine/Graph';
+  import type { Node } from '@/nodes/Node';
+  import type { Graph } from '@/nodes/Graph';
   import PackageSearch from './PackageSearch.svelte';
-  import type { PackageManager } from '@/core/engine/PackageManager';
+  import type { PackageManager } from '@/engine/PackageManager';
   import Icon from './Icon.svelte';
   import { Clock, Check, XCircle, Copy, FileOutput, History, Lock, FolderOpen, Sparkles, Loader2 } from 'lucide-svelte';
   import { isStandardLibraryNode, typeToPackagePath, getNodeClass, getNodeSource } from '@/utils/nodeTypeUtils';
@@ -109,8 +109,8 @@ declare namespace Cascade {
     watchProp(name: string, callback: Function): void;
 
     // Variadic inputs
-    defineVariadicInput(baseName: string, config?: { minCount?: number; maxCount?: number; defaultValue?: any }): void;
-    getVariadicInputs(baseName: string): InputPort[];
+    setVariadic(defaultValue?: any): void;
+    getVariadicInputs(): InputPort[];
 
     // Lifecycle hooks
     onSetup?: () => void | Promise<void>;

@@ -7,9 +7,10 @@
   import ExportDialog from './editor/ExportDialog.svelte';
   import SettingsDialog from './editor/SettingsDialog.svelte';
   import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
-  import { Graph } from '@/core/engine/Graph';
-  import type { Node } from '@/core/engine/Node';
+  import { Graph } from '@/nodes/Graph';
+  import { Node } from '@/nodes/Node';
   import { GraphEditorAdapter } from './editor/GraphEditorAdapter';
+  import { incrementPropUpdateCounter } from './editor/stores/propUpdateStore';
   import {
     recordSnapshotImmediate,
     popUndo,
@@ -499,8 +500,11 @@
 
   // Set initial window title
   onMount(async () => {
+    // Wire up Node's prop params change callback to editor's store
+    Node.onPropParamsChanged = incrementPropUpdateCounter;
+
     updateWindowTitle();
-    
+
     // Load default graph on startup
     if (!graph) {
       try {

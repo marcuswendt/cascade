@@ -1,6 +1,6 @@
-import type { Graph } from './Graph.js';
-import type { Node } from './Node.js';
-import type { Connection } from '../../types/node.types.js';
+import type { Graph } from '../nodes/Graph.js';
+import type { Node } from '../nodes/Node.js';
+import type { Connection } from '../types/node.types.js';
 
 export interface ValidationError {
   type: 'cycle' | 'invalid_connection' | 'orphaned_node' | 'invalid_entry_point';

@@ -5,7 +5,7 @@
  * Uses polling in browser environments, could use native watchers in Node.js.
  */
 
-import type { FileStatus, ExternalModule } from '../../types/node.types.js';
+import type { FileStatus, ExternalModule } from '../types/node.types.js';
 
 export interface FileChangeEvent {
   modulePath: string;

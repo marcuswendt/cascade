@@ -1,7 +1,8 @@
-import { Graph } from '../core/engine/Graph.js';
-import { Node } from '../core/engine/Node.js';
-import { AssetManager, NodeAssetLoader } from '../core/engine/AssetManager.js';
-import { PackageManager } from '../core/engine/PackageManager.js';
+import { Graph } from '../nodes/Graph.js';
+import { Node } from '../nodes/Node.js';
+import { Annotation } from '../nodes/annotations/Annotation.js';
+import { AssetManager, NodeAssetLoader } from '../engine/AssetManager.js';
+import { PackageManager } from '../engine/PackageManager.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -49,7 +50,7 @@ export async function runGraph(options: RunOptions): Promise<void> {
   // Only execute computations if ports weren't restored from metadata
   // This avoids unnecessary execution just for port discovery
   const nodesNeedingExecution: Node[] = [];
-  for (const element of graph.elements.filter(e => e.kind === 'computation')) {
+  for (const element of graph.elements.filter(e => !(e instanceof Annotation))) {
     const node = element as Node;
     // Check if computation has ports (restored from metadata)
     // If not, we may need to execute to create them
@@ -108,7 +109,7 @@ export async function runGraph(options: RunOptions): Promise<void> {
   }
 
   if (verbose) {
-    const nodeCount = graph.elements.filter(e => e.kind === 'computation').length;
+    const nodeCount = graph.elements.filter(e => !(e instanceof Annotation)).length;
     console.log(`Graph loaded: ${nodeCount} nodes, ${graph.connections.length} connections`);
   }
 

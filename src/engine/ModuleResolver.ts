@@ -17,8 +17,8 @@ import type {
   ExternalModule,
   FileStatus,
   CodeVersion
-} from '../../types/node.types.js';
-import { getNodeClass } from '../../utils/nodeTypeUtils.js';
+} from '../types/node.types.js';
+import { getNodeClass } from '../utils/nodeTypeUtils.js';
 
 export interface ModuleResolution {
   source: NodeSource;

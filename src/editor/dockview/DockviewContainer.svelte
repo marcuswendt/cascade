@@ -3,8 +3,8 @@
   import { dockviewStore, PANEL_TYPES } from './dockview-store.svelte';
   import { registerPanelComponent, setSharedContext } from './renderer';
   import type { PanelContext, PanelType } from './types';
-  import type { Graph } from '@/core/engine/Graph';
-  import type { Node } from '@/core/engine/Node';
+  import type { Graph } from '@/nodes/Graph';
+  import type { Node } from '@/nodes/Node';
 
   // Import panel components
   import GraphPanel from '../panels/GraphPanel.svelte';

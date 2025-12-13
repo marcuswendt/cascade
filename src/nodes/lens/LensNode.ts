@@ -3,8 +3,8 @@
  * Provides common utilities for canvas, image, and pixel manipulation
  */
 
-import { Node } from '@/core/engine/Node';
-import type { Graph } from '@/core/engine/Graph';
+import { Node } from '@/nodes/Node';
+import type { Graph } from '@/nodes/Graph';
 
 export type ImageInput = HTMLCanvasElement | HTMLImageElement | null;
 

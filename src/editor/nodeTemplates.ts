@@ -1,26 +1,10 @@
 // Node structure: Library > Category > Nodes
 import { lensLibrary } from '@/nodes/lens';
 import { coreLibrary } from '@/nodes/core';
+import type { Library, NodeTemplate } from '@/types/library.types';
 
-export interface NodeTemplate {
-  name: string;
-  icon: string;
-  description: string;
-  type: string;
-}
-
-export interface Category {
-  id: string;
-  label: string;
-  nodes: NodeTemplate[];
-}
-
-export interface Library {
-  id: string;
-  label: string;
-  icon: string;
-  categories: Category[];
-}
+// Re-export types for backward compatibility
+export type { NodeTemplate, Category, Library } from '@/types/library.types';
 
 // Annotations library - contains all annotation node types
 export const annotationsLibrary: Library = {

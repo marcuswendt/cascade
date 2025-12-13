@@ -1,6 +1,6 @@
-import { Graph } from '@/core/engine/Graph';
-import { AssetManager, BrowserAssetLoader } from '@/core/engine/AssetManager';
-import { PackageManager } from '@/core/engine/PackageManager';
+import { Graph } from '@/nodes/Graph';
+import { AssetManager, BrowserAssetLoader } from '@/engine/AssetManager';
+import { PackageManager } from '@/engine/PackageManager';
 
 /**
  * Adapter class that bridges the pure graph execution engine with the editor UI

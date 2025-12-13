@@ -3,7 +3,7 @@
  */
 
 import { LensNode } from '../LensNode';
-import type { Graph } from '@/core/engine/Graph';
+import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
 
 export class CheckersNode extends LensNode {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { Graph } from '@/core/engine/Graph';
+  import type { Graph } from '@/nodes/Graph';
   import type { ProjectPackage } from '@/types/node.types';
   import Icon from '../Icon.svelte';
   import { X, Plus, Trash2, FolderOpen, Package, AlertCircle } from 'lucide-svelte';

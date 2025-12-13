@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { Node } from '@/core/engine/Node';
+  import type { Node } from '@/nodes/Node';
   import type { InputPort, Prop, OutputPort } from '@/types/node.types';
-  import type { Graph, CanvasAnnotation } from '@/core/engine/Graph';
+  import type { Graph, CanvasAnnotation } from '@/nodes/Graph';
   import type { Annotation } from '@/nodes/annotations/Annotation';
   import { inferPropControlType } from '@/utils/propUtils';
   import NumberInput from './components/NumberInput.svelte';
@@ -14,6 +14,7 @@
   import CheckboxInput from './components/CheckboxInput.svelte';
   import FolderGroup from './components/FolderGroup.svelte';
   import ColorRampEditor from './components/ColorRampEditor.svelte';
+  import ExpressionInput from './components/ExpressionInput.svelte';
   import { propUpdateCounters } from './stores/propUpdateStore';
   import { normalizeColor, colorToHex } from '@/utils/colorUtils';
 
@@ -963,20 +964,24 @@
                   {/if}
                   
                   {#if controlType === 'number' || controlType === 'slider' || controlType === 'int'}
-                    {#key `${key}-${prop.value}-${JSON.stringify(prop.params)}`}
-                      <NumberInput
-                        {prop}
-                        id={inputId}
-                        onValueChange={(value) => handlePropChange([key, prop], value)}
-                      />
+                    {#key `${key}-${prop.value}-${prop.expression}-${JSON.stringify(prop.params)}`}
+                      <ExpressionInput {prop} propKey={key} {node} onValueChange={(value) => handlePropChange([key, prop], value)}>
+                        <NumberInput
+                          {prop}
+                          id={inputId}
+                          onValueChange={(value) => handlePropChange([key, prop], value)}
+                        />
+                      </ExpressionInput>
                     {/key}
                   {:else if isVector}
-                    {#key `${key}-${JSON.stringify(prop.value)}-${propsValueKey}-${propsUpdateCounter}`}
-                      <VectorInput
-                        {prop}
-                        id={inputId}
-                        onValueChange={(value) => handlePropChange([key, prop], value)}
-                      />
+                    {#key `${key}-${JSON.stringify(prop.value)}-${prop.expression}-${propsValueKey}-${propsUpdateCounter}`}
+                      <ExpressionInput {prop} propKey={key} {node} onValueChange={(value) => handlePropChange([key, prop], value)}>
+                        <VectorInput
+                          {prop}
+                          id={inputId}
+                          onValueChange={(value) => handlePropChange([key, prop], value)}
+                        />
+                      </ExpressionInput>
                     {/key}
                   {:else if controlType === 'color'}
                     <ColorPicker
@@ -1060,18 +1065,22 @@
                 {/if}
                 
                 {#if controlType === 'number' || controlType === 'slider' || controlType === 'int'}
-                  <NumberInput
-                    {prop}
-                    id={inputId}
-                    onValueChange={(value) => handlePropChange([key, prop], value)}
-                  />
-                {:else if isVector}
-                  {#key `${key}-${JSON.stringify(prop.value)}-${propsValueKey}-${propsUpdateCounter}`}
-                    <VectorInput
+                  <ExpressionInput {prop} propKey={key} {node} onValueChange={(value) => handlePropChange([key, prop], value)}>
+                    <NumberInput
                       {prop}
                       id={inputId}
                       onValueChange={(value) => handlePropChange([key, prop], value)}
                     />
+                  </ExpressionInput>
+                {:else if isVector}
+                  {#key `${key}-${JSON.stringify(prop.value)}-${prop.expression}-${propsValueKey}-${propsUpdateCounter}`}
+                    <ExpressionInput {prop} propKey={key} {node} onValueChange={(value) => handlePropChange([key, prop], value)}>
+                      <VectorInput
+                        {prop}
+                        id={inputId}
+                        onValueChange={(value) => handlePropChange([key, prop], value)}
+                      />
+                    </ExpressionInput>
                   {/key}
                 {:else if controlType === 'color'}
                   <ColorPicker
