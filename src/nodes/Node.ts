@@ -210,9 +210,21 @@ export class Node {
 
   // ============ Props System ============
 
-  defineProp<T>(name: string, config: Prop<T>): void {
+  /**
+   * Add a parameter to this node
+   * Short alias for defineProp - use in setup()
+   */
+  addParm<T>(name: string, config: Prop<T>): void {
     this.props[name] = config as Prop;
     this.markDirty();
+  }
+
+  /**
+   * Define a parameter on this node
+   * @deprecated Use addParm() instead
+   */
+  defineProp<T>(name: string, config: Prop<T>): void {
+    this.addParm(name, config);
   }
 
   updateProp(name: string, value: any): void {

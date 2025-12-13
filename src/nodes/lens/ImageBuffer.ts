@@ -11,7 +11,15 @@
 export type ColorSpace = 'linear' | 'srgb';
 export type ChannelLayout = 'gray' | 'rgb' | 'rgba';
 
+// Global buffer tracking for memory statistics
+let globalBufferCount = 0;
+let globalBufferMemory = 0;
+
 export class ImageBuffer {
+  // Static methods for global tracking
+  static get totalBufferCount(): number { return globalBufferCount; }
+  static get totalMemoryBytes(): number { return globalBufferMemory; }
+  static get totalMemoryMB(): number { return globalBufferMemory / (1024 * 1024); }
   readonly width: number;
   readonly height: number;
   readonly channels: Float32Array[];
@@ -21,6 +29,10 @@ export class ImageBuffer {
   private _canvas: HTMLCanvasElement | null = null;
   private _imageData: ImageData | null = null;
   private _dirty: boolean = true;
+  private _disposed: boolean = false;
+
+  // Instance memory tracking
+  private readonly _memoryBytes: number;
 
   private constructor(
     width: number,
@@ -32,6 +44,45 @@ export class ImageBuffer {
     this.height = height;
     this.channels = channels;
     this.colorSpace = colorSpace;
+
+    // Calculate and track memory usage (Float32 = 4 bytes per element)
+    this._memoryBytes = channels.reduce((sum, ch) => sum + ch.byteLength, 0);
+    globalBufferCount++;
+    globalBufferMemory += this._memoryBytes;
+  }
+
+  /**
+   * Get memory usage of this buffer in bytes
+   */
+  get memoryBytes(): number {
+    return this._memoryBytes;
+  }
+
+  /**
+   * Get memory usage in human-readable format
+   */
+  get memorySizeStr(): string {
+    const bytes = this._memoryBytes;
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)}MB`;
+  }
+
+  /**
+   * Dispose of this buffer and free memory tracking
+   * Note: The actual memory is freed by GC, this just updates tracking
+   */
+  dispose(): void {
+    if (this._disposed) return;
+    this._disposed = true;
+    globalBufferCount--;
+    globalBufferMemory -= this._memoryBytes;
+    this._canvas = null;
+    this._imageData = null;
+  }
+
+  get isDisposed(): boolean {
+    return this._disposed;
   }
 
   // ============ Factory Methods ============

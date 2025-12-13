@@ -18,7 +18,7 @@ export class NoiseNode extends LensNode {
   }
 
   protected setup(): void {
-    this.defineProp('seed', {
+    this.addParm('seed', {
       value: 0,
       params: {
         min: 0,
@@ -30,7 +30,7 @@ export class NoiseNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('scale', {
+    this.addParm('scale', {
       value: 0.01,
       params: {
         min: 0.001,
@@ -41,7 +41,7 @@ export class NoiseNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('iterations', {
+    this.addParm('iterations', {
       value: 4,
       params: {
         min: 1,
@@ -53,7 +53,7 @@ export class NoiseNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('resolution', {
+    this.addParm('resolution', {
       value: [512, 512],
       params: {
         min: [1, 1],

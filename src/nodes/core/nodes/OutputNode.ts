@@ -24,7 +24,7 @@ export class OutputNode extends Node {
     this.in('input', null);
 
     // Output index - for multiple outputs from a subnet
-    this.defineProp('outputIndex', {
+    this.addParm('outputIndex', {
       value: 0,
       type: 'int',
       params: { min: 0, step: 1 },

@@ -20,7 +20,7 @@ export class ImageNode extends LensNode {
   protected setup(): void {
     this.imageInput = this.in<ImageInputValue>('image', null);
 
-    this.defineProp('file', {
+    this.addParm('file', {
       value: '',
       type: 'image',
       params: {
@@ -34,7 +34,7 @@ export class ImageNode extends LensNode {
       }
     });
 
-    this.defineProp('resolutionMode', {
+    this.addParm('resolutionMode', {
       value: 'original',
       params: {
         options: [
@@ -51,7 +51,7 @@ export class ImageNode extends LensNode {
       }
     });
 
-    this.defineProp('maxResolution', {
+    this.addParm('maxResolution', {
       value: [2048, 2048],
       params: {
         min: [1, 1],
@@ -66,7 +66,7 @@ export class ImageNode extends LensNode {
       }
     });
 
-    this.defineProp('fixedResolution', {
+    this.addParm('fixedResolution', {
       value: [512, 512],
       params: {
         min: [1, 1],

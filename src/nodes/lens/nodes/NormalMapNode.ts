@@ -17,7 +17,7 @@ export class NormalMapNode extends LensNode {
   protected setup(): void {
     this.image = this.in<ImageInput>('image', null);
 
-    this.defineProp('scale', {
+    this.addParm('scale', {
       value: 1.0,
       params: {
         min: 0.0,
@@ -28,14 +28,14 @@ export class NormalMapNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('flipX', {
+    this.addParm('flipX', {
       value: false,
       type: 'boolean',
       displayName: 'Flip X',
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('flipY', {
+    this.addParm('flipY', {
       value: false,
       type: 'boolean',
       displayName: 'Flip Y',

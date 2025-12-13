@@ -45,7 +45,7 @@ export class SwitchNode extends Node {
     this.setVariadic();
     this.output = this.out('output');
 
-    this.defineProp('index', {
+    this.addParm('index', {
       value: 0,
       type: 'int',
       params: { min: 0, max: 0, step: 1 },

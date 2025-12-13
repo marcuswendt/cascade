@@ -19,7 +19,7 @@ export class CompositeNode extends LensNode {
     this.image1 = this.in<ImageInput>('image1', null);
     this.image2 = this.in<ImageInput>('image2', null);
 
-    this.defineProp('blendMode', {
+    this.addParm('blendMode', {
       value: 'multiply',
       params: {
         options: [
@@ -48,7 +48,7 @@ export class CompositeNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('opacity', {
+    this.addParm('opacity', {
       value: 1.0,
       params: {
         min: 0.0,

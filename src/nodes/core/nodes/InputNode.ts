@@ -27,7 +27,7 @@ export class InputNode extends Node {
     this.output = this.out('output');
 
     // Input index - which external input this represents
-    this.defineProp('inputIndex', {
+    this.addParm('inputIndex', {
       value: 0,
       type: 'int',
       params: { min: 0, step: 1 },
@@ -35,7 +35,7 @@ export class InputNode extends Node {
     });
 
     // Optional name for documentation
-    this.defineProp('inputName', {
+    this.addParm('inputName', {
       value: '',
       type: 'text',
       displayName: 'Input Name'

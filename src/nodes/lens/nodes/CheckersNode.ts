@@ -14,21 +14,21 @@ export class CheckersNode extends LensNode {
   }
 
   protected setup(): void {
-    this.defineProp('color1', {
+    this.addParm('color1', {
       value: { r: 1.0, g: 1.0, b: 1.0 },
       type: 'color',
       displayName: 'Color 1',
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('color2', {
+    this.addParm('color2', {
       value: { r: 0.0, g: 0.0, b: 0.0 },
       type: 'color',
       displayName: 'Color 2',
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('mode', {
+    this.addParm('mode', {
       value: 'size',
       params: {
         options: [
@@ -40,7 +40,7 @@ export class CheckersNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('size', {
+    this.addParm('size', {
       value: 32,
       params: {
         min: 1,
@@ -52,7 +52,7 @@ export class CheckersNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('divisions', {
+    this.addParm('divisions', {
       value: 16,
       params: {
         min: 1,
@@ -65,7 +65,7 @@ export class CheckersNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('resolution', {
+    this.addParm('resolution', {
       value: [512, 512],
       params: {
         min: [1, 1],

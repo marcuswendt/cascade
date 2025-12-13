@@ -27,7 +27,7 @@ export class MergeNode extends Node {
     this.output = this.out('output');
 
     // Append mode - when first input is an array, append others to it
-    this.defineProp('append', {
+    this.addParm('append', {
       value: false,
       type: 'boolean',
       displayName: 'Append Mode',

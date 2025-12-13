@@ -14,13 +14,13 @@ export class ColorNode extends LensNode {
   }
 
   protected setup(): void {
-    this.defineProp('color', {
+    this.addParm('color', {
       value: { r: 1.0, g: 1.0, b: 1.0 },
       type: 'color',
       displayName: 'Color'
     });
 
-    this.defineProp('resolution', {
+    this.addParm('resolution', {
       value: [512, 512],
       params: {
         min: [1, 1],

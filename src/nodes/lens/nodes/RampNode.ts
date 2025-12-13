@@ -27,7 +27,7 @@ export class RampNode extends LensNode {
   }
 
   protected setup(): void {
-    this.defineProp('type', {
+    this.addParm('type', {
       value: 'horizontal',
       params: {
         options: [
@@ -41,7 +41,7 @@ export class RampNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('points', {
+    this.addParm('points', {
       value: [
         { position: 0.0, color: { r: 0.0, g: 0.0, b: 0.0 }, interpolation: 'linear' },
         { position: 1.0, color: { r: 1.0, g: 1.0, b: 1.0 }, interpolation: 'linear' }
@@ -51,7 +51,7 @@ export class RampNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('resolution', {
+    this.addParm('resolution', {
       value: [512, 512],
       params: {
         min: [1, 1],

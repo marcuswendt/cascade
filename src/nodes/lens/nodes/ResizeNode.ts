@@ -17,7 +17,7 @@ export class ResizeNode extends LensNode {
   protected setup(): void {
     this.image = this.in<ImageInput>('image', null);
 
-    this.defineProp('mode', {
+    this.addParm('mode', {
       value: 'scale',
       params: {
         options: [
@@ -29,7 +29,7 @@ export class ResizeNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('scale', {
+    this.addParm('scale', {
       value: 1.0,
       params: {
         min: 0.1,
@@ -41,7 +41,7 @@ export class ResizeNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('width', {
+    this.addParm('width', {
       value: 512,
       params: {
         min: 1,
@@ -53,7 +53,7 @@ export class ResizeNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.defineProp('height', {
+    this.addParm('height', {
       value: 512,
       params: {
         min: 1,

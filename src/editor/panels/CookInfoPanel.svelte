@@ -4,6 +4,7 @@
   import type { Node } from '@/nodes/Node';
   import { sharedContextStore, panelLockStore } from '../dockview/renderer';
   import { typeToPackagePath } from '@/utils/nodeTypeUtils';
+  import { LensNode, ImageBuffer } from '@/nodes/lens/LensNode';
 
   export let panelId: string;
   export let panelParams: CascadePanelParams;
@@ -106,6 +107,52 @@
       displayNode.resetCookInfo();
     }
   }
+
+  // Check if node is a LensNode
+  function isLensNode(node: Node): node is LensNode {
+    return node instanceof LensNode;
+  }
+
+  // Get buffer info for lens nodes
+  function getBufferInfo(node: Node) {
+    if (isLensNode(node)) {
+      return node.getBufferInfo();
+    }
+    return null;
+  }
+
+  // Get global buffer stats
+  function getGlobalBufferStats() {
+    return {
+      totalBuffers: ImageBuffer.totalBufferCount,
+      totalMemoryBytes: ImageBuffer.totalMemoryBytes,
+      totalMemoryMB: ImageBuffer.totalMemoryMB
+    };
+  }
+
+  // Format resolution
+  function formatResolution(width: number, height: number): string {
+    const megapixels = (width * height) / 1000000;
+    if (megapixels >= 1) {
+      return `${width} × ${height} (${megapixels.toFixed(1)}MP)`;
+    }
+    const kilopixels = (width * height) / 1000;
+    return `${width} × ${height} (${kilopixels.toFixed(0)}K)`;
+  }
+
+  // Get channel layout description
+  function getLayoutDescription(layout: string, channels: number): string {
+    switch (layout) {
+      case 'gray': return 'Grayscale (1ch)';
+      case 'rgb': return 'RGB (3ch)';
+      case 'rgba': return 'RGBA (4ch)';
+      default: return `${channels} channels`;
+    }
+  }
+
+  // Reactive buffer info
+  $: bufferInfo = displayNode ? getBufferInfo(displayNode) : null;
+  $: globalStats = getGlobalBufferStats();
 </script>
 
 <div class="cook-info-panel">
@@ -177,6 +224,46 @@
           </div>
         </div>
       </section>
+
+      <!-- ImageBuffer Info (for LensNodes) -->
+      {#if bufferInfo}
+        <section class="info-section buffer-section">
+          <h3>Output Buffer</h3>
+          <div class="info-grid">
+            <div class="info-row resolution-row">
+              <span class="label">Resolution</span>
+              <span class="value mono highlight">
+                {formatResolution(bufferInfo.width, bufferInfo.height)}
+              </span>
+            </div>
+            <div class="info-row">
+              <span class="label">Format</span>
+              <span class="value">{getLayoutDescription(bufferInfo.layout, bufferInfo.channels)}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Buffer Size</span>
+              <span class="value">{bufferInfo.memorySizeStr}</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Global Buffer Stats -->
+        <section class="info-section">
+          <h3>Global Buffers</h3>
+          <div class="info-grid">
+            <div class="info-row">
+              <span class="label">Active Buffers</span>
+              <span class="value">{globalStats.totalBuffers}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Total Memory</span>
+              <span class="value" class:warning={globalStats.totalMemoryMB > 100}>
+                {globalStats.totalMemoryMB.toFixed(1)} MB
+              </span>
+            </div>
+          </div>
+        </section>
+      {/if}
 
       <!-- State -->
       <section class="info-section">
@@ -385,6 +472,20 @@
 
   .value.warning {
     color: #ffcc66;
+  }
+
+  .value.highlight {
+    color: #88ddff;
+    font-weight: 500;
+  }
+
+  .buffer-section {
+    background: linear-gradient(135deg, #141414 0%, #1a1a22 100%);
+    border: 1px solid #2a2a3a;
+  }
+
+  .resolution-row .value {
+    font-size: 12px;
   }
 
   .issues {

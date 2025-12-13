@@ -225,6 +225,50 @@ export abstract class LensNode extends Node {
     }
     // If pending, the scheduled update will handle it
   }
+
+  // ============ Buffer Info (for debugging/monitoring) ============
+
+  /**
+   * Get info about the current output buffer
+   */
+  getBufferInfo(): {
+    hasOutput: boolean;
+    width: number;
+    height: number;
+    channels: number;
+    layout: string;
+    memoryBytes: number;
+    memorySizeStr: string;
+  } | null {
+    if (!this._previewBuffer) {
+      return null;
+    }
+    const buf = this._previewBuffer;
+    return {
+      hasOutput: true,
+      width: buf.width,
+      height: buf.height,
+      channels: buf.channelCount,
+      layout: buf.layout,
+      memoryBytes: buf.memoryBytes,
+      memorySizeStr: buf.memorySizeStr
+    };
+  }
+
+  /**
+   * Get global ImageBuffer statistics
+   */
+  static getGlobalBufferStats(): {
+    totalBuffers: number;
+    totalMemoryBytes: number;
+    totalMemoryMB: number;
+  } {
+    return {
+      totalBuffers: ImageBuffer.totalBufferCount,
+      totalMemoryBytes: ImageBuffer.totalMemoryBytes,
+      totalMemoryMB: ImageBuffer.totalMemoryMB
+    };
+  }
 }
 
 // Re-export ImageBuffer for convenience
