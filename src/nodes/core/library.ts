@@ -13,7 +13,7 @@ export const coreLibrary: Library = {
       id: 'routing',
       label: 'Routing',
       nodes: [
-        { name: 'Select', icon: 'GitBranch', description: 'Select one of multiple inputs by index', type: 'Select' },
+        { name: 'Switch', icon: 'GitBranch', description: 'Switch between multiple inputs by index', type: 'Switch' },
         { name: 'Merge', icon: 'GitMerge', description: 'Combine multiple inputs into an array', type: 'Merge' }
       ]
     },

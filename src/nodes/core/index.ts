@@ -3,21 +3,21 @@
  *
  * This package provides:
  * - Base classes: Node, Graph
- * - Utility nodes: Select, Merge
+ * - Utility nodes: Switch, Merge
  * - Network nodes: Subnet, Input, Output
  */
 
 import { registerNodeClasses, registerNodeSource, type NodeClass } from '@/utils/nodeTypeUtils';
 
 // Import node classes and metadata
-import { SelectNode, nodeMetadata as selectMetadata } from './nodes/SelectNode.js';
+import { SwitchNode, nodeMetadata as switchMetadata } from './nodes/SwitchNode.js';
 import { MergeNode, nodeMetadata as mergeMetadata } from './nodes/MergeNode.js';
 import { SubnetNode, nodeMetadata as subnetMetadata } from './nodes/SubnetNode.js';
 import { InputNode, nodeMetadata as inputMetadata } from './nodes/InputNode.js';
 import { OutputNode, nodeMetadata as outputMetadata } from './nodes/OutputNode.js';
 
 // Import source code for nodes (using Vite's ?raw imports)
-import SelectNodeSource from './nodes/SelectNode.ts?raw';
+import SwitchNodeSource from './nodes/SwitchNode.ts?raw';
 import MergeNodeSource from './nodes/MergeNode.ts?raw';
 import SubnetNodeSource from './nodes/SubnetNode.ts?raw';
 import InputNodeSource from './nodes/InputNode.ts?raw';
@@ -25,7 +25,7 @@ import OutputNodeSource from './nodes/OutputNode.ts?raw';
 
 // Collect all node metadata
 export const nodeMetadataList = [
-  selectMetadata,
+  switchMetadata,
   mergeMetadata,
   subnetMetadata,
   inputMetadata,
@@ -34,7 +34,7 @@ export const nodeMetadataList = [
 
 // Node class registry: type -> class constructor
 export const coreNodeClasses: Record<string, NodeClass> = {
-  'Select': SelectNode,
+  'Switch': SwitchNode,
   'Merge': MergeNode,
   'Subnet': SubnetNode,
   'Input': InputNode,
@@ -45,7 +45,7 @@ export const coreNodeClasses: Record<string, NodeClass> = {
 registerNodeClasses('core', coreNodeClasses);
 
 // Register source code for each node type
-registerNodeSource('Select', SelectNodeSource);
+registerNodeSource('Switch', SwitchNodeSource);
 registerNodeSource('Merge', MergeNodeSource);
 registerNodeSource('Subnet', SubnetNodeSource);
 registerNodeSource('Input', InputNodeSource);
@@ -66,7 +66,7 @@ export { ExpressionEngine, expressionEngine } from '../../engine/expressions/ind
 export type { ExpressionContext, CompiledExpression } from '../../engine/expressions/index.js';
 
 // Re-export node classes
-export { SelectNode } from './nodes/SelectNode.js';
+export { SwitchNode } from './nodes/SwitchNode.js';
 export { MergeNode } from './nodes/MergeNode.js';
 export { SubnetNode } from './nodes/SubnetNode.js';
 export { InputNode } from './nodes/InputNode.js';

@@ -1,5 +1,5 @@
 /**
- * SelectNode - routes one of multiple inputs to output based on index
+ * SwitchNode - routes one of multiple inputs to output based on index
  * Connect multiple inputs and use the index parameter to select which one passes through
  */
 
@@ -8,18 +8,18 @@ import type { Graph } from '../../Graph.js';
 import type { OutputPort } from '@/types/node.types';
 
 export const nodeMetadata = {
-  type: 'Select',
-  name: 'Select',
+  type: 'Switch',
+  name: 'Switch',
   icon: 'GitBranch',
-  description: 'Select one of multiple inputs by index',
+  description: 'Switch between multiple inputs by index',
   category: 'routing'
 };
 
-export class SelectNode extends Node {
+export class SwitchNode extends Node {
   private output!: OutputPort<any>;
 
   constructor(id: string, graph: Graph) {
-    super(id, 'Select', graph);
+    super(id, 'Switch', graph);
   }
 
   protected setup(): void {
