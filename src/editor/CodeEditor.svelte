@@ -644,14 +644,20 @@ node.onReady = () => {
         {:else}
           <Sparkles size={16} class="ai-icon" />
         {/if}
-        <input
-          type="text"
+        <textarea
           class="ai-prompt-input"
           placeholder="Describe what you want the node to do..."
           bind:value={aiPrompt}
-          on:keydown={(e) => e.key === 'Enter' && !e.shiftKey && handleAIGenerate()}
+          on:keydown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              handleAIGenerate();
+            }
+          }}
           disabled={isGenerating}
-        />
+          rows="3"
+        ></textarea>
       </div>
       {#if aiError}
         <div class="ai-error">
@@ -660,6 +666,7 @@ node.onReady = () => {
         </div>
       {/if}
       <div class="ai-controls">
+        <span class="ai-hint">⌘/Ctrl+Enter to generate</span>
         <select class="model-select" bind:value={aiModel} disabled={isGenerating}>
           <option value="claude">Claude</option>
           <option value="openai">OpenAI</option>
@@ -858,7 +865,7 @@ node.onReady = () => {
 
   .ai-input-row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     margin-bottom: 8px;
   }
@@ -866,6 +873,7 @@ node.onReady = () => {
   .ai-input-row :global(.ai-icon) {
     color: #9c27b0;
     flex-shrink: 0;
+    margin-top: 10px;
   }
 
   .ai-spinner {
@@ -874,6 +882,7 @@ node.onReady = () => {
     justify-content: center;
     color: #9c27b0;
     flex-shrink: 0;
+    margin-top: 10px;
   }
 
   .ai-spinner :global(.spinning),
@@ -907,6 +916,11 @@ node.onReady = () => {
     border-radius: 4px;
     color: #fff;
     font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 60px;
+    max-height: 150px;
+    line-height: 1.4;
   }
 
   .ai-prompt-input:focus {
@@ -918,10 +932,22 @@ node.onReady = () => {
     color: #666;
   }
 
+  .ai-prompt-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .ai-controls {
     display: flex;
     gap: 8px;
+    align-items: center;
     justify-content: flex-end;
+  }
+
+  .ai-hint {
+    color: #666;
+    font-size: 11px;
+    margin-right: auto;
   }
 
   .model-select {
