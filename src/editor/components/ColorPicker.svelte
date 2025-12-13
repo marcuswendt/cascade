@@ -15,7 +15,13 @@
   let pickerElement: HTMLDivElement;
   let wheelCanvas: HTMLCanvasElement;
   let wheelCtx: CanvasRenderingContext2D | null = null;
-  
+
+  // Cached canvases for performance
+  let outerRingCanvas: HTMLCanvasElement | null = null;
+  let innerCircleCanvas: HTMLCanvasElement | null = null;
+  let cachedBrightness: number = -1;
+  let cachedColorMode: 'hsv' | 'rgb' | null = null;
+
   // Color state
   let hue = 210;
   let saturation = 1;
@@ -115,7 +121,7 @@
     };
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
   }
-  
+
   // Update color from color object or string (for backward compatibility)
   function updateFromColor(colorValue: ColorObject | string) {
     // Normalize to color object
@@ -152,15 +158,17 @@
     green = rgb.g;
     blue = rgb.b;
     hex = rgbToHex(red, green, blue);
-    // Convert to color object for storage
+    // Convert to color object for storage - node debounces via requestCook()
     const colorObj: ColorObject = { r: red, g: green, b: blue, a: 1.0 };
     onValueChange(colorObj);
-    // Only redraw wheel if context is ready
-    if (wheelCtx && wheelCanvas) {
-      drawWheel();
-    }
+    // Redraw wheel on next frame to ensure state is settled
+    requestAnimationFrame(() => {
+      if (wheelCtx && wheelCanvas) {
+        drawWheel();
+      }
+    });
   }
-  
+
   // Update color from RGB
   function updateFromRgb() {
     hex = rgbToHex(red, green, blue);
@@ -168,202 +176,220 @@
     hue = hsv.h;
     saturation = hsv.s;
     brightness = hsv.v;
-    // Convert to color object for storage
+    // Convert to color object for storage - node debounces via requestCook()
     const colorObj: ColorObject = { r: red, g: green, b: blue, a: 1.0 };
     onValueChange(colorObj);
-    // Only redraw wheel if context is ready
-    if (wheelCtx && wheelCanvas) {
-      drawWheel();
-    }
+    // Redraw wheel on next frame to ensure state is settled
+    requestAnimationFrame(() => {
+      if (wheelCtx && wheelCanvas) {
+        drawWheel();
+      }
+    });
   }
   
-  // Draw color wheel
-  function drawWheel() {
-    if (!wheelCtx || !wheelCanvas) {
-      console.warn('ColorPicker: Cannot draw wheel - context or canvas missing');
-      return;
-    }
-    
-    const size = wheelCanvas.width;
+  // Create outer ring canvas (cached - never changes)
+  function createOuterRingCanvas(size: number): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
     const center = size / 2;
     const outerRadius = center - 2;
-    const innerRadius = outerRadius - 9; // Inner circle radius (outer ring is 9px thick, 2x thinner)
-    
-    wheelCtx.clearRect(0, 0, size, size);
-    
-    // Draw color wheel using image data for better performance
-    const imageData = wheelCtx.createImageData(size, size);
+    const innerRadius = outerRadius - 9;
+
+    const imageData = ctx.createImageData(size, size);
     const data = imageData.data;
-    
+
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
         const dx = x - center;
         const dy = y - center;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        const angle = (Math.atan2(dy, dx) * 180 / Math.PI + 90 + 360) % 360;
-        
+
         if (distance <= outerRadius && distance > innerRadius) {
-          // Outer ring: pure hues (s = 1, v = 1)
+          const angle = (Math.atan2(dy, dx) * 180 / Math.PI + 90 + 360) % 360;
           const rgb = hsvToRgb(angle, 1, 1);
           const index = (y * size + x) * 4;
           data[index] = Math.round(rgb.r * 255);
           data[index + 1] = Math.round(rgb.g * 255);
           data[index + 2] = Math.round(rgb.b * 255);
           data[index + 3] = 255;
-        } else if (distance <= innerRadius) {
-          if (colorMode === 'rgb') {
-            // RGB mode: Use angle for Red-Green blend, distance for Blue
-            // Angle: 0° = red, 120° = green, 240° = blue
-            // Normalize angle to 0-1 range
+        }
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  }
+
+  // Create inner circle canvas (cached per brightness/mode)
+  function createInnerCircleCanvas(size: number, brightnessVal: number, mode: 'hsv' | 'rgb'): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    const center = size / 2;
+    const outerRadius = center - 2;
+    const innerRadius = outerRadius - 9;
+
+    const imageData = ctx.createImageData(size, size);
+    const data = imageData.data;
+
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx = x - center;
+        const dy = y - center;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance <= innerRadius) {
+          const angle = (Math.atan2(dy, dx) * 180 / Math.PI + 90 + 360) % 360;
+          const index = (y * size + x) * 4;
+
+          if (mode === 'rgb') {
             const normalizedAngle = angle / 360;
-            
-            // Map angle to Red-Green gradient
-            // 0-120°: Red to Green (R decreases, G increases)
-            // 120-240°: Green to Blue (G decreases, B increases)  
-            // 240-360°: Blue to Red (B decreases, R increases)
             let r = 0, g = 0, b = 0;
-            
+
             if (normalizedAngle < 1/3) {
-              // Red to Green
               const t = normalizedAngle * 3;
-              r = 1 - t;
-              g = t;
-              b = 0;
+              r = 1 - t; g = t; b = 0;
             } else if (normalizedAngle < 2/3) {
-              // Green to Blue
               const t = (normalizedAngle - 1/3) * 3;
-              r = 0;
-              g = 1 - t;
-              b = t;
+              r = 0; g = 1 - t; b = t;
             } else {
-              // Blue to Red
               const t = (normalizedAngle - 2/3) * 3;
-              r = t;
-              g = 0;
-              b = 1 - t;
+              r = t; g = 0; b = 1 - t;
             }
-            
-            // Use distance for Blue component blending
-            // Center has no blue (0), edge has full blue (1)
-            // Blend the RGB gradient with blue based on distance
+
             const blueFactor = distance / innerRadius;
             const invBlueFactor = 1 - blueFactor;
-            
-            // Mix: (1 - blueFactor) * RGB_gradient + blueFactor * blue
-            r = r * invBlueFactor + 0 * blueFactor;
-            g = g * invBlueFactor + 0 * blueFactor;
-            b = b * invBlueFactor + 1 * blueFactor;
-            
-            // Also blend towards white at center (decrease saturation)
+            r = r * invBlueFactor;
+            g = g * invBlueFactor;
+            b = b * invBlueFactor + blueFactor;
+
             const saturationFactor = distance / innerRadius;
             r = r * saturationFactor + (1 - saturationFactor);
             g = g * saturationFactor + (1 - saturationFactor);
             b = b * saturationFactor + (1 - saturationFactor);
-            
-            const index = (y * size + x) * 4;
+
             data[index] = Math.round(r * 255);
             data[index + 1] = Math.round(g * 255);
             data[index + 2] = Math.round(b * 255);
             data[index + 3] = 255;
           } else {
-            // HSV mode: inner circle shows all hues with saturation decreasing towards center
-            // Center is white (s=0), edge is fully saturated (s=1)
-            // Use angle for hue, distance for saturation, current brightness value
             const s = distance / innerRadius;
-            const v = brightness;
-            const rgb = hsvToRgb(angle, s, v);
-            const index = (y * size + x) * 4;
+            const rgb = hsvToRgb(angle, s, brightnessVal);
             data[index] = Math.round(rgb.r * 255);
             data[index + 1] = Math.round(rgb.g * 255);
             data[index + 2] = Math.round(rgb.b * 255);
             data[index + 3] = 255;
           }
-        } else {
-          // Set transparent for pixels outside the wheel
-          const index = (y * size + x) * 4;
-          data[index] = 0;
-          data[index + 1] = 0;
-          data[index + 2] = 0;
-          data[index + 3] = 0;
         }
       }
     }
-    
-    wheelCtx.putImageData(imageData, 0, 0);
-    
-    // Draw indicators based on color mode
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  }
+
+  // Draw indicators only (fast operation)
+  function drawIndicators(ctx: CanvasRenderingContext2D, size: number) {
+    const center = size / 2;
+    const outerRadius = center - 2;
+    const innerRadius = outerRadius - 9;
+
     if (colorMode === 'rgb') {
-      // RGB mode: Calculate angle from current RGB values
-      // Find the angle that best represents the current color
       const currentAngle = Math.atan2(green - red, red - blue) * 180 / Math.PI + 90;
       const normalizedAngle = (currentAngle + 360) % 360;
-      
-      // Draw indicator on outer ring
-      const outerIndicatorX = center + Math.cos((normalizedAngle - 90) * Math.PI / 180) * (outerRadius - 2);
-      const outerIndicatorY = center + Math.sin((normalizedAngle - 90) * Math.PI / 180) * (outerRadius - 2);
-      
-      wheelCtx.strokeStyle = '#fff';
-      wheelCtx.lineWidth = 2;
-      wheelCtx.beginPath();
-      wheelCtx.arc(outerIndicatorX, outerIndicatorY, 4, 0, Math.PI * 2);
-      wheelCtx.stroke();
-      
-      wheelCtx.strokeStyle = '#000';
-      wheelCtx.lineWidth = 1;
-      wheelCtx.beginPath();
-      wheelCtx.arc(outerIndicatorX, outerIndicatorY, 5, 0, Math.PI * 2);
-      wheelCtx.stroke();
-      
-      // Draw indicator on inner circle based on RGB position
-      // Use normalized position from RGB values
+
+      const outerIndicatorX = center + Math.cos((normalizedAngle - 90) * Math.PI / 180) * (outerRadius - 4.5);
+      const outerIndicatorY = center + Math.sin((normalizedAngle - 90) * Math.PI / 180) * (outerRadius - 4.5);
+
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(outerIndicatorX, outerIndicatorY, 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(outerIndicatorX, outerIndicatorY, 5, 0, Math.PI * 2);
+      ctx.stroke();
+
       const rgbDistance = Math.sqrt(red * red + green * green + blue * blue) / Math.sqrt(3);
       const indicatorX = center + Math.cos((normalizedAngle - 90) * Math.PI / 180) * (rgbDistance * innerRadius);
       const indicatorY = center + Math.sin((normalizedAngle - 90) * Math.PI / 180) * (rgbDistance * innerRadius);
-      
-      wheelCtx.strokeStyle = '#fff';
-      wheelCtx.lineWidth = 2;
-      wheelCtx.beginPath();
-      wheelCtx.arc(indicatorX, indicatorY, 6, 0, Math.PI * 2);
-      wheelCtx.stroke();
-      
-      wheelCtx.strokeStyle = '#000';
-      wheelCtx.lineWidth = 1;
-      wheelCtx.beginPath();
-      wheelCtx.arc(indicatorX, indicatorY, 7, 0, Math.PI * 2);
-      wheelCtx.stroke();
+
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(indicatorX, indicatorY, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(indicatorX, indicatorY, 7, 0, Math.PI * 2);
+      ctx.stroke();
     } else {
-      // HSV mode: Draw hue indicator on outer ring
-      const outerIndicatorX = center + Math.cos((hue - 90) * Math.PI / 180) * (outerRadius - 2);
-      const outerIndicatorY = center + Math.sin((hue - 90) * Math.PI / 180) * (outerRadius - 2);
-      
-      wheelCtx.strokeStyle = '#fff';
-      wheelCtx.lineWidth = 2;
-      wheelCtx.beginPath();
-      wheelCtx.arc(outerIndicatorX, outerIndicatorY, 4, 0, Math.PI * 2);
-      wheelCtx.stroke();
-      
-      wheelCtx.strokeStyle = '#000';
-      wheelCtx.lineWidth = 1;
-      wheelCtx.beginPath();
-      wheelCtx.arc(outerIndicatorX, outerIndicatorY, 5, 0, Math.PI * 2);
-      wheelCtx.stroke();
-      
-      // Draw current color indicator on inner circle
+      const outerIndicatorX = center + Math.cos((hue - 90) * Math.PI / 180) * (outerRadius - 4.5);
+      const outerIndicatorY = center + Math.sin((hue - 90) * Math.PI / 180) * (outerRadius - 4.5);
+
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(outerIndicatorX, outerIndicatorY, 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(outerIndicatorX, outerIndicatorY, 5, 0, Math.PI * 2);
+      ctx.stroke();
+
       const indicatorX = center + Math.cos((hue - 90) * Math.PI / 180) * (saturation * innerRadius);
       const indicatorY = center + Math.sin((hue - 90) * Math.PI / 180) * (saturation * innerRadius);
-      
-      wheelCtx.strokeStyle = '#fff';
-      wheelCtx.lineWidth = 2;
-      wheelCtx.beginPath();
-      wheelCtx.arc(indicatorX, indicatorY, 6, 0, Math.PI * 2);
-      wheelCtx.stroke();
-      
-      wheelCtx.strokeStyle = '#000';
-      wheelCtx.lineWidth = 1;
-      wheelCtx.beginPath();
-      wheelCtx.arc(indicatorX, indicatorY, 7, 0, Math.PI * 2);
-      wheelCtx.stroke();
+
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(indicatorX, indicatorY, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(indicatorX, indicatorY, 7, 0, Math.PI * 2);
+      ctx.stroke();
     }
+  }
+
+  // Draw color wheel (optimized with caching)
+  function drawWheel() {
+    if (!wheelCtx || !wheelCanvas) {
+      return;
+    }
+
+    const size = wheelCanvas.width;
+
+    // Create outer ring cache if needed (never changes)
+    if (!outerRingCanvas || outerRingCanvas.width !== size) {
+      outerRingCanvas = createOuterRingCanvas(size);
+    }
+
+    // Create inner circle cache if brightness changed or mode changed
+    const needsInnerRedraw = !innerCircleCanvas ||
+      innerCircleCanvas.width !== size ||
+      cachedBrightness !== brightness ||
+      cachedColorMode !== colorMode;
+
+    if (needsInnerRedraw) {
+      innerCircleCanvas = createInnerCircleCanvas(size, brightness, colorMode);
+      cachedBrightness = brightness;
+      cachedColorMode = colorMode;
+    }
+
+    // Composite cached canvases (fast)
+    wheelCtx.clearRect(0, 0, size, size);
+    wheelCtx.drawImage(innerCircleCanvas!, 0, 0);
+    wheelCtx.drawImage(outerRingCanvas!, 0, 0);
+
+    // Draw indicators (fast - just a few arcs)
+    drawIndicators(wheelCtx, size);
   }
   
   // Handle wheel click
