@@ -126,10 +126,12 @@
   // Navigate up one level (jump out)
   function jumpOut() {
     if (currentNetwork) {
+      const exitedSubnet = currentNetwork;
       currentNetwork = currentNetwork.parent;
-      selectedNodes = [];
-      selectedNode = null;
-      dispatch('nodeSelect', { node: null });
+      // Keep the subnet we just exited selected
+      selectedNodes = [exitedSubnet.id];
+      selectedNode = exitedSubnet;
+      dispatch('nodeSelect', { node: exitedSubnet });
     }
   }
 
