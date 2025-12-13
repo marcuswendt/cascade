@@ -614,29 +614,26 @@
           }
         }
         
-        // Annotation shortcuts
-        if (e.key === 't' || e.key === 'T') {
-          if (!e.metaKey && !e.ctrlKey) {
+        // Annotation shortcuts (Alt + key)
+        if (e.altKey && !e.metaKey && !e.ctrlKey) {
+          if (e.key === 't' || e.key === 'T') {
+            e.preventDefault();
             activeTool = 'text';
           }
-        }
-        if (e.key === 'i' || e.key === 'I') {
-          if (!e.metaKey && !e.ctrlKey) {
+          if (e.key === 'i' || e.key === 'I') {
+            e.preventDefault();
             activeTool = 'image';
           }
-        }
-        if (e.key === 'g' || e.key === 'G') {
-          if (!e.metaKey && !e.ctrlKey) {
+          if (e.key === 'g' || e.key === 'G') {
+            e.preventDefault();
             activeTool = 'group';
           }
-        }
-        if (e.key === 'l' || e.key === 'L') {
-          if (!e.metaKey && !e.ctrlKey) {
+          if (e.key === 'l' || e.key === 'L') {
+            e.preventDefault();
             activeTool = 'line';
           }
-        }
-        if (e.key === 'p' || e.key === 'P') {
-          if (!e.metaKey && !e.ctrlKey) {
+          if (e.key === 'p' || e.key === 'P') {
+            e.preventDefault();
             activeTool = 'polyline';
           }
         }
