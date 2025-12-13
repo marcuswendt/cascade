@@ -10,7 +10,8 @@
   // Form state
   let nodeName = '';
   let modulePath = '';
-  let baseClass = 'cascade.Node';
+  let baseClassSelection = 'cascade.Node';
+  let customBaseClass = '';
   let autoModulePath = true;
 
   // Available base classes with their descriptions and code templates
@@ -26,8 +27,17 @@
       label: 'LensNode',
       description: 'Image processing base class with canvas/image utilities',
       template: 'lens'
+    },
+    {
+      id: 'custom',
+      label: 'Other',
+      description: 'Specify a custom base class path',
+      template: 'node'
     }
   ];
+
+  // Get the actual base class value
+  $: baseClass = baseClassSelection === 'custom' ? customBaseClass : baseClassSelection;
 
   // Auto-generate module path from name
   $: if (autoModulePath && nodeName) {
@@ -52,8 +62,9 @@
 
   function handleSubmit() {
     if (!nodeName.trim()) return;
+    if (baseClassSelection === 'custom' && !customBaseClass.trim()) return;
 
-    const selectedBase = baseClasses.find(b => b.id === baseClass);
+    const selectedBase = baseClasses.find(b => b.id === baseClassSelection);
 
     dispatch('create', {
       name: nodeName.trim(),
@@ -63,20 +74,21 @@
     });
 
     // Reset form
-    nodeName = '';
-    modulePath = '';
-    baseClass = 'cascade.Node';
-    autoModulePath = true;
-    open = false;
+    resetForm();
   }
 
   function handleCancel() {
+    resetForm();
+    dispatch('close');
+  }
+
+  function resetForm() {
     nodeName = '';
     modulePath = '';
-    baseClass = 'cascade.Node';
+    baseClassSelection = 'cascade.Node';
+    customBaseClass = '';
     autoModulePath = true;
     open = false;
-    dispatch('close');
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -145,17 +157,29 @@
           <label>Base Class</label>
           <div class="base-class-options">
             {#each baseClasses as base}
-              <label class="radio-option" class:selected={baseClass === base.id}>
+              <label class="radio-option" class:selected={baseClassSelection === base.id}>
                 <input
                   type="radio"
                   name="baseClass"
                   value={base.id}
-                  bind:group={baseClass}
+                  bind:group={baseClassSelection}
                 />
                 <div class="radio-content">
                   <span class="radio-label">{base.label}</span>
-                  <span class="radio-path">{base.id}</span>
+                  {#if base.id !== 'custom'}
+                    <span class="radio-path">{base.id}</span>
+                  {/if}
                   <span class="radio-description">{base.description}</span>
+                  {#if base.id === 'custom' && baseClassSelection === 'custom'}
+                    <input
+                      type="text"
+                      class="custom-base-input"
+                      bind:value={customBaseClass}
+                      placeholder="e.g., cascade.mylib.MyBaseNode"
+                      autocomplete="off"
+                      on:click|stopPropagation
+                    />
+                  {/if}
                 </div>
               </label>
             {/each}
@@ -166,7 +190,7 @@
           <button type="button" class="cancel-button" on:click={handleCancel}>
             Cancel
           </button>
-          <button type="submit" class="create-button" disabled={!nodeName.trim()}>
+          <button type="submit" class="create-button" disabled={!nodeName.trim() || (baseClassSelection === 'custom' && !customBaseClass.trim())}>
             <Icon name="Zap" size={14} />
             Create Node
           </button>
@@ -365,6 +389,29 @@
     font-size: 12px;
     color: #888;
     margin-top: 4px;
+  }
+
+  .custom-base-input {
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: #2a2a2a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 13px;
+    font-family: 'SF Mono', Monaco, monospace;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .custom-base-input:focus {
+    outline: none;
+    border-color: #0078d4;
+    background: #1e1e1e;
+  }
+
+  .custom-base-input::placeholder {
+    color: #666;
   }
 
   .dialog-footer {
