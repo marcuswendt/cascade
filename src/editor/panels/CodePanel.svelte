@@ -48,14 +48,19 @@
 </script>
 
 <div class="panel-wrapper">
-  {#if node}
+  {#if node && graph}
     <CodeEditor
       {node}
-      packageManager={graph?.packageManager || null}
+      {graph}
+      packageManager={graph.packageManager || null}
       onClose={handleClose}
       showCloseButton={false}
       {onRecordHistory}
     />
+  {:else if !graph}
+    <div class="error">
+      Loading...
+    </div>
   {:else}
     <div class="error">
       Node not found: {nodeId}
