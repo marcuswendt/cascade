@@ -60,16 +60,17 @@ router.post('/claude-cli/generate', async (req, res) => {
 
   try {
     // Build the claude command with print flag for non-interactive output
-    // Use --print to get output without interactive mode
-    const args = ['--print'];
+    const args = ['--print', '--output-format', 'text'];
 
     // Add system prompt if provided
     if (systemPrompt) {
       args.push('--system-prompt', systemPrompt);
     }
 
-    // Add the user prompt
-    args.push(prompt);
+    // Prompt will be piped via stdin to handle long/complex prompts
+    args.push('-'); // Read from stdin
+
+    console.log('[claude-cli] Starting generation...');
 
     const claude = spawn('claude', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -80,14 +81,19 @@ router.post('/claude-cli/generate', async (req, res) => {
     let errorOutput = '';
 
     claude.stdout.on('data', (data) => {
-      output += data.toString();
+      const chunk = data.toString();
+      output += chunk;
+      console.log('[claude-cli] stdout chunk:', chunk.slice(0, 100) + (chunk.length > 100 ? '...' : ''));
     });
 
     claude.stderr.on('data', (data) => {
-      errorOutput += data.toString();
+      const chunk = data.toString();
+      errorOutput += chunk;
+      console.log('[claude-cli] stderr:', chunk);
     });
 
     claude.on('close', (code) => {
+      console.log('[claude-cli] Process closed with code:', code);
       if (code !== 0) {
         return res.status(500).json({
           error: errorOutput || `Claude CLI exited with code ${code}`
@@ -97,10 +103,16 @@ router.post('/claude-cli/generate', async (req, res) => {
     });
 
     claude.on('error', (err) => {
+      console.log('[claude-cli] Process error:', err.message);
       res.status(500).json({ error: err.message });
     });
 
+    // Write prompt to stdin and close it
+    claude.stdin.write(prompt);
+    claude.stdin.end();
+
   } catch (error: any) {
+    console.log('[claude-cli] Exception:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -128,15 +140,17 @@ router.post('/claude-cli/stream', async (req, res) => {
 
   try {
     // Build the claude command with print flag
-    const args = ['--print'];
+    const args = ['--print', '--output-format', 'text'];
 
     // Add system prompt if provided
     if (systemPrompt) {
       args.push('--system-prompt', systemPrompt);
     }
 
-    // Add the user prompt
-    args.push(prompt);
+    // Prompt will be piped via stdin
+    args.push('-');
+
+    console.log('[claude-cli] Starting stream generation...');
 
     const claude = spawn('claude', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -148,16 +162,19 @@ router.post('/claude-cli/stream', async (req, res) => {
     claude.stdout.on('data', (data) => {
       const chunk = data.toString();
       fullOutput += chunk;
+      console.log('[claude-cli] stream stdout chunk:', chunk.slice(0, 50) + (chunk.length > 50 ? '...' : ''));
       // Send each chunk as an SSE event
       res.write(`data: ${JSON.stringify({ type: 'token', content: chunk })}\n\n`);
     });
 
     claude.stderr.on('data', (data) => {
       const error = data.toString();
-      res.write(`data: ${JSON.stringify({ type: 'error', content: error })}\n\n`);
+      console.log('[claude-cli] stream stderr:', error);
+      // Don't send stderr as error - it might be progress/info
     });
 
     claude.on('close', (code) => {
+      console.log('[claude-cli] stream process closed with code:', code);
       if (code === 0) {
         res.write(`data: ${JSON.stringify({ type: 'complete', code: fullOutput.trim() })}\n\n`);
       } else {
@@ -167,16 +184,23 @@ router.post('/claude-cli/stream', async (req, res) => {
     });
 
     claude.on('error', (err) => {
+      console.log('[claude-cli] stream process error:', err.message);
       res.write(`data: ${JSON.stringify({ type: 'error', content: err.message })}\n\n`);
       res.end();
     });
 
+    // Write prompt to stdin and close it
+    claude.stdin.write(prompt);
+    claude.stdin.end();
+
     // Handle client disconnect
     req.on('close', () => {
+      console.log('[claude-cli] Client disconnected, killing process');
       claude.kill();
     });
 
   } catch (error: any) {
+    console.log('[claude-cli] stream exception:', error.message);
     res.write(`data: ${JSON.stringify({ type: 'error', content: error.message })}\n\n`);
     res.end();
   }
