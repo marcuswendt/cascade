@@ -6,9 +6,12 @@
     "cascade": "./dist/cli/index.js"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -n client,server -c cyan,magenta \"npm run dev:client\" \"npm run dev:server\"",
+    "dev:client": "vite",
+    "dev:server": "cd server && npm run dev",
     "build": "vite build",
     "build:cli": "tsc --project tsconfig.cli.json",
+    "build:server": "cd server && npm run build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest",
@@ -27,6 +30,7 @@
     "@tsconfig/svelte": "^5.0.0",
     "@types/node": "^24.10.1",
     "@vitest/coverage-v8": "^4.0.15",
+    "concurrently": "^9.2.1",
     "svelte-check": "^4.0.0",
     "typescript": "^5.0.0",
     "vite": "^6.0.0",
