@@ -244,31 +244,33 @@
       // Wait for annotation ports to be initialized (especially image annotations)
       await graph.waitForAnnotationPorts();
 
-      // Execute all nodes to initialize them
+      // Set up node functions (fast, synchronous)
       for (const node of graph.nodes) {
         if (node.code) {
           try {
-            // Wrap code in async function to support top-level await (same as CodeEditor)
             const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
             const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
             node.setFunction(nodeFunction);
-            await node.execute();
           } catch (err) {
-            console.warn('Failed to execute node ' + node.id + ':', err);
+            console.warn('Failed to set function for node ' + node.id + ':', err);
           }
         }
       }
 
       // Restore connections now that ports exist
       graph.restoreConnections();
-      // Wait for DOM to update before forcing reactivity
       await tick();
-      // Force connections array reference update to trigger reactivity
       graph.connections = [...graph.connections];
-      // Force elements array reference to trigger reactivity
       graph.elements = [...graph.elements];
-      
-      // Center canvas on nodes after loading
+
+      // Execute nodes in parallel in background
+      const nodesToExecute = graph.nodes.filter(n => n.code);
+      if (nodesToExecute.length > 0) {
+        Promise.all(nodesToExecute.map(async (node) => {
+          try { await node.execute(); } catch (err) { console.warn('Node execution failed:', err); }
+        })).catch(() => {});
+      }
+
       setTimeout(() => {
         if (dockviewContainerRef && dockviewContainerRef.centerOnNodes) {
           dockviewContainerRef.centerOnNodes();
@@ -276,7 +278,6 @@
       }, 100);
     } catch (error) {
       console.error('Failed to load default graph:', error);
-      // Fallback: create empty graph
       const adapter = GraphEditorAdapter.create();
       graph = adapter.getGraph();
       documentName = 'Untitled';
@@ -313,32 +314,34 @@
         
         // Wait for annotation ports to be initialized (especially image annotations)
         await graph.waitForAnnotationPorts();
-        
-        // Execute all nodes to initialize them
+
+        // Set up node functions (fast, synchronous)
         for (const node of graph.nodes) {
           if (node.code) {
             try {
-              // Wrap code in async function to support top-level await (same as CodeEditor)
               const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
               const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
               node.setFunction(nodeFunction);
-              await node.execute();
             } catch (err) {
-              console.warn('Failed to execute node ' + node.id + ':', err);
+              console.warn('Failed to set function for node ' + node.id + ':', err);
             }
           }
         }
-        
+
         // Restore connections now that ports exist
         graph.restoreConnections();
-        // Wait for DOM to update before forcing reactivity
         await tick();
-        // Force connections array reference update to trigger reactivity
         graph.connections = [...graph.connections];
-        // Force elements array reference to trigger reactivity
         graph.elements = [...graph.elements];
 
-        // Center canvas on nodes after loading
+        // Execute nodes in parallel in background
+        const nodesToExecute = graph.nodes.filter(n => n.code);
+        if (nodesToExecute.length > 0) {
+          Promise.all(nodesToExecute.map(async (node) => {
+            try { await node.execute(); } catch (err) { console.warn('Node execution failed:', err); }
+          })).catch(() => {});
+        }
+
         setTimeout(() => {
           if (dockviewContainerRef && dockviewContainerRef.centerOnNodes) {
             dockviewContainerRef.centerOnNodes();
@@ -437,33 +440,36 @@
     // Wait for annotation ports to be initialized
     await graph.waitForAnnotationPorts();
 
-    // Execute all nodes to initialize them
+    // Set up node functions (fast, synchronous)
     for (const node of graph.nodes) {
       if (node.code) {
         try {
           const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
           const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
           node.setFunction(nodeFunction);
-          await node.execute();
         } catch (err) {
-          console.warn('Failed to execute node ' + node.id + ':', err);
+          console.warn('Failed to set function for node ' + node.id + ':', err);
         }
       }
     }
 
     // Restore connections now that ports exist
     graph.restoreConnections();
-
-    // Wait for DOM to update before forcing reactivity
     await tick();
-
-    // Force reactivity
     graph.connections = [...graph.connections];
     graph.elements = [...graph.elements];
 
     // Restore selection
     selectedNode = snapshot.selectedNodeId ? graph.getNode(snapshot.selectedNodeId) : null;
     selectedAnnotation = snapshot.selectedAnnotationId;
+
+    // Execute nodes in parallel in background
+    const nodesToExecute = graph.nodes.filter(n => n.code);
+    if (nodesToExecute.length > 0) {
+      Promise.all(nodesToExecute.map(async (node) => {
+        try { await node.execute(); } catch (err) { console.warn('Node execution failed:', err); }
+      })).catch(() => {});
+    }
   }
 
   /**
@@ -524,33 +530,42 @@
         documentName = 'Default Cascade Graph';
         currentFilePath = null;
         updateWindowTitle();
-        
+
         // Wait for annotation ports to be initialized (especially image annotations)
         await graph.waitForAnnotationPorts();
-        
-        // Execute all nodes to initialize them
+
+        // Set up node functions (fast, synchronous) - don't execute yet
         for (const node of graph.nodes) {
           if (node.code) {
             try {
-              // Wrap code in async function to support top-level await (same as CodeEditor)
               const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
               const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
               node.setFunction(nodeFunction);
-              await node.execute();
             } catch (err) {
-              console.warn('Failed to execute node ' + node.id + ':', err);
+              console.warn('Failed to set function for node ' + node.id + ':', err);
             }
           }
         }
-        
+
         // Restore connections now that ports exist
         graph.restoreConnections();
-        // Wait for DOM to update before forcing reactivity
+
+        // Force reactivity updates
         await tick();
-        // Force connections array reference update to trigger reactivity
         graph.connections = [...graph.connections];
-        // Force elements array reference to trigger reactivity
         graph.elements = [...graph.elements];
+
+        // Execute nodes in parallel in the background (non-blocking)
+        const nodesToExecute = graph.nodes.filter(n => n.code);
+        if (nodesToExecute.length > 0) {
+          Promise.all(nodesToExecute.map(async (node) => {
+            try {
+              await node.execute();
+            } catch (err) {
+              console.warn('Background node execution failed for ' + node.id + ':', err);
+            }
+          })).catch(err => console.warn('Node execution batch failed:', err));
+        }
 
         // Center canvas on nodes after loading
         setTimeout(() => {
