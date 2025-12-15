@@ -3,6 +3,7 @@
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
   import type { Annotation } from '@/nodes/annotations/Annotation';
+  import { ImageBuffer } from '@/nodes/lens/ImageBuffer';
 
   export let graph: Graph | undefined;
   export let selectedNode: Node | null = null;
@@ -71,22 +72,22 @@
       }
     } else if (!displayNode) {
       currentViewer = 'empty';
-    } else if (displayNode.preview) {
-      // Check preview property
-      if (displayNode.preview instanceof HTMLCanvasElement) {
-        currentViewer = 'canvas';
-      } else if (displayNode.preview instanceof HTMLImageElement) {
-        currentViewer = 'image';
-      } else {
-        currentViewer = 'text';
-      }
     } else {
-      // Check output ports for renderable content
-      const outputPort = displayNode.outputs.find(p => p.name === 'output' || p.name === 'preview');
+      // Check output ports first for renderable content (includes 'image' port for LensNodes)
+      const outputPort = displayNode.outputs.find(p => p.name === 'output' || p.name === 'preview' || p.name === 'image');
       if (outputPort && outputPort.value) {
-        if (outputPort.value instanceof HTMLCanvasElement) {
+        if (outputPort.value instanceof HTMLCanvasElement || outputPort.value instanceof ImageBuffer) {
           currentViewer = 'canvas';
         } else if (outputPort.value instanceof HTMLImageElement) {
+          currentViewer = 'image';
+        } else {
+          currentViewer = 'text';
+        }
+      } else if (displayNode.preview) {
+        // Fall back to preview property
+        if (displayNode.preview instanceof HTMLCanvasElement) {
+          currentViewer = 'canvas';
+        } else if (displayNode.preview instanceof HTMLImageElement) {
           currentViewer = 'image';
         } else {
           currentViewer = 'text';
@@ -105,13 +106,20 @@
 
     let canvas: HTMLCanvasElement | null = null;
 
-    if (displayNode.preview instanceof HTMLCanvasElement) {
-      canvas = displayNode.preview;
-    } else {
-      const outputPort = displayNode.outputs.find(p => p.name === 'output' || p.name === 'preview');
-      if (outputPort?.value instanceof HTMLCanvasElement) {
+    // First check output ports directly (bypasses throttled preview for immediate updates)
+    const outputPort = displayNode.outputs.find(p => p.name === 'output' || p.name === 'preview' || p.name === 'image');
+    if (outputPort?.value) {
+      if (outputPort.value instanceof HTMLCanvasElement) {
         canvas = outputPort.value;
+      } else if (outputPort.value instanceof ImageBuffer) {
+        // Convert ImageBuffer to canvas on-demand (bypasses throttled preview)
+        canvas = outputPort.value.toCanvas();
       }
+    }
+
+    // Fall back to preview property if no output port canvas
+    if (!canvas && displayNode.preview instanceof HTMLCanvasElement) {
+      canvas = displayNode.preview;
     }
 
     if (canvas) {
@@ -290,7 +298,7 @@
     }
   }
 
-  // Generate a key representing current content for change detection
+  // Generate a lightweight key for change detection (avoid expensive operations)
   function getContentKey(): string | null {
     if (displayAnnotation) {
       if (displayAnnotation.type === 'Image') {
@@ -307,75 +315,149 @@
 
     if (!displayNode) return null;
 
-    // For canvas/image content, use a simple fingerprint
+    // Use lightweight fingerprints - avoid isDirty (expensive) and JSON.stringify
     if (displayNode.preview instanceof HTMLCanvasElement) {
-      // Use dimensions as a lightweight fingerprint (full toDataURL is expensive)
-      return `canvas:${displayNode.preview.width}x${displayNode.preview.height}:${displayNode.id}:${displayNode.isDirty}`;
+      return `canvas:${displayNode.preview.width}x${displayNode.preview.height}:${displayNode.id}`;
     } else if (displayNode.preview instanceof HTMLImageElement) {
       return `img:${displayNode.preview.src}`;
     } else if (displayNode.preview) {
-      return `preview:${JSON.stringify(displayNode.preview)}`;
+      // Lightweight fingerprint for other preview types
+      const p = displayNode.preview as any;
+      if (typeof p === 'object' && p.width !== undefined) {
+        return `preview:${p.width}x${p.height || 0}`;
+      }
+      return `preview:${typeof p}:${String(p).slice(0, 50)}`;
     }
 
     // Check output ports
-    const outputPort = displayNode.outputs.find(p => p.name === 'output' || p.name === 'preview');
+    const outputPort = displayNode.outputs.find(p => p.name === 'output' || p.name === 'preview' || p.name === 'image');
     if (outputPort?.value instanceof HTMLCanvasElement) {
-      return `canvas:${outputPort.value.width}x${outputPort.value.height}:${displayNode.id}:${displayNode.isDirty}`;
+      return `canvas:${outputPort.value.width}x${outputPort.value.height}:${displayNode.id}`;
     } else if (outputPort?.value instanceof HTMLImageElement) {
       return `img:${outputPort.value.src}`;
     } else if (outputPort?.value !== undefined) {
-      return `data:${JSON.stringify(outputPort.value)}`;
+      // Lightweight fingerprint for data values
+      const v = outputPort.value;
+      if (typeof v === 'object' && v.width !== undefined) {
+        return `data:${v.width}x${v.height || 0}`;
+      }
+      if (typeof v === 'string' || typeof v === 'number') {
+        return `data:${String(v).slice(0, 100)}`;
+      }
+      return `data:${typeof v}`;
     }
 
     return null;
   }
 
+  // Trigger lazy evaluation for display node (called on-demand, not polling)
+  async function evaluateDisplayNode() {
+    if (!displayNode || !displayNode.isDirty) return;
+
+    await displayNode.requestOutput();
+    checkForRender();
+  }
+
+  // Check if content changed and re-render if needed
+  function checkForRender() {
+    if ((displayNode || displayAnnotation) && currentViewer !== 'empty') {
+      const currentId = displayNode?.id || displayAnnotation?.id || null;
+      const contentKey = getContentKey();
+
+      const needsRender =
+        currentId !== lastRenderedId ||
+        currentViewer !== lastRenderedViewer ||
+        contentKey !== lastRenderedContent;
+
+      if (needsRender) {
+        lastRenderedId = currentId;
+        lastRenderedViewer = currentViewer;
+        lastRenderedContent = contentKey;
+
+        if (currentViewer === 'canvas') {
+          renderCanvas();
+        } else if (currentViewer === 'image') {
+          renderImage();
+        } else if (currentViewer === 'text') {
+          renderText();
+        }
+      }
+    }
+  }
+
+  // Guard to prevent overlapping evaluations
+  let isEvaluating = false;
+
+  // Force re-render (bypasses change detection)
+  function forceRender() {
+    if (currentViewer === 'canvas') {
+      renderCanvas();
+    } else if (currentViewer === 'image') {
+      renderImage();
+    } else if (currentViewer === 'text') {
+      renderText();
+    }
+  }
+
+  // Check for dirty nodes and trigger evaluation + render
+  async function checkAndEvaluate() {
+    // If display node is dirty, evaluate it first
+    if (displayNode && displayNode.isDirty && !isEvaluating) {
+      isEvaluating = true;
+      try {
+        await displayNode.requestOutput();
+        // Force re-render after evaluation (content changed even if dimensions didn't)
+        forceRender();
+      } finally {
+        isEvaluating = false;
+      }
+    } else {
+      // No evaluation needed, just check if render needed
+      checkForRender();
+    }
+  }
+
+  // RAF-based polling - only schedules next frame when needed
+  let rafId: number | null = null;
+  let lastCheckTime = 0;
+  const CHECK_INTERVAL = 100; // ms between dirty checks
+
+  function scheduleCheck() {
+    if (rafId !== null) return; // Already scheduled
+    rafId = requestAnimationFrame(rafCheck);
+  }
+
+  function rafCheck() {
+    rafId = null;
+    const now = performance.now();
+
+    // Throttle checks to CHECK_INTERVAL
+    if (now - lastCheckTime >= CHECK_INTERVAL) {
+      lastCheckTime = now;
+      checkAndEvaluate();
+    }
+
+    // Continue polling if we have a display node
+    if (displayNode || displayAnnotation) {
+      scheduleCheck();
+    }
+  }
+
+  // React to displayNode changes - trigger evaluation when selection changes
+  $: if (displayNode) {
+    lastCheckTime = 0; // Reset throttle for immediate check
+    scheduleCheck();
+  }
+
   onMount(() => {
-    // Guard against overlapping async executions
-    let isExecuting = false;
-
-    // Periodically check for preview updates and trigger lazy evaluation
-    const interval = setInterval(async () => {
-      // Lazy evaluation: request output if display node is dirty (not for annotations)
-      // Guard prevents overlapping async executions
-      if (displayNode && displayNode.isDirty && !isExecuting) {
-        isExecuting = true;
-        try {
-          await displayNode.requestOutput();
-        } finally {
-          isExecuting = false;
-        }
-      }
-
-      // Only re-render if content has changed (prevents flickering)
-      if ((displayNode || displayAnnotation) && currentViewer !== 'empty') {
-        const currentId = displayNode?.id || displayAnnotation?.id || null;
-        const contentKey = getContentKey();
-
-        // Check if anything changed that requires re-render
-        const needsRender =
-          currentId !== lastRenderedId ||
-          currentViewer !== lastRenderedViewer ||
-          contentKey !== lastRenderedContent;
-
-        if (needsRender) {
-          lastRenderedId = currentId;
-          lastRenderedViewer = currentViewer;
-          lastRenderedContent = contentKey;
-
-          if (currentViewer === 'canvas') {
-            renderCanvas();
-          } else if (currentViewer === 'image') {
-            renderImage();
-          } else if (currentViewer === 'text') {
-            renderText();
-          }
-        }
-      }
-    }, 100);
+    // Start the RAF-based check loop
+    scheduleCheck();
 
     return () => {
-      clearInterval(interval);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
     };
   });
 </script>
