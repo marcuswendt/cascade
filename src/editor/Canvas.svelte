@@ -235,6 +235,26 @@
 
   $: visibleNodes = getVisibleElements(graph.nodes, currentNetwork);
 
+  // Cached nodes center for zoom performance (avoid recalculating on every wheel event)
+  let cachedNodesCenter: { x: number; y: number } | null = null;
+  let nodesCenterCacheValid = false;
+
+  // Invalidate cache when visible nodes or annotations change
+  $: {
+    visibleNodes;
+    annotations;
+    nodesCenterCacheValid = false;
+  }
+
+  // Get cached or compute nodes center
+  function getCachedNodesCenter(): { x: number; y: number } | null {
+    if (!nodesCenterCacheValid) {
+      cachedNodesCenter = getNodesCenter();
+      nodesCenterCacheValid = true;
+    }
+    return cachedNodesCenter;
+  }
+
   /**
    * Add a child node to a parent network, using addChild() if available
    * This ensures SubnetNode.syncPorts() is called when Input/Output nodes are added
@@ -680,10 +700,13 @@ const tick = node.out('tick', 'trigger');
 const time = node.out('time');
 
 let frame = 0;
-setInterval(() => {
+const intervalId = setInterval(() => {
   time.setValue(frame++);
   tick.trigger({ frame });
 }, 1000 / 60);
+
+// Cleanup interval when node is destroyed
+node.onDestroy = () => clearInterval(intervalId);
       `;
       
       colorNode.code = `// Color node - creates a solid color canvas
@@ -3590,8 +3613,8 @@ node.onReady = () => {
     const oldZoom = internalTransform.zoom;
     const newZoom = Math.max(0.1, Math.min(2, oldZoom + delta));
     
-    // Zoom from the center of all nodes
-    const center = getNodesCenter();
+    // Zoom from the center of all nodes (use cached value for performance)
+    const center = getCachedNodesCenter();
     if (center) {
       // Calculate how much to adjust transform to keep the center point fixed
       // Formula: newTransform.x = oldTransform.x + centerX * (oldZoom - newZoom)
@@ -3721,14 +3744,14 @@ node.onReady = () => {
       e.preventDefault();
       const oldZoom = internalTransform.zoom;
       const newZoom = Math.min(2, oldZoom + 0.1);
-      
-      // Zoom from the center of all nodes
-      const center = getNodesCenter();
+
+      // Zoom from the center of all nodes (use cached value for performance)
+      const center = getCachedNodesCenter();
       if (center) {
         internalTransform.x = internalTransform.x + center.x * (oldZoom - newZoom);
         internalTransform.y = internalTransform.y + center.y * (oldZoom - newZoom);
       }
-      
+
       internalTransform.zoom = newZoom;
       internalTransform = { ...internalTransform };
     }
@@ -3736,14 +3759,14 @@ node.onReady = () => {
       e.preventDefault();
       const oldZoom = internalTransform.zoom;
       const newZoom = Math.max(0.1, oldZoom - 0.1);
-      
-      // Zoom from the center of all nodes
-      const center = getNodesCenter();
+
+      // Zoom from the center of all nodes (use cached value for performance)
+      const center = getCachedNodesCenter();
       if (center) {
         internalTransform.x = internalTransform.x + center.x * (oldZoom - newZoom);
         internalTransform.y = internalTransform.y + center.y * (oldZoom - newZoom);
       }
-      
+
       internalTransform.zoom = newZoom;
       internalTransform = { ...internalTransform };
     }
