@@ -2,63 +2,107 @@
 
 All notable changes to Cascade will be documented in this file.
 
-## [1.0.0] - 2024-12-XX
+## [0.3.0] - December 2024
 
-### Added
-- **Core Foundation** - Node, Graph, and Port system
-- **Live Code Editing** - Monaco Editor integration with Shift+Enter compilation
-- **State Preservation** - Nodes preserve state during recompilation
-- **Asset Management** - Load and cache images, audio, and data files
-- **NPM Integration** - Dynamic package loading via `node.require()`
-- **Package Search** - Search and install NPM packages from the editor
-- **Export System** - Export graphs to standalone HTML files
-- **UI Components**:
-  - Bottom toolbar with node categories
-  - Node creation panel with search
-  - Inspector panel for node parameters
-  - Document panel with file operations
-  - Presentation mode
-- **Canvas Features**:
-  - Pan (middle mouse, space+drag, two-finger drag)
-  - Zoom (mouse wheel, pinch gesture)
-  - Node dragging
-  - Port connections
-- **Keyboard Shortcuts**:
-  - Tab - Open node creation
-  - ⌘K/Ctrl+K - Search packages
-  - Shift+Enter - Compile code
-  - Esc - Close panels
-  - ⌘N/O/S/E - File operations
-- **Example Projects** - Hello World and Counter examples
+### Performance Optimizations
 
-### Fixed
-- Async/await support in node code compilation
-- CORS handling for NPM registry search
-- TypeScript errors in build configuration
-- State preservation during node recompilation
-- Canvas centering on node load
+- O(1) node, port, and connection lookups using Map indices
+- Lazy (pull-based) graph evaluation - only compute what's needed
+- Parallel node execution for independent branches
+- Lightweight value fingerprinting (avoid expensive JSON.stringify)
+- RAF-based viewer polling with throttling
+- Zoom center caching for smooth canvas interaction
+- Timer node cleanup (memory leak fix)
 
-### Changed
-- Improved zoom sensitivity (5x faster)
-- Auto-center canvas when opening/creating projects
-- Package search gracefully handles network errors
+### Lens System (Image Processing)
 
-### Technical Details
-- Built with Svelte 4, TypeScript, Vite
-- Monaco Editor for code editing
-- ESM.sh CDN for NPM package loading
-- Standalone HTML export with embedded assets
+- High-performance `ImageBuffer` class with Float32Array channels
+- 9 built-in image processing nodes:
+  - Generators: Checkers, Color, Noise, Ramp
+  - Filters: Blur (box, gaussian, bilateral), Composite, Resize, NormalMap, Image
+- Resolution control system (input1/input2/largest/smallest/custom)
+- Fit modes: Fill, Fit, Stretch, Native
+- 20+ blend modes in Composite node
+- Bilinear interpolation for resize operations
+
+### Testing Infrastructure
+
+- 605+ tests across 23 test files
+- Performance regression tests for critical paths
+- Workflow integration tests
+- AI code generation tests
+- UI testing setup with jsdom
+
+### UI Improvements
+
+- Color-coded ports by data type
+- Custom node creation dialog with base class selection
+- Dynamic subnet ports from Input/Output nodes
+- Improved viewer with ImageBuffer support
+
+## [0.2.0] - December 2024
+
+### Major Changes
+
+- Upgraded to Svelte 5 with modern runes-based reactivity
+- Dockview integration for flexible panel management
+  - Drag and drop panels to rearrange layout
+  - Add new panels with "+" button in tab headers
+  - Minimize/restore panels by clicking tab titles
+  - Layout auto-saved to localStorage
+
+### Features
+
+- Undo/redo functionality (Cmd+Z / Cmd+Shift+Z)
+- Select all nodes and annotations (Cmd+A)
+- Consolidated node picker (Create menu and Tab-menu share same component)
+- Unified nodes and annotations with common base class hierarchy
+- Improved annotation positioning and grouping
+- Streamlined UI: moved file menu into Graph tab header
+
+### Bug Fixes
+
+- Fixed node type serialization bug causing "Invalid node type format" errors
+- Enhanced graph serialization and node ID handling
+- Improved node execution and connection logic
+
+## [0.1.0] - November 2024
+
+### Initial Release
+
+- Complete visual programming framework
+- Live code editing with Monaco Editor
+- NPM package integration via esm.sh CDN
+- Asset management system (images, audio, data)
+- Export to standalone HTML files
+- Modern UI with keyboard shortcuts
+
+### Core Features
+
+- Node System with id, type, name, position, preview
+- Port System with trigger and param ports
+- Graph execution engine with topological sort
+- Canvas with pan/zoom functionality
+- Connection drawing between ports
+- State preservation during recompilation
+
+### Editor Features
+
+- Monaco Editor integration with TypeScript support
+- Double-click to edit node code
+- Shift+Enter compilation
+- Error display on nodes
+- Package search (Cmd+K)
+- Inspector panel for node parameters
 
 ---
 
-## Future Releases
+## Historical Development
 
-### Planned
-- More built-in node templates
-- Node library expansion
-- Performance optimizations
-- Additional export formats
-- Collaboration features
+Development phase documentation archived in `spec/archive/`:
 
-
-
+- Phase 1-3 implementation checklist
+- Phase 8 completion report
+- Dockview migration spec
+- Settings panel implementation
+- Implementation status reports
