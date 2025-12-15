@@ -1,20 +1,24 @@
-# Cascade 🌊
+# Cascade
 
 **Visual Programming Framework for Creative Coders**
 
 Cascade is a visual programming framework where every node is a TypeScript/JavaScript function. Inspired by Nodes.io, Cascade combines the power of code with the clarity of visual graphs.
 
-## ✨ Features
+## Features
 
 - **Live Code Editing** - Edit node code with Shift+Enter, no state loss
 - **Visual Graph** - Connect nodes visually, see data flow
 - **NPM Integration** - Use any NPM package with `await node.require('package-name')`
+- **Lens System** - High-performance image processing with GPU-ready ImageBuffer
+- **Subnet Networks** - Organize complex graphs into reusable sub-networks
 - **Asset Management** - Drag-drop images, audio, and data files
 - **Export to HTML** - One-click export to standalone HTML files
 - **Monaco Editor** - Full TypeScript/JavaScript editing with IntelliSense
-- **Modern UI** - FigJam-style interface with presentation mode
+- **AI Code Generation** - Generate node code with Claude AI assistance
+- **Lazy Evaluation** - Pull-based execution only computes what's needed
+- **Undo/Redo** - Full history with keyboard shortcuts
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -33,267 +37,321 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 4. Write your node function:
 
 ```typescript
-// Example: Simple counter node
-const trigger = node.in('trigger', null, { type: 'trigger' });
-const count = node.in('count', 0);
+// Example: Simple math node
+const input = node.in('value', 0);
+const multiplier = node.in('multiplier', 2);
 const output = node.out('result');
 
-let currentCount = count.value || 0;
-
-if (trigger) {
-  trigger.onTrigger = () => {
-    currentCount++;
-    output.setValue(currentCount);
-  };
-}
+output.setValue(input.value * multiplier.value);
 ```
 
 5. Press **Shift+Enter** to compile
 6. Connect nodes by dragging from output ports to input ports
 
-## 📖 Core Concepts
+## Core Concepts
 
 ### Every Node is a Function
 
-Every node in Cascade is just a TypeScript/JavaScript function:
+Every node in Cascade is a TypeScript/JavaScript function that runs in an async context:
 
 ```typescript
-export default async function(node, graph) {
-  // Your code here
-  const input = node.in('input', 0);
-  const output = node.out('output');
-  
-  // Use the input value
-  output.setValue(input.value * 2);
-}
+// Inputs with default values
+const input = node.in('input', 0);
+const name = node.in('name', 'default');
+
+// Outputs
+const output = node.out('result');
+
+// Computation
+output.setValue(input.value * 2);
 ```
 
 ### Ports: Inputs and Outputs
 
-- **Input Ports**: Read values with `node.in(name, defaultValue, options)`
-- **Output Ports**: Set values with `node.out(name)`
-- **Trigger Ports**: Execute callbacks with `trigger.onTrigger = () => { ... }`
+- **Input Ports**: `node.in(name, defaultValue, options)` - Read values from upstream
+- **Output Ports**: `node.out(name)` - Send values downstream
+- **Trigger Ports**: Special ports for event-driven execution
+
+```typescript
+// Trigger port example
+const trigger = node.in('trigger', null, { type: 'trigger' });
+trigger.onTrigger = (props) => {
+  console.log('Triggered!', props);
+};
+```
+
+### Port Types and Colors
+
+Ports are color-coded by data type for visual clarity:
+
+- **Gray** - Any/unknown type
+- **Blue** - Number
+- **Green** - String
+- **Yellow** - Boolean
+- **Purple** - Object/Array
+- **Cyan** - Image/Canvas
+- **Orange** - Trigger
 
 ### Using NPM Packages
 
 Load any NPM package dynamically:
 
 ```typescript
-// Load a package
 const three = await node.require('three');
 const chroma = await node.require('chroma-js');
 
-// Use it immediately
 const scene = new three.Scene();
 const color = chroma('#4a9eff').brighten(2).hex();
 ```
 
-Press **⌘K** (or **Ctrl+K**) in the code editor to search for packages.
+Press **Cmd+K** (or **Ctrl+K**) in the code editor to search for packages.
 
-### Asset Management
+### Parameters (Props)
 
-Load assets in your nodes:
+Add UI controls to your nodes with `node.addParm()`:
 
 ```typescript
-// Load an image
-const image = await node.assets.load('./assets/images/photo.jpg');
+node.addParm('intensity', {
+  value: 1.0,
+  params: { min: 0, max: 2, step: 0.1 },
+  displayName: 'Intensity',
+  onChange: () => node.requestCook()
+});
 
-// Use it
-const canvas = document.createElement('canvas');
-const ctx = canvas.getContext('2d');
-ctx.drawImage(image, 0, 0);
+// Access the value
+const intensity = node.props.intensity.value;
 ```
 
-## 🎨 UI Overview
+## Lens System (Image Processing)
 
-### Canvas
-- **Pan**: Middle mouse button, Space + drag, or two-finger drag
-- **Zoom**: Mouse wheel or pinch gesture
-- **Create Node**: Double-click or press Tab
+Cascade includes a high-performance image processing system inspired by TouchDesigner:
+
+### Built-in Lens Nodes
+
+| Node | Description |
+|------|-------------|
+| **Checkers** | Generates checkerboard patterns |
+| **Color** | Solid color output |
+| **Noise** | Perlin/Simplex noise generation |
+| **Ramp** | Linear/radial gradients |
+| **Blur** | Box, Gaussian, and bilateral blur |
+| **Composite** | Blend two images (20+ blend modes) |
+| **Resize** | Scale images with fit modes |
+| **NormalMap** | Generate normal maps from height |
+| **Image** | Load external images |
+
+### Creating Custom Lens Nodes
+
+```typescript
+// Extend LensNode for image processing
+import { LensNode, ImageBuffer } from '@/nodes/lens/LensNode';
+
+class MyFilterNode extends LensNode {
+  protected setup(): void {
+    this.in('image', null);
+    this.addParm('amount', { value: 1.0, params: { min: 0, max: 1 } });
+    this.out('image');
+  }
+
+  protected render(): void {
+    const input = this.toImageBuffer(this.inputs[0].value);
+    if (!input) return;
+
+    const result = ImageBuffer.rgba(input.width, input.height);
+    // Process pixels...
+    this.setOutput(this.outputs[0], result);
+  }
+}
+```
+
+### Resolution Control
+
+Multi-input nodes support automatic resolution matching:
+- **Input 1/2** - Use specific input's resolution
+- **Largest/Smallest** - Use largest or smallest input
+- **Custom** - Specify exact dimensions
+- **Fit Modes**: Fill, Fit, Stretch, Native
+
+## Subnet Networks
+
+Organize complex graphs into reusable sub-networks:
+
+1. Create a **Subnet** node from the node panel
+2. Double-click to enter the subnet
+3. Add **Input** and **Output** nodes to define the interface
+4. The subnet automatically exposes ports based on internal Input/Output nodes
+
+## UI Overview
+
+### Canvas Navigation
+
+- **Pan**: Middle mouse, Space+drag, or two-finger drag
+- **Zoom**: Mouse wheel or pinch gesture (Cmd+Plus/Minus)
+- **Create Node**: Double-click or Tab
 - **Edit Node**: Double-click a node
-- **Connect Nodes**: Drag from output port to input port
+- **Connect**: Drag from output to input port
 
 ### Keyboard Shortcuts
 
-- **Tab** - Open node creation panel
-- **⌘K / Ctrl+K** - Search NPM packages (in code editor)
-- **Shift+Enter** - Compile node code
-- **Esc** - Close editor/panel
-- **⌘N** - New project
-- **⌘O** - Open project
-- **⌘S** - Save project
-- **⌘E** - Export HTML
+| Shortcut | Action |
+|----------|--------|
+| **Tab** | Open node creation panel |
+| **Cmd+K** | Search NPM packages (in editor) |
+| **Shift+Enter** | Compile node code |
+| **Cmd+Z / Cmd+Shift+Z** | Undo / Redo |
+| **Cmd+N** | New project |
+| **Cmd+O** | Open project |
+| **Cmd+S** | Save project |
+| **Cmd+E** | Export HTML |
+| **Esc** | Close editor/panel |
+| **Delete/Backspace** | Delete selected |
+| **Cmd+A** | Select all |
+| **Alt+A** | Add annotation |
 
-## 📁 Project Structure
+## Project Structure
 
-```
+```text
 cascade/
 ├── src/
-│   ├── core/           # Core classes (Node, Graph, PackageManager)
-│   ├── editor/         # UI components (Canvas, CodeEditor, etc.)
-│   ├── types/          # TypeScript type definitions
-│   └── utils/          # Utilities (export, fileSystem)
-├── spec/               # Specification documents
-└── graphs/             # Example projects (create your own!)
+│   ├── nodes/           # Core node system
+│   │   ├── Graph.ts     # Graph management
+│   │   ├── Node.ts      # Base node class
+│   │   └── lens/        # Image processing system
+│   ├── editor/          # UI components (18 Svelte components)
+│   ├── engine/          # Execution engine
+│   └── types/           # TypeScript definitions
+├── tests/               # Test suite (605+ tests)
+│   ├── performance/     # Performance regression tests
+│   └── workflows/       # Integration tests
+├── spec/                # Documentation
+└── graphs/              # Example projects
 ```
 
-## 💾 Saving and Loading
+## Testing
 
-### Save Project
-- **⌘S** or click the document name → Save
-- Projects are saved as `.cascade` files
-
-### Export to HTML
-- **⌘E** or click the document name → Export HTML
-- Creates a standalone HTML file with embedded assets
-- Works offline, no server required
-
-## 🔧 Development
-
-### Build for Production
+Cascade has comprehensive test coverage:
 
 ```bash
-npm run build
+# Run all tests
+npm run test:run
+
+# Run with watch mode
+npm run test
+
+# Run specific test file
+npm run test:run -- tests/graph-execution.test.ts
 ```
 
-Outputs to `dist/` directory.
+**Test Coverage:**
 
-### Type Checking
+- 605+ tests across 23 test files
+- Unit tests for core modules (Graph, Node, execution)
+- Performance regression tests (lookups, connections, dirty propagation)
+- Integration/workflow tests
+- AI code generation tests
+
+## Performance
+
+Cascade is optimized for large graphs:
+
+- **O(1) Lookups** - Node, port, and connection lookups use Map indices
+- **Lazy Evaluation** - Pull-based execution only computes visible outputs
+- **Parallel Execution** - Independent nodes execute concurrently
+- **Dirty Propagation** - Only re-execute changed subgraphs
+- **Throttled Preview** - Image previews update at 30fps max
+
+## Command Line Interface
+
+Run graphs headlessly for automation and CI/CD:
 
 ```bash
-npm run check
-```
-
-### Preview Production Build
-
-```bash
-npm run preview
-```
-
-## 💻 Command Line Interface
-
-Cascade includes a CLI tool for running graphs from the command line, perfect for automation, CI/CD, and headless execution.
-
-### Building the CLI
-
-First, build the CLI:
-
-```bash
+# Build CLI
 npm run build:cli
-```
 
-This compiles the TypeScript CLI code to `dist/cli/`.
-
-### Installing the CLI
-
-After building, you can install it locally:
-
-```bash
+# Install globally
 npm link
-```
 
-This makes the `cascade` command available globally on your system.
-
-### Running Graphs
-
-Once installed, you can run graphs from the command line:
-
-```bash
-# Run a graph file
+# Run a graph
 cascade run graphs/examples/hello-world.cascade
 
-# Validate a graph without executing
-cascade validate graphs/examples/hello-world.cascade
+# Validate without executing
+cascade validate graph.cascade
 
-# Run with verbose output
+# Verbose output
 cascade run graph.cascade --verbose
-
-# Run from a specific entry node
-cascade run graph.cascade --entry-node node_1234567890_abc123
-
-# Show help
-cascade --help
-
-# Show version
-cascade --version
 ```
 
-### CLI Options
+## AI Code Generation
 
-- `run <graph-file>` - Execute a graph file
-- `validate <graph-file>` - Validate a graph file without executing
-- `--entry-node <id>` - Execute from a specific entry node
-- `--verbose, -v` - Show verbose output
-- `--help, -h` - Show help message
-- `--version` - Show version
+Cascade integrates with Claude AI for code generation:
 
-### Direct Execution (Without Installation)
+1. Open the code editor
+2. Press **Cmd+K** and type a description
+3. Claude generates node code based on context
 
-You can also run the CLI directly without installing:
+Configure your API key in Settings (gear icon).
+
+## Development
+
+### Build Commands
 
 ```bash
-node dist/cli/index.js run graphs/examples/hello-world.cascade
+npm run dev        # Start dev server
+npm run build      # Production build
+npm run preview    # Preview production build
+npm run check      # TypeScript type checking
+npm run check:ts   # Strict type checking
+npm run build:cli  # Build CLI tool
 ```
 
-### What the CLI Does
+### Adding New Node Types
 
-The CLI will:
-1. **Load** the graph JSON file
-2. **Validate** the graph (checks for cycles, invalid connections, orphaned nodes)
-3. **Execute** the graph using topological sort for proper ordering
-4. **Report** any errors or warnings with clear messages
+1. Create a class extending `Node` (or `LensNode` for image processing)
+2. Register in the appropriate package index
+3. Add to the node panel categories
 
-The CLI uses the same execution engine as the editor, ensuring consistent behavior between visual editing and command-line execution.
+## Documentation
 
-## 📚 Documentation
-
-- **Quick Start**: See this README
-- **Complete Spec**: `spec/CASCADE_PRODUCTION_SPEC.md`
-- **API Reference**: `spec/CASCADE_QUICK_REFERENCE.md`
+- **Quick Reference**: `spec/CASCADE_QUICK_REFERENCE.md`
+- **Production Spec**: `spec/CASCADE_PRODUCTION_SPEC.md`
 - **Implementation Guide**: `spec/CASCADE_CLAUDE_CODE_SPEC.md`
 
-## 🎯 Example Projects
-
-Check out `graphs/examples/` for example projects:
-
-- **Hello World** - Basic node connection
-- **Image Processing** - Load and process images
-- **Generative Art** - Create art with NPM packages
-
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Node code won't compile
-- Make sure you're using valid JavaScript/TypeScript
-- Check the error message in the editor status bar
-- Ensure `await` is only used at the top level (it's automatically wrapped)
+
+- Check for syntax errors in the editor status bar
+- Ensure `await` is only used at top level
+- Verify all variables are defined
 
 ### Packages won't load
-- Check your internet connection (packages load from esm.sh CDN)
-- Some packages may not be compatible with ESM
-- Try a different version: `await node.require('package@1.0.0')`
 
-### Assets won't load
-- Use relative paths: `./assets/images/photo.jpg`
-- Make sure the file exists in your project directory
-- Check the browser console for errors
+- Check internet connection (packages load from esm.sh CDN)
+- Try specifying a version: `await node.require('package@1.0.0')`
+- Some packages may not support ESM
 
-## 🤝 Contributing
+### Graph is slow
 
-Cascade is designed for creative coders. If you find bugs or have ideas:
+- Use lazy evaluation (only evaluate visible nodes)
+- Check for circular dependencies
+- Profile with browser DevTools
+
+## Contributing
 
 1. Check existing issues
 2. Create a new issue with details
-3. For code changes, follow the existing code style
+3. Follow existing code style
+4. Add tests for new features
 
-## 📄 License
+## License
 
 See LICENSE file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- Inspired by [Nodes.io](https://nodes.io/)
+- Inspired by [Nodes.io](https://nodes.io/) and [TouchDesigner](https://derivative.ca/)
 - Built with [Svelte](https://svelte.dev/), [Monaco Editor](https://microsoft.github.io/monaco-editor/), and [Vite](https://vitejs.dev/)
 
 ---
 
-**Made with 🌊 for creative coders**
+Made for creative coders
