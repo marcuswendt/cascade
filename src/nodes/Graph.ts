@@ -238,6 +238,9 @@ export class Graph {
       }
       this._elementMap.delete(id);
 
+      // Remove from cookingNodes if present (for Viewer cleanup)
+      this.cookingNodes.delete(element as Node);
+
       this.invalidateTopologicalOrder();
     }
   }

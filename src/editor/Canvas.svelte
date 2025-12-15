@@ -3226,8 +3226,15 @@ node.onReady = () => {
 
   // Delete all selected nodes and annotations
   export function deleteSelected() {
-    if (selectedNodes.length > 0) {
-      recordHistory();
+    const hasNodes = selectedNodes.length > 0;
+    const hasAnnotations = selectedAnnotations.length > 0 || selectedAnnotation;
+
+    if (!hasNodes && !hasAnnotations) return;
+
+    recordHistory();
+
+    // Delete selected nodes
+    if (hasNodes) {
       selectedNodes.forEach(nodeId => {
         graph.removeNode(nodeId);
       });
@@ -3235,13 +3242,17 @@ node.onReady = () => {
       selectedNode = null;
       graph.nodes = [...graph.nodes];
       dispatch('nodeSelect', { node: null });
-    } else if (selectedAnnotations.length > 0) {
-      recordHistory();
+    }
+
+    // Delete selected annotations
+    if (selectedAnnotations.length > 0) {
       selectedAnnotations.forEach(annotationId => {
         handleAnnotationDelete(annotationId, true);
       });
+      dispatch('annotationSelect', { annotationId: null });
     } else if (selectedAnnotation) {
       handleAnnotationDelete(selectedAnnotation);
+      dispatch('annotationSelect', { annotationId: null });
     }
   }
 
