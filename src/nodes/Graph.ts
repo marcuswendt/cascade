@@ -63,7 +63,9 @@ export type CanvasAnnotation = Annotation & {
 
 export class Graph {
   private _elements: Node[] = [];
+  private _elementMap: Map<string, Node> = new Map(); // O(1) lookup cache
   connections: Connection[] = [];
+  private _connectionMap: Map<string, Connection> = new Map(); // O(1) connection lookup
   private connectionIdCounter: number = 0;
   packageManager: PackageManager;
   assetManager: AssetManager;
@@ -81,6 +83,11 @@ export class Graph {
 
   set elements(value: Node[]) {
     this._elements = value;
+    // Rebuild the element map for O(1) lookups
+    this._elementMap.clear();
+    for (const el of value) {
+      this._elementMap.set(el.id, el);
+    }
   }
 
   // Execution Control
@@ -162,10 +169,10 @@ export class Graph {
   }
 
   /**
-   * Get any element by ID
+   * Get any element by ID (O(1) using Map cache)
    */
   getElement(id: string): Node | null {
-    return this._elements.find(e => e.id === id) || null;
+    return this._elementMap.get(id) || null;
   }
 
   /**
@@ -204,6 +211,7 @@ export class Graph {
    */
   addElement(element: Node): void {
     this._elements.push(element);
+    this._elementMap.set(element.id, element);
     this.invalidateTopologicalOrder();
   }
 
@@ -211,23 +219,25 @@ export class Graph {
    * Remove an element from the graph
    */
   removeElement(id: string): void {
-    const index = this._elements.findIndex(e => e.id === id);
-    if (index >= 0) {
-      const element = this._elements[index];
-      
+    const element = this._elementMap.get(id);
+    if (element) {
       // Call onDestroy if element has the method
       if (element.onDestroy) {
         element.onDestroy();
       }
-      
+
       // Remove connections
       this.connections = this.connections.filter(
         c => c.from.nodeId !== id && c.to.nodeId !== id
       );
-      
-      // Remove element
-      this._elements.splice(index, 1);
-      
+
+      // Remove from array and map
+      const index = this._elements.indexOf(element);
+      if (index >= 0) {
+        this._elements.splice(index, 1);
+      }
+      this._elementMap.delete(id);
+
       this.invalidateTopologicalOrder();
     }
   }
@@ -423,6 +433,7 @@ export class Graph {
     }
     
     this.connections.push(connection);
+    this._connectionMap.set(connection.id, connection);
     fromPort.connections.push(connection);
     toPort.connections.push(connection);
     
@@ -452,31 +463,43 @@ export class Graph {
   }
 
   disconnect(connectionId: string) {
+    // O(1) connection lookup via map
+    const conn = this._connectionMap.get(connectionId);
+    if (!conn) return;
+
+    // Direct O(1) removal from source and target ports only (not all elements)
+    const sourceNode = this.getElement(conn.from.nodeId);
+    const targetNode = this.getElement(conn.to.nodeId);
+
+    if (sourceNode) {
+      const sourcePort = sourceNode.getPort(conn.from.portId);
+      if (sourcePort) {
+        sourcePort.connections = sourcePort.connections.filter(c => c.id !== connectionId);
+      }
+    }
+
+    if (targetNode) {
+      const targetPort = targetNode.getPort(conn.to.portId);
+      if (targetPort) {
+        targetPort.connections = targetPort.connections.filter(c => c.id !== connectionId);
+      }
+    }
+
+    // Remove from array and map
     const index = this.connections.findIndex(c => c.id === connectionId);
     if (index >= 0) {
-      const conn = this.connections[index];
-      
-      // Remove from all element port connections
-      this._elements.forEach(element => {
-        element.inputs.forEach(p => {
-          p.connections = p.connections.filter(c => c.id !== connectionId);
-        });
-        element.outputs.forEach(p => {
-          p.connections = p.connections.filter(c => c.id !== connectionId);
-        });
-      });
-      
       this.connections.splice(index, 1);
-
-      // Invalidate cached topological order when graph structure changes
-      this.invalidateTopologicalOrder();
-
-      // Sync variadic ports on the target node
-      this.syncVariadicPortsOnNode(conn.to.nodeId);
-
-      // Re-check type mismatches after disconnection
-      this.updateTypeMismatchWarnings(conn.to.nodeId);
     }
+    this._connectionMap.delete(connectionId);
+
+    // Invalidate cached topological order when graph structure changes
+    this.invalidateTopologicalOrder();
+
+    // Sync variadic ports on the target node
+    this.syncVariadicPortsOnNode(conn.to.nodeId);
+
+    // Re-check type mismatches after disconnection
+    this.updateTypeMismatchWarnings(conn.to.nodeId);
   }
 
   /**
