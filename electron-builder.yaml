@@ -1,0 +1,132 @@
+# Cascade Electron Builder Configuration
+# Build with: npm run electron:build:mac
+
+appId: dev.cascade.app
+productName: Cascade
+copyright: Copyright © 2024 Cascade
+
+directories:
+  output: release
+  buildResources: resources
+
+# Files to include in the app
+files:
+  - dist/**/*
+  - electron/**/*.js
+  - server/dist/**/*
+  - package.json
+  - "!**/*.ts"
+  - "!**/*.map"
+  - "!**/node_modules/.cache"
+
+# Additional resources to copy
+extraResources:
+  - from: server/dist
+    to: server/dist
+
+extraMetadata:
+  main: electron/main.js
+
+# macOS Configuration
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  icon: resources/icon.icns
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+
+  # File associations
+  fileAssociations:
+    - ext: cascade
+      name: Cascade Project
+      description: Cascade Visual Programming Project
+      icon: resources/cascade-doc.icns
+      role: Editor
+    - ext: cascade.json
+      name: Cascade Project JSON
+      description: Cascade Visual Programming Project
+      role: Editor
+
+  # Protocol handler (deep links)
+  protocols:
+    - name: Cascade
+      schemes:
+        - cascade
+
+# DMG Configuration
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
+  background: resources/dmg-background.png
+
+# Windows Configuration (for future use)
+win:
+  target:
+    - nsis
+    - portable
+  icon: resources/icon.ico
+
+  fileAssociations:
+    - ext: cascade
+      name: Cascade Project
+      description: Cascade Visual Programming Project
+      icon: resources/cascade-doc.ico
+    - ext: cascade.json
+      name: Cascade Project JSON
+      description: Cascade Visual Programming Project
+
+# NSIS installer (Windows)
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+# Linux Configuration (for future use)
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: resources/icon.png
+  category: Development
+
+  mimeTypes:
+    - application/x-cascade
+
+  desktop:
+    StartupWMClass: cascade
+
+# AppImage configuration
+appImage:
+  artifactName: "${productName}-${version}-${arch}.AppImage"
+
+# Auto-update (disabled for now - manual updates only)
+# Uncomment when ready for auto-updates via GitHub Releases
+# publish:
+#   provider: github
+#   owner: your-username
+#   repo: cascade
+#   releaseType: release
+
+# Build settings
+asar: true
+compression: maximum

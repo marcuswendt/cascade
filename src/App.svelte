@@ -7,6 +7,7 @@
   import ExportDialog from './editor/ExportDialog.svelte';
   import SettingsDialog from './editor/SettingsDialog.svelte';
   import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
+  import { isElectron, onAnyMenuCommand } from './lib/electron';
   import { Graph } from '@/nodes/Graph';
   import { Node } from '@/nodes/Node';
   import { GraphEditorAdapter } from './editor/GraphEditorAdapter';
@@ -906,16 +907,58 @@
     }
     
     window.addEventListener('keydown', handleKeyDown);
-    
+
+    // Electron native menu command handlers
+    let unsubElectronMenu: (() => void) | null = null;
+    if (isElectron) {
+      unsubElectronMenu = onAnyMenuCommand((command) => {
+        switch (command) {
+          case 'newProject':
+            handleMenuAction('new');
+            break;
+          case 'openProject':
+            handleMenuAction('open');
+            break;
+          case 'save':
+            handleMenuAction('save');
+            break;
+          case 'saveAs':
+            handleMenuAction('saveAs');
+            break;
+          case 'exportHTML':
+            handleMenuAction('export');
+            break;
+          case 'createNode':
+            // Open node panel in center of screen
+            activeLibrary = 'core';
+            nodePanelFixedPosition = null; // Use mouse position
+            break;
+          case 'homeView':
+            dockviewContainerRef?.centerOnNodes();
+            break;
+          case 'selectAll':
+            dockviewContainerRef?.selectAll?.();
+            break;
+          case 'deleteSelected':
+            dockviewContainerRef?.deleteSelected?.();
+            break;
+          case 'preferences':
+            handleMenuAction('settings');
+            break;
+        }
+      });
+    }
+
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('mousemove', handleMouseMove);
+      unsubElectronMenu?.();
     };
   });
 </script>
 
-<div class="app" class:presentation-mode={presentationMode}>
-  {#if !presentationMode}
+<div class="app" class:presentation-mode={presentationMode} class:electron={isElectron}>
+  {#if !presentationMode && !isElectron}
     <MenuBar
       {documentName}
       canUndo={$canUndo}
@@ -931,6 +974,11 @@
         updateWindowTitle();
       }}
     />
+  {:else if !presentationMode && isElectron}
+    <!-- Minimal title bar for Electron - just document name, avoids traffic lights -->
+    <div class="electron-titlebar">
+      <span class="electron-title">{documentName}</span>
+    </div>
   {/if}
   <DockviewContainer
     bind:this={dockviewContainerRef}
@@ -1022,6 +1070,26 @@
 
   .app.presentation-mode :global(.dockview-container) {
     height: 100vh;
+  }
+
+  /* Electron: Minimal title bar that avoids traffic lights */
+  .electron-titlebar {
+    height: 38px;
+    background: #1a1a1a;
+    border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-app-region: drag;
+    user-select: none;
+    flex-shrink: 0;
+  }
+
+  .electron-title {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    opacity: 0.9;
   }
 </style>
 

@@ -1,11 +1,16 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { isElectron, isMac } from '../lib/electron';
 
   export let documentName: string = 'Untitled';
   export let canUndo: boolean = false;
   export let canRedo: boolean = false;
 
   const dispatch = createEventDispatcher();
+
+  // In Electron on macOS, we have native menus and need space for traffic lights
+  const useNativeMenu = isElectron && isMac;
+  const trafficLightPadding = isElectron && isMac;
 
   let activeMenu: string | null = null;
   let editingName = false;
@@ -112,63 +117,65 @@
 
 <svelte:window on:click={handleClickOutside} />
 
-<div class="menu-bar">
+<div class="menu-bar" class:electron-mac={trafficLightPadding}>
   <div class="menu-left">
-    <!-- File Menu -->
-    <div class="menu-item" class:active={activeMenu === 'file'}>
-      <button class="menu-button" on:click={() => handleMenuClick('file')}>
-        File
-      </button>
-      {#if activeMenu === 'file'}
-        <div class="dropdown">
-          {#each fileMenuItems as item}
-            {#if item.type === 'separator'}
-              <div class="separator"></div>
-            {:else}
-              <button
-                class="dropdown-item"
-                on:click={() => item.action && handleMenuItemClick(item.action)}
-              >
-                <span class="item-label">{item.label}</span>
-                {#if item.shortcut}
-                  <span class="item-shortcut">{item.shortcut}</span>
-                {/if}
-              </button>
-            {/if}
-          {/each}
-        </div>
-      {/if}
-    </div>
+    {#if !useNativeMenu}
+      <!-- File Menu (browser only - Electron uses native menu) -->
+      <div class="menu-item" class:active={activeMenu === 'file'}>
+        <button class="menu-button" on:click={() => handleMenuClick('file')}>
+          File
+        </button>
+        {#if activeMenu === 'file'}
+          <div class="dropdown">
+            {#each fileMenuItems as item}
+              {#if item.type === 'separator'}
+                <div class="separator"></div>
+              {:else}
+                <button
+                  class="dropdown-item"
+                  on:click={() => item.action && handleMenuItemClick(item.action)}
+                >
+                  <span class="item-label">{item.label}</span>
+                  {#if item.shortcut}
+                    <span class="item-shortcut">{item.shortcut}</span>
+                  {/if}
+                </button>
+              {/if}
+            {/each}
+          </div>
+        {/if}
+      </div>
 
-    <!-- Edit Menu -->
-    <div class="menu-item" class:active={activeMenu === 'edit'}>
-      <button class="menu-button" on:click={() => handleMenuClick('edit')}>
-        Edit
-      </button>
-      {#if activeMenu === 'edit'}
-        <div class="dropdown">
-          {#each editMenuItems as item}
-            {#if item.type === 'separator'}
-              <div class="separator"></div>
-            {:else}
-              <button
-                class="dropdown-item"
-                class:disabled={item.disabled}
-                disabled={item.disabled}
-                on:click={() => !item.disabled && item.action && handleMenuItemClick(item.action)}
-              >
-                <span class="item-label">{item.label}</span>
-                {#if item.shortcut}
-                  <span class="item-shortcut">{item.shortcut}</span>
-                {/if}
-              </button>
-            {/if}
-          {/each}
-        </div>
-      {/if}
-    </div>
+      <!-- Edit Menu (browser only) -->
+      <div class="menu-item" class:active={activeMenu === 'edit'}>
+        <button class="menu-button" on:click={() => handleMenuClick('edit')}>
+          Edit
+        </button>
+        {#if activeMenu === 'edit'}
+          <div class="dropdown">
+            {#each editMenuItems as item}
+              {#if item.type === 'separator'}
+                <div class="separator"></div>
+              {:else}
+                <button
+                  class="dropdown-item"
+                  class:disabled={item.disabled}
+                  disabled={item.disabled}
+                  on:click={() => !item.disabled && item.action && handleMenuItemClick(item.action)}
+                >
+                  <span class="item-label">{item.label}</span>
+                  {#if item.shortcut}
+                    <span class="item-shortcut">{item.shortcut}</span>
+                  {/if}
+                </button>
+              {/if}
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/if}
 
-    <!-- Create Menu - opens NodePanel directly -->
+    <!-- Create Menu - always shown, opens NodePanel directly -->
     <div class="menu-item">
       <button
         class="menu-button"
@@ -179,31 +186,33 @@
       </button>
     </div>
 
-    <!-- View Menu -->
-    <div class="menu-item" class:active={activeMenu === 'view'}>
-      <button class="menu-button" on:click={() => handleMenuClick('view')}>
-        View
-      </button>
-      {#if activeMenu === 'view'}
-        <div class="dropdown">
-          {#each viewMenuItems as item}
-            {#if item.type === 'separator'}
-              <div class="separator"></div>
-            {:else}
-              <button
-                class="dropdown-item"
-                on:click={() => item.action && handleMenuItemClick(item.action)}
-              >
-                <span class="item-label">{item.label}</span>
-                {#if item.shortcut}
-                  <span class="item-shortcut">{item.shortcut}</span>
-                {/if}
-              </button>
-            {/if}
-          {/each}
-        </div>
-      {/if}
-    </div>
+    {#if !useNativeMenu}
+      <!-- View Menu (browser only) -->
+      <div class="menu-item" class:active={activeMenu === 'view'}>
+        <button class="menu-button" on:click={() => handleMenuClick('view')}>
+          View
+        </button>
+        {#if activeMenu === 'view'}
+          <div class="dropdown">
+            {#each viewMenuItems as item}
+              {#if item.type === 'separator'}
+                <div class="separator"></div>
+              {:else}
+                <button
+                  class="dropdown-item"
+                  on:click={() => item.action && handleMenuItemClick(item.action)}
+                >
+                  <span class="item-label">{item.label}</span>
+                  {#if item.shortcut}
+                    <span class="item-shortcut">{item.shortcut}</span>
+                  {/if}
+                </button>
+              {/if}
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/if}
   </div>
 
   <div class="menu-center">
@@ -239,6 +248,11 @@
     padding: 0 8px;
     -webkit-app-region: drag;
     user-select: none;
+  }
+
+  /* Add padding for macOS traffic lights in Electron */
+  .menu-bar.electron-mac {
+    padding-left: 80px;
   }
 
   .menu-left {

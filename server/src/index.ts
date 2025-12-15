@@ -8,8 +8,8 @@ import { aiRouter } from './routes/ai.js';
 import { setupWebSocket } from './services/websocket.js';
 
 const app = express();
-const PORT = 3030;
-const WS_PORT = 3031;
+const PORT = parseInt(process.env.PORT || '3030', 10);
+const WS_PORT = parseInt(process.env.WS_PORT || '3031', 10);
 
 // Middleware
 app.use(cors());
