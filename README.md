@@ -2,6 +2,8 @@
 
 **Visual Programming Framework for Creative Coders**
 
+Created by **Marcus Wendt** <marcus@field.io> at [FIELD.IO](https://www.field.io)
+
 Cascade is a visual programming framework where every node is a TypeScript/JavaScript function. Inspired by Nodes.io, Cascade combines the power of code with the clarity of visual graphs.
 
 ## Features
@@ -347,10 +349,15 @@ npm run build:cli  # Build CLI tool
 
 See LICENSE file for details.
 
-## Acknowledgments
+## Acknowledgements
 
-- Inspired by [Nodes.io](https://nodes.io/) and [TouchDesigner](https://derivative.ca/)
-- Built with [Svelte](https://svelte.dev/), [Monaco Editor](https://microsoft.github.io/monaco-editor/), and [Vite](https://vitejs.dev/)
+Inspired by:
+
+- [Variable Nodes.IO](https://nodes.io/) - The original inspiration for code-as-nodes
+- [SideFX Houdini](https://www.sidefx.com/) - Procedural workflows and node-based thinking
+- [Derivative TouchDesigner](https://derivative.ca/) - Real-time visual programming
+
+Built with [Svelte](https://svelte.dev/), [Monaco Editor](https://microsoft.github.io/monaco-editor/), and [Vite](https://vitejs.dev/)
 
 ---
 

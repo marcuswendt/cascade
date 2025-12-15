@@ -2,6 +2,11 @@
 
 A creative thinking framework for the generative AI age.
 
+## Author
+
+**Marcus Wendt** <marcus@field.io>
+[FIELD.IO](https://www.field.io) - Creative Intelligence Practice
+
 ## Core Ideas
 
 **Infinite Visual Canvas**
@@ -20,10 +25,13 @@ Cascade is open source, built on open web standards. Creative work made with Cas
 
 Currently a single-user standalone app. Future versions will introduce server-based collaborative features.
 
-## Thanks & Inspiration
+## Acknowledgements
 
-- [Variable Nodes.IO](https://nodes.io)
-- [SideFX Houdini](https://www.sidefx.com)
+Cascade draws inspiration from pioneering tools in visual programming and procedural content creation:
+
+- [Variable Nodes.IO](https://nodes.io) - The original inspiration for code-as-nodes
+- [SideFX Houdini](https://www.sidefx.com) - Procedural workflows and node-based thinking
+- [Derivative TouchDesigner](https://derivative.ca) - Real-time visual programming for creative coding
 
 ---
 
