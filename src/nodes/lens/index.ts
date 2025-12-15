@@ -2,7 +2,7 @@
  * Lens Library - Image processing and generation nodes
  *
  * This package provides nodes for:
- * - Image generation (Color, Checkers, Noise, Ramp)
+ * - Image generation (Color, Checkers, Noise, Ramp, Text)
  * - Image loading and import (Image)
  * - Image compositing and blending (Composite)
  * - Image transformation (Resize)
@@ -21,6 +21,7 @@ import { NormalMapNode } from './nodes/NormalMapNode';
 import { RampNode } from './nodes/RampNode';
 import { NoiseNode } from './nodes/NoiseNode';
 import { BlurNode } from './nodes/BlurNode';
+import { TextNode } from './nodes/TextNode';
 
 // Import source code for nodes (using Vite's ?raw imports)
 import ColorNodeSource from './nodes/ColorNode.ts?raw';
@@ -32,6 +33,7 @@ import NormalMapNodeSource from './nodes/NormalMapNode.ts?raw';
 import RampNodeSource from './nodes/RampNode.ts?raw';
 import NoiseNodeSource from './nodes/NoiseNode.ts?raw';
 import BlurNodeSource from './nodes/BlurNode.ts?raw';
+import TextNodeSource from './nodes/TextNode.ts?raw';
 
 // Node class registry: type -> class constructor
 export const lensNodeClasses: Record<string, NodeClass> = {
@@ -44,6 +46,7 @@ export const lensNodeClasses: Record<string, NodeClass> = {
   'Ramp': RampNode,
   'Noise': NoiseNode,
   'Blur': BlurNode,
+  'Text': TextNode,
 };
 
 // Register nodes with the central registry
@@ -59,6 +62,7 @@ registerNodeSource('NormalMap', NormalMapNodeSource);
 registerNodeSource('Ramp', RampNodeSource);
 registerNodeSource('Noise', NoiseNodeSource);
 registerNodeSource('Blur', BlurNodeSource);
+registerNodeSource('Text', TextNodeSource);
 
 // Re-export library metadata
 export { lensLibrary } from './library';
@@ -75,3 +79,4 @@ export { NormalMapNode } from './nodes/NormalMapNode';
 export { RampNode } from './nodes/RampNode';
 export { NoiseNode } from './nodes/NoiseNode';
 export { BlurNode } from './nodes/BlurNode';
+export { TextNode } from './nodes/TextNode';

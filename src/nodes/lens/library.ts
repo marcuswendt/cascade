@@ -16,7 +16,8 @@ export const lensLibrary: Library = {
         { name: 'Color', icon: 'Square', description: 'Create a solid color canvas', type: 'Color' },
         { name: 'Checkers', icon: 'Grid', description: 'Generate a checkerboard pattern', type: 'Checkers' },
         { name: 'Noise', icon: 'Cloud', description: 'Generate procedural noise patterns', type: 'Noise' },
-        { name: 'Ramp', icon: 'Gradient', description: 'Generate color ramps', type: 'Ramp' }
+        { name: 'Ramp', icon: 'Gradient', description: 'Generate color ramps', type: 'Ramp' },
+        { name: 'Text', icon: 'Type', description: 'Render text with customizable font and style', type: 'Text' }
       ]
     },
     {
