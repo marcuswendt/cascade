@@ -1,8 +1,9 @@
 /**
  * CompositeNode - blends two ImageBuffers together
+ * Supports resolution control similar to TouchDesigner TOPs
  */
 
-import { LensNode, ImageBuffer, type ImageInput } from '../LensNode';
+import { LensNode, ImageBuffer, type ImageInput, type ResolutionMode, type FitMode } from '../LensNode';
 import type { Graph } from '@/nodes/Graph';
 import type { InputPort, OutputPort } from '@/types/node.types';
 
@@ -56,6 +57,49 @@ export class CompositeNode extends LensNode {
         step: 0.01
       },
       displayName: 'Opacity',
+      onChange: () => this.requestCook()
+    });
+
+    // Resolution control - which input determines output size
+    this.addParm('outputResolution', {
+      value: 'input1',
+      params: {
+        options: [
+          { value: 'input1', label: 'Use Input 1' },
+          { value: 'input2', label: 'Use Input 2' },
+          { value: 'largest', label: 'Largest Input' },
+          { value: 'smallest', label: 'Smallest Input' },
+          { value: 'custom', label: 'Custom' }
+        ]
+      },
+      displayName: 'Output Resolution',
+      onChange: () => this.requestCook()
+    });
+
+    this.addParm('customResolution', {
+      value: [512, 512],
+      params: {
+        min: [1, 1],
+        max: [4096, 4096],
+        integer: true
+      },
+      displayName: 'Resolution',
+      hidden: () => this.props.outputResolution.value !== 'custom',
+      onChange: () => this.requestCook()
+    });
+
+    // How to fit inputs that don't match output resolution
+    this.addParm('fitMode', {
+      value: 'fill',
+      params: {
+        options: [
+          { value: 'fill', label: 'Fill (Crop)' },
+          { value: 'fit', label: 'Fit (Letterbox)' },
+          { value: 'stretch', label: 'Stretch' },
+          { value: 'native', label: 'Native (No Scale)' }
+        ]
+      },
+      displayName: 'Fit Mode',
       onChange: () => this.requestCook()
     });
 
@@ -190,8 +234,20 @@ export class CompositeNode extends LensNode {
   }
 
   protected render(): void {
-    const buf1 = this.toImageBuffer(this.image1.value);
-    const buf2 = this.toImageBuffer(this.image2.value);
+    // Get resolution settings
+    const resolutionMode = this.props.outputResolution.value as ResolutionMode;
+    const fitMode = this.props.fitMode.value as FitMode;
+    const customSize = this.props.customResolution.value as [number, number];
+
+    // Prepare inputs - handles resolution matching
+    const { buffers } = this.prepareInputs(
+      [this.image1.value, this.image2.value],
+      resolutionMode,
+      fitMode,
+      customSize
+    );
+
+    const [buf1, buf2] = buffers;
 
     if (!buf1 || !buf2) {
       return;
