@@ -116,16 +116,7 @@ export class TextNode extends LensNode {
       displayName: 'Background'
     });
 
-    // Resolution
-    this.addParm('resolution', {
-      value: [512, 512],
-      params: {
-        min: [1, 1],
-        max: [4096, 4096],
-        integer: true
-      },
-      displayName: 'Resolution'
-    });
+    this.addResolutionParm();
 
     // Position offset (relative to alignment anchor)
     this.addParm('offset', {
@@ -172,10 +163,10 @@ export class TextNode extends LensNode {
 
     this.output = this.out('image');
 
-    // Watch all properties for changes
+    // Watch all properties for changes (resolution is handled by addResolutionParm)
     const propNames = [
       'text', 'font', 'fontSize', 'fontWeight', 'fontStyle',
-      'alignH', 'alignV', 'color', 'backgroundColor', 'resolution',
+      'alignH', 'alignV', 'color', 'backgroundColor',
       'offset', 'rotation', 'letterSpacing', 'lineHeight', 'opacity'
     ];
     propNames.forEach(prop => this.watchProp(prop, () => this.requestCook()));
@@ -184,7 +175,7 @@ export class TextNode extends LensNode {
   }
 
   protected render(): void {
-    const [width, height] = this.props.resolution.value;
+    const [width, height] = this.getResolution();
     const text = this.props.text.value as string;
     const font = this.props.font.value as string;
     const fontSize = this.props.fontSize.value as number;

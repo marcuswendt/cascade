@@ -191,6 +191,37 @@ export abstract class LensNode extends Node {
   // ============ Resolution Utilities ============
 
   /**
+   * Add the standard resolution parameter used by generator nodes
+   * Call this in setup() to add a resolution parameter with automatic cooking
+   */
+  protected addResolutionParm(defaultWidth = 512, defaultHeight = 512): void {
+    this.addParm('resolution', {
+      value: [defaultWidth, defaultHeight],
+      params: {
+        min: [1, 1],
+        max: [4096, 4096],
+        integer: true
+      },
+      displayName: 'Resolution',
+      onChange: () => this.requestCook()
+    });
+    this.watchProp('resolution', () => this.requestCook());
+  }
+
+  /**
+   * Get the current resolution from the resolution parameter
+   * Returns [width, height] tuple
+   * Requires addResolutionParm() to have been called in setup()
+   */
+  protected getResolution(): [number, number] {
+    if (!this.props.resolution) {
+      console.warn(`${this.type}: getResolution() called but no resolution parameter exists. Call addResolutionParm() in setup().`);
+      return [512, 512];
+    }
+    return this.props.resolution.value as [number, number];
+  }
+
+  /**
    * Determine output resolution based on mode and inputs
    */
   protected resolveOutputSize(

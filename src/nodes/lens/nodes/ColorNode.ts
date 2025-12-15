@@ -20,26 +20,17 @@ export class ColorNode extends LensNode {
       displayName: 'Color'
     });
 
-    this.addParm('resolution', {
-      value: [512, 512],
-      params: {
-        min: [1, 1],
-        max: [4096, 4096],
-        integer: true
-      },
-      displayName: 'Resolution'
-    });
+    this.addResolutionParm();
 
     this.output = this.out('image');
 
     this.watchProp('color', () => this.requestCook());
-    this.watchProp('resolution', () => this.requestCook());
 
     this.onReady = () => this.requestCook();
   }
 
   protected render(): void {
-    const [width, height] = this.props.resolution.value;
+    const [width, height] = this.getResolution();
     const color = this.normalizeColor(this.props.color.value);
 
     const buffer = this.createSolid(width, height, color);

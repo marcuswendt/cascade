@@ -53,16 +53,7 @@ export class NoiseNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.addParm('resolution', {
-      value: [512, 512],
-      params: {
-        min: [1, 1],
-        max: [4096, 4096],
-        integer: true
-      },
-      displayName: 'Resolution',
-      onChange: () => this.requestCook()
-    });
+    this.addResolutionParm();
 
     this.output = this.out('image');
 
@@ -75,7 +66,6 @@ export class NoiseNode extends LensNode {
     });
     this.watchProp('scale', () => this.requestCook());
     this.watchProp('iterations', () => this.requestCook());
-    this.watchProp('resolution', () => this.requestCook());
 
     this.onReady = async () => {
       await this.initNoise();
@@ -115,7 +105,7 @@ export class NoiseNode extends LensNode {
       return;
     }
 
-    const [width, height] = this.props.resolution.value;
+    const [width, height] = this.getResolution();
     const scale = this.props.scale.value;
     const iterations = this.props.iterations.value;
     const seed = this.props.seed.value;

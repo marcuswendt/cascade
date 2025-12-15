@@ -65,24 +65,22 @@ export class CheckersNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.addParm('resolution', {
-      value: [512, 512],
-      params: {
-        min: [1, 1],
-        max: [4096, 4096],
-        integer: true
-      },
-      displayName: 'Resolution',
-      onChange: () => this.requestCook()
-    });
+    this.addResolutionParm();
 
     this.output = this.out('image');
+
+    // Watch all props to ensure updates trigger re-render
+    this.watchProp('color1', () => this.requestCook());
+    this.watchProp('color2', () => this.requestCook());
+    this.watchProp('mode', () => this.requestCook());
+    this.watchProp('size', () => this.requestCook());
+    this.watchProp('divisions', () => this.requestCook());
 
     this.onReady = () => this.requestCook();
   }
 
   protected render(): void {
-    const [width, height] = this.props.resolution.value;
+    const [width, height] = this.getResolution();
     const mode = this.props.mode.value;
     const color1 = this.normalizeColor(this.props.color1.value);
     const color2 = this.normalizeColor(this.props.color2.value);

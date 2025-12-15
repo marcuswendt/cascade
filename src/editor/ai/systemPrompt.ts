@@ -49,7 +49,7 @@ trigger.trigger();
 ### Props (Inspector UI)
 \`\`\`typescript
 // Slider
-node.defineProp('radius', {
+node.addParm('radius', {
   value: 5.0,
   params: { min: 0.0, max: 100.0, step: 0.1 },
   displayName: 'Radius',
@@ -57,7 +57,7 @@ node.defineProp('radius', {
 });
 
 // Color picker (values are normalized 0-1)
-node.defineProp('color', {
+node.addParm('color', {
   value: { r: 1.0, g: 0.0, b: 0.0 },
   type: 'color',
   displayName: 'Color',
@@ -65,7 +65,7 @@ node.defineProp('color', {
 });
 
 // Dropdown select
-node.defineProp('mode', {
+node.addParm('mode', {
   value: 'normal',
   params: {
     options: [
@@ -78,34 +78,34 @@ node.defineProp('mode', {
 });
 
 // Boolean toggle
-node.defineProp('enabled', {
+node.addParm('enabled', {
   value: true,
   type: 'boolean',
   displayName: 'Enabled'
 });
 
 // Integer with constraints
-node.defineProp('divisions', {
+node.addParm('divisions', {
   value: 16,
   params: { min: 1, max: 512, step: 1, integer: true },
   displayName: 'Divisions'
 });
 
 // Resolution (vec2)
-node.defineProp('resolution', {
+node.addParm('resolution', {
   value: [512, 512],
   params: { min: [1, 1], max: [4096, 4096], integer: true },
   displayName: 'Resolution'
 });
 
 // Conditional visibility
-node.defineProp('size', {
+node.addParm('size', {
   value: 32,
   hidden: () => node.props.mode.value !== 'size',
   onChange: () => render()
 });
 
-// Watch prop changes (alternative to onChange)
+// Watch prop changes (use in addition to onChange for reliability)
 node.watchProp('color', () => render());
 \`\`\`
 
@@ -178,33 +178,39 @@ function colorToCss(color: { r: number; g: number; b: number; a?: number }): str
 ### Pattern Generator (like Checkers)
 \`\`\`typescript
 // Setup
-node.defineProp('color1', {
+node.addParm('color1', {
   value: { r: 1.0, g: 1.0, b: 1.0 },
   type: 'color',
   displayName: 'Color 1',
   onChange: () => render()
 });
 
-node.defineProp('color2', {
+node.addParm('color2', {
   value: { r: 0.0, g: 0.0, b: 0.0 },
   type: 'color',
   displayName: 'Color 2',
   onChange: () => render()
 });
 
-node.defineProp('size', {
+node.addParm('size', {
   value: 32,
   params: { min: 1, max: 512, step: 1 },
   displayName: 'Size',
   onChange: () => render()
 });
 
-node.defineProp('resolution', {
+node.addParm('resolution', {
   value: [512, 512],
   params: { min: [1, 1], max: [4096, 4096], integer: true },
   displayName: 'Resolution',
   onChange: () => render()
 });
+
+// Watch all props for reliable updates
+node.watchProp('color1', () => render());
+node.watchProp('color2', () => render());
+node.watchProp('size', () => render());
+node.watchProp('resolution', () => render());
 
 const output = node.out<HTMLCanvasElement>('image');
 
@@ -245,13 +251,14 @@ node.onReady = () => render();
 const image = node.in<HTMLCanvasElement | null>('image', null);
 const output = node.out<HTMLCanvasElement>('image');
 
-node.defineProp('radius', {
+node.addParm('radius', {
   value: 5.0,
   params: { min: 0, max: 100, step: 0.1 },
   displayName: 'Radius',
   onChange: () => render()
 });
 
+node.watchProp('radius', () => render());
 image.onChange = () => render();
 
 function render() {
@@ -281,20 +288,23 @@ node.onReady = () => render();
 
 ### Solid Color Generator
 \`\`\`typescript
-node.defineProp('color', {
+node.addParm('color', {
   value: { r: 1.0, g: 1.0, b: 1.0 },
   type: 'color',
-  displayName: 'Color'
+  displayName: 'Color',
+  onChange: () => render()
 });
 
-node.defineProp('resolution', {
+node.addParm('resolution', {
   value: [512, 512],
   params: { min: [1, 1], max: [4096, 4096], integer: true },
-  displayName: 'Resolution'
+  displayName: 'Resolution',
+  onChange: () => render()
 });
 
 const output = node.out<HTMLCanvasElement>('image');
 
+// Watch props for reliable updates
 node.watchProp('color', () => render());
 node.watchProp('resolution', () => render());
 
@@ -324,22 +334,25 @@ node.onReady = () => render();
 
 ### Using External Libraries (like Noise)
 \`\`\`typescript
-node.defineProp('seed', {
+node.addParm('seed', {
   value: 0,
   params: { min: 0, max: 10000, step: 1, integer: true },
-  displayName: 'Seed'
+  displayName: 'Seed',
+  onChange: () => initNoise()
 });
 
-node.defineProp('scale', {
+node.addParm('scale', {
   value: 0.01,
   params: { min: 0.001, max: 1.0, step: 0.001 },
-  displayName: 'Scale'
+  displayName: 'Scale',
+  onChange: () => render()
 });
 
-node.defineProp('resolution', {
+node.addParm('resolution', {
   value: [512, 512],
   params: { min: [1, 1], max: [4096, 4096], integer: true },
-  displayName: 'Resolution'
+  displayName: 'Resolution',
+  onChange: () => render()
 });
 
 const output = node.out<HTMLCanvasElement>('image');

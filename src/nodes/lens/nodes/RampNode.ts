@@ -51,22 +51,12 @@ export class RampNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
-    this.addParm('resolution', {
-      value: [512, 512],
-      params: {
-        min: [1, 1],
-        max: [4096, 4096],
-        integer: true
-      },
-      displayName: 'Resolution',
-      onChange: () => this.requestCook()
-    });
+    this.addResolutionParm();
 
     this.output = this.out('image');
 
     this.watchProp('type', () => this.requestCook());
     this.watchProp('points', () => this.requestCook());
-    this.watchProp('resolution', () => this.requestCook());
 
     this.onReady = () => this.requestCook();
   }
@@ -171,7 +161,7 @@ export class RampNode extends LensNode {
   }
 
   protected render(): void {
-    const [width, height] = this.props.resolution.value;
+    const [width, height] = this.getResolution();
     const rampType = this.props.type.value;
     const points: RampPoint[] = this.props.points.value || [];
 
