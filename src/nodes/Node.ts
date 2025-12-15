@@ -88,6 +88,9 @@ export class Node {
   // Port tracking for cleanup
   protected portsUsedDuringSetup: Set<string> = new Set();
 
+  // Port index map for O(1) lookups (portId -> port)
+  private _portMap: Map<string, InputPort | OutputPort> = new Map();
+
   constructor(id: string, type: string, graph: Graph) {
     this.id = id;
     this.type = type;
@@ -142,6 +145,7 @@ export class Node {
     };
 
     this.inputs.push(port as InputPort);
+    this._portMap.set(port.id, port as InputPort);
     this.portsUsedDuringSetup.add(`input_${name}`);
     return port;
   }
@@ -169,7 +173,8 @@ export class Node {
         port.connections.forEach(conn => {
           const targetNode = this.graph.getNode(conn.to.nodeId);
           if (targetNode) {
-            const targetPort = targetNode.inputs.find(p => p.id === conn.to.portId);
+            // O(1) port lookup via index map
+            const targetPort = targetNode.getInputPortById(conn.to.portId);
             if (targetPort) {
               targetPort.value = value;
               if (targetPort.onChange) targetPort.onChange(value);
@@ -182,7 +187,8 @@ export class Node {
         port.connections.forEach(conn => {
           const targetNode = this.graph.getNode(conn.to.nodeId);
           if (targetNode) {
-            const targetPort = targetNode.inputs.find(p => p.id === conn.to.portId);
+            // O(1) port lookup via index map
+            const targetPort = targetNode.getInputPortById(conn.to.portId);
             if (targetPort && targetPort.onTrigger) targetPort.onTrigger(props);
           }
         });
@@ -190,6 +196,7 @@ export class Node {
     };
 
     this.outputs.push(port as OutputPort);
+    this._portMap.set(port.id, port as OutputPort);
     this.portsUsedDuringSetup.add(`output_${name}`);
     return port;
   }
@@ -205,7 +212,12 @@ export class Node {
   }
 
   getPort(portId: string): InputPort | OutputPort | null {
-    return this.inputs.find(p => p.id === portId) || this.outputs.find(p => p.id === portId) || null;
+    return this._portMap.get(portId) || null;
+  }
+
+  getInputPortById(portId: string): InputPort | null {
+    const port = this._portMap.get(portId);
+    return port && 'defaultValue' in port ? port as InputPort : null;
   }
 
   // ============ Props System ============
@@ -781,16 +793,46 @@ export class Node {
     this.manualDirty = true;
   }
 
+  /**
+   * Calculate a lightweight fingerprint for an input value
+   * Avoids expensive JSON.stringify on large objects like ImageBuffers
+   */
+  private getValueFingerprint(value: any): string {
+    if (value === null || value === undefined) return 'null';
+    if (typeof value !== 'object') return String(value);
+
+    // For typed arrays (ImageBuffer channels), use length + sample values
+    if (ArrayBuffer.isView(value)) {
+      const arr = value as Float32Array;
+      const len = arr.length;
+      if (len === 0) return 'empty';
+      // Sample first, middle, last values for quick fingerprint
+      return `f32[${len}]:${arr[0]?.toFixed(4)},${arr[Math.floor(len/2)]?.toFixed(4)},${arr[len-1]?.toFixed(4)}`;
+    }
+
+    // For ImageBuffer-like objects, use dimensions
+    if (value.width !== undefined && value.height !== undefined) {
+      const channelCount = value.channelCount || value.channels?.length || 0;
+      return `img:${value.width}x${value.height}x${channelCount}`;
+    }
+
+    // For HTMLCanvasElement/HTMLImageElement, use dimensions
+    if (value instanceof HTMLCanvasElement || value instanceof HTMLImageElement) {
+      return `el:${value.width}x${value.height}`;
+    }
+
+    // For small objects, use JSON (but with a size limit)
+    try {
+      const json = JSON.stringify(value);
+      if (json.length < 500) return json;
+      return `obj:${json.length}:${json.slice(0, 100)}`;
+    } catch {
+      return `obj:${typeof value}`;
+    }
+  }
+
   private calculateInputHash(): string {
-    return this.inputs.map(input => {
-      const value = input.value;
-      if (value === null || value === undefined) return 'null';
-      if (typeof value === 'object') {
-        try { return JSON.stringify(value); }
-        catch { return String(value); }
-      }
-      return String(value);
-    }).join('|');
+    return this.inputs.map(input => this.getValueFingerprint(input.value)).join('|');
   }
 
   get isDirty(): boolean {
@@ -1102,6 +1144,7 @@ export class Node {
     this.inputs = this.inputs.filter(port => {
       if (!used.has(`input_${port.name}`)) {
         port.connections.forEach(c => this.graph.disconnect(c.id));
+        this._portMap.delete(port.id);
         return false;
       }
       return true;
@@ -1110,6 +1153,7 @@ export class Node {
     this.outputs = this.outputs.filter(port => {
       if (!used.has(`output_${port.name}`)) {
         port.connections.forEach(c => this.graph.disconnect(c.id));
+        this._portMap.delete(port.id);
         return false;
       }
       return true;
