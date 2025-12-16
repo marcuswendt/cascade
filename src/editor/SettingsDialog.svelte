@@ -7,6 +7,7 @@
     type UserSettings,
     type AIServiceType
   } from './stores/settingsStore';
+  import { ProviderRegistry } from '@/services/genai';
 
   export let open = false;
   /** If set, auto-adds a new API key entry for this service when dialog opens */
@@ -128,6 +129,10 @@
     if (key.length <= 8) return '••••••••';
     return key.slice(0, 4) + '••••' + key.slice(-4);
   }
+
+  // Get model options for defaults dropdowns
+  $: textModelOptions = ProviderRegistry.getLLMModelOptions();
+  $: imageModelOptions = ProviderRegistry.getImageModelOptions();
 
   const tabs = [
     { id: 'apiKeys' as TabId, label: 'API Keys', group: 'user' },
@@ -286,6 +291,35 @@
               <button class="add-row-btn" on:click={addApiKey}>
                 +
               </button>
+            </div>
+
+            <!-- Default Models -->
+            <div class="defaults-section">
+              <h3>Defaults</h3>
+              <div class="defaults-row">
+                <label>Text</label>
+                <select
+                  class="model-select"
+                  bind:value={localSettings.defaults.textModel}
+                >
+                  <option value={null}>Auto</option>
+                  {#each textModelOptions as opt}
+                    <option value={opt.value}>{opt.label}</option>
+                  {/each}
+                </select>
+              </div>
+              <div class="defaults-row">
+                <label>Image</label>
+                <select
+                  class="model-select"
+                  bind:value={localSettings.defaults.imageModel}
+                >
+                  <option value={null}>Auto</option>
+                  {#each imageModelOptions as opt}
+                    <option value={opt.value}>{opt.label}</option>
+                  {/each}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -735,5 +769,51 @@
     color: #fff;
     font-size: 13px;
     font-family: 'SF Mono', Monaco, monospace;
+  }
+
+  /* Defaults Section */
+  .defaults-section {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #333;
+  }
+
+  .defaults-section h3 {
+    margin: 0 0 10px 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .defaults-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+
+  .defaults-row label {
+    width: 50px;
+    color: #888;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+
+  .model-select {
+    flex: 1;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .model-select:focus {
+    outline: none;
+    border-color: #4a9eff;
   }
 </style>

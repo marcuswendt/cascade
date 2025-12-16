@@ -61,10 +61,19 @@ export const SERVICE_PRESETS = [
 ] as const;
 
 /**
+ * Default model preferences
+ */
+export interface DefaultModels {
+  textModel: string | null;  // LLM model ID
+  imageModel: string | null; // Image generation model ID
+}
+
+/**
  * User settings - stored locally, never shared with project files
  */
 export interface UserSettings {
   apiKeys: APIKeyEntry[];
+  defaults: DefaultModels;
   appearance: {
     // Future: theme, accentColor
   };
@@ -76,6 +85,10 @@ export interface UserSettings {
 function createDefaultSettings(): UserSettings {
   return {
     apiKeys: [],
+    defaults: {
+      textModel: null,
+      imageModel: null
+    },
     appearance: {},
     editor: {
       fontSize: 12
@@ -93,6 +106,7 @@ function loadSettings(): UserSettings {
       return {
         ...defaults,
         ...parsed,
+        defaults: { ...defaults.defaults, ...parsed.defaults },
         appearance: { ...defaults.appearance, ...parsed.appearance },
         editor: { ...defaults.editor, ...parsed.editor }
       };
@@ -223,6 +237,30 @@ export function getApiKeyUrl(service: AIServiceType): string | undefined {
  */
 export function getServicePreset(service: AIServiceType) {
   return SERVICE_PRESETS.find(p => p.value === service);
+}
+
+/**
+ * Get default text (LLM) model
+ */
+export function getDefaultTextModel(): string | null {
+  return get(settingsStore).defaults.textModel;
+}
+
+/**
+ * Get default image generation model
+ */
+export function getDefaultImageModel(): string | null {
+  return get(settingsStore).defaults.imageModel;
+}
+
+/**
+ * Update default model settings
+ */
+export function updateDefaultModels(updates: Partial<DefaultModels>): void {
+  settingsStore.update(settings => ({
+    ...settings,
+    defaults: { ...settings.defaults, ...updates }
+  }));
 }
 
 export { settingsStore };

@@ -24,7 +24,13 @@ export type {
 	NodeDisplayMode,
 	ResultStatus,
 	ActiveGeneration,
-	HistoryEntry
+	HistoryEntry,
+	// Chat/LLM streaming types
+	LLMStreamRequest,
+	LLMStreamChunk,
+	LLMMessage,
+	LLMContentPart,
+	LLMTokenUsage
 } from './types';
 
 // Errors
@@ -41,6 +47,17 @@ export { ProviderRegistry } from './ProviderRegistry';
 export { GenerationManager } from './GenerationManager';
 export { GenerationCache } from './GenerationCache';
 export type { FileSystemAdapter } from './GenerationCache';
+
+// Chat streaming
+export {
+	ChatStreamHandler,
+	getChatModels,
+	getChatModelOptions,
+	getDefaultChatModel,
+	getDefaultImageGenerationModel,
+	formatMessages
+} from './ChatStreamHandler';
+export type { ChatStreamCallbacks } from './ChatStreamHandler';
 
 // Model definitions
 export {
