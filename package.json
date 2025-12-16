@@ -20,7 +20,6 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-
     "electron:dev": "concurrently -k -n server,client,electron -c magenta,cyan,yellow \"npm run dev:server\" \"npm run dev:client\" \"wait-on http://localhost:5173 && NODE_ENV=development electron .\"",
     "electron:preview": "npm run build && npm run build:electron && npm run build:server && electron .",
     "electron:build": "npm run build && npm run build:electron && npm run build:server && electron-builder",
@@ -28,14 +27,16 @@
     "electron:build:win": "npm run electron:build -- --win",
     "electron:build:linux": "npm run electron:build -- --linux",
     "electron:pack": "npm run build && npm run build:electron && npm run build:server && electron-builder --dir",
-
     "postinstall": "electron-builder install-app-deps || true"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
+    "@google/genai": "^1.33.0",
     "dockview-core": "^4.11.0",
     "lucide-svelte": "^0.554.0",
     "marked": "^17.0.0",
     "monaco-editor": "^0.44.0",
+    "openai": "^6.14.0",
     "svelte": "^5.0.0"
   },
   "devDependencies": {
