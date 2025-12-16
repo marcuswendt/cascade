@@ -1829,7 +1829,7 @@ node.onReady = () => {
     }
   }
   
-  function handleNodeMouseDown(nodeId: string, e: MouseEvent) {
+  async function handleNodeMouseDown(nodeId: string, e: MouseEvent) {
     // Don't start drag if clicking on a port or if middle mouse button
     if ((e.target as HTMLElement).closest('.port') || e.button === 1) {
       return;
@@ -1847,13 +1847,208 @@ node.onReady = () => {
     const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
     const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
 
+    // Alt-drag: duplicate selected nodes and drag the copies
+    if (e.altKey) {
+      // Ensure the clicked node is in selection
+      let nodesToDuplicate = [...selectedNodes];
+      let annotationsToDuplicate = [...selectedAnnotations];
+
+      if (!nodesToDuplicate.includes(nodeId)) {
+        nodesToDuplicate = [nodeId];
+        annotationsToDuplicate = [];
+      }
+
+      // Duplicate nodes
+      const nodeIdMap = new Map<string, string>();
+      const newNodeIds: string[] = [];
+      const newAnnotationIds: string[] = [];
+
+      // Create duplicate nodes
+      for (const oldNodeId of nodesToDuplicate) {
+        const sourceNode = graph.getNode(oldNodeId);
+        if (!sourceNode) continue;
+
+        // Get the module path for proper node creation
+        const modulePath = (sourceNode as any).modulePath || sourceNode.type;
+        const newNode = graph.addNode(modulePath, { ...sourceNode.position });
+
+        // Generate unique ID
+        const oldId = newNode.id;
+        const newId = graph.generateUniqueNodeId(sourceNode.id);
+        nodeIdMap.set(oldNodeId, newId);
+        graph.renameElement(oldId, newId);
+
+        // Copy properties
+        newNode.code = sourceNode.code || '';
+        newNode.comment = sourceNode.comment || '';
+        newNode.bypass = sourceNode.bypass || false;
+
+        // Set parent to current network level
+        if (currentNetwork) {
+          newNode.parent = currentNetwork;
+          (currentNetwork as any)._children.push(newNode);
+        }
+
+        newNodeIds.push(newId);
+
+        // Execute the node to initialize ports
+        if (newNode.code) {
+          try {
+            await newNode.execute();
+          } catch (err) {
+            console.warn('Failed to execute duplicated node:', err);
+          }
+        }
+      }
+
+      // Restore props after execution
+      for (let i = 0; i < nodesToDuplicate.length; i++) {
+        const oldNodeId = nodesToDuplicate[i];
+        const newNodeId = newNodeIds[i];
+        const sourceNode = graph.getNode(oldNodeId);
+        const newNode = graph.getNode(newNodeId);
+
+        if (sourceNode && newNode && Object.keys(sourceNode.props).length > 0) {
+          Object.entries(sourceNode.props).forEach(([key, prop]) => {
+            if (newNode.props[key]) {
+              newNode.props[key].value = prop.value;
+              if (prop.expression) {
+                // Remap node ID references in expressions
+                let expr = prop.expression;
+                nodeIdMap.forEach((newId, oldId) => {
+                  const pathPatterns = [
+                    new RegExp(`(ch[sv]?\\s*\\(\\s*['"][^'"]*/)${oldId}(/[^'"]*['"]\\s*\\))`, 'g'),
+                    new RegExp(`(ch[sv]?\\s*\\(\\s*['"]\\.\\./)${oldId}(['"]\\s*\\))`, 'g'),
+                  ];
+                  pathPatterns.forEach(pattern => {
+                    expr = expr.replace(pattern, `$1${newId}$2`);
+                  });
+                });
+                newNode.props[key].expression = expr;
+              }
+            }
+          });
+        }
+      }
+
+      // Recreate connections between duplicated nodes
+      for (const oldNodeId of nodesToDuplicate) {
+        const sourceNode = graph.getNode(oldNodeId);
+        if (!sourceNode) continue;
+
+        // Check each output connection
+        for (const output of sourceNode.outputs) {
+          for (const conn of output.connections) {
+            // Find the target node
+            const targetInput = graph.getInputPortById(conn.to);
+            if (!targetInput) continue;
+
+            // Get target node ID from port ID (format: nodeId:portIndex)
+            const targetNodeId = targetInput.id.split(':')[0];
+
+            // Only recreate if both source and target were duplicated
+            const newFromId = nodeIdMap.get(oldNodeId);
+            const newToId = nodeIdMap.get(targetNodeId);
+
+            if (newFromId && newToId) {
+              const newFromNode = graph.getNode(newFromId);
+              const newToNode = graph.getNode(newToId);
+
+              if (newFromNode && newToNode) {
+                const fromPortIndex = sourceNode.outputs.indexOf(output);
+                const toPortIndex = graph.getNode(targetNodeId)?.inputs.indexOf(targetInput) ?? -1;
+
+                if (fromPortIndex >= 0 && toPortIndex >= 0) {
+                  const newFromPort = newFromNode.outputs[fromPortIndex];
+                  const newToPort = newToNode.inputs[toPortIndex];
+
+                  if (newFromPort && newToPort) {
+                    try {
+                      graph.connect(newFromPort, newToPort);
+                    } catch (err) {
+                      // Connection might fail due to type mismatch
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Duplicate annotations
+      for (const oldAnnotationId of annotationsToDuplicate) {
+        const sourceAnnotation = graph.getAnnotation(oldAnnotationId);
+        if (!sourceAnnotation) continue;
+
+        const newId = `${sourceAnnotation.type}_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 5)}`;
+        const newAnnotation: any = {
+          ...sourceAnnotation,
+          id: newId,
+          position: { ...sourceAnnotation.position }
+        };
+
+        if (currentNetwork) {
+          newAnnotation.parent = currentNetwork;
+          (currentNetwork as any)._children.push(newAnnotation);
+        }
+
+        graph.addAnnotation(newAnnotation);
+        newAnnotationIds.push(newId);
+      }
+
+      // Update graph reactivity
+      graph.nodes = [...graph.nodes];
+      graph.annotations = [...graph.annotations];
+
+      // Select the duplicated nodes
+      selectedNodes = newNodeIds;
+      selectedAnnotations = newAnnotationIds;
+
+      // Find the duplicated version of the clicked node
+      const newClickedNodeId = nodeIdMap.get(nodeId);
+      if (newClickedNodeId) {
+        const newClickedNode = graph.getNode(newClickedNodeId);
+        if (newClickedNode) {
+          selectedNode = newClickedNode;
+          dispatch('nodeSelect', { node: newClickedNode });
+
+          // Set up dragging on the new node
+          const offset = {
+            x: mouseX - newClickedNode.position.x,
+            y: mouseY - newClickedNode.position.y
+          };
+
+          draggingNode = { nodeId: newClickedNodeId, offset };
+
+          if (newNodeIds.length > 1 || newAnnotationIds.length > 0) {
+            draggingMultiple = {
+              nodes: newNodeIds.map(id => {
+                const n = graph.getNode(id);
+                return { nodeId: id, startPos: n ? { ...n.position } : { x: 0, y: 0 } };
+              }),
+              annotations: newAnnotationIds.map(id => {
+                const ann = graph.getAnnotation(id);
+                return { annotationId: id, startPos: ann ? { ...ann.position } : { x: 0, y: 0 } };
+              }),
+              offset
+            };
+          }
+        }
+      }
+
+      e.stopPropagation();
+      return;
+    }
+
+    // Normal drag (no alt key)
     const offset = {
       x: mouseX - node.position.x,
       y: mouseY - node.position.y
     };
 
     draggingNode = { nodeId, offset };
-    
+
     // If multiple items are selected, prepare to drag all of them
     if (selectedNodes.length > 1 || selectedAnnotations.length > 0) {
       draggingMultiple = {
@@ -1868,7 +2063,7 @@ node.onReady = () => {
         offset
       };
     }
-    
+
     e.stopPropagation();
   }
   
