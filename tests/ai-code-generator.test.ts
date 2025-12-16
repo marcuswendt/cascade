@@ -252,7 +252,7 @@ describe('SYSTEM_PROMPT', () => {
     });
 
     it('should emphasize onChange/watchProp usage', () => {
-      expect(SYSTEM_PROMPT).toContain('Use onChange/watchProp');
+      expect(SYSTEM_PROMPT).toContain('Use both onChange AND watchProp');
     });
 
     it('should emphasize calling render in onReady', () => {

@@ -32,7 +32,7 @@ describe('Custom Node Creation Workflow', () => {
       expect(templateCode).toContain('// TestNode - Custom Node');
       expect(templateCode).toContain("node.in('input'");
       expect(templateCode).toContain("node.out('output')");
-      expect(templateCode).toContain("node.defineProp('value'");
+      expect(templateCode).toContain("node.addParm('value'");
 
       // Step 3: Create node and add to graph
       const node = new Node(config.modulePath, config.modulePath, graph);
@@ -60,7 +60,7 @@ describe('Custom Node Creation Workflow', () => {
       const templateCode = codeTemplates.lens(config.name);
       expect(templateCode).toContain('// BlurEffect - Image Processing Node');
       expect(templateCode).toContain("node.in('image'");
-      expect(templateCode).toContain("node.defineProp('intensity'");
+      expect(templateCode).toContain("node.addParm('intensity'");
 
       // Create and compile
       const node = new Node(config.modulePath, config.modulePath, graph);

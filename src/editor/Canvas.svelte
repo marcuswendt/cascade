@@ -1939,12 +1939,9 @@ node.onReady = () => {
         // Check each output connection
         for (const output of sourceNode.outputs) {
           for (const conn of output.connections) {
-            // Find the target node
-            const targetInput = graph.getInputPortById(conn.to);
-            if (!targetInput) continue;
-
-            // Get target node ID from port ID (format: nodeId:portIndex)
-            const targetNodeId = targetInput.id.split(':')[0];
+            // Get target node ID directly from connection
+            const targetNodeId = conn.to.nodeId;
+            const targetPortId = conn.to.portId;
 
             // Only recreate if both source and target were duplicated
             const newFromId = nodeIdMap.get(oldNodeId);
@@ -1953,10 +1950,12 @@ node.onReady = () => {
             if (newFromId && newToId) {
               const newFromNode = graph.getNode(newFromId);
               const newToNode = graph.getNode(newToId);
+              const targetNode = graph.getNode(targetNodeId);
 
-              if (newFromNode && newToNode) {
+              if (newFromNode && newToNode && targetNode) {
                 const fromPortIndex = sourceNode.outputs.indexOf(output);
-                const toPortIndex = graph.getNode(targetNodeId)?.inputs.indexOf(targetInput) ?? -1;
+                const targetInput = targetNode.getInputPortById(targetPortId);
+                const toPortIndex = targetInput ? targetNode.inputs.indexOf(targetInput) : -1;
 
                 if (fromPortIndex >= 0 && toPortIndex >= 0) {
                   const newFromPort = newFromNode.outputs[fromPortIndex];
