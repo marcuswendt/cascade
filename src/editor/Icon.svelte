@@ -1,80 +1,39 @@
 <script lang="ts">
-  import * as icons from 'lucide-svelte';
-  
+  import {
+    Settings, Plus, X, Triangle, Ruler, Timer, MousePointer2, Keyboard,
+    Eye, Save, Palette, Droplets, Sun, Sliders, Camera, Volume2, Zap,
+    FileText, FolderOpen, Copy, Package, Info, Clock, Check, CheckCircle,
+    XCircle, MoveUpLeft, Hand, Waves, ChevronDown, ChevronRight,
+    SlidersHorizontal, GitBranch, Terminal, Network, Workflow, ScrollText,
+    Type, Image, Folder, Minus, PenTool, StickyNote, FileImage, Square,
+    Grid3x3, Cloud, Blend, Lightbulb, Box, Move, Maximize2, Layers,
+    GitMerge, Dice5, ListFilter, Snowflake, LogIn, LogOut
+  } from 'lucide-svelte';
+
   export let name: string;
   export let size: number = 16;
   export let color: string | undefined = undefined;
   export let strokeWidth: number = 2;
-  
+
   // Map icon names to Lucide components
   const iconMap: Record<string, any> = {
-    Settings: icons.Settings,
-    Plus: icons.Plus,
-    X: icons.X,
-    Triangle: icons.Triangle,
-    Ruler: icons.Ruler,
-    Timer: icons.Timer,
-    MousePointer2: icons.MousePointer2,
-    Keyboard: icons.Keyboard,
-    Eye: icons.Eye,
-    Save: icons.Save,
-    Palette: icons.Palette,
-    Droplets: icons.Droplets,
-    Sun: icons.Sun,
-    Sliders: icons.Sliders,
-    Camera: icons.Camera,
-    Volume2: icons.Volume2,
-    Zap: icons.Zap,
-    FileText: icons.FileText,
-    FolderOpen: icons.FolderOpen,
-    Copy: icons.Copy,
-    Package: icons.Package,
-    Info: icons.Info,
-    Clock: icons.Clock,
-    Check: icons.Check,
-    CheckCircle: icons.CheckCircle,
-    XCircle: icons.XCircle,
-    MoveUpLeft: icons.MoveUpLeft,
-    Hand: icons.Hand,
-    Waves: icons.Waves,
-    ChevronDown: icons.ChevronDown,
-    ChevronRight: icons.ChevronRight,
-    View: icons.Eye,
-    SlidersHorizontal: icons.SlidersHorizontal,
-    GitGraph: icons.GitBranch,
-    Logs: icons.Terminal,
-    Network: icons.Network,
-    Workflow: icons.Workflow,
-    ScrollText: icons.ScrollText,
-    // Annotation icons
-    Type: icons.Type,
-    Image: icons.Image,
-    Folder: icons.Folder,
-    Minus: icons.Minus,
-    PenTool: icons.PenTool,
-    StickyNote: icons.StickyNote,
-    // Lens library icons
-    FileImage: icons.FileImage,
-    Square: icons.Square,
-    Grid: icons.Grid3x3,
-    Cloud: icons.Cloud,
-    Gradient: icons.Blend,
-    Lightbulb: icons.Lightbulb,
-    Box: icons.Box,
-    Move: icons.Move,
-    Maximize2: icons.Maximize2,
-    Layers: icons.Layers,
-    // Core library icons
-    GitBranch: icons.GitBranch,
-    GitMerge: icons.GitMerge,
-    Dice5: icons.Dice5,
-    ListFilter: icons.ListFilter,
-    Snowflake: icons.Snowflake,
-    LogIn: icons.LogIn,
-    LogOut: icons.LogOut
+    Settings, Plus, X, Triangle, Ruler, Timer, MousePointer2, Keyboard,
+    Eye, Save, Palette, Droplets, Sun, Sliders, Camera, Volume2, Zap,
+    FileText, FolderOpen, Copy, Package, Info, Clock, Check, CheckCircle,
+    XCircle, MoveUpLeft, Hand, Waves, ChevronDown, ChevronRight,
+    SlidersHorizontal, Network, Workflow, ScrollText, Type, Image, Folder,
+    Minus, PenTool, StickyNote, FileImage, Square, Box, Move, Maximize2,
+    Layers, GitMerge, Dice5, ListFilter, Snowflake, LogIn, LogOut,
+    // Aliases
+    View: Eye,
+    GitGraph: GitBranch,
+    Logs: Terminal,
+    Grid: Grid3x3,
+    Gradient: Blend,
+    GitBranch
   };
   
-  $: IconComponent = iconMap[name] || icons.Settings;
+  $: IconComponent = iconMap[name] || Settings;
 </script>
 
 <svelte:component this={IconComponent} {size} {color} {strokeWidth} />
