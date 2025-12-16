@@ -28,7 +28,12 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          'monaco-editor': ['monaco-editor']
+          'monaco-editor': ['monaco-editor'],
+          'ai-anthropic': ['@anthropic-ai/sdk'],
+          'ai-google': ['@google/genai'],
+          'ai-openai': ['openai'],
+          'dockview': ['dockview-core'],
+          'icons': ['lucide-svelte']
         }
       }
     },
