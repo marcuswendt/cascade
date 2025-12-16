@@ -2505,15 +2505,19 @@ node.onReady = () => {
       // Paste nodes
       if (clipboardData.nodes && clipboardData.nodes.length > 0) {
         for (const nodeData of clipboardData.nodes) {
+          // Position is serialized as [x, y] array in toJSON()
+          const posX = Array.isArray(nodeData.position) ? nodeData.position[0] : nodeData.position.x;
+          const posY = Array.isArray(nodeData.position) ? nodeData.position[1] : nodeData.position.y;
           const newNode = graph.addNode(nodeData.type, {
-            x: nodeData.position.x + pasteOffset,
-            y: nodeData.position.y + pasteOffset
+            x: posX + pasteOffset,
+            y: posY + pasteOffset
           });
 
-          // Generate unique ID
+          // Generate unique ID and update the graph's element map
+          const oldId = newNode.id;
           const newId = graph.generateUniqueNodeId(nodeData.id);
           nodeIdMap.set(nodeData.id, newId);
-          newNode.id = newId;
+          graph.renameElement(oldId, newId);
 
           // Copy properties
           newNode.code = nodeData.code || '';

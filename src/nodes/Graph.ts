@@ -244,7 +244,22 @@ export class Graph {
       this.invalidateTopologicalOrder();
     }
   }
-  
+
+  /**
+   * Rename an element's ID, updating internal maps
+   */
+  renameElement(oldId: string, newId: string): boolean {
+    const element = this._elementMap.get(oldId);
+    if (!element) return false;
+
+    // Update the map
+    this._elementMap.delete(oldId);
+    element.id = newId;
+    this._elementMap.set(newId, element);
+
+    return true;
+  }
+
   addNode(type: string, position: { x: number; y: number }): Node {
     // Type should be a package path, but we'll convert to short type for internal use
     const shortType = packagePathToType(type);
