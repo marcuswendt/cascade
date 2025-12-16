@@ -17,6 +17,55 @@ const nodeClassRegistries: Map<string, Record<string, NodeClass>> = new Map();
 // Source code registry for stdlib nodes (populated by library modules)
 const nodeSourceRegistry: Map<string, string> = new Map();
 
+// Node metadata registry (type -> { name, icon, description, etc. })
+export interface NodeMetadata {
+  type: string;
+  name: string;
+  icon?: string;
+  description?: string;
+  category?: string;
+}
+const nodeMetadataRegistry: Map<string, NodeMetadata> = new Map();
+
+/**
+ * Register node metadata (display name, icon, etc.)
+ * Called by library modules during initialization
+ */
+export function registerNodeMetadata(metadata: NodeMetadata): void {
+  nodeMetadataRegistry.set(metadata.type, metadata);
+}
+
+/**
+ * Get node metadata for a given type
+ * Returns null if no metadata is registered
+ */
+export function getNodeMetadata(type: string): NodeMetadata | null {
+  // Try full type first
+  if (nodeMetadataRegistry.has(type)) {
+    return nodeMetadataRegistry.get(type) || null;
+  }
+
+  // Try short type name
+  const shortType = packagePathToType(type);
+  if (nodeMetadataRegistry.has(shortType)) {
+    return nodeMetadataRegistry.get(shortType) || null;
+  }
+
+  return null;
+}
+
+/**
+ * Get display name for a node type (for generating IDs)
+ * Falls back to short type if no metadata exists
+ */
+export function getNodeDisplayName(type: string): string {
+  const metadata = getNodeMetadata(type);
+  if (metadata?.name) {
+    return metadata.name;
+  }
+  return packagePathToType(type);
+}
+
 /**
  * Register source code for a node type
  * Called by library modules during initialization

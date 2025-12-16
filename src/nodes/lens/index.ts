@@ -9,7 +9,7 @@
  * - Image filters (Blur, NormalMap)
  */
 
-import { registerNodeClasses, registerNodeSource, type NodeClass } from '@/utils/nodeTypeUtils';
+import { registerNodeClasses, registerNodeSource, registerNodeMetadata, type NodeClass } from '@/utils/nodeTypeUtils';
 
 // Import node classes
 import { ColorNode } from './nodes/ColorNode';
@@ -23,6 +23,8 @@ import { NoiseNode } from './nodes/NoiseNode';
 import { BlurNode } from './nodes/BlurNode';
 import { TextNode } from './nodes/TextNode';
 import { TransformNode } from './nodes/TransformNode';
+import { GenerateNode, nodeMetadata as generateMetadata } from './nodes/GenerateNode';
+import { EditNode, nodeMetadata as editMetadata } from './nodes/EditNode';
 
 // Import source code for nodes (using Vite's ?raw imports)
 import ColorNodeSource from './nodes/ColorNode.ts?raw';
@@ -36,6 +38,8 @@ import NoiseNodeSource from './nodes/NoiseNode.ts?raw';
 import BlurNodeSource from './nodes/BlurNode.ts?raw';
 import TextNodeSource from './nodes/TextNode.ts?raw';
 import TransformNodeSource from './nodes/TransformNode.ts?raw';
+import GenerateNodeSource from './nodes/GenerateNode.ts?raw';
+import EditNodeSource from './nodes/EditNode.ts?raw';
 
 // Node class registry: type -> class constructor
 export const lensNodeClasses: Record<string, NodeClass> = {
@@ -50,6 +54,8 @@ export const lensNodeClasses: Record<string, NodeClass> = {
   'Blur': BlurNode,
   'Text': TextNode,
   'Transform': TransformNode,
+  'Generate': GenerateNode,
+  'Edit': EditNode,
 };
 
 // Register nodes with the central registry
@@ -67,6 +73,12 @@ registerNodeSource('Noise', NoiseNodeSource);
 registerNodeSource('Blur', BlurNodeSource);
 registerNodeSource('Text', TextNodeSource);
 registerNodeSource('Transform', TransformNodeSource);
+registerNodeSource('Generate', GenerateNodeSource);
+registerNodeSource('Edit', EditNodeSource);
+
+// Register node metadata (for display names in node IDs)
+registerNodeMetadata(generateMetadata);
+registerNodeMetadata(editMetadata);
 
 // Re-export library metadata
 export { lensLibrary } from './library';
@@ -85,3 +97,5 @@ export { NoiseNode } from './nodes/NoiseNode';
 export { BlurNode } from './nodes/BlurNode';
 export { TextNode } from './nodes/TextNode';
 export { TransformNode } from './nodes/TransformNode';
+export { GenerateNode } from './nodes/GenerateNode';
+export { EditNode } from './nodes/EditNode';

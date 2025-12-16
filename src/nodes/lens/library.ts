@@ -10,32 +10,33 @@ export const lensLibrary: Library = {
   icon: 'Palette',
   categories: [
     {
-      id: 'generators',
-      label: 'Generators',
+      id: 'create',
+      label: 'Create',
       nodes: [
+        { name: 'File', icon: 'FileImage', description: 'Load images from files', type: 'Image' },
         { name: 'Color', icon: 'Square', description: 'Create a solid color canvas', type: 'Color' },
         { name: 'Checkers', icon: 'Grid', description: 'Generate a checkerboard pattern', type: 'Checkers' },
         { name: 'Noise', icon: 'Cloud', description: 'Generate procedural noise patterns', type: 'Noise' },
         { name: 'Ramp', icon: 'Gradient', description: 'Generate color ramps', type: 'Ramp' },
-        { name: 'Text', icon: 'Type', description: 'Render text with customizable font and style', type: 'Text' }
+        { name: 'Text', icon: 'Type', description: 'Render text with customizable font and style', type: 'Text' },
+        { name: 'Prompt to Image', icon: 'Lightbulb', description: 'Generate images from text prompts using AI', type: 'Generate' }
       ]
     },
     {
-      id: 'filters',
-      label: 'Filters',
+      id: 'filter',
+      label: 'Filter',
       nodes: [
         { name: 'Blur', icon: 'Droplets', description: 'Gaussian blur', type: 'Blur' },
-        { name: 'Normal Map', icon: 'Layers', description: 'Compute normal map from height map', type: 'NormalMap' },
-        { name: 'Brightness', icon: 'Sun', description: 'Adjust brightness', type: 'Brightness' },
-        { name: 'Contrast', icon: 'Sliders', description: 'Adjust contrast', type: 'Contrast' }
+        { name: 'Normal Map', icon: 'Box', description: 'Compute normal map from height map', type: 'NormalMap' },
+        { name: 'Prompt to Edit', icon: 'Lightbulb', description: 'Edit images using AI prompts', type: 'Edit' }
       ]
     },
-    // Single-entry categories moved to main menu (flattened)
     {
-      id: 'image',
-      label: 'Image',
+      id: 'transform',
+      label: 'Transform',
       nodes: [
-        { name: 'Image', icon: 'Camera', description: 'Load images from assets', type: 'Image' }
+        { name: 'Transform', icon: 'Move', description: '2D rotation, translation, and scaling', type: 'Transform' },
+        { name: 'Resize', icon: 'Maximize2', description: 'Scale or resize an image', type: 'Resize' }
       ]
     },
     {
@@ -43,20 +44,6 @@ export const lensLibrary: Library = {
       label: 'Composite',
       nodes: [
         { name: 'Composite', icon: 'Layers', description: 'Blend two images together', type: 'Composite' }
-      ]
-    },
-    {
-      id: 'resize',
-      label: 'Resize',
-      nodes: [
-        { name: 'Resize', icon: 'Maximize2', description: 'Scale or resize an image', type: 'Resize' }
-      ]
-    },
-    {
-      id: 'transform',
-      label: 'Transform',
-      nodes: [
-        { name: 'Transform', icon: 'Move', description: '2D rotation, translation, and scaling', type: 'Transform' }
       ]
     }
   ]

@@ -18,7 +18,7 @@ import type {
   ProjectConfig,
   NodeSource
 } from '../types/node.types.js';
-import { packagePathToType, isStandardLibraryNode, getNodeClass, compileCustomNode } from '../utils/nodeTypeUtils.js';
+import { packagePathToType, isStandardLibraryNode, getNodeClass, compileCustomNode, getNodeDisplayName } from '../utils/nodeTypeUtils.js';
 import { normalizeColor, isColorValue } from '../utils/colorUtils.js';
 
 // Current file format version
@@ -143,28 +143,34 @@ export class Graph {
   
   /**
    * Generates a unique element ID based on a base ID.
+   * If the base ID ends in a number (e.g., "Checkers1"), strips it and increments.
    * Always appends a number starting from 1 (e.g., "Checkers1", "Checkers2").
    * Ensures the ID has no spaces.
-   * @param baseId The base ID to use (typically the element type)
+   * @param baseId The base ID to use (typically the element type or existing node ID)
    * @param excludeElementId Optional element ID to exclude from uniqueness check (useful when renaming)
    * @returns A unique element ID with no spaces
    */
   generateUniqueNodeId(baseId: string, excludeElementId?: string): string {
     // Remove spaces from base ID
     const sanitizedBaseId = baseId.replace(/\s+/g, '');
-    
+
+    // Strip trailing numbers to get the base name
+    // e.g., "Checkers1" -> "Checkers", "Checkers123" -> "Checkers", "Checkers" -> "Checkers"
+    const match = sanitizedBaseId.match(/^(.+?)(\d+)?$/);
+    const baseName = match ? match[1] : sanitizedBaseId;
+
     // Always use numbered versions starting from 1
     let counter = 1;
-    let candidateId = `${sanitizedBaseId}${counter}`;
-    
+    let candidateId = `${baseName}${counter}`;
+
     // Find the first available numbered ID
     while (this._elements.some(
       element => element.id === candidateId && (!excludeElementId || element.id !== excludeElementId)
     )) {
       counter++;
-      candidateId = `${sanitizedBaseId}${counter}`;
+      candidateId = `${baseName}${counter}`;
     }
-    
+
     return candidateId;
   }
 
@@ -261,11 +267,13 @@ export class Graph {
   }
 
   addNode(type: string, position: { x: number; y: number }): Node {
-    // Type should be a package path, but we'll convert to short type for internal use
-    const shortType = packagePathToType(type);
+    // Get display name for ID generation (uses metadata if available, falls back to type)
+    const displayName = getNodeDisplayName(type);
+    // Convert to lowercase with underscores (e.g., "Prompt to Image" -> "prompt_to_image")
+    const baseId = displayName.toLowerCase().replace(/\s+/g, '_');
 
-    // Generate unique ID automatically based on short type
-    const id = this.generateUniqueNodeId(shortType);
+    // Generate unique ID automatically based on display name
+    const id = this.generateUniqueNodeId(baseId);
 
     // Try to get a class-based node first (for stdlib nodes)
     const NodeClass = getNodeClass(type);
@@ -276,7 +284,7 @@ export class Graph {
       node = new NodeClass(id, this);
     } else {
       // Fallback: create base Node for custom/function-based nodes
-      node = new Node(id, shortType, this);
+      node = new Node(id, packagePathToType(type), this);
     }
 
     // Store full module path and source type for serialization

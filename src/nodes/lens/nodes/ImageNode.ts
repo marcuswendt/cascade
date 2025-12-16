@@ -14,7 +14,7 @@ export class ImageNode extends LensNode {
   private output!: OutputPort<ImageBuffer>;
 
   constructor(id: string, graph: Graph) {
-    super(id, 'Image', graph);
+    super(id, 'File', graph);
   }
 
   protected setup(): void {
