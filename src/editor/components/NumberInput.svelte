@@ -1,10 +1,10 @@
 <script lang="ts">
   import type { Prop } from '@/types/node.types';
-  
+
   export let prop: Prop;
   export let id: string;
   export let onValueChange: (value: number) => void;
-  
+
   $: value = typeof prop.value === 'number' ? prop.value : 0;
   $: min = typeof prop.params?.min === 'number' ? prop.params.min : undefined;
   $: max = typeof prop.params?.max === 'number' ? prop.params.max : undefined;
@@ -12,27 +12,43 @@
   $: isInteger = prop.params?.integer === true || step === 1;
   $: hasSlider = min !== undefined && max !== undefined;
   $: disabled = typeof prop.disabled === 'function' ? prop.disabled() : prop.disabled;
-  
+
+  // Display value for number input - formatted based on integer setting
+  $: displayValue = isInteger ? Math.round(value) : value;
+
+  // Reference to the number input element for manual sync
+  let numberInputEl: HTMLInputElement;
+
+  // Sync number input when prop value changes externally (e.g., from slider)
+  $: if (numberInputEl && document.activeElement !== numberInputEl) {
+    numberInputEl.value = String(displayValue);
+  }
+
   function handleSliderInput(e: Event) {
     const newValue = parseFloat((e.target as HTMLInputElement).value);
-    onValueChange(isInteger ? Math.round(newValue) : newValue);
+    const finalValue = isInteger ? Math.round(newValue) : newValue;
+    onValueChange(finalValue);
+    // Immediately update the number input display
+    if (numberInputEl) {
+      numberInputEl.value = String(finalValue);
+    }
   }
-  
+
   function handleNumberInput(e: Event) {
     const input = e.target as HTMLInputElement;
     let newValue = parseFloat(input.value);
-    
+
     if (isNaN(newValue)) {
       input.value = String(value);
       return;
     }
-    
+
     if (min !== undefined && newValue < min) newValue = min;
     if (max !== undefined && newValue > max) newValue = max;
-    
+
     onValueChange(isInteger ? Math.round(newValue) : newValue);
   }
-  
+
   function handleBlur(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.value === '' || isNaN(parseFloat(input.value))) {
@@ -58,10 +74,11 @@
       <input
         type="number"
         class="number-input"
+        bind:this={numberInputEl}
         min={min}
         max={max}
         step={step}
-        value={isInteger ? Math.round(value) : value}
+        value={displayValue}
         disabled={disabled}
         on:input={handleNumberInput}
         on:blur={handleBlur}
@@ -75,7 +92,7 @@
       min={min}
       max={max}
       step={step}
-      value={isInteger ? Math.round(value) : value}
+      value={displayValue}
       disabled={disabled}
       on:input={handleNumberInput}
       on:blur={handleBlur}
