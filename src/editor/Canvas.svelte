@@ -2881,6 +2881,11 @@ node.onReady = () => {
       const defaultCode = customConfig?.code || getDefaultNodeCode(nodeType);
       newNode.code = defaultCode;
 
+      // Register custom node with module resolver for proper serialization
+      if (nodeType.startsWith('local.')) {
+        graph.moduleResolver.createEmbeddedModule(nodeType, defaultCode, 'user');
+      }
+
       // Compile and execute the node code to initialize props and ports
       try {
         newNode.resetPortTracking();

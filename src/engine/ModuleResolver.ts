@@ -237,6 +237,35 @@ export class ModuleResolver {
   }
 
   /**
+   * Create a new embedded module with the given code
+   * Use this when creating custom nodes from scratch
+   */
+  createEmbeddedModule(
+    modulePath: string,
+    code: string,
+    author: 'user' | 'ai' = 'user'
+  ): { modulePath: string; module: EmbeddedModule } {
+    const now = new Date().toISOString();
+    const initialVersion: CodeVersion = {
+      code,
+      timestamp: now,
+      author
+    };
+
+    const module: EmbeddedModule = {
+      code,
+      history: [initialVersion],
+      created: now,
+      modified: now
+    };
+
+    // Add to embedded modules
+    this.config.embeddedModules.set(modulePath, module);
+
+    return { modulePath, module };
+  }
+
+  /**
    * Create a new embedded module from stdlib (duplicate)
    */
   duplicateToEmbedded(

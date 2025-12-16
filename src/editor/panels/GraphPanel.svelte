@@ -79,7 +79,7 @@
   }
 
   // Expose methods for parent container
-  export function addNode(params: { type: string; category: string | null }) {
+  export function addNode(params: { type: string; category: string | null; customConfig?: { name: string; modulePath: string; baseClass: string; code: string } }) {
     if (canvasRef && canvasRef.addNode) {
       canvasRef.addNode(params);
     }

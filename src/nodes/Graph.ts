@@ -279,6 +279,19 @@ export class Graph {
       node = new Node(id, shortType, this);
     }
 
+    // Store full module path and source type for serialization
+    // This ensures custom nodes (local.*) are saved correctly
+    (node as any).modulePath = type;
+    if (isStandardLibraryNode(type)) {
+      (node as any).sourceType = 'stdlib';
+    } else if (type.startsWith('local.')) {
+      (node as any).sourceType = 'embedded';
+    } else {
+      // Check module resolver for project modules
+      const sourceType = this.moduleResolver.getSourceType(type);
+      (node as any).sourceType = sourceType || 'embedded';
+    }
+
     node.position = position;
     this.addElement(node);
 
@@ -1107,32 +1120,36 @@ export class Graph {
    * Serialize a node with v0.2 source information
    */
   private nodeToJSON(node: Node): any {
-    const fullType = node.type.includes('.') ? node.type : `cascade.lens.${node.type}`;
-    const isStdlib = isStandardLibraryNode(fullType);
+    // Use stored modulePath if available (set by addNode or fromJSON)
+    // Otherwise fall back to deriving from node.type
+    const nodeAny = node as any;
+    const fullType = nodeAny.modulePath || (node.type.includes('.') ? node.type : `cascade.lens.${node.type}`);
+
+    // Use stored sourceType if available, otherwise derive it
+    let sourceType = nodeAny.sourceType;
+    if (!sourceType) {
+      if (isStandardLibraryNode(fullType)) {
+        sourceType = 'stdlib';
+      } else if (fullType.startsWith('local.')) {
+        sourceType = 'embedded';
+      } else {
+        sourceType = this.moduleResolver.getSourceType(fullType) || 'embedded';
+      }
+    }
 
     const result: any = {
       id: node.id,
       module: fullType,
-      position: [node.position.x, node.position.y]
+      position: [node.position.x, node.position.y],
+      source: sourceType
     };
 
-    // Determine source type
-    if (isStdlib) {
-      result.source = 'stdlib';
-    } else if (fullType.startsWith('local.')) {
-      result.source = 'embedded';
-    } else {
-      // Check if it's a project module
-      const sourceType = this.moduleResolver.getSourceType(fullType);
-      result.source = sourceType || 'embedded';
-
-      // For project modules, include file reference
-      if (sourceType === 'project') {
-        const config = this.moduleResolver.exportConfig();
-        const external = config.externalModules[fullType];
-        if (external) {
-          result.file = external.file;
-        }
+    // For project modules, include file reference
+    if (sourceType === 'project') {
+      const config = this.moduleResolver.exportConfig();
+      const external = config.externalModules[fullType];
+      if (external) {
+        result.file = external.file;
       }
     }
 

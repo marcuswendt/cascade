@@ -74,7 +74,7 @@
   $: setSharedContext(context);
 
   // Expose methods to parent via bind:this
-  export function addNode(params: { type: string; category: string | null }) {
+  export function addNode(params: { type: string; category: string | null; customConfig?: { name: string; modulePath: string; baseClass: string; code: string } }) {
     const graphPanelEl = document.querySelector('[data-panel-type="graph"]');
     if (graphPanelEl) {
       graphPanelEl.dispatchEvent(new CustomEvent('addNode', { detail: params }));
