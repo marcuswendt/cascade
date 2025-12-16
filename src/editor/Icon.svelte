@@ -52,7 +52,26 @@
     Folder: icons.Folder,
     Minus: icons.Minus,
     PenTool: icons.PenTool,
-    StickyNote: icons.StickyNote
+    StickyNote: icons.StickyNote,
+    // Lens library icons
+    FileImage: icons.FileImage,
+    Square: icons.Square,
+    Grid: icons.Grid3x3,
+    Cloud: icons.Cloud,
+    Gradient: icons.Blend,
+    Lightbulb: icons.Lightbulb,
+    Box: icons.Box,
+    Move: icons.Move,
+    Maximize2: icons.Maximize2,
+    Layers: icons.Layers,
+    // Core library icons
+    GitBranch: icons.GitBranch,
+    GitMerge: icons.GitMerge,
+    Dice5: icons.Dice5,
+    ListFilter: icons.ListFilter,
+    Snowflake: icons.Snowflake,
+    LogIn: icons.LogIn,
+    LogOut: icons.LogOut
   };
   
   $: IconComponent = iconMap[name] || icons.Settings;
