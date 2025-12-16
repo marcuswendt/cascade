@@ -141,8 +141,8 @@ class DockviewStore {
           } else {
             lockBtn.classList.remove('locked');
             lockBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 5-5 5 5 0 0 1 5 5v4"/><line x1="17" y1="7" x2="21" y2="3"/></svg>`;
-            lockBtn.title = hasSelection ? 'Lock to current node' : 'Select a node to lock';
-            lockBtn.disabled = !hasSelection;
+            lockBtn.title = hasSelection ? 'Lock to current node' : 'Lock to empty view';
+            lockBtn.disabled = false;
           }
         };
 

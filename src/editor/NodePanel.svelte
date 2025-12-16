@@ -25,6 +25,7 @@
   let panelElement: HTMLDivElement;
   let calculatedPosition = { x: 0, y: 0 };
   let hasCalculated = false;
+  let mainColumnWidth = 160; // Default width, updated dynamically
   
   // Navigation state
   let selectedLibraryIndex = -1;
@@ -180,7 +181,12 @@
     : hoveredLibraryId !== undefined
       ? getNodesFromLibrary(hoveredLibraryId).sort((a, b) => a.name.localeCompare(b.name))
       : [];
-  
+
+  // Update main column width when submenu is about to show
+  $: if (hoveredLibraryId !== undefined && panelElement) {
+    mainColumnWidth = panelElement.getBoundingClientRect().width;
+  }
+
   // Get nodes based on context
   $: nodes = searchQuery
     ? getAllNodes()
@@ -716,9 +722,9 @@
   
   <!-- Nodes submenu column (appears when library is hovered) -->
   {#if !searchQuery && hoveredLibraryId !== undefined && hoveredNodes.length > 0}
-    <div 
+    <div
       class="menu-column submenu-column"
-      style="left: {calculatedPosition.x + 200}px; top: {calculatedPosition.y}px"
+      style="left: {calculatedPosition.x + mainColumnWidth}px; top: {calculatedPosition.y}px"
       on:mouseenter={() => {
         // Keep submenu open when hovering over it
       }}
