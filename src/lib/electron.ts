@@ -177,14 +177,21 @@ export function onAnyMenuCommand(
     'save',
     'saveAs',
     'exportHTML',
-    'runAll',
-    'stopAll',
+    'createNode',
     'homeView',
     'frameSelection',
     'selectAll',
     'deleteSelected',
     'showShortcuts',
     'about',
+    // View menu commands
+    'centerOnNodes',
+    'resetLayout',
+    'maximizeTab',
+    'focusGraph',
+    'focusViewer',
+    'focusInspector',
+    'focusLog',
   ];
 
   const unsubscribers = commands.map(cmd =>

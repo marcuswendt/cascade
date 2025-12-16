@@ -15,6 +15,9 @@ import { startServer, stopServer } from './server.js';
 import { createMenu } from './menu.js';
 import { addToRecentProjects } from './recent.js';
 
+// Set app name (for development mode - productName in electron-builder handles packaged app)
+app.setName('Cascade');
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 

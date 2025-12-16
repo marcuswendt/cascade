@@ -101,9 +101,17 @@ export function createMenu(mainWindow: BrowserWindow): void {
         { role: 'cut' as const },
         { role: 'copy' as const },
         { role: 'paste' as const },
-        { role: 'delete' as const },
+        {
+          label: 'Delete',
+          accelerator: 'Backspace',
+          click: () => mainWindow.webContents.send('menu:deleteSelected'),
+        },
         { type: 'separator' as const },
-        { role: 'selectAll' as const },
+        {
+          label: 'Select All',
+          accelerator: 'CmdOrCtrl+A',
+          click: () => mainWindow.webContents.send('menu:selectAll'),
+        },
         ...(isMac
           ? [
               { type: 'separator' as const },
@@ -123,6 +131,49 @@ export function createMenu(mainWindow: BrowserWindow): void {
     {
       label: 'View',
       submenu: [
+        {
+          label: 'Home',
+          accelerator: 'H',
+          click: () => mainWindow.webContents.send('menu:centerOnNodes'),
+        },
+        {
+          label: 'Frame Selection',
+          accelerator: 'F',
+          click: () => mainWindow.webContents.send('menu:frameSelection'),
+        },
+        {
+          label: 'Reset Layout',
+          accelerator: 'CmdOrCtrl+Shift+P',
+          click: () => mainWindow.webContents.send('menu:resetLayout'),
+        },
+        { type: 'separator' as const },
+        {
+          label: 'Maximize Tab',
+          accelerator: 'CmdOrCtrl+B',
+          click: () => mainWindow.webContents.send('menu:maximizeTab'),
+        },
+        { type: 'separator' as const },
+        {
+          label: 'Focus Graph',
+          accelerator: 'CmdOrCtrl+1',
+          click: () => mainWindow.webContents.send('menu:focusGraph'),
+        },
+        {
+          label: 'Focus Viewer',
+          accelerator: 'CmdOrCtrl+2',
+          click: () => mainWindow.webContents.send('menu:focusViewer'),
+        },
+        {
+          label: 'Focus Inspector',
+          accelerator: 'CmdOrCtrl+3',
+          click: () => mainWindow.webContents.send('menu:focusInspector'),
+        },
+        {
+          label: 'Focus Log',
+          accelerator: 'CmdOrCtrl+4',
+          click: () => mainWindow.webContents.send('menu:focusLog'),
+        },
+        { type: 'separator' as const },
         { role: 'reload' as const },
         { role: 'forceReload' as const },
         { role: 'toggleDevTools' as const },
@@ -135,47 +186,14 @@ export function createMenu(mainWindow: BrowserWindow): void {
       ] as MenuItemConstructorOptions[],
     },
 
-    // ============ Graph Menu (Cascade-specific) ============
+    // ============ Create Menu (Cascade-specific) ============
     {
-      label: 'Graph',
+      label: 'Create',
       submenu: [
         {
           label: 'Create Node...',
           accelerator: 'Tab',
           click: () => mainWindow.webContents.send('menu:createNode'),
-        },
-        { type: 'separator' as const },
-        {
-          label: 'Run All',
-          accelerator: 'CmdOrCtrl+Enter',
-          click: () => mainWindow.webContents.send('menu:runAll'),
-        },
-        {
-          label: 'Stop All',
-          accelerator: 'CmdOrCtrl+.',
-          click: () => mainWindow.webContents.send('menu:stopAll'),
-        },
-        { type: 'separator' as const },
-        {
-          label: 'Home View',
-          accelerator: 'H',
-          click: () => mainWindow.webContents.send('menu:homeView'),
-        },
-        {
-          label: 'Frame Selection',
-          accelerator: 'F',
-          click: () => mainWindow.webContents.send('menu:frameSelection'),
-        },
-        { type: 'separator' as const },
-        {
-          label: 'Select All Nodes',
-          accelerator: 'CmdOrCtrl+A',
-          click: () => mainWindow.webContents.send('menu:selectAll'),
-        },
-        {
-          label: 'Delete Selected',
-          accelerator: 'Backspace',
-          click: () => mainWindow.webContents.send('menu:deleteSelected'),
         },
       ] as MenuItemConstructorOptions[],
     },
