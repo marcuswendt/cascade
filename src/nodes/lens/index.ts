@@ -22,6 +22,7 @@ import { RampNode } from './nodes/RampNode';
 import { NoiseNode } from './nodes/NoiseNode';
 import { BlurNode } from './nodes/BlurNode';
 import { TextNode } from './nodes/TextNode';
+import { TransformNode } from './nodes/TransformNode';
 
 // Import source code for nodes (using Vite's ?raw imports)
 import ColorNodeSource from './nodes/ColorNode.ts?raw';
@@ -34,6 +35,7 @@ import RampNodeSource from './nodes/RampNode.ts?raw';
 import NoiseNodeSource from './nodes/NoiseNode.ts?raw';
 import BlurNodeSource from './nodes/BlurNode.ts?raw';
 import TextNodeSource from './nodes/TextNode.ts?raw';
+import TransformNodeSource from './nodes/TransformNode.ts?raw';
 
 // Node class registry: type -> class constructor
 export const lensNodeClasses: Record<string, NodeClass> = {
@@ -47,6 +49,7 @@ export const lensNodeClasses: Record<string, NodeClass> = {
   'Noise': NoiseNode,
   'Blur': BlurNode,
   'Text': TextNode,
+  'Transform': TransformNode,
 };
 
 // Register nodes with the central registry
@@ -63,6 +66,7 @@ registerNodeSource('Ramp', RampNodeSource);
 registerNodeSource('Noise', NoiseNodeSource);
 registerNodeSource('Blur', BlurNodeSource);
 registerNodeSource('Text', TextNodeSource);
+registerNodeSource('Transform', TransformNodeSource);
 
 // Re-export library metadata
 export { lensLibrary } from './library';
@@ -80,3 +84,4 @@ export { RampNode } from './nodes/RampNode';
 export { NoiseNode } from './nodes/NoiseNode';
 export { BlurNode } from './nodes/BlurNode';
 export { TextNode } from './nodes/TextNode';
+export { TransformNode } from './nodes/TransformNode';

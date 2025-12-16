@@ -65,6 +65,13 @@ export class CheckersNode extends LensNode {
       onChange: () => this.requestCook()
     });
 
+    this.addParm('centered', {
+      value: false,
+      type: 'boolean',
+      displayName: 'Centered',
+      onChange: () => this.requestCook()
+    });
+
     this.addResolutionParm();
 
     this.output = this.out('image');
@@ -75,6 +82,7 @@ export class CheckersNode extends LensNode {
     this.watchProp('mode', () => this.requestCook());
     this.watchProp('size', () => this.requestCook());
     this.watchProp('divisions', () => this.requestCook());
+    this.watchProp('centered', () => this.requestCook());
 
     this.onReady = () => this.requestCook();
   }
@@ -84,12 +92,22 @@ export class CheckersNode extends LensNode {
     const mode = this.props.mode.value;
     const color1 = this.normalizeColor(this.props.color1.value);
     const color2 = this.normalizeColor(this.props.color2.value);
+    const centered = this.props.centered.value;
 
     let checkerSize: number;
     if (mode === 'size') {
       checkerSize = this.props.size.value;
     } else {
       checkerSize = width / this.props.divisions.value;
+    }
+
+    // Calculate offset to center the pattern
+    let offsetX = 0;
+    let offsetY = 0;
+    if (centered) {
+      // Offset so that the center of the image is at the center of a checker cell
+      offsetX = (width / 2) % checkerSize - checkerSize / 2;
+      offsetY = (height / 2) % checkerSize - checkerSize / 2;
     }
 
     const buffer = this.createRGBA(width, height);
@@ -101,7 +119,7 @@ export class CheckersNode extends LensNode {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const idx = y * width + x;
-        const isEven = (Math.floor(x / checkerSize) + Math.floor(y / checkerSize)) % 2 === 0;
+        const isEven = (Math.floor((x - offsetX) / checkerSize) + Math.floor((y - offsetY) / checkerSize)) % 2 === 0;
         const color = isEven ? color1 : color2;
 
         r[idx] = color.r;

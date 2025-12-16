@@ -48,15 +48,21 @@ export const codeTemplates: Record<string, (name: string) => string> = {
 const input = node.in('input', null);
 
 // Define properties (shown in inspector)
-node.defineProp('value', {
+node.addParm('value', {
   value: 1.0,
   type: 'slider',
   params: { min: 0, max: 10, step: 0.1 },
-  displayName: 'Value'
+  displayName: 'Value',
+  onChange: () => process()
 });
 
 // Define outputs
 const output = node.out('output');
+
+// Process function
+function process() {
+  output.setValue(node.props.value.value);
+}
 
 // React to input changes
 input.onChange = (value) => {
@@ -64,15 +70,11 @@ input.onChange = (value) => {
   output.setValue(value);
 };
 
-// React to property changes
-node.watchProp('value', (newValue) => {
-  output.setValue(newValue);
-});
+// Watch property changes (use with onChange for reliability)
+node.watchProp('value', () => process());
 
 // Called once when node is ready
-node.onReady = () => {
-  output.setValue(node.props.value.value);
-};
+node.onReady = () => process();
 `,
 
   lens: (name: string) => `// ${name} - Image Processing Node
@@ -90,26 +92,29 @@ node.onReady = () => {
 // Define image input
 const imageInput = node.in('image', null);
 
-// Define properties
-node.defineProp('intensity', {
+// Define properties (use both onChange and watchProp for reliability)
+node.addParm('intensity', {
   value: 1.0,
   type: 'slider',
   params: { min: 0, max: 2, step: 0.01 },
-  displayName: 'Intensity'
+  displayName: 'Intensity',
+  onChange: () => process()
 });
 
-node.defineProp('width', {
+node.addParm('width', {
   value: 512,
   type: 'int',
   params: { min: 1, max: 4096, step: 1 },
-  displayName: 'Width'
+  displayName: 'Width',
+  onChange: () => process()
 });
 
-node.defineProp('height', {
+node.addParm('height', {
   value: 512,
   type: 'int',
   params: { min: 1, max: 4096, step: 1 },
-  displayName: 'Height'
+  displayName: 'Height',
+  onChange: () => process()
 });
 
 // Define output
@@ -147,13 +152,13 @@ function process() {
   node.preview = canvas;
 }
 
-// React to changes
+// React to changes (watchProp used with onChange for reliability)
 imageInput.onChange = process;
-node.watchProp('intensity', process);
-node.watchProp('width', process);
-node.watchProp('height', process);
+node.watchProp('intensity', () => process());
+node.watchProp('width', () => process());
+node.watchProp('height', () => process());
 
-node.onReady = process;
+node.onReady = () => process();
 `
 };
 

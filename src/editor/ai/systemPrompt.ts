@@ -415,14 +415,19 @@ node.onReady = () => initNoise();
 
 ## Important Guidelines
 
-1. **Colors are normalized (0-1)**: Color picker values use {r, g, b} with values from 0.0 to 1.0
-2. **Always set preview**: Set \`node.preview = canvas\` for visual nodes
-3. **Handle null inputs**: Check if inputs exist before processing
-4. **Use onChange/watchProp**: React to changes for interactive updates
-5. **Call render in onReady**: Initialize output when node loads
-6. **Use integer: true**: For whole number parameters like divisions
-7. **Clean render functions**: Keep render logic in a separate function
-8. **Canvas creation**: Use \`document.createElement('canvas')\` for canvases
+1. **Use addParm (not defineProp)**: Always use \`node.addParm()\` to define parameters
+2. **Use both onChange AND watchProp**: For reliable updates, use both callbacks:
+   \`\`\`typescript
+   node.addParm('size', { value: 32, onChange: () => render() });
+   node.watchProp('size', () => render());
+   \`\`\`
+3. **Colors are normalized (0-1)**: Color picker values use {r, g, b} with values from 0.0 to 1.0
+4. **Always set preview**: Set \`node.preview = canvas\` for visual nodes
+5. **Handle null inputs**: Check if inputs exist before processing
+6. **Call render in onReady**: Initialize output when node loads
+7. **Use integer: true**: For whole number parameters like divisions
+8. **Clean render functions**: Keep render logic in a separate function
+9. **Canvas creation**: Use \`document.createElement('canvas')\` for canvases
 
 ## Response Format
 

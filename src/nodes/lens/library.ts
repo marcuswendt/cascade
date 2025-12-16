@@ -51,6 +51,13 @@ export const lensLibrary: Library = {
       nodes: [
         { name: 'Resize', icon: 'Maximize2', description: 'Scale or resize an image', type: 'Resize' }
       ]
+    },
+    {
+      id: 'transform',
+      label: 'Transform',
+      nodes: [
+        { name: 'Transform', icon: 'Move', description: '2D rotation, translation, and scaling', type: 'Transform' }
+      ]
     }
   ]
 };
