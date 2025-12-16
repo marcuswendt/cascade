@@ -263,6 +263,8 @@ export class Node {
 
     this.props = { ...this.props };
     this.markDirty();
+    // Trigger UI reactivity if callback is set (editor sets this)
+    Node.onPropParamsChanged?.(this.id);
   }
 
   /**

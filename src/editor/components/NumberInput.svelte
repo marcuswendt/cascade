@@ -16,22 +16,10 @@
   // Display value for number input - formatted based on integer setting
   $: displayValue = isInteger ? Math.round(value) : value;
 
-  // Reference to the number input element for manual sync
-  let numberInputEl: HTMLInputElement;
-
-  // Sync number input when prop value changes externally (e.g., from slider)
-  $: if (numberInputEl && document.activeElement !== numberInputEl) {
-    numberInputEl.value = String(displayValue);
-  }
-
   function handleSliderInput(e: Event) {
     const newValue = parseFloat((e.target as HTMLInputElement).value);
     const finalValue = isInteger ? Math.round(newValue) : newValue;
     onValueChange(finalValue);
-    // Immediately update the number input display
-    if (numberInputEl) {
-      numberInputEl.value = String(finalValue);
-    }
   }
 
   function handleNumberInput(e: Event) {
@@ -71,18 +59,19 @@
         disabled={disabled}
         on:input={handleSliderInput}
       />
-      <input
-        type="number"
-        class="number-input"
-        bind:this={numberInputEl}
-        min={min}
-        max={max}
-        step={step}
-        value={displayValue}
-        disabled={disabled}
-        on:input={handleNumberInput}
-        on:blur={handleBlur}
-      />
+      {#key displayValue}
+        <input
+          type="number"
+          class="number-input"
+          min={min}
+          max={max}
+          step={step}
+          value={displayValue}
+          disabled={disabled}
+          on:input={handleNumberInput}
+          on:blur={handleBlur}
+        />
+      {/key}
     </div>
   {:else}
     <input
