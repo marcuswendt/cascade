@@ -23,16 +23,21 @@
   let searchInput: HTMLInputElement;
   let searchQuery = '';
   let panelElement: HTMLDivElement;
+  let submenuElement: HTMLDivElement;
   let calculatedPosition = { x: 0, y: 0 };
   let hasCalculated = false;
   let mainColumnWidth = 160; // Default width, updated dynamically
-  
+  let submenuColumnWidth = 180; // Width of submenu column for third-level positioning
+
   // Navigation state
   let selectedLibraryIndex = -1;
   let selectedCategoryIndex = -1;
   let selectedNodeIndex = -1;
   let navigationMode: 'library' | 'category' | 'node' = 'library';
   let hoveredLibraryId: string | null | undefined = undefined; // undefined = no hover, null = "All", string = library id
+  let hoveredCategoryId: string | null = null; // null = no category hovered
+  let hoveredLibraryY: number = 0; // Y position of hovered library item
+  let hoveredCategoryY: number = 0; // Y position of hovered category item
   
   // Calculate position relative to Graph window, centered on cursor, clamped to screen
   function calculatePosition() {
@@ -175,16 +180,57 @@
     return all;
   }
   
-  // Get nodes for the hovered library (for submenu)
+  // Get the hovered library object
+  $: hoveredLibrary = hoveredLibraryId && hoveredLibraryId !== 'all'
+    ? nodeLibraries.find(lib => lib.id === hoveredLibraryId)
+    : null;
+
+  // Check if library has only one category - if so, flatten it
+  $: hoveredLibraryHasSingleCategory = hoveredLibrary
+    ? hoveredLibrary.categories.length === 1
+    : false;
+
+  // Get categories for hovered library, separating multi-node and single-node categories
+  // If library has only one category, don't show it as a category (flatten it)
+  $: hoveredLibraryCategories = hoveredLibrary
+    ? (hoveredLibraryHasSingleCategory
+        ? []
+        : hoveredLibrary.categories.filter(cat => cat.nodes.length > 1))
+    : [];
+
+  // Get direct nodes (from single-node categories) for hovered library
+  // If library has only one category, show all its nodes directly
+  $: hoveredLibraryDirectNodes = hoveredLibrary
+    ? (hoveredLibraryHasSingleCategory
+        ? hoveredLibrary.categories[0].nodes
+        : hoveredLibrary.categories
+            .filter(cat => cat.nodes.length === 1)
+            .map(cat => cat.nodes[0]))
+    : [];
+
+  // Get nodes for the hovered category (third level)
+  $: hoveredCategoryNodes = hoveredCategoryId && hoveredLibrary
+    ? (hoveredLibrary.categories.find(cat => cat.id === hoveredCategoryId)?.nodes || [])
+    : [];
+
+  // For "All" option - show all nodes flattened
   $: hoveredNodes = hoveredLibraryId === null
     ? getAllNodes().sort((a, b) => a.name.localeCompare(b.name))
-    : hoveredLibraryId !== undefined
-      ? getNodesFromLibrary(hoveredLibraryId).sort((a, b) => a.name.localeCompare(b.name))
-      : [];
+    : [];
 
   // Update main column width when submenu is about to show
   $: if (hoveredLibraryId !== undefined && panelElement) {
     mainColumnWidth = panelElement.getBoundingClientRect().width;
+  }
+
+  // Update submenu column width when category submenu is about to show
+  $: if (hoveredCategoryId && submenuElement) {
+    submenuColumnWidth = submenuElement.getBoundingClientRect().width;
+  }
+
+  // Reset category hover when library changes
+  $: if (hoveredLibraryId) {
+    hoveredCategoryId = null;
   }
 
   // Get nodes based on context
@@ -649,9 +695,10 @@
             selectedLibraryIndex = index;
             handleLibraryClick(library.id);
           }}
-          on:mouseenter={() => {
+          on:mouseenter={(e) => {
             selectedLibraryIndex = index;
             hoveredLibraryId = library.id;
+            hoveredLibraryY = (e.currentTarget as HTMLElement).getBoundingClientRect().top;
           }}
         >
           <span class="label">{library.label}</span>
@@ -672,9 +719,10 @@
           selectedLibraryIndex = availableLibraries.length;
           handleLibraryClick('all');
         }}
-        on:mouseenter={() => {
+        on:mouseenter={(e) => {
           selectedLibraryIndex = availableLibraries.length;
           hoveredLibraryId = null;
+          hoveredLibraryY = (e.currentTarget as HTMLElement).getBoundingClientRect().top;
         }}
       >
         <span class="label">All</span>
@@ -720,45 +768,141 @@
     {/if}
   </div>
   
-  <!-- Nodes submenu column (appears when library is hovered) -->
-  {#if !searchQuery && hoveredLibraryId !== undefined && hoveredNodes.length > 0}
-    <div
-      class="menu-column submenu-column"
-      style="left: {calculatedPosition.x + mainColumnWidth}px; top: {calculatedPosition.y}px"
-      on:mouseenter={() => {
-        // Keep submenu open when hovering over it
-      }}
-      on:mouseleave|self={() => {
-        // Close submenu when leaving it
-        setTimeout(() => {
-          const activeHover = document.querySelector('.menu-column:hover');
-          if (!activeHover) {
-            hoveredLibraryId = undefined;
-          }
-        }, 50);
-      }}
-    >
-      {#each hoveredNodes as node, index}
-        <button
-          class="node-item"
-          class:keyboard-selected={navigationMode === 'node' && selectedNodeIndex === index}
-          on:click={() => {
-            selectedNodeIndex = index;
-            handleNodeClick(node);
+  <!-- Submenu column for library hover -->
+  {#if !searchQuery && hoveredLibraryId !== undefined}
+    <!-- For "All" - show flattened nodes -->
+    {#if hoveredLibraryId === null && hoveredNodes.length > 0}
+      <div
+        class="menu-column submenu-column"
+        style="left: {calculatedPosition.x + mainColumnWidth}px; top: {hoveredLibraryY}px"
+        on:mouseenter={() => {}}
+        on:mouseleave|self={() => {
+          setTimeout(() => {
+            const activeHover = document.querySelector('.menu-column:hover');
+            if (!activeHover) {
+              hoveredLibraryId = undefined;
+            }
+          }, 50);
+        }}
+      >
+        {#each hoveredNodes as node, index}
+          <button
+            class="node-item"
+            class:keyboard-selected={navigationMode === 'node' && selectedNodeIndex === index}
+            on:click={() => {
+              selectedNodeIndex = index;
+              handleNodeClick(node);
+            }}
+            on:mouseenter={() => {
+              selectedNodeIndex = index;
+            }}
+            title={node.description}
+          >
+            <span class="node-icon">
+              <Icon name={node.icon} size={16} />
+            </span>
+            <span class="node-name">{node.name}</span>
+            <span class="node-path">{getNodePathShort(node.type)}</span>
+          </button>
+        {/each}
+      </div>
+    <!-- For specific library - show categories and direct nodes -->
+    {:else if hoveredLibrary && (hoveredLibraryCategories.length > 0 || hoveredLibraryDirectNodes.length > 0)}
+      <div
+        bind:this={submenuElement}
+        class="menu-column submenu-column"
+        style="left: {calculatedPosition.x + mainColumnWidth}px; top: {hoveredLibraryY}px"
+        on:mouseenter={() => {}}
+        on:mouseleave|self={() => {
+          setTimeout(() => {
+            const activeHover = document.querySelector('.menu-column:hover');
+            if (!activeHover) {
+              hoveredLibraryId = undefined;
+              hoveredCategoryId = null;
+            }
+          }, 50);
+        }}
+      >
+        <!-- Multi-node categories (expandable) -->
+        {#each hoveredLibraryCategories as category}
+          <button
+            class="library-item"
+            class:active={hoveredCategoryId === category.id}
+            on:click={() => {
+              // Click on category could expand it, or we can make it just hover
+            }}
+            on:mouseenter={(e) => {
+              hoveredCategoryId = category.id;
+              hoveredCategoryY = (e.currentTarget as HTMLElement).getBoundingClientRect().top;
+            }}
+          >
+            <span class="label">{category.label}</span>
+            <span class="arrow-icon">
+              <Icon name="ChevronRight" size={12} />
+            </span>
+          </button>
+        {/each}
+
+        <!-- Separator if we have both categories and direct nodes -->
+        {#if hoveredLibraryCategories.length > 0 && hoveredLibraryDirectNodes.length > 0}
+          <div class="separator"></div>
+        {/if}
+
+        <!-- Single-node categories shown as direct nodes -->
+        {#each hoveredLibraryDirectNodes as node}
+          <button
+            class="node-item"
+            on:click={() => handleNodeClick(node)}
+            on:mouseenter={() => {
+              hoveredCategoryId = null;
+            }}
+            title={node.description}
+          >
+            <span class="node-icon">
+              <Icon name={node.icon} size={16} />
+            </span>
+            <span class="node-name">{node.name}</span>
+          </button>
+        {/each}
+      </div>
+
+      <!-- Third level: nodes for hovered category -->
+      {#if hoveredCategoryId && hoveredCategoryNodes.length > 0}
+        <div
+          class="menu-column submenu-column nodes-submenu"
+          style="left: {calculatedPosition.x + mainColumnWidth + submenuColumnWidth}px; top: {hoveredCategoryY}px"
+          on:mouseenter={() => {}}
+          on:mouseleave|self={() => {
+            setTimeout(() => {
+              const activeHover = document.querySelector('.menu-column:hover');
+              if (!activeHover) {
+                hoveredCategoryId = null;
+              }
+            }, 50);
           }}
-          on:mouseenter={() => {
-            selectedNodeIndex = index;
-          }}
-          title={node.description}
         >
-          <span class="node-icon">
-            <Icon name={node.icon} size={16} />
-          </span>
-          <span class="node-name">{node.name}</span>
-          <span class="node-path">{getNodePathShort(node.type)}</span>
-        </button>
-      {/each}
-    </div>
+          {#each hoveredCategoryNodes as node, index}
+            <button
+              class="node-item"
+              class:keyboard-selected={navigationMode === 'node' && selectedNodeIndex === index}
+              on:click={() => {
+                selectedNodeIndex = index;
+                handleNodeClick(node);
+              }}
+              on:mouseenter={() => {
+                selectedNodeIndex = index;
+              }}
+              title={node.description}
+            >
+              <span class="node-icon">
+                <Icon name={node.icon} size={16} />
+              </span>
+              <span class="node-name">{node.name}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    {/if}
   {/if}
 {/if}
 
@@ -793,6 +937,10 @@
   .submenu-column {
     z-index: 200;
     min-width: 180px;
+  }
+
+  .nodes-submenu {
+    z-index: 199;
   }
 
   @keyframes fadeIn {
