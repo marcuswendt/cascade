@@ -4437,6 +4437,7 @@ node.onReady = () => {
       <NodeUI
         {node}
         selected={selectedNodes.includes(node.id)}
+        canvasTransform={internalTransform}
         on:portClick={(e) => handlePortClick(e.detail.nodeId, e.detail.portId, e.detail.portType, e.detail.event)}
         on:portMouseDown={(e) => handlePortMouseDown(e.detail.nodeId, e.detail.portId, e.detail.portType, e.detail.event)}
         on:nodeMouseDown={(e) => handleNodeMouseDown(e.detail.nodeId, e.detail.event)}

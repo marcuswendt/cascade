@@ -7,7 +7,8 @@
 
   export let node: Node;
   export let selected = false;
-  
+  export let canvasTransform: { x: number; y: number; zoom: number } = { x: 0, y: 0, zoom: 1 };
+
   const dispatch = createEventDispatcher();
   
   $: hasError = node.error !== null;
@@ -95,20 +96,32 @@
   }
   
   let isDragging = false;
-  let tooltip: { text: string; x: number; y: number; type: 'input' | 'output' } | null = null;
+  let tooltip: { name: string; dataType: string; color: string; x: number; y: number; type: 'input' | 'output' } | null = null;
   let isEditingName = false;
   let nameInput: HTMLInputElement;
   let tempName = node.id;
-  
-  function showPortTooltip(e: MouseEvent, portName: string, portType: 'input' | 'output') {
+
+  function showPortTooltip(e: MouseEvent, portName: string, dataType: string, color: string, portType: 'input' | 'output') {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    
+
+    // getBoundingClientRect returns viewport coordinates, but since the tooltip
+    // is inside the transformed canvas container, we need to convert to container space
+    const viewportX = rect.left + rect.width / 2;
+    const viewportY = portType === 'input' ? rect.bottom : rect.top;
+
+    // Convert viewport coordinates to container coordinates
+    // (accounting for canvas pan and zoom)
+    const containerX = (viewportX - canvasTransform.x) / canvasTransform.zoom;
+    const containerY = (viewportY - canvasTransform.y) / canvasTransform.zoom;
+
+    // Small offset in container space (2px gap between port and tooltip)
+    const offset = 2;
     tooltip = {
-      text: portName,
-      x: rect.left + rect.width / 2,
-      y: portType === 'input' 
-        ? rect.bottom + 4
-        : rect.top - 4,
+      name: portName,
+      dataType,
+      color,
+      x: containerX,
+      y: portType === 'input' ? containerY + offset : containerY - offset,
       type: portType
     };
   }
@@ -293,7 +306,7 @@
               on:click={(e) => handlePortClick(port.id, 'input', e)}
               on:mousedown={(e) => handlePortMouseDown(port.id, 'input', e)}
               on:keydown={(e) => handleKeyDown(port.id, 'input', e)}
-              on:mouseenter={(e) => showPortTooltip(e, port.name, 'input')}
+              on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'input')}
               on:mouseleave={hidePortTooltip}
               data-node-id={node.id}
               data-port-id={port.id}
@@ -313,7 +326,7 @@
                 on:click={(e) => handlePortClick(displayPort.firstPort.id, 'input', e)}
                 on:mousedown={(e) => handlePortMouseDown(displayPort.firstPort.id, 'input', e)}
                 on:keydown={(e) => handleKeyDown(displayPort.firstPort.id, 'input', e)}
-                on:mouseenter={(e) => showPortTooltip(e, `Drop connections here`, 'input')}
+                on:mouseenter={(e) => showPortTooltip(e, displayPort.baseName, displayPort.firstPort.dataType || 'any', portColor, 'input')}
                 on:mouseleave={hidePortTooltip}
                 data-node-id={node.id}
                 data-port-id={displayPort.firstPort.id}
@@ -385,7 +398,7 @@
             on:click={(e) => handlePortClick(port.id, 'output', e)}
             on:mousedown={(e) => handlePortMouseDown(port.id, 'output', e)}
             on:keydown={(e) => handleKeyDown(port.id, 'output', e)}
-            on:mouseenter={(e) => showPortTooltip(e, port.name, 'output')}
+            on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'output')}
             on:mouseleave={hidePortTooltip}
             data-node-id={node.id}
             data-port-id={port.id}
@@ -435,12 +448,13 @@
 
 <!-- Port tooltip -->
 {#if tooltip}
-  <div 
+  <div
     class="port-tooltip port-tooltip-{tooltip.type}"
-    style="left: {tooltip.x}px; top: {tooltip.y}px;"
+    style="left: {tooltip.x}px; top: {tooltip.y}px; border-color: {tooltip.color};"
     role="tooltip"
   >
-    {tooltip.text}
+    <span class="tooltip-name">{tooltip.name}</span>
+    <span class="tooltip-type" style="color: {tooltip.color};">{tooltip.dataType}</span>
   </div>
 {/if}
 
@@ -736,22 +750,35 @@
   }
   
   .port-tooltip {
-    position: fixed;
+    position: absolute;
     pointer-events: none;
-    background: rgba(0, 0, 0, 0.85);
+    background: #1a1a1a;
     color: #fff;
-    padding: 4px 8px;
+    padding: 4px 10px;
     border-radius: 4px;
     font-size: 11px;
     white-space: nowrap;
     z-index: 10000;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    border: 1px solid;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    display: flex;
+    gap: 6px;
+    align-items: center;
   }
-  
+
+  .tooltip-name {
+    font-weight: 500;
+  }
+
+  .tooltip-type {
+    font-size: 10px;
+    opacity: 0.9;
+  }
+
   .port-tooltip-input {
     transform: translate(-50%, 0);
   }
-  
+
   .port-tooltip-output {
     transform: translate(-50%, -100%);
   }
