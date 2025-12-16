@@ -3,24 +3,61 @@ import { writable, get } from 'svelte/store';
 const STORAGE_KEY = 'cascade-user-settings';
 
 /**
+ * Supported AI service providers
+ */
+export type AIServiceType = 'anthropic' | 'openai' | 'google' | 'replicate' | 'fal' | 'custom';
+
+/**
  * API Key entry for external services
  */
 export interface APIKeyEntry {
   id: string;
-  service: 'anthropic' | 'openai' | 'google' | 'custom';
+  service: AIServiceType;
   label: string;
   key: string;
   endpoint?: string;
 }
 
 /**
- * Predefined service options
+ * Predefined service options with API key URLs
  */
 export const SERVICE_PRESETS = [
-  { value: 'anthropic', label: 'Anthropic Claude' },
-  { value: 'openai', label: 'OpenAI ChatGPT' },
-  { value: 'google', label: 'Google Gemini' },
-  { value: 'custom', label: 'Custom' }
+  {
+    value: 'anthropic',
+    label: 'Anthropic Claude',
+    keyUrl: 'https://console.anthropic.com/settings/keys',
+    description: 'Claude models for text and vision'
+  },
+  {
+    value: 'openai',
+    label: 'OpenAI',
+    keyUrl: 'https://platform.openai.com/api-keys',
+    description: 'GPT models and DALL-E image generation'
+  },
+  {
+    value: 'google',
+    label: 'Google AI',
+    keyUrl: 'https://aistudio.google.com/apikey',
+    description: 'Gemini models and Imagen'
+  },
+  {
+    value: 'replicate',
+    label: 'Replicate',
+    keyUrl: 'https://replicate.com/account/api-tokens',
+    description: 'Flux, Stable Diffusion, and more'
+  },
+  {
+    value: 'fal',
+    label: 'Fal.ai',
+    keyUrl: 'https://fal.ai/dashboard/keys',
+    description: 'Fast Flux and image models'
+  },
+  {
+    value: 'custom',
+    label: 'Custom',
+    keyUrl: undefined,
+    description: 'Custom API endpoint'
+  }
 ] as const;
 
 /**
@@ -163,6 +200,29 @@ export function updateEditorSettings(updates: Partial<UserSettings['editor']>): 
     ...settings,
     editor: { ...settings.editor, ...updates }
   }));
+}
+
+/**
+ * Check if a provider has an API key configured
+ */
+export function isProviderConfigured(service: AIServiceType): boolean {
+  const key = getApiKey(service);
+  return !!key && key.trim().length > 0;
+}
+
+/**
+ * Get the API key URL for a service
+ */
+export function getApiKeyUrl(service: AIServiceType): string | undefined {
+  const preset = SERVICE_PRESETS.find(p => p.value === service);
+  return preset?.keyUrl;
+}
+
+/**
+ * Get preset info for a service
+ */
+export function getServicePreset(service: AIServiceType) {
+  return SERVICE_PRESETS.find(p => p.value === service);
 }
 
 export { settingsStore };

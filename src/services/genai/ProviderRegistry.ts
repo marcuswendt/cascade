@@ -216,6 +216,7 @@ class ProviderRegistryClass {
 
 	/**
 	 * Get model options for a select dropdown, grouped by provider
+	 * Models without API keys are marked with * and still selectable
 	 */
 	getImageModelOptions(): { value: string; label: string; group?: string; disabled?: boolean }[] {
 		return this.getImageModels().map((model) => {
@@ -224,15 +225,15 @@ class ProviderRegistryClass {
 
 			return {
 				value: model.id,
-				label: isConfigured ? model.name : `${model.name} (no API key)`,
-				group: provider?.name ?? model.provider,
-				disabled: !isConfigured
+				label: isConfigured ? model.name : `${model.name} *`,
+				group: provider?.name ?? model.provider
 			};
 		});
 	}
 
 	/**
 	 * Get edit model options for a select dropdown, grouped by provider
+	 * Models without API keys are marked with * and still selectable
 	 */
 	getEditModelOptions(): { value: string; label: string; group?: string; disabled?: boolean }[] {
 		return this.getEditModels().map((model) => {
@@ -241,15 +242,15 @@ class ProviderRegistryClass {
 
 			return {
 				value: model.id,
-				label: isConfigured ? model.name : `${model.name} (no API key)`,
-				group: provider?.name ?? model.provider,
-				disabled: !isConfigured
+				label: isConfigured ? model.name : `${model.name} *`,
+				group: provider?.name ?? model.provider
 			};
 		});
 	}
 
 	/**
 	 * Get LLM model options for a select dropdown
+	 * Models without API keys are marked with * and still selectable
 	 */
 	getLLMModelOptions(): { value: string; label: string; disabled?: boolean }[] {
 		return this.getLLMModels().map((model) => {
@@ -258,14 +259,14 @@ class ProviderRegistryClass {
 
 			return {
 				value: model.id,
-				label: isConfigured ? model.name : `${model.name} (no API key)`,
-				disabled: !isConfigured
+				label: isConfigured ? model.name : `${model.name} *`
 			};
 		});
 	}
 
 	/**
 	 * Get vision model options for a select dropdown
+	 * Models without API keys are marked with * and still selectable
 	 */
 	getVisionModelOptions(): { value: string; label: string; disabled?: boolean }[] {
 		return this.getVisionModels().map((model) => {
@@ -274,8 +275,7 @@ class ProviderRegistryClass {
 
 			return {
 				value: model.id,
-				label: isConfigured ? model.name : `${model.name} (no API key)`,
-				disabled: !isConfigured
+				label: isConfigured ? model.name : `${model.name} *`
 			};
 		});
 	}

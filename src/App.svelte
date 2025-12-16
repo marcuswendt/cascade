@@ -6,6 +6,8 @@
   import { dockviewStore } from './editor/dockview/dockview-store.svelte';
   import ExportDialog from './editor/ExportDialog.svelte';
   import SettingsDialog from './editor/SettingsDialog.svelte';
+  import { settingsDialogRequest, clearSettingsDialogRequest } from './editor/stores/uiEventStore';
+  import type { AIServiceType } from './editor/stores/settingsStore';
   import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
   import { isElectron, onAnyMenuCommand } from './lib/electron';
   import { Graph } from '@/nodes/Graph';
@@ -39,6 +41,7 @@
   let globalMousePosition = { x: 0, y: 0 }; // Track mouse position globally
   let exportDialogOpen = false;
   let settingsDialogOpen = false;
+  let settingsInitialService: AIServiceType | null = null;
   let graph: Graph | undefined = undefined;
   let documentName = 'Untitled';
   let currentFilePath: string | null = null;
@@ -545,6 +548,15 @@
 
     updateWindowTitle();
 
+    // Subscribe to settings dialog requests from nodes/components
+    const unsubSettingsRequest = settingsDialogRequest.subscribe(request => {
+      if (request) {
+        settingsInitialService = request.service;
+        settingsDialogOpen = true;
+        clearSettingsDialogRequest();
+      }
+    });
+
     // Load default graph on startup (async IIFE to avoid onMount return type issues)
     (async () => {
     if (!graph) {
@@ -991,6 +1003,7 @@
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('mousemove', handleMouseMove);
       unsubElectronMenu?.();
+      unsubSettingsRequest();
     };
   });
 </script>
@@ -1083,7 +1096,11 @@
 
   <SettingsDialog
     bind:open={settingsDialogOpen}
-    on:close={() => settingsDialogOpen = false}
+    initialService={settingsInitialService}
+    on:close={() => {
+      settingsDialogOpen = false;
+      settingsInitialService = null;
+    }}
   />
 </div>
 

@@ -4,10 +4,13 @@
     settingsStore,
     SERVICE_PRESETS,
     type APIKeyEntry,
-    type UserSettings
+    type UserSettings,
+    type AIServiceType
   } from './stores/settingsStore';
 
   export let open = false;
+  /** If set, auto-adds a new API key entry for this service when dialog opens */
+  export let initialService: AIServiceType | null = null;
 
   const dispatch = createEventDispatcher();
 
@@ -16,12 +19,50 @@
   let activeTab: TabId = 'apiKeys';
   let localSettings: UserSettings;
   let showKeyIds: Set<string> = new Set();
+  let wasOpen = false;
 
-  // Deep clone settings when dialog opens
-  $: if (open) {
-    localSettings = JSON.parse(JSON.stringify($settingsStore));
+  // Initialize settings only when dialog transitions from closed to open
+  $: if (open && !wasOpen) {
+    wasOpen = true;
+    const currentSettings = $settingsStore;
+    localSettings = JSON.parse(JSON.stringify(currentSettings));
     showKeyIds = new Set();
     activeTab = 'apiKeys';
+
+    if (initialService) {
+      const hasKey = localSettings.apiKeys.some(k => k.service === initialService);
+      if (!hasKey) {
+        const preset = SERVICE_PRESETS.find(p => p.value === initialService);
+        const newEntry: APIKeyEntry = {
+          id: crypto.randomUUID(),
+          service: initialService,
+          label: preset?.label || initialService,
+          key: ''
+        };
+        localSettings.apiKeys = [...localSettings.apiKeys, newEntry];
+      }
+      initialService = null;
+    }
+  } else if (!open && wasOpen) {
+    wasOpen = false;
+  }
+
+  function getPresetForService(service: string) {
+    return SERVICE_PRESETS.find(p => p.value === service);
+  }
+
+  function getAvailablePresetsForEntry(entry: APIKeyEntry) {
+    const usedServices = new Set(
+      localSettings.apiKeys
+        .filter(k => k.id !== entry.id)
+        .map(k => k.service)
+    );
+
+    return SERVICE_PRESETS.filter(preset =>
+      preset.value === 'custom' ||
+      preset.value === entry.service ||
+      !usedServices.has(preset.value)
+    );
   }
 
   function handleClose() {
@@ -42,10 +83,15 @@
   }
 
   function addApiKey() {
+    const usedServices = new Set(localSettings.apiKeys.map(k => k.service));
+    const availablePreset = SERVICE_PRESETS.find(p =>
+      p.value === 'custom' || !usedServices.has(p.value)
+    ) || SERVICE_PRESETS[0];
+
     const newEntry: APIKeyEntry = {
       id: crypto.randomUUID(),
-      service: 'anthropic',
-      label: 'Anthropic Claude',
+      service: availablePreset.value as APIKeyEntry['service'],
+      label: availablePreset.label,
       key: ''
     };
     localSettings.apiKeys = [...localSettings.apiKeys, newEntry];
@@ -75,6 +121,12 @@
       showKeyIds.add(id);
     }
     showKeyIds = showKeyIds;
+  }
+
+  function maskKey(key: string): string {
+    if (!key) return '';
+    if (key.length <= 8) return '••••••••';
+    return key.slice(0, 4) + '••••' + key.slice(-4);
   }
 
   const tabs = [
@@ -125,88 +177,116 @@
         {#if activeTab === 'apiKeys'}
           <div class="section">
             <p class="section-description">
-              API keys are stored locally on your machine and are never included in exported projects.
+              API keys are stored locally and never included in exports.
             </p>
 
-            {#if localSettings.apiKeys.length === 0}
-              <div class="empty-state">
-                No API keys configured. Click "Add API Key" to add one.
-              </div>
-            {/if}
-
-            {#each localSettings.apiKeys as entry (entry.id)}
-              <div class="api-key-card">
-                <div class="api-key-header">
-                  <div class="form-group">
-                    <label>Service</label>
+            <div class="api-key-list">
+              {#each localSettings.apiKeys as entry (entry.id)}
+                {#if entry.service === 'custom'}
+                  <!-- Custom entry: name, endpoint, key -->
+                  <div class="api-key-row custom">
+                    <input
+                      type="text"
+                      class="name-input"
+                      bind:value={entry.label}
+                      placeholder="Name"
+                    />
+                    <input
+                      type="text"
+                      class="endpoint-input"
+                      bind:value={entry.endpoint}
+                      placeholder="Endpoint URL"
+                    />
+                    <div class="key-cell">
+                      {#if showKeyIds.has(entry.id)}
+                        <input
+                          type="text"
+                          class="key-input"
+                          bind:value={entry.key}
+                          placeholder="API Key"
+                        />
+                      {:else}
+                        <input
+                          type="password"
+                          class="key-input"
+                          bind:value={entry.key}
+                          placeholder="API Key"
+                        />
+                      {/if}
+                      <button
+                        class="toggle-btn"
+                        on:click={() => toggleShowKey(entry.id)}
+                        title={showKeyIds.has(entry.id) ? 'Hide' : 'Show'}
+                      >
+                        {showKeyIds.has(entry.id) ? '◠' : '◡'}
+                      </button>
+                    </div>
+                    <button class="remove-btn" on:click={() => removeApiKey(entry.id)}>×</button>
+                  </div>
+                {:else}
+                  <!-- Standard provider row -->
+                  <div class="api-key-row">
                     <select
+                      class="provider-select"
                       value={entry.service}
                       on:change={(e) => handleServiceChange(entry, e.currentTarget.value)}
                     >
-                      {#each SERVICE_PRESETS as preset}
+                      {#each getAvailablePresetsForEntry(entry) as preset}
                         <option value={preset.value}>{preset.label}</option>
                       {/each}
                     </select>
-                  </div>
-                  <button
-                    class="remove-button"
-                    on:click={() => removeApiKey(entry.id)}
-                    title="Remove API key"
-                  >
-                    ×
-                  </button>
-                </div>
-
-                {#if entry.service === 'custom'}
-                  <div class="form-group">
-                    <label>Label</label>
-                    <input
-                      type="text"
-                      bind:value={entry.label}
-                      placeholder="e.g., ComfyUI Localhost"
-                    />
-                  </div>
-                  <div class="form-group">
-                    <label>Endpoint</label>
-                    <input
-                      type="text"
-                      bind:value={entry.endpoint}
-                      placeholder="e.g., http://localhost:8188"
-                    />
+                    <div class="key-cell">
+                      {#if entry.key}
+                        {#if showKeyIds.has(entry.id)}
+                          <input
+                            type="text"
+                            class="key-input"
+                            bind:value={entry.key}
+                            placeholder="API Key"
+                          />
+                        {:else}
+                          <input
+                            type="password"
+                            class="key-input"
+                            bind:value={entry.key}
+                            placeholder="API Key"
+                          />
+                        {/if}
+                        <button
+                          class="toggle-btn"
+                          on:click={() => toggleShowKey(entry.id)}
+                          title={showKeyIds.has(entry.id) ? 'Hide' : 'Show'}
+                        >
+                          {showKeyIds.has(entry.id) ? '◠' : '◡'}
+                        </button>
+                      {:else}
+                        <input
+                          type="password"
+                          class="key-input"
+                          bind:value={entry.key}
+                          placeholder="Enter API key"
+                        />
+                        {#if getPresetForService(entry.service)?.keyUrl}
+                          <a
+                            href={getPresetForService(entry.service)?.keyUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="get-key-link"
+                          >
+                            Get Key
+                          </a>
+                        {/if}
+                      {/if}
+                    </div>
+                    <button class="remove-btn" on:click={() => removeApiKey(entry.id)}>×</button>
                   </div>
                 {/if}
+              {/each}
 
-                <div class="form-group">
-                  <label>API Key</label>
-                  <div class="key-input-wrapper">
-                    {#if showKeyIds.has(entry.id)}
-                      <input
-                        type="text"
-                        bind:value={entry.key}
-                        placeholder="Enter API key"
-                      />
-                    {:else}
-                      <input
-                        type="password"
-                        bind:value={entry.key}
-                        placeholder="Enter API key"
-                      />
-                    {/if}
-                    <button
-                      class="toggle-visibility"
-                      on:click={() => toggleShowKey(entry.id)}
-                      title={showKeyIds.has(entry.id) ? 'Hide key' : 'Show key'}
-                    >
-                      {showKeyIds.has(entry.id) ? '🙈' : '👁'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            {/each}
-
-            <button class="add-button" on:click={addApiKey}>
-              + Add API Key
-            </button>
+              <button class="add-row-btn" on:click={addApiKey}>
+                +
+              </button>
+            </div>
           </div>
 
         {:else if activeTab === 'appearance'}
@@ -240,12 +320,8 @@
       </div>
 
       <div class="footer">
-        <button class="cancel-button" on:click={handleClose}>
-          Cancel
-        </button>
-        <button class="save-button" on:click={handleSave}>
-          Save
-        </button>
+        <button class="cancel-button" on:click={handleClose}>Cancel</button>
+        <button class="save-button" on:click={handleSave}>Save</button>
       </div>
     </div>
   </div>
@@ -277,7 +353,7 @@
     border-radius: 8px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
     width: 90%;
-    max-width: 600px;
+    max-width: 550px;
     max-height: 85vh;
     display: flex;
     flex-direction: column;
@@ -285,28 +361,22 @@
   }
 
   @keyframes slideUp {
-    from {
-      transform: translateY(20px);
-      opacity: 0;
-    }
-    to {
-      transform: translateY(0);
-      opacity: 1;
-    }
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
   }
 
   .header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 20px;
+    padding: 16px 20px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   .header h2 {
     margin: 0;
     color: #fff;
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 600;
   }
 
@@ -317,8 +387,8 @@
     font-size: 24px;
     cursor: pointer;
     padding: 0;
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -334,7 +404,7 @@
   .tabs {
     display: flex;
     gap: 24px;
-    padding: 12px 20px;
+    padding: 10px 20px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(0, 0, 0, 0.2);
   }
@@ -377,143 +447,177 @@
   .content {
     flex: 1;
     overflow-y: auto;
-    padding: 20px;
+    padding: 16px 20px;
   }
 
   .section {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
   }
 
   .section-description {
     color: #888;
-    font-size: 13px;
+    font-size: 12px;
     margin: 0;
-    padding: 12px;
+    padding: 8px 12px;
     background: rgba(74, 158, 255, 0.1);
     border: 1px solid rgba(74, 158, 255, 0.2);
     border-radius: 4px;
   }
 
-  .empty-state {
-    color: #666;
-    font-size: 14px;
-    text-align: center;
-    padding: 32px;
-    border: 1px dashed #404040;
-    border-radius: 6px;
-  }
-
-  .api-key-card {
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid #404040;
-    border-radius: 6px;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .api-key-header {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .api-key-header .form-group {
-    flex: 1;
-    margin: 0;
-  }
-
-  .remove-button {
-    background: transparent;
-    border: none;
-    color: #666;
-    font-size: 20px;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    transition: all 0.15s ease;
-    margin-top: 20px;
-  }
-
-  .remove-button:hover {
-    background: rgba(255, 68, 68, 0.2);
-    color: #ff6b6b;
-  }
-
-  .form-group {
+  /* Compact API Key List */
+  .api-key-list {
     display: flex;
     flex-direction: column;
     gap: 6px;
   }
 
-  .form-group label {
-    color: #aaa;
-    font-size: 12px;
-    font-weight: 500;
-  }
-
-  .form-group input,
-  .form-group select {
-    width: 100%;
-    padding: 8px 10px;
+  .api-key-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
     background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid #333;
     border-radius: 4px;
-    color: #fff;
-    font-size: 13px;
-    box-sizing: border-box;
   }
 
-  .form-group input:focus,
-  .form-group select:focus {
+  .api-key-row.custom {
+    flex-wrap: wrap;
+  }
+
+  .provider-select {
+    width: 140px;
+    flex-shrink: 0;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .provider-select:focus {
     outline: none;
     border-color: #4a9eff;
   }
 
-  .form-group select {
-    cursor: pointer;
-  }
-
-  .key-input-wrapper {
-    display: flex;
-    gap: 8px;
-  }
-
-  .key-input-wrapper input {
+  .name-input,
+  .endpoint-input {
     flex: 1;
+    min-width: 100px;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    color: #fff;
+    font-size: 12px;
   }
 
-  .toggle-visibility {
-    background: rgba(255, 255, 255, 0.05);
+  .name-input {
+    max-width: 120px;
+  }
+
+  .name-input:focus,
+  .endpoint-input:focus {
+    outline: none;
+    border-color: #4a9eff;
+  }
+
+  .key-cell {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .key-input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    color: #888;
-    cursor: pointer;
-    padding: 0 12px;
+    border-radius: 3px;
+    color: #fff;
+    font-size: 12px;
+    font-family: 'SF Mono', Monaco, monospace;
+  }
+
+  .key-input:focus {
+    outline: none;
+    border-color: #4a9eff;
+  }
+
+  .key-input::placeholder {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    color: #555;
+  }
+
+  .toggle-btn {
+    background: transparent;
+    border: none;
+    color: #666;
     font-size: 14px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 3px;
     transition: all 0.15s ease;
   }
 
-  .toggle-visibility:hover {
+  .toggle-btn:hover {
     background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    color: #aaa;
   }
 
-  .add-button {
+  .get-key-link {
+    flex-shrink: 0;
+    color: #4a9eff;
+    font-size: 11px;
+    text-decoration: none;
+    padding: 4px 8px;
+    border-radius: 3px;
+    background: rgba(74, 158, 255, 0.1);
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .get-key-link:hover {
+    background: rgba(74, 158, 255, 0.2);
+    color: #6bb8ff;
+  }
+
+  .remove-btn {
+    background: transparent;
+    border: none;
+    color: #555;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+
+  .remove-btn:hover {
+    background: rgba(255, 68, 68, 0.2);
+    color: #ff6b6b;
+  }
+
+  .add-row-btn {
     background: transparent;
     border: 1px dashed #404040;
-    border-radius: 6px;
-    color: #888;
-    font-size: 13px;
-    padding: 12px;
+    border-radius: 4px;
+    color: #666;
+    font-size: 16px;
+    padding: 6px;
     cursor: pointer;
     transition: all 0.15s ease;
   }
 
-  .add-button:hover {
+  .add-row-btn:hover {
     border-color: #4a9eff;
     color: #4a9eff;
     background: rgba(74, 158, 255, 0.1);
@@ -529,17 +633,17 @@
   .footer {
     display: flex;
     gap: 12px;
-    padding: 20px;
+    padding: 16px 20px;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     justify-content: flex-end;
   }
 
   .cancel-button,
   .save-button {
-    padding: 10px 20px;
+    padding: 8px 16px;
     border: none;
     border-radius: 4px;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;
