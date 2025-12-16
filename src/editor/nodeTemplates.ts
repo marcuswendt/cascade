@@ -1,6 +1,8 @@
 // Node structure: Library > Category > Nodes
-import { lensLibrary } from '@/nodes/lens';
-import { coreLibrary } from '@/nodes/core';
+// Import only library metadata, not the full node implementations
+import { lensLibrary } from '@/nodes/lens/library';
+import { coreLibrary } from '@/nodes/core/library';
+import { quillLibrary } from '@/nodes/quill/library';
 import type { Library, NodeTemplate } from '@/types/library.types';
 
 // Re-export types for backward compatibility
@@ -29,7 +31,8 @@ export const annotationsLibrary: Library = {
 export const nodeLibraries: Library[] = [
   annotationsLibrary,
   coreLibrary,
-  lensLibrary
+  lensLibrary,
+  quillLibrary
 ];
 
 // Custom node template - shown as standalone button in menu, not in library hierarchy
