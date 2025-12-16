@@ -774,7 +774,7 @@
     {#if hoveredLibraryId === null && hoveredNodes.length > 0}
       <div
         class="menu-column submenu-column"
-        style="left: {calculatedPosition.x + mainColumnWidth}px; top: {hoveredLibraryY}px"
+        style="left: {calculatedPosition.x + mainColumnWidth}px; top: {hoveredLibraryY}px; max-height: {Math.max(200, window.innerHeight - hoveredLibraryY - 20)}px;"
         on:mouseenter={() => {}}
         on:mouseleave|self={() => {
           setTimeout(() => {
@@ -811,7 +811,7 @@
       <div
         bind:this={submenuElement}
         class="menu-column submenu-column"
-        style="left: {calculatedPosition.x + mainColumnWidth}px; top: {hoveredLibraryY}px"
+        style="left: {calculatedPosition.x + mainColumnWidth}px; top: {hoveredLibraryY}px; max-height: {Math.max(200, window.innerHeight - hoveredLibraryY - 20)}px;"
         on:mouseenter={() => {}}
         on:mouseleave|self={() => {
           setTimeout(() => {
@@ -870,7 +870,7 @@
       {#if hoveredCategoryId && hoveredCategoryNodes.length > 0}
         <div
           class="menu-column submenu-column nodes-submenu"
-          style="left: {calculatedPosition.x + mainColumnWidth + submenuColumnWidth}px; top: {hoveredCategoryY}px"
+          style="left: {calculatedPosition.x + mainColumnWidth + submenuColumnWidth}px; top: {hoveredCategoryY}px; max-height: {Math.max(200, window.innerHeight - hoveredCategoryY - 20)}px;"
           on:mouseenter={() => {}}
           on:mouseleave|self={() => {
             setTimeout(() => {
@@ -937,6 +937,8 @@
   .submenu-column {
     z-index: 200;
     min-width: 180px;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .nodes-submenu {
