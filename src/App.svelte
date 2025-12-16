@@ -76,9 +76,13 @@
   let canvasRef: any = null;
   let dockviewContainerRef: any = null;
 
-  function handleAddNode(e: CustomEvent<{ type: string; libraryId: string | null; categoryId: string | null }>) {
+  function handleAddNode(e: CustomEvent<{ type: string; libraryId: string | null; categoryId: string | null; customConfig?: { name: string; modulePath: string; baseClass: string; code: string } }>) {
     if (dockviewContainerRef && dockviewContainerRef.addNode) {
-      dockviewContainerRef.addNode({ type: e.detail.type, category: e.detail.categoryId });
+      dockviewContainerRef.addNode({
+        type: e.detail.type,
+        category: e.detail.categoryId,
+        customConfig: e.detail.customConfig
+      });
     }
     activeLibrary = null;
     activeCategory = null;
@@ -760,20 +764,27 @@
         settingsDialogOpen = true;
       }
 
-      // ⌘N - New project
-      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+      // New/Open/Save shortcuts:
+      // - Electron: Use Cmd/Ctrl (system-level shortcuts)
+      // - Browser: Use Alt to avoid conflicting with browser shortcuts (Cmd+N, Cmd+O, Cmd+S)
+      const fileModifier = isElectron
+        ? (e.metaKey || e.ctrlKey)
+        : e.altKey;
+
+      // ⌘N / Alt+N - New project
+      if (fileModifier && e.key === 'n' && !e.shiftKey) {
         e.preventDefault();
         handleNewProject();
       }
 
-      // ⌘O - Open project
-      if ((e.metaKey || e.ctrlKey) && e.key === 'o') {
+      // ⌘O / Alt+O - Open project
+      if (fileModifier && e.key === 'o' && !e.shiftKey) {
         e.preventDefault();
         handleOpenProject();
       }
 
-      // ⌘S - Save project
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      // ⌘S / Alt+S - Save project
+      if (fileModifier && e.key === 's') {
         e.preventDefault();
         if (e.shiftKey) {
           handleSaveAs();

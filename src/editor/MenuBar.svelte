@@ -76,12 +76,15 @@
     }
   }
 
-  const fileMenuItems = [
-    { label: 'New Project', action: 'new', shortcut: '⌘N' },
-    { label: 'Open...', action: 'open', shortcut: '⌘O' },
+  // In browser, file shortcuts use Alt to avoid conflicting with browser shortcuts
+  const fileModKey = isElectron ? '⌘' : '⌥';
+
+  $: fileMenuItems = [
+    { label: 'New Project', action: 'new', shortcut: `${fileModKey}N` },
+    { label: 'Open...', action: 'open', shortcut: `${fileModKey}O` },
     { type: 'separator' },
-    { label: 'Save', action: 'save', shortcut: '⌘S' },
-    { label: 'Save As...', action: 'saveAs', shortcut: '⇧⌘S' },
+    { label: 'Save', action: 'save', shortcut: `${fileModKey}S` },
+    { label: 'Save As...', action: 'saveAs', shortcut: `⇧${fileModKey}S` },
     { type: 'separator' },
     { label: 'Export...', action: 'export', shortcut: '⌘E' },
     { type: 'separator' },
