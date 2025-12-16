@@ -42,7 +42,11 @@
   let graph: Graph | undefined = undefined;
   let documentName = 'Untitled';
   let currentFilePath: string | null = null;
-  
+  let hasUnsavedChanges = false;
+
+  // Computed display name with dirty indicator
+  $: displayName = hasUnsavedChanges ? `${documentName} *` : documentName;
+
   function togglePresentationMode() {
     presentationMode = !presentationMode;
     if (presentationMode) {
@@ -244,8 +248,9 @@
       graph = adapter.getGraph();
       documentName = 'Untitled';
       currentFilePath = null;
+      hasUnsavedChanges = false;
       updateWindowTitle();
-      
+
       // Wait for annotation ports to be initialized (especially image annotations)
       await graph.waitForAnnotationPorts();
 
@@ -287,6 +292,7 @@
       graph = adapter.getGraph();
       documentName = 'Untitled';
       currentFilePath = null;
+      hasUnsavedChanges = false;
       updateWindowTitle();
     }
   }
@@ -315,8 +321,9 @@
       graph = adapter.getGraph();
         documentName = removeExtension(file.name);
         currentFilePath = file.name;
+        hasUnsavedChanges = false;
         updateWindowTitle();
-        
+
         // Wait for annotation ports to be initialized (especially image annotations)
         await graph.waitForAnnotationPorts();
 
@@ -359,20 +366,31 @@
 
   function handleSave() {
     if (!graph) return;
-    
+
     if (currentFilePath) {
       saveGraph(graph, currentFilePath);
+      hasUnsavedChanges = false;
+      updateWindowTitle();
     } else {
+      // No file path - prompt for name
       handleSaveAs();
     }
   }
 
   function handleSaveAs() {
     if (!graph) return;
-    
-    const filename = documentName + '.cascade';
+
+    // Prompt user for filename
+    const suggestedName = documentName === 'Untitled' ? 'my-project' : documentName;
+    const newName = prompt('Save as:', suggestedName);
+    if (!newName) return; // User cancelled
+
+    const filename = newName.endsWith('.cascade') ? newName : newName + '.cascade';
     saveGraph(graph, filename);
+    documentName = newName.replace(/\.cascade$/, '');
     currentFilePath = filename;
+    hasUnsavedChanges = false;
+    updateWindowTitle();
   }
 
   function handleDuplicate() {
@@ -417,10 +435,11 @@
 
   function updateWindowTitle() {
     if (typeof document !== 'undefined') {
+      const dirtyIndicator = hasUnsavedChanges ? ' *' : '';
       if (documentName && documentName !== 'Untitled') {
-        document.title = `Cascade - ${documentName}`;
+        document.title = `Cascade - ${documentName}${dirtyIndicator}`;
       } else {
-        document.title = 'Cascade';
+        document.title = `Cascade - Untitled${dirtyIndicator}`;
       }
     }
   }
@@ -505,10 +524,17 @@
   function recordHistory() {
     if (!graph) return;
     recordSnapshotImmediate(graph, selectedNode?.id || null, selectedAnnotation);
+    hasUnsavedChanges = true;
+    updateWindowTitle();
   }
 
   // Update window title when document name changes
   $: if (documentName) {
+    updateWindowTitle();
+  }
+
+  // Update window title when unsaved changes state changes
+  $: if (typeof hasUnsavedChanges !== 'undefined') {
     updateWindowTitle();
   }
 
@@ -529,11 +555,12 @@
         }
         const json = await response.json();
         
-        // Load graph from JSON
+        // Load graph from JSON as a new untitled document
         const adapter = GraphEditorAdapter.fromJSON(json);
         graph = adapter.getGraph();
-        documentName = 'Default Cascade Graph';
+        documentName = 'Untitled';
         currentFilePath = null;
+        hasUnsavedChanges = false;
         updateWindowTitle();
 
         // Wait for annotation ports to be initialized (especially image annotations)
@@ -971,7 +998,7 @@
 <div class="app" class:presentation-mode={presentationMode} class:electron={isElectron}>
   {#if !presentationMode && !isElectron}
     <MenuBar
-      {documentName}
+      documentName={displayName}
       canUndo={$canUndo}
       canRedo={$canRedo}
       on:action={(e) => handleMenuAction(e.detail)}
@@ -982,13 +1009,14 @@
       }}
       on:nameChange={(e) => {
         documentName = e.detail;
+        hasUnsavedChanges = true;
         updateWindowTitle();
       }}
     />
   {:else if !presentationMode && isElectron}
     <!-- Minimal title bar for Electron - just document name, avoids traffic lights -->
     <div class="electron-titlebar">
-      <span class="electron-title">{documentName}</span>
+      <span class="electron-title">{displayName}</span>
     </div>
   {/if}
   <DockviewContainer
@@ -998,7 +1026,7 @@
     {selectedAnnotation}
     {activeTool}
     {activeLibrary}
-    {documentName}
+    documentName={displayName}
     {presentationMode}
     onRecordHistory={recordHistory}
     on:nodeSelect={(e) => handleNodeSelect(e.detail.node)}
@@ -1008,6 +1036,7 @@
     on:action={(e) => handleMenuAction(e.detail)}
     on:nameChange={(e) => {
       documentName = e.detail;
+      hasUnsavedChanges = true;
       updateWindowTitle();
     }}
     on:openNodePanel={(e) => {
