@@ -8,10 +8,16 @@
   import Log from './Log.svelte';
   import Tabs from './Tabs.svelte';
   import GraphTabs from './GraphTabs.svelte';
-  import CodeEditor from './CodeEditor.svelte';
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
   import type { Annotation } from '@/nodes/annotations/Annotation';
+
+  // Lazy load CodeEditor (Monaco is large)
+  let CodeEditor: any = null;
+  onMount(async () => {
+    const module = await import('./CodeEditor.svelte');
+    CodeEditor = module.default;
+  });
 
   import { createEventDispatcher } from 'svelte';
 
@@ -722,14 +728,17 @@
           {@const tabId = tab.id}
           {@const editorNode = tab.node}
           <div class="tab-content">
-            {#if editorNode}
-              <CodeEditor
+            {#if editorNode && CodeEditor}
+              <svelte:component
+                this={CodeEditor}
                 node={editorNode}
                 packageManager={graph?.packageManager || null}
                 onClose={() => closeTab(tabId, 'graph')}
                 showCloseButton={false}
                 {onRecordHistory}
               />
+            {:else if editorNode}
+              <div class="loading-editor">Loading editor...</div>
             {/if}
           </div>
         {:else if graphActiveTab && graphActiveTab.type === 'viewer'}
@@ -830,14 +839,17 @@
           {@const tabId = tab.id}
           {@const editorNode = tab.node}
           <div class="tab-content">
-            {#if editorNode}
-              <CodeEditor
+            {#if editorNode && CodeEditor}
+              <svelte:component
+                this={CodeEditor}
                 node={editorNode}
                 packageManager={graph?.packageManager || null}
                 onClose={() => closeTab(tabId, 'viewer')}
                 showCloseButton={false}
                 {onRecordHistory}
               />
+            {:else if editorNode}
+              <div class="loading-editor">Loading editor...</div>
             {/if}
           </div>
         {:else if viewerActiveTab && viewerActiveTab.type === 'graph'}
@@ -928,14 +940,17 @@
           {@const tabId = tab.id}
           {@const editorNode = tab.node}
           <div class="tab-content">
-            {#if editorNode}
-              <CodeEditor
+            {#if editorNode && CodeEditor}
+              <svelte:component
+                this={CodeEditor}
                 node={editorNode}
                 packageManager={graph?.packageManager || null}
                 onClose={() => closeTab(tabId, 'log')}
                 showCloseButton={false}
                 {onRecordHistory}
               />
+            {:else if editorNode}
+              <div class="loading-editor">Loading editor...</div>
             {/if}
           </div>
         {:else if logActiveTab && logActiveTab.type === 'graph'}
@@ -1016,14 +1031,17 @@
           {@const tabId = tab.id}
           {@const editorNode = tab.node}
           <div class="tab-content">
-            {#if editorNode}
-              <CodeEditor
+            {#if editorNode && CodeEditor}
+              <svelte:component
+                this={CodeEditor}
                 node={editorNode}
                 packageManager={graph?.packageManager || null}
                 onClose={() => closeTab(tabId, 'inspector')}
                 showCloseButton={false}
                 {onRecordHistory}
               />
+            {:else if editorNode}
+              <div class="loading-editor">Loading editor...</div>
             {/if}
           </div>
         {:else if inspectorActiveTab && inspectorActiveTab.type === 'graph'}
@@ -1100,13 +1118,16 @@
             {@const tabId = tab.id}
             {@const editorNode = tab.node}
             <div class="tab-content">
-              {#if editorNode}
-                <CodeEditor
+              {#if editorNode && CodeEditor}
+                <svelte:component
+                  this={CodeEditor}
                   node={editorNode}
                   packageManager={graph?.packageManager || null}
                   onClose={() => closeTab(tabId, 'inspector')}
                   showCloseButton={false}
                 />
+              {:else if editorNode}
+                <div class="loading-editor">Loading editor...</div>
               {/if}
             </div>
           {:else if inspectorActiveTab && inspectorActiveTab.type === 'graph'}
@@ -1184,14 +1205,17 @@
           {@const tabId = tab.id}
           {@const editorNode = tab.node}
           <div class="tab-content">
-            {#if editorNode}
-              <CodeEditor
+            {#if editorNode && CodeEditor}
+              <svelte:component
+                this={CodeEditor}
                 node={editorNode}
                 packageManager={graph?.packageManager || null}
                 onClose={() => closeTab(tabId, 'inspector')}
                 showCloseButton={false}
                 {onRecordHistory}
               />
+            {:else if editorNode}
+              <div class="loading-editor">Loading editor...</div>
             {/if}
           </div>
         {:else if inspectorActiveTab && inspectorActiveTab.type === 'graph'}
@@ -1355,6 +1379,15 @@
   :global(.add-tab-button:hover) {
     background: rgba(74, 158, 255, 0.3);
     border-color: #4a9eff;
+  }
+
+  .loading-editor {
+    padding: 16px;
+    color: #888;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
   }
 </style>
 

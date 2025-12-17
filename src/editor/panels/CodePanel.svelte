@@ -2,8 +2,15 @@
   import type { CascadePanelParams } from '../dockview/types';
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
-  import CodeEditor from '../CodeEditor.svelte';
   import { sharedContextStore } from '../dockview/renderer';
+  import { onMount } from 'svelte';
+
+  // Lazy load CodeEditor
+  let CodeEditor: any = null;
+  onMount(async () => {
+    const module = await import('../CodeEditor.svelte');
+    CodeEditor = module.default;
+  });
 
   export let panelId: string;
   export let panelParams: CascadePanelParams;
@@ -48,8 +55,9 @@
 </script>
 
 <div class="panel-wrapper">
-  {#if node && graph}
-    <CodeEditor
+  {#if node && graph && CodeEditor}
+    <svelte:component
+      this={CodeEditor}
       {node}
       {graph}
       packageManager={graph.packageManager || null}
@@ -57,14 +65,12 @@
       showCloseButton={false}
       {onRecordHistory}
     />
+  {:else if !CodeEditor}
+    <div class="loading">Loading editor...</div>
   {:else if !graph}
-    <div class="error">
-      Loading...
-    </div>
+    <div class="error">Loading...</div>
   {:else}
-    <div class="error">
-      Node not found: {nodeId}
-    </div>
+    <div class="error">Node not found: {nodeId}</div>
   {/if}
 </div>
 
@@ -79,5 +85,10 @@
   .error {
     padding: 16px;
     color: #ff6b6b;
+  }
+
+  .loading {
+    padding: 16px;
+    color: #888;
   }
 </style>

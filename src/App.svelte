@@ -4,9 +4,25 @@
   import MenuBar from './editor/MenuBar.svelte';
   import NodePanel from './editor/NodePanel.svelte';
   import { dockviewStore } from './editor/dockview/dockview-store.svelte';
-  import ExportDialog from './editor/ExportDialog.svelte';
-  import SettingsDialog from './editor/SettingsDialog.svelte';
   import { settingsDialogRequest, clearSettingsDialogRequest } from './editor/stores/uiEventStore';
+
+  // Lazy-loaded dialog components
+  let ExportDialog: any = null;
+  let SettingsDialog: any = null;
+
+  async function loadExportDialog() {
+    if (!ExportDialog) {
+      const module = await import('./editor/ExportDialog.svelte');
+      ExportDialog = module.default;
+    }
+  }
+
+  async function loadSettingsDialog() {
+    if (!SettingsDialog) {
+      const module = await import('./editor/SettingsDialog.svelte');
+      SettingsDialog = module.default;
+    }
+  }
   import type { AIServiceType } from './editor/stores/settingsStore';
   import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
   import { isElectron, onAnyMenuCommand } from './lib/electron';
@@ -128,10 +144,10 @@
         handleDuplicate();
         break;
       case 'export':
-        exportDialogOpen = true;
+        loadExportDialog().then(() => exportDialogOpen = true);
         break;
       case 'settings':
-        settingsDialogOpen = true;
+        loadSettingsDialog().then(() => settingsDialogOpen = true);
         break;
       case 'about':
         alert('Cascade - Visual Programming Framework\nVersion 1.0.0');
@@ -552,7 +568,7 @@
     const unsubSettingsRequest = settingsDialogRequest.subscribe(request => {
       if (request) {
         settingsInitialService = request.service;
-        settingsDialogOpen = true;
+        loadSettingsDialog().then(() => settingsDialogOpen = true);
         clearSettingsDialogRequest();
       }
     });
@@ -794,13 +810,13 @@
       // ⌘E - Export project
       if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
         e.preventDefault();
-        exportDialogOpen = true;
+        loadExportDialog().then(() => exportDialogOpen = true);
       }
 
       // ⌘, - Settings
       if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault();
-        settingsDialogOpen = true;
+        loadSettingsDialog().then(() => settingsDialogOpen = true);
       }
 
       // New/Open/Save shortcuts:
@@ -1086,22 +1102,26 @@
     />
   {/if}
 
-  {#if graph}
-    <ExportDialog
+  {#if graph && ExportDialog}
+    <svelte:component
+      this={ExportDialog}
       {graph}
       bind:open={exportDialogOpen}
       on:close={() => exportDialogOpen = false}
     />
   {/if}
 
-  <SettingsDialog
-    bind:open={settingsDialogOpen}
-    initialService={settingsInitialService}
-    on:close={() => {
-      settingsDialogOpen = false;
-      settingsInitialService = null;
-    }}
-  />
+  {#if SettingsDialog}
+    <svelte:component
+      this={SettingsDialog}
+      bind:open={settingsDialogOpen}
+      initialService={settingsInitialService}
+      on:close={() => {
+        settingsDialogOpen = false;
+        settingsInitialService = null;
+      }}
+    />
+  {/if}
 </div>
 
 <style>
