@@ -10,6 +10,7 @@
 
 import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { startServer, stopServer } from './server.js';
 import { createMenu } from './menu.js';
@@ -154,6 +155,25 @@ ipcMain.on('shell:openExternal', (_event, url: string) => {
 // Project operations
 ipcMain.on('project:opened', (_event, projectPath: string) => {
   addToRecentProjects(projectPath);
+});
+
+// File system operations
+ipcMain.handle('fs:fileExists', async (_event, filePath: string) => {
+  try {
+    await fs.promises.access(filePath, fs.constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle('fs:writeFile', async (_event, filePath: string, content: string) => {
+  try {
+    await fs.promises.writeFile(filePath, content, 'utf-8');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
 });
 
 // ============ App Lifecycle ============

@@ -70,6 +70,14 @@ contextBridge.exposeInMainWorld('cascade', {
   /** Notify main process that a project was opened (for recent documents) */
   notifyProjectOpened: (projectPath: string) => ipcRenderer.send('project:opened', projectPath),
 
+  // ============ File System ============
+
+  /** Check if a file exists */
+  fileExists: (filePath: string) => ipcRenderer.invoke('fs:fileExists', filePath),
+
+  /** Write content to a file */
+  writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content),
+
   // ============ Event Listeners ============
 
   /** Listen for menu commands */
@@ -152,6 +160,10 @@ declare global {
 
       // Project
       notifyProjectOpened: (projectPath: string) => void;
+
+      // File System
+      fileExists: (filePath: string) => Promise<boolean>;
+      writeFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
 
       // Events
       onMenuCommand: (channel: string, callback: (...args: any[]) => void) => void;

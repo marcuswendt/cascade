@@ -42,6 +42,11 @@ electron_1.contextBridge.exposeInMainWorld('cascade', {
     // ============ Project Operations ============
     /** Notify main process that a project was opened (for recent documents) */
     notifyProjectOpened: (projectPath) => electron_1.ipcRenderer.send('project:opened', projectPath),
+    // ============ File System ============
+    /** Check if a file exists */
+    fileExists: (filePath) => electron_1.ipcRenderer.invoke('fs:fileExists', filePath),
+    /** Write content to a file */
+    writeFile: (filePath, content) => electron_1.ipcRenderer.invoke('fs:writeFile', filePath, content),
     // ============ Event Listeners ============
     /** Listen for menu commands */
     onMenuCommand: (channel, callback) => {

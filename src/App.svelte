@@ -24,8 +24,8 @@
     }
   }
   import type { AIServiceType } from './editor/stores/settingsStore';
-  import { saveGraph, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
-  import { isElectron, onAnyMenuCommand } from './lib/electron';
+  import { serializeGraph, saveGraphWithPicker, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
+  import { isElectron, onAnyMenuCommand, showSaveDialog, fileExists, getAppPath, writeFile } from './lib/electron';
   import { Graph } from '@/nodes/Graph';
   import { Node } from '@/nodes/Node';
   import { GraphEditorAdapter } from './editor/GraphEditorAdapter';
@@ -64,7 +64,8 @@
   let hasUnsavedChanges = false;
 
   // Computed display name with dirty indicator
-  $: displayName = hasUnsavedChanges ? `${documentName} *` : documentName;
+  // Show * for unsaved changes OR new files that haven't been saved yet
+  $: displayName = (hasUnsavedChanges || currentFilePath === null) ? `${documentName} *` : documentName;
 
   function togglePresentationMode() {
     presentationMode = !presentationMode;
@@ -383,11 +384,22 @@
     }
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!graph) return;
 
     if (currentFilePath) {
-      saveGraph(graph, currentFilePath);
+      if (isElectron) {
+        // Write directly to file in Electron
+        const content = serializeGraph(graph);
+        const result = await writeFile(currentFilePath, content);
+        if (!result.success) {
+          alert('Failed to save: ' + result.error);
+          return;
+        }
+      } else {
+        // Browser: use File System Access API or download
+        await saveGraphWithPicker(graph, currentFilePath);
+      }
       hasUnsavedChanges = false;
       updateWindowTitle();
     } else {
@@ -396,18 +408,80 @@
     }
   }
 
-  function handleSaveAs() {
+  /**
+   * Generate a unique filename by appending/incrementing a number suffix
+   * E.g., if "Untitled.cascade" exists, try "Untitled1.cascade", "Untitled2.cascade", etc.
+   */
+  async function getUniqueFilename(baseName: string, directory: string): Promise<string> {
+    // Strip any existing number suffix and extension
+    const nameWithoutExt = baseName.replace(/\.cascade$/, '');
+    const match = nameWithoutExt.match(/^(.+?)(\d+)?$/);
+    const coreName = match?.[1] || nameWithoutExt;
+
+    // Start with the base name (no number)
+    let candidate = `${coreName}.cascade`;
+    let fullPath = `${directory}/${candidate}`;
+
+    if (!(await fileExists(fullPath))) {
+      return candidate;
+    }
+
+    // Try incrementing numbers starting from 1
+    let counter = 1;
+    while (counter < 1000) { // Safety limit
+      candidate = `${coreName}${counter}.cascade`;
+      fullPath = `${directory}/${candidate}`;
+      if (!(await fileExists(fullPath))) {
+        return candidate;
+      }
+      counter++;
+    }
+
+    // Fallback: use timestamp
+    return `${coreName}-${Date.now()}.cascade`;
+  }
+
+  async function handleSaveAs() {
     if (!graph) return;
 
-    // Prompt user for filename
-    const suggestedName = documentName === 'Untitled' ? 'my-project' : documentName;
-    const newName = prompt('Save as:', suggestedName);
-    if (!newName) return; // User cancelled
+    if (isElectron) {
+      // Get the documents directory for checking existing files
+      const documentsDir = await getAppPath('documents') || '';
 
-    const filename = newName.endsWith('.cascade') ? newName : newName + '.cascade';
-    saveGraph(graph, filename);
-    documentName = newName.replace(/\.cascade$/, '');
-    currentFilePath = filename;
+      // Generate a unique filename based on current document name
+      const uniqueFilename = await getUniqueFilename(documentName, documentsDir);
+      const defaultPath = documentsDir ? `${documentsDir}/${uniqueFilename}` : uniqueFilename;
+
+      // Use native Electron save dialog
+      const filePath = await showSaveDialog({
+        defaultPath,
+        filters: [{ name: 'Cascade Files', extensions: ['cascade'] }],
+        title: 'Save Project As'
+      });
+      if (!filePath) return; // User cancelled
+
+      // Write file directly to disk
+      const content = serializeGraph(graph);
+      const result = await writeFile(filePath, content);
+      if (!result.success) {
+        alert('Failed to save: ' + result.error);
+        return;
+      }
+
+      // Extract just the filename without path for display
+      const filename = filePath.split('/').pop() || filePath;
+      documentName = filename.replace(/\.cascade$/, '');
+      currentFilePath = filePath;
+    } else {
+      // Browser: use File System Access API (single native dialog)
+      const suggestedName = documentName === 'Untitled' ? 'my-project.cascade' : `${documentName}.cascade`;
+      const savedFilename = await saveGraphWithPicker(graph, suggestedName);
+      if (!savedFilename) return; // User cancelled
+
+      documentName = savedFilename.replace(/\.cascade$/, '');
+      currentFilePath = savedFilename;
+    }
+
     hasUnsavedChanges = false;
     updateWindowTitle();
   }

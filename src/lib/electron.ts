@@ -136,6 +136,44 @@ export function notifyProjectOpened(projectPath: string): void {
   }
 }
 
+// ============ File System ============
+
+/**
+ * Check if a file exists
+ *
+ * Always returns false in browser mode
+ */
+export async function fileExists(filePath: string): Promise<boolean> {
+  if (isElectron) {
+    return window.cascade!.fileExists(filePath);
+  }
+  return false;
+}
+
+/**
+ * Get app path (documents, home, userData, etc.)
+ *
+ * Returns null in browser mode
+ */
+export async function getAppPath(name: string): Promise<string | null> {
+  if (isElectron) {
+    return window.cascade!.getPath(name);
+  }
+  return null;
+}
+
+/**
+ * Write content to a file
+ *
+ * Returns false in browser mode (use File System Access API instead)
+ */
+export async function writeFile(filePath: string, content: string): Promise<{ success: boolean; error?: string }> {
+  if (isElectron) {
+    return window.cascade!.writeFile(filePath, content);
+  }
+  return { success: false, error: 'Not supported in browser mode' };
+}
+
 // ============ Menu Commands ============
 
 type MenuCommandCallback = (...args: any[]) => void;

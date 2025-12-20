@@ -202,12 +202,19 @@ function formatCompactJSONPass(jsonString: string, indent: number = 2): string {
 }
 
 /**
- * Save graph as JSON file
+ * Serialize graph to JSON string (compact format)
  */
-export function saveGraph(graph: Graph, filename: string = 'graph.cascade') {
+export function serializeGraph(graph: Graph): string {
   const json = graph.toJSON();
   const jsonString = JSON.stringify(json, null, 2);
-  const compactJsonString = formatCompactJSON(jsonString, 2);
+  return formatCompactJSON(jsonString, 2);
+}
+
+/**
+ * Save graph as JSON file (browser download fallback)
+ */
+export function saveGraph(graph: Graph, filename: string = 'graph.cascade') {
+  const compactJsonString = serializeGraph(graph);
   const blob = new Blob([compactJsonString], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -217,6 +224,42 @@ export function saveGraph(graph: Graph, filename: string = 'graph.cascade') {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Save graph using File System Access API (modern browsers)
+ * Returns the chosen filename, or null if cancelled
+ */
+export async function saveGraphWithPicker(graph: Graph, suggestedName: string = 'graph.cascade'): Promise<string | null> {
+  // Check if File System Access API is supported
+  if (!('showSaveFilePicker' in window)) {
+    // Fall back to download approach
+    saveGraph(graph, suggestedName);
+    return suggestedName;
+  }
+
+  try {
+    const handle = await (window as any).showSaveFilePicker({
+      suggestedName,
+      types: [{
+        description: 'Cascade Files',
+        accept: { 'application/json': ['.cascade'] }
+      }]
+    });
+
+    const writable = await handle.createWritable();
+    const content = serializeGraph(graph);
+    await writable.write(content);
+    await writable.close();
+
+    return handle.name;
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      // User cancelled
+      return null;
+    }
+    throw err;
+  }
 }
 
 /**

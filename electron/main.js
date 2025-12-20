@@ -9,10 +9,13 @@
  */
 import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { startServer, stopServer } from './server.js';
 import { createMenu } from './menu.js';
 import { addToRecentProjects } from './recent.js';
+// Set app name (for development mode - productName in electron-builder handles packaged app)
+app.setName('Cascade');
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 // Handle creating/removing shortcuts on Windows when installing/uninstalling
@@ -133,6 +136,25 @@ ipcMain.on('shell:openExternal', (_event, url) => {
 // Project operations
 ipcMain.on('project:opened', (_event, projectPath) => {
     addToRecentProjects(projectPath);
+});
+// File system operations
+ipcMain.handle('fs:fileExists', async (_event, filePath) => {
+    try {
+        await fs.promises.access(filePath, fs.constants.F_OK);
+        return true;
+    }
+    catch {
+        return false;
+    }
+});
+ipcMain.handle('fs:writeFile', async (_event, filePath, content) => {
+    try {
+        await fs.promises.writeFile(filePath, content, 'utf-8');
+        return { success: true };
+    }
+    catch (err) {
+        return { success: false, error: err.message };
+    }
 });
 // ============ App Lifecycle ============
 // macOS: re-create window when dock icon clicked
