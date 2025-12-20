@@ -12,7 +12,7 @@ import type {
 import { SYSTEM_PROMPT } from '../systemPrompt.js';
 import { AICodeGenerator } from '../AICodeGenerator.js';
 
-const DEFAULT_MODEL = 'gemini-1.5-pro';
+const DEFAULT_MODEL = 'gemini-2.5-pro';
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export class GeminiProvider implements AIProviderInterface {

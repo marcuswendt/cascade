@@ -14,7 +14,10 @@ import type {
 	GenerationOptions,
 	LLMRequest,
 	VisionRequest,
-	ModelSchema
+	ModelSchema,
+	LLMStreamRequest,
+	LLMStreamChunk,
+	LLMContentPart
 } from '../types';
 import { AIError, AIErrorType } from '../errors';
 import { getApiKey } from '../../../editor/stores/settingsStore';
@@ -153,6 +156,114 @@ export class AnthropicProvider extends Provider {
 				retryable: true
 			});
 		}
+	}
+
+	/**
+	 * Check if this provider supports streaming LLM
+	 */
+	supportsLLMStreaming(): boolean {
+		return true;
+	}
+
+	/**
+	 * Stream text completion using Claude
+	 */
+	async *streamComplete(request: LLMStreamRequest): AsyncGenerator<LLMStreamChunk> {
+		this.ensureConfigured();
+
+		const client = this.getClient();
+		const modelId = CLAUDE_MODELS[request.model] || request.model;
+
+		// Extract system message from messages
+		const systemMsg = request.messages.find((m) => m.role === 'system');
+		const systemPrompt =
+			request.systemPrompt ||
+			(typeof systemMsg?.content === 'string' ? systemMsg.content : undefined);
+
+		// Convert messages to Anthropic format (excluding system messages)
+		const messages: Anthropic.MessageParam[] = request.messages
+			.filter((m) => m.role !== 'system')
+			.map((m) => ({
+				role: m.role as 'user' | 'assistant',
+				content: this.formatMessageContent(m.content)
+			}));
+
+		try {
+			const stream = client.messages.stream({
+				model: modelId,
+				max_tokens: request.maxTokens ?? 4096,
+				temperature: request.temperature ?? 0.7,
+				system: systemPrompt,
+				messages
+			});
+
+			for await (const event of stream) {
+				if (event.type === 'content_block_delta') {
+					if (event.delta.type === 'text_delta') {
+						yield { type: 'delta', content: event.delta.text };
+					}
+				}
+			}
+
+			const finalMessage = await stream.finalMessage();
+			yield {
+				type: 'usage',
+				usage: {
+					input: finalMessage.usage.input_tokens,
+					output: finalMessage.usage.output_tokens,
+					total: finalMessage.usage.input_tokens + finalMessage.usage.output_tokens
+				}
+			};
+
+			yield {
+				type: 'done',
+				finishReason: finalMessage.stop_reason === 'end_turn' ? 'stop' : 'length'
+			};
+		} catch (error) {
+			if (error instanceof Anthropic.APIError) {
+				yield {
+					type: 'error',
+					error: `Anthropic API error: ${error.message}`
+				};
+			} else {
+				yield {
+					type: 'error',
+					error: error instanceof Error ? error.message : String(error)
+				};
+			}
+		}
+	}
+
+	/**
+	 * Format message content for Anthropic API
+	 */
+	private formatMessageContent(
+		content: string | LLMContentPart[]
+	): string | Anthropic.ContentBlockParam[] {
+		if (typeof content === 'string') {
+			return content;
+		}
+
+		return content.map((part) => {
+			if (part.type === 'text') {
+				return { type: 'text' as const, text: part.text || '' };
+			}
+			if (part.type === 'image' && part.image) {
+				return {
+					type: 'image' as const,
+					source: {
+						type: 'base64' as const,
+						media_type: (part.image.mediaType || 'image/png') as
+							| 'image/png'
+							| 'image/jpeg'
+							| 'image/gif'
+							| 'image/webp',
+						data: part.image.data
+					}
+				};
+			}
+			return { type: 'text' as const, text: '' };
+		});
 	}
 
 	/**

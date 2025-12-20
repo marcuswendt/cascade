@@ -1,21 +1,94 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
   import type { Node } from '@/nodes/Node';
   import { getNodeIcon } from './nodeTemplates';
   import Icon from './Icon.svelte';
   import { getPortColor } from '@/utils/portColors';
+  import type { ChatNode } from '@/nodes/quill/nodes/ChatNode';
 
   export let node: Node;
   export let selected = false;
   export let canvasTransform: { x: number; y: number; zoom: number } = { x: 0, y: 0, zoom: 1 };
 
   const dispatch = createEventDispatcher();
+
+  // Track if this is a newly mounted Chat node to auto-focus
+  let hasAutoFocused = false;
   
   $: hasError = node.error !== null;
   $: nodeIcon = getNodeIcon(node.type);
   $: isBypassed = node.bypass;
   $: isCooking = node.cook;
-  
+  $: isChatNode = node.type === 'Chat' || node.type.endsWith('.Chat');
+  $: chatNodeState = isChatNode ? (node as ChatNode).getState() : null;
+
+  // Chat node prompt editing state
+  let isEditingPrompt = false;
+  let promptTextarea: HTMLTextAreaElement;
+  let promptValue = '';
+
+  // Sync prompt value when chat state changes (but not while editing)
+  $: if (chatNodeState && !isEditingPrompt) {
+    promptValue = chatNodeState.prompt || '';
+  }
+
+  // Check if editing is disabled (while streaming)
+  $: isPromptDisabled = chatNodeState?.status === 'streaming';
+
+  // Exit editing mode when streaming starts
+  $: if (isPromptDisabled && isEditingPrompt) {
+    isEditingPrompt = false;
+  }
+
+  function startEditingPrompt() {
+    if (!isChatNode) return;
+    // Don't allow editing while streaming
+    if (isPromptDisabled) return;
+    isEditingPrompt = true;
+    promptValue = chatNodeState?.prompt || '';
+    // Focus textarea after it renders
+    setTimeout(() => {
+      if (promptTextarea) {
+        promptTextarea.focus();
+        promptTextarea.setSelectionRange(promptTextarea.value.length, promptTextarea.value.length);
+      }
+    }, 0);
+  }
+
+  function handlePromptInput(e: Event) {
+    const textarea = e.target as HTMLTextAreaElement;
+    promptValue = textarea.value;
+    // Update the node's prompt in real-time
+    (node as ChatNode).setPrompt(promptValue);
+  }
+
+  function handlePromptKeydown(e: KeyboardEvent) {
+    // Cmd/Ctrl+Enter to send
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      finishEditingPrompt();
+      (node as ChatNode).send();
+    }
+    // Escape to cancel editing
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      isEditingPrompt = false;
+    }
+    // Stop propagation to prevent canvas shortcuts
+    e.stopPropagation();
+  }
+
+  function finishEditingPrompt() {
+    isEditingPrompt = false;
+  }
+
+  // Auto-focus prompt when a new empty Chat node is selected
+  $: if (isChatNode && selected && !hasAutoFocused && chatNodeState && !chatNodeState.prompt && !chatNodeState.response) {
+    hasAutoFocused = true;
+    // Delay to ensure the node is fully rendered
+    setTimeout(() => startEditingPrompt(), 50);
+  }
+
   // Reactive statements to track port changes
   $: inputs = node.inputs;
   $: outputs = node.outputs;
@@ -291,125 +364,233 @@
   on:mouseleave={handleMouseUp}
   on:dblclick={handleDoubleClick}
 >
-  <div class="node-container">
-    <div class="node-content">
-      <!-- Input ports (top) -->
-      <div class="port-row inputs">
-        {#each displayInputs as displayPort}
-          {#if displayPort.type === 'single'}
-            {@const port = displayPort.port}
+  <div class="node-container" class:chat-node={isChatNode}>
+    {#if isChatNode && chatNodeState}
+      <!-- Unified Chat Node Layout -->
+      <div class="chat-unified-node">
+        <!-- Input ports (top) -->
+        <div class="port-row inputs chat-ports">
+          {#each displayInputs as displayPort}
+            {#if displayPort.type === 'single'}
+              {@const port = displayPort.port}
+              {@const portColor = getPortColor(port)}
+              <div
+                class="port port-{port.portType}"
+                role="button"
+                tabindex="0"
+                on:click={(e) => handlePortClick(port.id, 'input', e)}
+                on:mousedown={(e) => handlePortMouseDown(port.id, 'input', e)}
+                on:keydown={(e) => handleKeyDown(port.id, 'input', e)}
+                on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'input')}
+                on:mouseleave={hidePortTooltip}
+                data-node-id={node.id}
+                data-port-id={port.id}
+                data-port-type="input"
+              >
+                <span class="port-dot" style="background-color: {portColor};"></span>
+              </div>
+            {/if}
+          {/each}
+        </div>
+
+        <!-- Chat body -->
+        <div class="chat-body" class:streaming={chatNodeState.status === 'streaming'}>
+          <!-- Status indicator -->
+          <div class="chat-status {chatNodeState.status}">
+            {#if chatNodeState.status === 'streaming'}
+              <span class="status-dot streaming"></span>
+            {:else if chatNodeState.status === 'complete'}
+              <Icon name="Check" size={10} />
+            {:else if chatNodeState.status === 'error'}
+              <Icon name="AlertCircle" size={10} />
+            {:else}
+              <Icon name="MessageSquare" size={10} />
+            {/if}
+          </div>
+
+          <!-- Prompt section -->
+          <div
+            class="chat-section prompt-section"
+            class:empty={!promptValue && !isEditingPrompt}
+            class:disabled={isPromptDisabled}
+            on:click={startEditingPrompt}
+            on:keydown={(e) => e.key === 'Enter' && startEditingPrompt()}
+            role="button"
+            tabindex="0"
+          >
+            {#if isEditingPrompt}
+              <textarea
+                bind:this={promptTextarea}
+                bind:value={promptValue}
+                class="chat-prompt-input"
+                placeholder="Enter a prompt..."
+                on:input={handlePromptInput}
+                on:keydown={handlePromptKeydown}
+                on:blur={finishEditingPrompt}
+                on:mousedown|stopPropagation
+              ></textarea>
+            {:else if promptValue}
+              <div class="chat-text">{promptValue}</div>
+            {:else}
+              <span class="chat-placeholder">Enter a prompt...</span>
+            {/if}
+          </div>
+
+          <!-- Response section -->
+          {#if chatNodeState.response || chatNodeState.streamBuffer}
+            <div class="chat-divider"></div>
+            <div class="chat-section response-section">
+              <div class="chat-text response">{chatNodeState.response || chatNodeState.streamBuffer}</div>
+              {#if chatNodeState.status === 'streaming'}
+                <span class="streaming-cursor">▌</span>
+              {/if}
+            </div>
+          {/if}
+        </div>
+
+        <!-- Output ports (bottom) -->
+        <div class="port-row outputs chat-ports">
+          {#each outputs as port}
             {@const portColor = getPortColor(port)}
             <div
               class="port port-{port.portType}"
               role="button"
               tabindex="0"
-              on:click={(e) => handlePortClick(port.id, 'input', e)}
-              on:mousedown={(e) => handlePortMouseDown(port.id, 'input', e)}
-              on:keydown={(e) => handleKeyDown(port.id, 'input', e)}
-              on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'input')}
+              on:click={(e) => handlePortClick(port.id, 'output', e)}
+              on:mousedown={(e) => handlePortMouseDown(port.id, 'output', e)}
+              on:keydown={(e) => handleKeyDown(port.id, 'output', e)}
+              on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'output')}
               on:mouseleave={hidePortTooltip}
               data-node-id={node.id}
               data-port-id={port.id}
-              data-port-type="input"
+              data-port-type="output"
             >
               <span class="port-dot" style="background-color: {portColor};"></span>
             </div>
-          {:else}
-            {@const portColor = getPortColor(displayPort.firstPort)}
-            {@const connectedCount = displayPort.ports.filter(p => p.connections.length > 0).length}
-            {#if hasVariadicInputs}
-              <!-- List-style variadic with connections list -->
+          {/each}
+        </div>
+      </div>
+    {:else}
+      <!-- Standard Node Layout -->
+      <div class="node-content">
+        <!-- Input ports (top) -->
+        <div class="port-row inputs">
+          {#each displayInputs as displayPort}
+            {#if displayPort.type === 'single'}
+              {@const port = displayPort.port}
+              {@const portColor = getPortColor(port)}
               <div
-                class="port port-{displayPort.firstPort.portType} variadic"
+                class="port port-{port.portType}"
                 role="button"
                 tabindex="0"
-                on:click={(e) => handlePortClick(displayPort.firstPort.id, 'input', e)}
-                on:mousedown={(e) => handlePortMouseDown(displayPort.firstPort.id, 'input', e)}
-                on:keydown={(e) => handleKeyDown(displayPort.firstPort.id, 'input', e)}
-                on:mouseenter={(e) => showPortTooltip(e, displayPort.baseName, displayPort.firstPort.dataType || 'any', portColor, 'input')}
+                on:click={(e) => handlePortClick(port.id, 'input', e)}
+                on:mousedown={(e) => handlePortMouseDown(port.id, 'input', e)}
+                on:keydown={(e) => handleKeyDown(port.id, 'input', e)}
+                on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'input')}
                 on:mouseleave={hidePortTooltip}
                 data-node-id={node.id}
-                data-port-id={displayPort.firstPort.id}
+                data-port-id={port.id}
                 data-port-type="input"
-                data-variadic-base={displayPort.baseName}
-                data-variadic-ports={displayPort.ports.map(p => p.id).join(',')}
               >
-                <span class="port-pill" style="background-color: {portColor};"></span>
+                <span class="port-dot" style="background-color: {portColor};"></span>
               </div>
+            {:else}
+              {@const portColor = getPortColor(displayPort.firstPort)}
+              {@const connectedCount = displayPort.ports.filter(p => p.connections.length > 0).length}
+              {#if hasVariadicInputs}
+                <!-- List-style variadic with connections list -->
+                <div
+                  class="port port-{displayPort.firstPort.portType} variadic"
+                  role="button"
+                  tabindex="0"
+                  on:click={(e) => handlePortClick(displayPort.firstPort.id, 'input', e)}
+                  on:mousedown={(e) => handlePortMouseDown(displayPort.firstPort.id, 'input', e)}
+                  on:keydown={(e) => handleKeyDown(displayPort.firstPort.id, 'input', e)}
+                  on:mouseenter={(e) => showPortTooltip(e, displayPort.baseName, displayPort.firstPort.dataType || 'any', portColor, 'input')}
+                  on:mouseleave={hidePortTooltip}
+                  data-node-id={node.id}
+                  data-port-id={displayPort.firstPort.id}
+                  data-port-type="input"
+                  data-variadic-base={displayPort.baseName}
+                  data-variadic-ports={displayPort.ports.map(p => p.id).join(',')}
+                >
+                  <span class="port-pill" style="background-color: {portColor};"></span>
+                </div>
+              {/if}
             {/if}
-          {/if}
-        {/each}
-      </div>
+          {/each}
+        </div>
 
-      <!-- Variadic connections list (between pill and body) -->
-      {#if hasVariadicInputs && variadicConnections.length > 0}
-        <div class="variadic-list" on:mousedown|stopPropagation>
-          {#each variadicConnections as conn}
-            <div class="variadic-item">
-              <span class="variadic-source">{conn.sourceNodeId}</span>
-              <button
-                class="variadic-remove"
-                title="Disconnect"
-                on:click={(e) => handleDisconnect(conn.connectionId, e)}
-                on:mousedown|stopPropagation
-              >×</button>
+        <!-- Variadic connections list (between pill and body) -->
+        {#if hasVariadicInputs && variadicConnections.length > 0}
+          <div class="variadic-list" on:mousedown|stopPropagation>
+            {#each variadicConnections as conn}
+              <div class="variadic-item">
+                <span class="variadic-source">{conn.sourceNodeId}</span>
+                <button
+                  class="variadic-remove"
+                  title="Disconnect"
+                  on:click={(e) => handleDisconnect(conn.connectionId, e)}
+                  on:mousedown|stopPropagation
+                >×</button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        <div class="body">
+          <!-- Bypass button (left side) -->
+          <button
+            class="node-button bypass-button"
+            class:active={isBypassed}
+            aria-label="Bypass node"
+            title="Bypass (B)"
+            on:click={handleBypassClick}
+            on:mousedown={(e) => e.stopPropagation()}
+          >
+          </button>
+
+          <!-- Icon / Preview (center) -->
+          <span class="node-icon">
+            <Icon name={nodeIcon} size={12} strokeWidth={2} />
+          </span>
+
+          <!-- Cook button (right side) -->
+          <button
+            class="node-button cook-button"
+            class:active={isCooking}
+            aria-label="Cook node"
+            title="Cook (C)"
+            on:click={handleCookClick}
+            on:mousedown={(e) => e.stopPropagation()}
+          >
+          </button>
+        </div>
+
+        <!-- Output ports (bottom) -->
+        <div class="port-row outputs">
+          {#each outputs as port}
+            {@const portColor = getPortColor(port)}
+            <div
+              class="port port-{port.portType}"
+              role="button"
+              tabindex="0"
+              on:click={(e) => handlePortClick(port.id, 'output', e)}
+              on:mousedown={(e) => handlePortMouseDown(port.id, 'output', e)}
+              on:keydown={(e) => handleKeyDown(port.id, 'output', e)}
+              on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'output')}
+              on:mouseleave={hidePortTooltip}
+              data-node-id={node.id}
+              data-port-id={port.id}
+              data-port-type="output"
+            >
+              <span class="port-dot" style="background-color: {portColor};"></span>
             </div>
           {/each}
         </div>
-      {/if}
-
-      <div class="body">
-        <!-- Bypass button (left side) -->
-        <button
-          class="node-button bypass-button"
-          class:active={isBypassed}
-          aria-label="Bypass node"
-          title="Bypass (B)"
-          on:click={handleBypassClick}
-          on:mousedown={(e) => e.stopPropagation()}
-        >
-        </button>
-        
-        <!-- Icon / Preview (center) -->
-        <span class="node-icon">
-          <Icon name={nodeIcon} size={12} strokeWidth={2} />
-        </span>
-        
-        <!-- Cook button (right side) -->
-        <button
-          class="node-button cook-button"
-          class:active={isCooking}
-          aria-label="Cook node"
-          title="Cook (C)"
-          on:click={handleCookClick}
-          on:mousedown={(e) => e.stopPropagation()}
-        >
-        </button>
       </div>
+    {/if}
 
-      <!-- Output ports (bottom) -->
-      <div class="port-row outputs">
-        {#each outputs as port}
-          {@const portColor = getPortColor(port)}
-          <div
-            class="port port-{port.portType}"
-            role="button"
-            tabindex="0"
-            on:click={(e) => handlePortClick(port.id, 'output', e)}
-            on:mousedown={(e) => handlePortMouseDown(port.id, 'output', e)}
-            on:keydown={(e) => handleKeyDown(port.id, 'output', e)}
-            on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'output')}
-            on:mouseleave={hidePortTooltip}
-            data-node-id={node.id}
-            data-port-id={port.id}
-            data-port-type="output"
-          >
-            <span class="port-dot" style="background-color: {portColor};"></span>
-          </div>
-        {/each}
-      </div>
-    </div>
-    
     <div class="label">
       {#if isEditingName}
         <input
@@ -781,6 +962,195 @@
 
   .port-tooltip-output {
     transform: translate(-50%, -100%);
+  }
+
+  /* Unified Chat Node Styles */
+  .node-container.chat-node {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .chat-unified-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .chat-ports {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .chat-body {
+    width: 200px;
+    min-height: 60px;
+    background: #252525;
+    border-radius: 8px;
+    border: 1px solid var(--node-border-color, #3a3a3a);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+  }
+
+  .node.selected .chat-body {
+    border-color: #4a9eff;
+  }
+
+  .chat-body.streaming {
+    border-color: #4a9eff;
+    box-shadow: 0 0 8px rgba(74, 158, 255, 0.5), 0 0 16px rgba(74, 158, 255, 0.3);
+    animation: glow-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes glow-pulse {
+    0%, 100% {
+      box-shadow: 0 0 8px rgba(74, 158, 255, 0.5), 0 0 16px rgba(74, 158, 255, 0.3);
+    }
+    50% {
+      box-shadow: 0 0 12px rgba(74, 158, 255, 0.7), 0 0 24px rgba(74, 158, 255, 0.5);
+    }
+  }
+
+  .chat-status {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #333;
+    color: #888;
+  }
+
+  .chat-status.complete {
+    background: rgba(76, 175, 80, 0.2);
+    color: #4caf50;
+  }
+
+  .chat-status.streaming {
+    background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+  }
+
+  .chat-status.error {
+    background: rgba(244, 67, 54, 0.2);
+    color: #f44336;
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .status-dot.streaming {
+    animation: pulse-dot 1s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 0.4; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
+  }
+
+  .chat-section {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .chat-text {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #e0e0e0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-height: 80px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+  }
+
+  .chat-text.response {
+    color: #b0b0b0;
+    font-size: 11px;
+  }
+
+  .chat-placeholder {
+    font-size: 11px;
+    color: #666;
+    font-style: italic;
+  }
+
+  .chat-prompt-input {
+    display: block;
+    width: 100%;
+    min-height: 40px;
+    max-height: 120px;
+    margin: 0;
+    padding: 6px 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    font-family: inherit;
+    color: #e0e0e0;
+    background: #1a1a1a;
+    border: 1px solid #4a4a4a;
+    border-radius: 4px;
+    resize: vertical;
+    outline: none;
+    box-sizing: border-box;
+  }
+
+  .chat-prompt-input:focus {
+    border-color: #666;
+    background: #1f1f1f;
+  }
+
+  .chat-prompt-input::placeholder {
+    color: #666;
+    font-style: italic;
+  }
+
+  .prompt-section {
+    cursor: text;
+  }
+
+  .prompt-section.disabled {
+    cursor: default;
+    opacity: 0.7;
+  }
+
+  .prompt-section.disabled .chat-text {
+    color: #999;
+  }
+
+  .chat-divider {
+    width: 100%;
+    height: 1px;
+    background: #3a3a3a;
+    margin: 4px 0;
+  }
+
+  .streaming-cursor {
+    color: #4a9eff;
+    animation: blink-cursor 0.8s infinite;
+    font-size: 11px;
+  }
+
+  @keyframes blink-cursor {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
+
+  .prompt-section.empty {
+    min-height: 20px;
+    display: flex;
+    align-items: center;
   }
 </style>
 

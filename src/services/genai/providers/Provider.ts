@@ -13,7 +13,9 @@ import type {
 	EditRequest,
 	LLMRequest,
 	VisionRequest,
-	ModelSchema
+	ModelSchema,
+	LLMStreamRequest,
+	LLMStreamChunk
 } from '../types';
 import { AIError, AIErrorType } from '../errors';
 
@@ -108,6 +110,35 @@ export abstract class Provider {
 			provider: this.id,
 			retryable: false
 		});
+	}
+
+	/**
+	 * Stream a text completion using an LLM
+	 *
+	 * Override in providers that support streaming LLM capabilities.
+	 *
+	 * @param request - LLM stream request parameters
+	 * @yields Streaming chunks with deltas, usage, and completion status
+	 * @throws AIError if not supported or on failure
+	 */
+	async *streamComplete(_request: LLMStreamRequest): AsyncGenerator<LLMStreamChunk> {
+		throw new AIError(
+			AIErrorType.INVALID_INPUT,
+			'LLM streaming not supported by this provider',
+			{
+				provider: this.id,
+				retryable: false
+			}
+		);
+		// TypeScript requires a yield for generator functions
+		yield { type: 'error', error: 'Not implemented' };
+	}
+
+	/**
+	 * Check if this provider supports streaming LLM
+	 */
+	supportsLLMStreaming(): boolean {
+		return false;
 	}
 
 	/**

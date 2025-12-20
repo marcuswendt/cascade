@@ -16,7 +16,10 @@ import type {
 	LLMRequest,
 	VisionRequest,
 	ModelSchema,
-	ImageData
+	ImageData,
+	LLMStreamRequest,
+	LLMStreamChunk,
+	LLMContentPart
 } from '../types';
 import { AIError, AIErrorType } from '../errors';
 import { getApiKey } from '../../../editor/stores/settingsStore';
@@ -255,6 +258,132 @@ export class OpenAIProvider extends Provider {
 				retryable: true
 			});
 		}
+	}
+
+	/**
+	 * Check if this provider supports streaming LLM
+	 */
+	supportsLLMStreaming(): boolean {
+		return true;
+	}
+
+	/**
+	 * Stream text completion using GPT models
+	 */
+	async *streamComplete(request: LLMStreamRequest): AsyncGenerator<LLMStreamChunk> {
+		this.ensureConfigured();
+
+		const client = this.getClient();
+
+		// Build messages array
+		const messages: OpenAI.ChatCompletionMessageParam[] = [];
+
+		// Add messages from request
+		for (const msg of request.messages) {
+			if (msg.role === 'system') {
+				messages.push({
+					role: 'system',
+					content: typeof msg.content === 'string' ? msg.content : ''
+				});
+			} else {
+				messages.push({
+					role: msg.role as 'user' | 'assistant',
+					content: this.formatMessageContent(msg.content)
+				});
+			}
+		}
+
+		// Add separate system prompt if provided and not in messages
+		if (request.systemPrompt && !messages.some((m) => m.role === 'system')) {
+			messages.unshift({ role: 'system', content: request.systemPrompt });
+		}
+
+		try {
+			const stream = await client.chat.completions.create({
+				model: request.model,
+				messages,
+				max_tokens: request.maxTokens ?? 4096,
+				temperature: request.temperature ?? 0.7,
+				stream: true,
+				stream_options: { include_usage: true }
+			});
+
+			for await (const chunk of stream) {
+				const delta = chunk.choices[0]?.delta?.content;
+				if (delta) {
+					yield { type: 'delta', content: delta };
+				}
+
+				// Usage comes in the final chunk
+				if (chunk.usage) {
+					yield {
+						type: 'usage',
+						usage: {
+							input: chunk.usage.prompt_tokens,
+							output: chunk.usage.completion_tokens,
+							total: chunk.usage.total_tokens
+						}
+					};
+				}
+
+				// Check finish reason
+				const finishReason = chunk.choices[0]?.finish_reason;
+				if (finishReason) {
+					yield {
+						type: 'done',
+						finishReason:
+							finishReason === 'stop'
+								? 'stop'
+								: finishReason === 'length'
+									? 'length'
+									: finishReason === 'content_filter'
+										? 'content_filter'
+										: 'stop'
+					};
+				}
+			}
+		} catch (error) {
+			if (error instanceof OpenAI.APIError) {
+				yield {
+					type: 'error',
+					error: `OpenAI API error: ${error.message}`
+				};
+			} else {
+				yield {
+					type: 'error',
+					error: error instanceof Error ? error.message : String(error)
+				};
+			}
+		}
+	}
+
+	/**
+	 * Format message content for OpenAI API
+	 */
+	private formatMessageContent(
+		content: string | LLMContentPart[]
+	): string | OpenAI.ChatCompletionContentPart[] {
+		if (typeof content === 'string') {
+			return content;
+		}
+
+		return content.map((part) => {
+			if (part.type === 'text') {
+				return { type: 'text' as const, text: part.text || '' };
+			}
+			if (part.type === 'image' && part.image) {
+				return {
+					type: 'image_url' as const,
+					image_url: {
+						url:
+							part.image.source === 'url'
+								? part.image.data
+								: `data:${part.image.mediaType || 'image/png'};base64,${part.image.data}`
+					}
+				};
+			}
+			return { type: 'text' as const, text: '' };
+		});
 	}
 
 	/**

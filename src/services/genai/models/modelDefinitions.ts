@@ -417,13 +417,14 @@ export const googleImageModels: ModelSchema[] = [
 
 /**
  * Google Gemini models for vision and LLM
+ * Note: Gemini 1.5 models were retired April 2025
  */
 export const geminiModels: ModelSchema[] = [
 	{
-		id: 'gemini-1.5-flash',
-		name: 'Gemini 1.5 Flash',
+		id: 'gemini-2.0-flash',
+		name: 'Gemini 2.0 Flash',
 		provider: 'google',
-		endpoint: 'gemini-1.5-flash',
+		endpoint: 'gemini-2.0-flash',
 		capabilities: ['llm', 'vision'],
 		supportsImageInput: true,
 		supportedReferenceTypes: [],
@@ -443,7 +444,7 @@ export const geminiModels: ModelSchema[] = [
 			{
 				name: 'maxOutputTokens',
 				type: 'number',
-				default: 1024,
+				default: 4096,
 				min: 1,
 				max: 8192,
 				step: 128,
@@ -459,10 +460,10 @@ export const geminiModels: ModelSchema[] = [
 		category: 'fast'
 	},
 	{
-		id: 'gemini-1.5-pro',
-		name: 'Gemini 1.5 Pro',
+		id: 'gemini-2.5-flash',
+		name: 'Gemini 2.5 Flash',
 		provider: 'google',
-		endpoint: 'gemini-1.5-pro',
+		endpoint: 'gemini-2.5-flash',
 		capabilities: ['llm', 'vision'],
 		supportsImageInput: true,
 		supportedReferenceTypes: [],
@@ -482,10 +483,49 @@ export const geminiModels: ModelSchema[] = [
 			{
 				name: 'maxOutputTokens',
 				type: 'number',
-				default: 2048,
+				default: 8192,
 				min: 1,
-				max: 8192,
-				step: 128,
+				max: 65536,
+				step: 256,
+				description: 'Maximum output tokens',
+				advanced: true
+			}
+		],
+		defaultWidth: 0,
+		defaultHeight: 0,
+		maxResolution: 0,
+		outputFormat: 'png',
+		icon: 'MessageSquare',
+		category: 'fast'
+	},
+	{
+		id: 'gemini-2.5-pro',
+		name: 'Gemini 2.5 Pro',
+		provider: 'google',
+		endpoint: 'gemini-2.5-pro',
+		capabilities: ['llm', 'vision'],
+		supportsImageInput: true,
+		supportedReferenceTypes: [],
+		supportsNegativePrompt: false,
+		supportsBatchGeneration: false,
+		maxBatchSize: 1,
+		parameters: [
+			{
+				name: 'temperature',
+				type: 'number',
+				default: 0.7,
+				min: 0,
+				max: 2,
+				step: 0.1,
+				description: 'Temperature'
+			},
+			{
+				name: 'maxOutputTokens',
+				type: 'number',
+				default: 8192,
+				min: 1,
+				max: 65536,
+				step: 256,
 				description: 'Maximum output tokens',
 				advanced: true
 			}
@@ -950,9 +990,9 @@ export function getDefaultModel(capability: 'generate' | 'inpaint' | 'llm' | 'vi
 		case 'inpaint':
 			return 'flux-fill';
 		case 'llm':
-			return 'gemini-1.5-flash';
+			return 'gemini-2.0-flash';
 		case 'vision':
-			return 'gemini-1.5-flash';
+			return 'gemini-2.0-flash';
 		default:
 			return 'flux-schnell';
 	}
