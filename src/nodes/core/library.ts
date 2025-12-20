@@ -18,6 +18,15 @@ export const coreLibrary: Library = {
       ]
     },
     {
+      id: 'utility',
+      label: 'Utility',
+      nodes: [
+        { name: 'Random', icon: 'Dice5', description: 'Generate random seeds or pick from options', type: 'Random' },
+        { name: 'Select', icon: 'ListFilter', description: 'Pick an item from an array by index', type: 'Select' },
+        { name: 'Freeze', icon: 'Snowflake', description: 'Capture and lock a value', type: 'Freeze' }
+      ]
+    },
+    {
       id: 'network',
       label: 'Network',
       nodes: [

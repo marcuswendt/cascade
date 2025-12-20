@@ -429,7 +429,7 @@ export abstract class LensNode extends Node {
    * This is the standard way to output from a Lens node
    * Preview updates are throttled to ~30fps to avoid excessive canvas conversions
    */
-  protected setOutput(
+  public setOutput(
     output: { setValue: (value: ImageBuffer) => void },
     buffer: ImageBuffer
   ): void {

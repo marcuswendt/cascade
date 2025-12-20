@@ -19,7 +19,7 @@ export const lensLibrary: Library = {
         { name: 'Noise', icon: 'Cloud', description: 'Generate procedural noise patterns', type: 'Noise' },
         { name: 'Ramp', icon: 'Gradient', description: 'Generate color ramps', type: 'Ramp' },
         { name: 'Text', icon: 'Type', description: 'Render text with customizable font and style', type: 'Text' },
-        { name: 'Prompt to Image', icon: 'Lightbulb', description: 'Generate images from text prompts using AI', type: 'Generate' }
+        { name: 'Generate Image', icon: 'Lightbulb', description: 'Generate images from text prompts using AI', type: 'Generate' }
       ]
     },
     {
@@ -28,7 +28,7 @@ export const lensLibrary: Library = {
       nodes: [
         { name: 'Blur', icon: 'Droplets', description: 'Gaussian blur', type: 'Blur' },
         { name: 'Normal Map', icon: 'Box', description: 'Compute normal map from height map', type: 'NormalMap' },
-        { name: 'Prompt to Edit', icon: 'Lightbulb', description: 'Edit images using AI prompts', type: 'Edit' }
+        { name: 'Edit Image', icon: 'Lightbulb', description: 'Edit images using AI prompts', type: 'Edit' }
       ]
     },
     {

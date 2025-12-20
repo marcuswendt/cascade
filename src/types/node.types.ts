@@ -153,6 +153,7 @@ export interface Prop<T = any> {
     accept?: string;  // For file inputs
     locked?: boolean; // For vector inputs
     integer?: boolean; // Explicit integer mode
+    small?: boolean; // For button inputs - compact size
   };
 
   // Callbacks - context is the Node instance
@@ -165,6 +166,7 @@ export interface Prop<T = any> {
   // Visibility
   disabled?: boolean | (() => boolean);
   hidden?: boolean | (() => boolean);
+  condition?: () => boolean; // Alternative to hidden - shows when true
 
   // Organization
   folder?: string;

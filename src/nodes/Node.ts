@@ -25,6 +25,14 @@ export class Node {
   props: Record<string, Prop> = {};
   protected propWatchers: Map<string, Function[]> = new Map();
 
+  // Actions system - button-triggered callbacks
+  actions: Record<string, {
+    label: string;
+    icon?: string;
+    callback: () => void | Promise<void>;
+    condition?: () => boolean;
+  }> = {};
+
   // Variadic inputs
   variadic: boolean = false;
   protected variadicDefault: any = null;
@@ -237,6 +245,29 @@ export class Node {
    */
   defineProp<T>(name: string, config: Prop<T>): void {
     this.addParm(name, config);
+  }
+
+  /**
+   * Add an action button to this node
+   * Actions appear in the Inspector and can be triggered by keyboard shortcuts
+   */
+  addAction(name: string, config: {
+    label: string;
+    icon?: string;
+    callback: () => void | Promise<void>;
+    condition?: () => boolean;
+  }): void {
+    this.actions[name] = config;
+  }
+
+  /**
+   * Execute an action by name
+   */
+  async executeAction(name: string): Promise<void> {
+    const action = this.actions[name];
+    if (!action) return;
+    if (action.condition && !action.condition()) return;
+    await action.callback();
   }
 
   updateProp(name: string, value: any): void {
