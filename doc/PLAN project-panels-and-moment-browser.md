@@ -162,7 +162,10 @@ Three rules. Each one, got wrong, looks like flaky images rather than a mistake:
    moment has photographs; `preview` present means one can actually be drawn.
    The gap is real — measured on this archive, 180 of 200 moments have
    `photoCount > 0` and 179 have a preview, so exactly one has photographs and
-   no renderable preview. There was also one video-only moment
+   no renderable preview. That one is asset `a7825ffb/cee5055e`, whose original
+   bytes are missing from storage rather than undecodable — a known hole,
+   confirmed upstream, and it will not close by re-running the backfill. Do not
+   treat it as a bug in the picker. There was also one video-only moment
    (`videoCount > 0`, `photoCount === 0`). Give video its own affordance rather
    than an empty tile.
 2. **The URLs expire, `expiresAt` on the row (15 minutes).** Never cache them to
