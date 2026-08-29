@@ -1,10 +1,13 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { isIP } from 'node:net';
 import type { NextFunction, Request, Response } from 'express';
 
 export interface ServerSecurityOptions {
   readonly host: string;
   readonly port: number;
   readonly trustedOrigins: readonly string[];
+  readonly trustedHosts: readonly string[];
+  readonly sensitiveCapabilities: boolean;
 }
 
 export interface BrowserCapabilityBoundary {
@@ -20,7 +23,12 @@ export interface ProjectRequestBoundary {
 }
 
 export function isLoopbackHost(host: string): boolean {
-  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  const normalized = host.toLowerCase().replace(/^\[|\]$/g, '');
+  return normalized === '127.0.0.1' || normalized === 'localhost' || normalized === '::1';
+}
+
+export function allowsSensitiveCapabilities(options: ServerSecurityOptions): boolean {
+  return options.sensitiveCapabilities;
 }
 
 /**
@@ -36,7 +44,7 @@ export function createProjectRequestBoundary(options: ServerSecurityOptions): Pr
     guard(req, res, next) {
       const host = req.get('Host');
       const origin = req.get('Origin');
-      if (!host || !authorities.has(host) || origin === 'null' || (origin && !origins.has(origin))) {
+      if (!host || !authorities.has(host.toLowerCase()) || origin === 'null' || (origin && !origins.has(origin))) {
         res.status(403).json({ ok: false, error: 'Project access denied' });
         return;
       }
@@ -67,11 +75,11 @@ export function createBrowserCapabilityBoundary(
     guardOrigin(req, res, next) {
       const origin = req.get('Origin');
       const host = req.get('Host');
-      if (!origin || origin === 'null' || !origins.has(origin) || !host || !authorities.has(host)) {
+      if (!host || !authorities.has(host.toLowerCase()) || origin === 'null' || (origin && !origins.has(origin))) {
         res.status(403).json({ ok: false, error: `${label} access denied` });
         return;
       }
-      setCorsOrigin(res, origin);
+      if (origin) setCorsOrigin(res, origin);
       next();
     },
     preflight(_req, res) {
@@ -97,16 +105,22 @@ export function createBrowserCapabilityBoundary(
 }
 
 function allowedAuthorities(options: ServerSecurityOptions, origins: ReadonlySet<string>): Set<string> {
-  const authorities = new Set([...origins].map((origin) => new URL(origin).host));
-  if (options.host === '127.0.0.1' || options.host === 'localhost') {
+  const authorities = new Set([...origins].map((origin) => new URL(origin).host.toLowerCase()));
+  if (isLoopbackHost(options.host)) {
     authorities.add(`127.0.0.1:${options.port}`);
     authorities.add(`localhost:${options.port}`);
-  } else if (options.host.includes(':')) {
-    authorities.add(`[${options.host}]:${options.port}`);
-  } else {
-    authorities.add(`${options.host}:${options.port}`);
+  } else if (options.trustedHosts.length === 0) {
+    authorities.add(authority(options.host, options.port));
   }
+  for (const host of options.trustedHosts) authorities.add(authority(host, options.port));
   return authorities;
+}
+
+export function authority(host: string, port: number): string {
+  const normalized = host.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!normalized || /[\s/?#@]/.test(normalized)) throw new Error(`Invalid trusted host: ${host}`);
+  if (normalized.includes(':') && isIP(normalized) !== 6) throw new Error(`Invalid trusted host: ${host}`);
+  return `${normalized.includes(':') ? `[${normalized}]` : normalized}:${port}`;
 }
 
 function setCorsOrigin(res: Response, origin: string): void {

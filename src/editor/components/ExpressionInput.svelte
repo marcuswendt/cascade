@@ -2,7 +2,7 @@
   import type { Prop } from '@/types/node.types';
   import type { Node } from '@/nodes/Node';
   import type { Graph } from '@/nodes/Graph';
-  import { Sigma, AlertCircle, X } from 'lucide-svelte';
+  import { Sigma, AlertCircle, X } from '@lucide/svelte';
   import { onMount } from 'svelte';
 
   export let prop: Prop;

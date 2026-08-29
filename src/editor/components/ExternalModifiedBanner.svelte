@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { RefreshCw, Download, X, FileCode } from 'lucide-svelte';
+  import { RefreshCw, Download, X, FileCode } from '@lucide/svelte';
 
   export let filePath = '';
   export let show = false;

@@ -4,7 +4,7 @@
   import type { CodeVersion } from '@/types/node.types';
   import { CodeHistory as CodeHistoryManager } from '../CodeHistory';
   import Icon from '../Icon.svelte';
-  import { X, History, RotateCcw, User, Sparkles, ChevronRight, GitCompare } from 'lucide-svelte';
+  import { X, History, RotateCcw, User, Sparkles, ChevronRight, GitCompare } from '@lucide/svelte';
 
   export let open = false;
   export let modulePath = '';

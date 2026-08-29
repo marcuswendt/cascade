@@ -49,7 +49,22 @@ export function createProject(projectsRoot: string, name: string): string {
     include: ['nodes/**/*.ts'],
   });
   fs.writeFileSync(path.join(directory, '.gitignore'), '.cascade-cache/\nrenders/\nnode_modules/\n');
-  fs.writeFileSync(path.join(directory, 'AGENTS.md'), '# Cascade project\n\nRead `node_modules/cascade/AGENTS.md` before editing graphs or nodes. Prefer deterministic node definitions.\n');
+  fs.writeFileSync(path.join(directory, 'AGENTS.md'), `# Cascade project
+
+Read \`node_modules/cascade/AGENTS.md\` before editing graphs or nodes. Prefer deterministic node definitions.
+
+## Common commands
+
+- \`npm run check\` — type-check custom nodes.
+- \`npm run check:graph\` — statically check the graph and node definitions.
+- \`npm run validate\` — validate \`index.cascade\`.
+- \`npm run run\` — execute headlessly without Studio.
+- \`cascade ./\` — launch local Studio on loopback.
+- \`cascade ./ --host KURO --port 3030\` — launch for \`http://KURO:3030\` on a trusted VPN/LAN.
+
+Do not start another Cascade process on an occupied port. Remote access requires
+both the explicit bind address and the exact trusted browser hostname.
+`);
   return directory;
 }
 

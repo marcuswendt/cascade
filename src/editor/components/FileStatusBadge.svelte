@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { FileStatus } from '@/types/node.types';
-  import { Check, AlertTriangle, FileX, RefreshCw } from 'lucide-svelte';
+  import { Check, AlertTriangle, FileX, RefreshCw } from '@lucide/svelte';
 
   export let status: FileStatus = 'synced';
   export let showLabel = true;

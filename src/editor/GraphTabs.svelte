@@ -2,7 +2,7 @@
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import type { Node } from '@/nodes/Node';
   import Icon from './Icon.svelte';
-  import { ChevronDown, FileText, FolderOpen, Save, Copy, Package, Info } from 'lucide-svelte';
+  import { ChevronDown, FileText, FolderOpen, Save, Copy, Package, Info } from '@lucide/svelte';
 
   interface Tab {
     id: string;

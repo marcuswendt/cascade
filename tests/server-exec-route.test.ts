@@ -31,7 +31,7 @@ async function fixture() {
     exec: { stages: { entrypoint: 'bridge/stages.py' } },
   }));
   const port = nextPort++;
-  const server = startServer(new ProjectRoot(root), { port, wsPort: false });
+  const server = startServer(new ProjectRoot(root), { port });
   servers.push(server);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
@@ -56,10 +56,12 @@ function rawStatus(url: string, headers: Record<string, string>): Promise<number
 }
 
 describe('/api/exec security and project boundary', () => {
-  it('does not disclose capabilities to hostile origins, missing origins, or forged hosts', async () => {
+  it('allows origin-less same-host capability discovery but rejects hostile origins and forged hosts', async () => {
     const { base, headers } = await fixture();
     expect((await fetch(`${base}/api/exec/capability`, { headers: { ...headers, Origin: 'https://evil.test' } })).status).toBe(403);
-    expect((await fetch(`${base}/api/exec/capability`, { headers: { Host: headers.Host } })).status).toBe(403);
+    const sameHost = await fetch(`${base}/api/exec/capability`, { headers: { Host: headers.Host } });
+    expect(sameHost.status).toBe(200);
+    await expect(sameHost.json()).resolves.toMatchObject({ capability: expect.any(String) });
     expect(await rawStatus(`${base}/api/exec/capability`, { ...headers, Host: 'evil.test' })).toBe(403);
   });
 
@@ -112,7 +114,7 @@ describe('/api/exec security and project boundary', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-exec-remote-'));
     roots.push(root);
     const port = nextPort++;
-    const server = startServer(new ProjectRoot(root), { port, wsPort: false, host: '0.0.0.0' });
+    const server = startServer(new ProjectRoot(root), { port, host: '0.0.0.0' });
     servers.push(server);
     await new Promise<void>((resolve) => server.once('listening', resolve));
     const response = await fetch(`http://127.0.0.1:${port}/api/exec/capability`, {

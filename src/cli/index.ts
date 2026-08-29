@@ -31,7 +31,7 @@ async function main() {
 Cascade Graph Execution CLI
 
 Usage:
-  cascade [project-directory | graph-file] [--no-open]
+  cascade [project-directory | graph-file] [Studio options]
   cascade new <name>
   cascade node <Name> [project-directory]
   cascade projects [directory]
@@ -50,6 +50,10 @@ Commands:
   inspect   Print a machine-readable graph and node-definition summary
 
 Options:
+  --host <address>         Bind Studio to an address or hostname
+  --port <number>          Bind Studio HTTP to an explicit port
+  --trusted-host <name>    Allow an exact remote browser hostname (repeatable)
+  --no-open                Do not open Studio in a browser
   --entry-node <id>  Execute from a specific entry node
   --validate-only   Validate only (same as 'validate' command)
   --verbose, -v      Show verbose output
@@ -58,6 +62,7 @@ Options:
 
 Examples:
   cascade ./
+  cascade ./ --host KURO --port 3030
   cascade new my-artwork
   cascade node Multiply ./my-artwork
   cascade run graph.cascade

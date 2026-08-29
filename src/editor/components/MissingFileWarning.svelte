@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { AlertTriangle, FileX, RefreshCw, FileCode, FolderSearch, X } from 'lucide-svelte';
+  import { AlertTriangle, FileX, RefreshCw, FileCode, FolderSearch, X } from '@lucide/svelte';
 
   export let filePath = '';
   export let modulePath = '';

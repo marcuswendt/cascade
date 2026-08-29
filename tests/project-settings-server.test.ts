@@ -55,7 +55,7 @@ describe('project manifest and credentials', () => {
     process.env.CASCADE_CREDENTIALS = file;
     try {
       const port = nextPort++;
-      const server = startServer(new ProjectRoot(root), { port, wsPort: false });
+      const server = startServer(new ProjectRoot(root), { port });
       servers.push(server);
       await new Promise<void>((resolve) => server.once('listening', resolve));
       const base = `http://127.0.0.1:${port}`;

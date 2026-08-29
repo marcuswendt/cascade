@@ -10,6 +10,17 @@ cd ~/Documents/Cascade/my-artwork
 cascade ./
 ```
 
+For a workstation reached by name over a trusted VPN or LAN, bind deliberately
+and allow the exact hostname used by the browser:
+
+```bash
+cascade ./ --host KURO --port 3030
+```
+
+Open `http://KURO:3030`. Loopback remains the default. Cascade trusts the
+specific non-loopback bind hostname; `--trusted-host` is only needed when the
+browser uses a different hostname. Wildcard remote binds are rejected.
+
 `index.cascade` is the default graph name. A project may contain several `.cascade` files; pass one explicitly when there is no unambiguous default:
 
 ```bash
@@ -54,6 +65,11 @@ export function mount(element: HTMLElement, api: ProjectPanelApi) {
 ```
 
 Panels are trusted browser code. Cascade discovers literal `title`, `icon`, and optional `rendererTypes` exports without executing the module, then compiles it only when Studio needs it. `mount` may be async and returns an instance disposer; `api.signal` aborts when its dock closes. Panels can call project stages, build media URLs, read/write node parameters, inspect selection, or close themselves.
+
+Reusable panels may live under `shared/panels/`. `shared/` may be a directory or
+a project-owned symlink to a sibling library; Cascade confines panel discovery
+and compilation to that link's canonical target. A project-local panel with the
+same name still wins.
 
 The same module can provide project-owned value renderers without teaching Cascade about project data types:
 

@@ -5,11 +5,71 @@ import { loadConfig, saveConfig, configPath } from './config.js';
 import { startServer } from './index.js';
 import { ProjectRoot } from './project.js';
 import { createNode, createProject } from './projectTemplate.js';
+import { authority, isLoopbackHost } from './security.js';
+
+export interface StudioCliArgs {
+  readonly positional: string[];
+  readonly noOpen: boolean;
+  readonly host?: string;
+  readonly port?: number;
+  readonly trustedHosts: string[];
+}
+
+export function parseStudioArgs(args: readonly string[]): StudioCliArgs {
+  const positional: string[] = [];
+  const trustedHosts: string[] = [];
+  let noOpen = false;
+  let host: string | undefined;
+  let port: number | undefined;
+
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (argument === '--no-open') {
+      noOpen = true;
+      continue;
+    }
+    const [name, inlineValue] = argument.startsWith('--') ? argument.split('=', 2) : [argument, undefined];
+    if (name === '--host' || name === '--port' || name === '--trusted-host') {
+      const value = inlineValue ?? args[++index];
+      if (!value || value.startsWith('--')) throw new Error(`${name} requires a value`);
+      if (name === '--host') host = value;
+      else if (name === '--trusted-host') {
+        authority(value, 1);
+        trustedHosts.push(value);
+      } else {
+        port = Number(value);
+        if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+          throw new Error('--port must be an integer between 1 and 65535');
+        }
+      }
+      continue;
+    }
+    if (argument.startsWith('-')) throw new Error(`unknown option: ${argument}`);
+    positional.push(argument);
+  }
+
+  if (trustedHosts.length > 0 && (!host || isLoopbackHost(host))) {
+    throw new Error('--trusted-host requires an explicit non-loopback --host bind address');
+  }
+  if (host && !isLoopbackHost(host)) {
+    if (host === '0.0.0.0' || host === '::' || host === '[::]') {
+      throw new Error('remote Studio must bind a specific hostname or VPN/interface address, not a wildcard address');
+    }
+    if (trustedHosts.length === 0) trustedHosts.push(host);
+  }
+
+  return {
+    positional,
+    noOpen,
+    ...(host === undefined ? {} : { host }),
+    ...(port === undefined ? {} : { port }),
+    trustedHosts,
+  };
+}
 
 /** Run Studio/project commands without reading process.argv or exiting. */
 export async function runStudioCli(args: readonly string[]): Promise<void> {
-  const noOpen = args.includes('--no-open');
-  const positional = args.filter((argument) => !argument.startsWith('--'));
+  const { noOpen, positional, host, port, trustedHosts } = parseStudioArgs(args);
   const config = loadConfig();
 
   if (positional[0] === 'projects') {
@@ -41,7 +101,7 @@ export async function runStudioCli(args: readonly string[]): Promise<void> {
     if (fs.existsSync(projectTarget)) target = projectTarget;
   }
   const project = ProjectRoot.fromArg(target);
-  const server = startServer(project);
+  const server = startServer(project, { host, port, trustedHosts });
 
   server.on('listening', async () => {
     const defaultGraph = await project.resolveDefaultGraph();
@@ -50,7 +110,8 @@ export async function runStudioCli(args: readonly string[]): Promise<void> {
       : '📄 No default graph (name one explicitly, or add index.cascade) — starting empty');
     const address = server.address();
     const port = typeof address === 'object' && address ? address.port : 3030;
-    const url = `http://localhost:${port}`;
+    const browserHost = trustedHosts[0] ?? (host && !isLoopbackHost(host) ? host : 'localhost');
+    const url = `http://${authority(browserHost, port)}`;
     if (!noOpen) {
       const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
       execFile(opener, [url], (error) => {

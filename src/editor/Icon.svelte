@@ -13,7 +13,7 @@
     CloudSun, Telescope, Rainbow, Mountain, Crop, Contrast, Scan, Spline,
     Dot, Grid2x2, Tag, Aperture, Gauge, Wind, Combine, Group, FileOutput,
     Sparkles, Binary, Radar
-  } from 'lucide-svelte';
+  } from '@lucide/svelte';
 
   export let name: string;
   export let size: number = 16;
@@ -21,7 +21,7 @@
   export let strokeWidth: number = 2;
   // `class` is reserved as a `let` binding name — the standard Svelte
   // re-export idiom lets callers still write `<Icon class="...">` while
-  // this forwards it to the underlying lucide-svelte component, which
+  // this forwards it to the underlying Lucide Svelte component, which
   // does accept it natively (renders straight onto the SVG element).
   let className: string = '';
   export { className as class };
@@ -51,4 +51,3 @@
 </script>
 
 <svelte:component this={IconComponent} {size} {color} {strokeWidth} class={className} />
-

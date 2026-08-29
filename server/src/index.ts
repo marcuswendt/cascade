@@ -1,6 +1,5 @@
 import express from 'express';
 import { createServer } from 'http';
-import { WebSocketServer } from 'ws';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -12,10 +11,9 @@ import { createExecRouter } from './routes/exec.js';
 import { createShellRouter } from './routes/shell.js';
 import { createProjectSettingsRouter } from './routes/projectSettings.js';
 import { createNetRouter } from './routes/net.js';
-import { createProjectRequestBoundary, type ServerSecurityOptions } from './security.js';
+import { authority, createProjectRequestBoundary, isLoopbackHost, type ServerSecurityOptions } from './security.js';
 import { createMediaRouter } from './routes/media.js';
 import { aiRouter } from './routes/ai.js';
-import { setupWebSocket } from './services/websocket.js';
 import { ProjectRoot } from './project.js';
 
 export { createDirectShellCapability } from './shell/service.js';
@@ -31,8 +29,8 @@ const CASCADE_DIST = path.resolve(__dirname, '..', '..', 'dist');
 
 export interface StartServerOptions {
   readonly port?: number;
-  readonly wsPort?: number | false;
   readonly host?: string;
+  readonly trustedHosts?: readonly string[];
   readonly trustedOrigins?: readonly string[];
   /** @deprecated Use trustedOrigins. */
   readonly trustedShellOrigins?: readonly string[];
@@ -41,16 +39,18 @@ export interface StartServerOptions {
 export function startServer(project: ProjectRoot, opts: StartServerOptions = {}) {
   const app = express();
   const PORT = opts.port ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : 3030);
-  const WS_PORT = opts.wsPort ?? (process.env.WS_PORT ? parseInt(process.env.WS_PORT, 10) : 3031);
   const HOST = opts.host ?? '127.0.0.1';
+  const trustedHosts = Object.freeze([...(opts.trustedHosts ?? [])]);
+  const defaultOrigins = [
+    ...(isLoopbackHost(HOST) ? [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`] : []),
+    ...trustedHosts.map((host) => `http://${authority(host, PORT)}`),
+  ];
   const security: ServerSecurityOptions = Object.freeze({
     host: HOST,
     port: PORT,
-    trustedOrigins: Object.freeze([...(opts.trustedOrigins ?? opts.trustedShellOrigins ?? (
-      HOST === '127.0.0.1' || HOST === 'localhost'
-        ? [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]
-        : HOST === '::1' ? [`http://[::1]:${PORT}`] : []
-    ))]),
+    trustedHosts,
+    sensitiveCapabilities: isLoopbackHost(HOST) || trustedHosts.length > 0,
+    trustedOrigins: Object.freeze([...(opts.trustedOrigins ?? opts.trustedShellOrigins ?? defaultOrigins)]),
   });
 
   // Process endpoints own their authentication and bounded parsers, so they
@@ -107,16 +107,11 @@ export function startServer(project: ProjectRoot, opts: StartServerOptions = {})
   }
 
   const server = createServer(app);
-  if (WS_PORT !== false) {
-    const wss = new WebSocketServer({ port: WS_PORT, host: HOST });
-    setupWebSocket(wss, project);
-    server.once('close', () => wss.close());
-  }
 
   server.listen(PORT, HOST, () => {
     console.log(`🚀 Cascade running on http://${HOST}:${PORT}`);
     console.log(`📁 Project: ${project.root}${project.isGitRepo ? ' (git)' : ' (not a git repo yet)'}`);
-    if (WS_PORT !== false) console.log(`📡 WebSocket on ws://${HOST}:${WS_PORT}`);
+    if (trustedHosts.length > 0) console.log(`🔐 Trusted Studio URL: http://${authority(trustedHosts[0], PORT)} (all reachable VPN/interface peers are trusted)`);
   });
 
   return server;

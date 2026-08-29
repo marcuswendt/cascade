@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import * as monaco from 'monaco-editor';
-  import { X, AlertTriangle, FileCode, Download, Upload, GitMerge } from 'lucide-svelte';
+  import { X, AlertTriangle, FileCode, Download, Upload, GitMerge } from '@lucide/svelte';
 
   export let open = false;
   export let modulePath = '';

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import Icon from './Icon.svelte';
-  import { X } from 'lucide-svelte';
+  import { X } from '@lucide/svelte';
 
   export let open = false;
 

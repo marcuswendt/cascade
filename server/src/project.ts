@@ -125,8 +125,8 @@ export class ProjectRoot {
    * with the same name provided by `shared/panels`. */
   async listPanels(): Promise<string[]> {
     const [local, shared] = await Promise.all([
-      this.listPanelDirectory('panels'),
-      this.listPanelDirectory(path.join('shared', 'panels')),
+      this.listPanelDirectory(this.resolve('panels')),
+      this.listPanelDirectory(this.resolveShared('panels')),
     ]);
     return [...new Set([...local, ...shared])].sort();
   }
@@ -150,7 +150,7 @@ export class ProjectRoot {
     this.assertExtensionName(name, 'panel');
     const entries = [
       this.resolve(path.join('panels', name, 'index.ts')),
-      this.resolve(path.join('shared', 'panels', name, 'index.ts')),
+      this.resolveShared('panels', name, 'index.ts'),
     ];
     for (const entry of entries) {
       try {
@@ -217,8 +217,7 @@ export class ProjectRoot {
     return fs.readFile(await this.resolvePanelEntry(name), 'utf-8');
   }
 
-  private async listPanelDirectory(relativeDirectory: string): Promise<string[]> {
-    const directory = this.resolve(relativeDirectory);
+  private async listPanelDirectory(directory: string): Promise<string[]> {
     let entries: import('node:fs').Dirent[];
     try {
       entries = await fs.readdir(directory, { withFileTypes: true });
@@ -238,6 +237,20 @@ export class ProjectRoot {
         }
       }));
     return panels.filter((name): name is string => name !== null);
+  }
+
+  /** `shared/` may intentionally link to a sibling library. Its canonical
+   * target is a second confined root for shared project extensions only. */
+  private resolveShared(...segments: string[]): string {
+    const sharedLink = path.join(this.root, 'shared');
+    let sharedRoot = sharedLink;
+    try {
+      sharedRoot = fssync.realpathSync(sharedLink);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return path.join(sharedLink, ...segments);
+      throw error;
+    }
+    return resolveWithinRoot(sharedRoot, ...segments);
   }
 
   private assertExtensionName(name: string, kind: string): void {

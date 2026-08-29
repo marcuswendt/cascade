@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.2] - 2026-08-29
+
+- Restored origin-less same-host browser capability discovery while retaining
+  exact Host checks and hostile/null Origin rejection.
+- Added strict `--host` and `--port` parsing plus first-class named-workstation
+  launch support for authenticated private VPN interfaces.
+- Allowed reusable project panels beneath the confined canonical target of a
+  project-owned `shared/` link.
+- Removed the unused WebSocket watcher and legacy project client, and made the
+  AI CLI bridge use the current Studio origin.
+- Replaced deprecated `lucide-svelte` with `@lucide/svelte`, refreshed
+  compatible dependencies, and kept major framework/SDK migrations separate.
+- Expanded packaged agent guidance for local, remote, and headless workflows.
+
 ## [0.2.1] - 2026-08-29
 
 - Removed generated release artifacts and tracked build output from the

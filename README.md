@@ -30,9 +30,9 @@ Useful checks:
 ```bash
 npm run check
 npm run test:run
-npm run build:cli
 npm --prefix server run build
 npm run build
+npm run build:cli
 ```
 
 ## Create a project
@@ -42,6 +42,18 @@ cascade new my-artwork
 cd ~/Documents/Cascade/my-artwork
 cascade ./
 ```
+
+Studio binds to loopback by default. To use a Cascade workstation over a
+trusted VPN or LAN, opt into the bind address and exact browser hostname:
+
+```bash
+cascade ./ --host KURO --port 3030
+```
+
+Then open `http://KURO:3030`. Cascade uses a specific non-loopback `--host` as
+both the bind target and allowed browser hostname. Use repeatable
+`--trusted-host` only when the bind address and browser hostname differ.
+Wildcard remote binds, unknown options, and invalid ports fail immediately.
 
 A project is an ordinary directory or Git repository:
 
@@ -156,14 +168,16 @@ Existing files without `parent` fields remain root-level graphs. Invalid parent 
 
 Shell execution is server-only and allowlisted in the project’s `cascade.json`. Cascade passes a fixed executable and argument array to `spawn(..., { shell: false })`; it does not accept shell command strings or interpolation. Working directories are project-confined, input/output is bounded, dangerous request-time environment overrides are rejected, and cancellation terminates the process tree. Commands inherit the server environment, then apply project-configured and explicitly allowed request overrides.
 
-Every project API requires an exact allowed Host and rejects hostile or null
-Origins; Cascade never enables wildcard CORS for local project data. Filesystem
-paths are checked lexically and through real paths so project symlinks cannot
-escape the opened root.
+Every project API requires an exact allowed Host. Present, hostile or null
+Origins are rejected; same-origin requests may omit `Origin`, as browsers do
+for ordinary GETs. Cascade never enables wildcard CORS for project data.
+Filesystem paths are checked lexically and through real paths. The one explicit
+secondary root is a project-owned `shared/` link used to discover reusable
+panels.
 
-The browser shell and process routes exist only on loopback and additionally
-require process-lifetime capability tokens. Remote-bound servers do not expose
-them.
+Browser shell and process routes additionally require process-lifetime
+capability tokens. They are available on loopback, or in an explicitly enabled
+trusted-host session; an untrusted remote bind does not expose them.
 
 ## More documentation
 

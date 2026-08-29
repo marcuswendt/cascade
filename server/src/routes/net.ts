@@ -2,14 +2,14 @@ import { Router, json } from 'express';
 import type { ProjectRoot } from '../project.js';
 import { CredentialStore, secretValue } from '../credentials.js';
 import { readProjectManifest } from '../projectConfig.js';
-import { createBrowserCapabilityBoundary, isLoopbackHost, type ServerSecurityOptions } from '../security.js';
+import { allowsSensitiveCapabilities, createBrowserCapabilityBoundary, type ServerSecurityOptions } from '../security.js';
 
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 const BLOCKED_HEADER = /^(?:authorization|cookie|host|origin|referer|proxy-|sec-)/i;
 
 export function createNetRouter(project: ProjectRoot, security: ServerSecurityOptions, credentials = new CredentialStore()): Router {
   const router = Router();
-  if (!isLoopbackHost(security.host)) return router.use((_req, res) => res.status(404).end());
+  if (!allowsSensitiveCapabilities(security)) return router.use((_req, res) => res.status(404).end());
   const boundary = createBrowserCapabilityBoundary(security, 'Authorized fetch', 'X-Cascade-Net-Capability');
   router.use(boundary.guardOrigin);
   router.options('{*path}', boundary.preflight);

@@ -1,14 +1,14 @@
 import { Router, json, type NextFunction, type Request, type Response } from 'express';
 import type { ShellService } from '../shell/service.js';
 import { ShellProcessError, ShellRequestError, type ShellRunResult } from '../shell/types.js';
-import { createBrowserCapabilityBoundary, isLoopbackHost, type ServerSecurityOptions } from '../security.js';
+import { allowsSensitiveCapabilities, createBrowserCapabilityBoundary, isLoopbackHost, type ServerSecurityOptions } from '../security.js';
 
 export type { ServerSecurityOptions } from '../security.js';
 export { isLoopbackHost } from '../security.js';
 
 export function createShellRouter(shell: ShellService, options: ServerSecurityOptions): Router {
   const router = Router();
-  if (!isLoopbackHost(options.host)) return router.use((_req, res) => res.status(404).end());
+  if (!allowsSensitiveCapabilities(options)) return router.use((_req, res) => res.status(404).end());
   const boundary = createBrowserCapabilityBoundary(options, 'Shell', 'X-Cascade-Shell-Capability');
   router.use(boundary.guardOrigin);
   router.options('{*path}', boundary.preflight);

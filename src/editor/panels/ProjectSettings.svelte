@@ -3,7 +3,7 @@
   import type { Graph } from '@/nodes/Graph';
   import type { ProjectPackage } from '@/types/node.types';
   import Icon from '../Icon.svelte';
-  import { X, Plus, Trash2, FolderOpen, Package, AlertCircle } from 'lucide-svelte';
+  import { X, Plus, Trash2, FolderOpen, Package, AlertCircle } from '@lucide/svelte';
   import { loadProjectSettings, saveProjectSettings, type ProjectSettingsDto } from '../projectSettingsApi';
 
   export let open = false;

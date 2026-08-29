@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { Router, json, type NextFunction, type Request, type Response } from 'express';
 import type { ProjectRoot } from '../project.js';
 import { PythonWorker } from '../pythonWorker.js';
-import { createBrowserCapabilityBoundary, isLoopbackHost, type ServerSecurityOptions } from '../security.js';
+import { allowsSensitiveCapabilities, createBrowserCapabilityBoundary, type ServerSecurityOptions } from '../security.js';
 import { CredentialStore } from '../credentials.js';
 import { readProjectManifest } from '../projectConfig.js';
 
@@ -25,7 +25,7 @@ interface WorkerSlot {
 /** Protected project-local Python execution with no assumed project layout. */
 export function createExecRouter(project: ProjectRoot, security: ServerSecurityOptions): Router {
   const router = Router();
-  if (!isLoopbackHost(security.host)) return router.use((_req, res) => res.status(404).end());
+  if (!allowsSensitiveCapabilities(security)) return router.use((_req, res) => res.status(404).end());
 
   const boundary = createBrowserCapabilityBoundary(security, 'Exec', 'X-Cascade-Exec-Capability');
   let workerSlot: WorkerSlot | null = null;

@@ -21,7 +21,7 @@ async function fixture() {
   fs.writeFileSync(path.join(root, 'cascade.json'), JSON.stringify({ commands: { node: process.execPath } }));
   const project = new ProjectRoot(root);
   const port = nextPort++;
-  const server = startServer(project, { port, wsPort: false });
+  const server = startServer(project, { port });
   servers.push(server);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
@@ -40,11 +40,11 @@ function rawStatus(url: string, headers: Record<string, string>): Promise<number
 }
 
 describe('/api/shell security boundary', () => {
-  it('does not disclose capabilities to hostile origins or forged hosts', async () => {
+  it('allows origin-less same-host capability discovery but rejects hostile origins and forged hosts', async () => {
     const { base, headers } = await fixture();
     expect((await fetch(`${base}/api/shell/capability`, { headers: { ...headers, Origin: 'https://evil.test' } })).status).toBe(403);
     expect(await rawStatus(`${base}/api/shell/capability`, { ...headers, Host: 'evil.test' })).toBe(403);
-    expect((await fetch(`${base}/api/shell/capability`, { headers: { Host: headers.Host } })).status).toBe(403);
+    expect((await fetch(`${base}/api/shell/capability`, { headers: { Host: headers.Host } })).status).toBe(200);
   });
 
   it('requires a token, applies no-store headers, and runs allowlisted commands', async () => {
@@ -85,7 +85,7 @@ describe('/api/shell security boundary', () => {
     roots.push(root);
     fs.writeFileSync(path.join(root, 'cascade.json'), JSON.stringify({ commands: { node: process.execPath } }));
     const port = nextPort++;
-    const server = startServer(new ProjectRoot(root), { port, wsPort: false, host: '0.0.0.0' });
+    const server = startServer(new ProjectRoot(root), { port, host: '0.0.0.0' });
     servers.push(server);
     await new Promise<void>((resolve) => server.once('listening', resolve));
     const response = await fetch(`http://127.0.0.1:${port}/api/shell/capability`, { headers: { Origin: `http://127.0.0.1:${port}` } });

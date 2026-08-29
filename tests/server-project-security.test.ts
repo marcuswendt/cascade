@@ -19,7 +19,7 @@ async function fixture(): Promise<{ base: string; root: string; host: string }> 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-project-security-'));
   roots.push(root);
   fs.writeFileSync(path.join(root, 'index.cascade'), '{}');
-  const server = startServer(new ProjectRoot(root), { port: nextPort++, wsPort: false });
+  const server = startServer(new ProjectRoot(root), { port: nextPort++ });
   servers.push(server);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
@@ -27,11 +27,40 @@ async function fixture(): Promise<{ base: string; root: string; host: string }> 
   return { base: `http://127.0.0.1:${address.port}`, host: `127.0.0.1:${address.port}`, root };
 }
 
+async function trustedHostFixture(): Promise<{ base: string; host: string }> {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-trusted-host-'));
+  roots.push(root);
+  fs.writeFileSync(path.join(root, 'index.cascade'), '{}');
+  const port = nextPort++;
+  const server = startServer(new ProjectRoot(root), {
+    port,
+    host: '0.0.0.0',
+    trustedHosts: ['kuro'],
+  });
+  servers.push(server);
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  return { base: `http://127.0.0.1:${port}`, host: `kuro:${port}` };
+}
+
 function rawStatus(url: string, headers: Record<string, string>): Promise<number> {
   return new Promise((resolve, reject) => {
     const request = http.get(url, { headers }, (response) => {
       response.resume();
       response.once('end', () => resolve(response.statusCode ?? 0));
+    });
+    request.once('error', reject);
+  });
+}
+
+function rawJson(url: string, headers: Record<string, string>): Promise<{ status: number; body: any }> {
+  return new Promise((resolve, reject) => {
+    const request = http.get(url, { headers }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      response.once('end', () => resolve({
+        status: response.statusCode ?? 0,
+        body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+      }));
     });
     request.once('error', reject);
   });
@@ -62,6 +91,18 @@ describe('project API security boundary', () => {
     expect(preflight.status).toBe(204);
     expect(preflight.headers.get('access-control-allow-origin')).toBe(base);
     expect(preflight.headers.get('access-control-allow-origin')).not.toBe('*');
+  });
+
+  it('allows explicitly trusted hostnames and keeps sensitive capabilities available', async () => {
+    const { base, host } = await trustedHostFixture();
+    expect(await rawStatus(`${base}/api/graph`, { Host: host })).toBe(200);
+
+    const capability = await rawJson(`${base}/api/exec/capability`, { Host: host });
+    expect(capability.status).toBe(200);
+    expect(capability.body).toMatchObject({ capability: expect.any(String) });
+
+    expect(await rawStatus(`${base}/api/graph`, { Host: `0.0.0.0:${new URL(base).port}` })).toBe(403);
+    expect(await rawStatus(`${base}/api/graph`, { Host: `other:${new URL(base).port}` })).toBe(403);
   });
 
   it('rejects symlink escapes for existing reads and writes below an existing parent', async () => {

@@ -25,6 +25,9 @@ describe('project templates', () => {
     ]);
     expect(JSON.parse(fs.readFileSync(path.join(directory, 'cascade.json'), 'utf8'))).toEqual({ name: 'my-artwork' });
     expect(JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8')).devDependencies).toHaveProperty('cascade');
+    const agentGuide = fs.readFileSync(path.join(directory, 'AGENTS.md'), 'utf8');
+    expect(agentGuide).toContain('--host KURO --port 3030');
+    expect(agentGuide).toContain('Do not start another Cascade process on an occupied port');
   });
 
   it('rejects path traversal and invalid project names', () => {

@@ -29,7 +29,7 @@ function writePanel(project: ProjectRoot, location: 'panels' | 'shared/panels', 
 }
 
 async function serve(project: ProjectRoot): Promise<string> {
-  const server = startServer(project, { port: nextPort++, wsPort: false });
+  const server = startServer(project, { port: nextPort++ });
   servers.push(server);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
@@ -68,6 +68,32 @@ describe('project panel server extension', () => {
       name: 'local-only',
       title: 'local-only',
       icon: null,
+    });
+  });
+
+  it('discovers and compiles panels through a project shared-directory symlink', async () => {
+    if (process.platform === 'win32') return;
+    const project = fixture();
+    const shared = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-shared-panels-'));
+    roots.push(shared);
+    fs.mkdirSync(path.join(shared, 'panels', 'moments'), { recursive: true });
+    fs.writeFileSync(path.join(shared, 'panels', 'moments', 'index.ts'), `
+      export const title = 'Linked Moments';
+      export function mount(element: HTMLElement) { element.dataset.panel = 'linked'; }
+    `);
+    fs.symlinkSync(shared, path.join(project.root, 'shared'));
+
+    await expect(project.listPanels()).resolves.toEqual(['moments']);
+    await expect(project.panelMeta('moments')).resolves.toMatchObject({ title: 'Linked Moments' });
+    const compiled = await compileProjectPanel(project, 'moments');
+    expect(compiled.ok).toBe(true);
+    expect(compiled.code).toContain('linked');
+
+    const base = await serve(project);
+    const response = await fetch(`${base}/api/panels`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      panels: [{ name: 'moments', title: 'Linked Moments', icon: null }],
     });
   });
 

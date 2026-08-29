@@ -7,7 +7,7 @@
   import PackageSearch from './PackageSearch.svelte';
   import type { PackageManager } from '@/engine/PackageManager';
   import Icon from './Icon.svelte';
-  import { Clock, Check, XCircle, Copy, FileOutput, History, Lock, FolderOpen, Sparkles, Loader2 } from 'lucide-svelte';
+  import { Clock, Check, XCircle, Copy, FileOutput, History, Lock, FolderOpen, Sparkles, Loader2 } from '@lucide/svelte';
   import { isStandardLibraryNode, typeToPackagePath, getNodeClass, getNodeSource } from '@/utils/nodeTypeUtils';
   import type { NodeSource, FileStatus } from '@/types/node.types';
   import { getAICodeGenerator, AICodeGenerator } from './ai/AICodeGenerator';

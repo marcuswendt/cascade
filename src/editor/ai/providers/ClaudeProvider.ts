@@ -14,7 +14,7 @@ import { AICodeGenerator } from '../AICodeGenerator.js';
 
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const CLI_API_BASE = 'http://localhost:3030/api/ai';
+const CLI_API_BASE = '/api/ai';
 
 export class ClaudeProvider implements AIProviderInterface {
   name = 'claude' as const;

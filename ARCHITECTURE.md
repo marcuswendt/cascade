@@ -30,7 +30,7 @@ Hosts adapt the neutral runtime to an environment:
 
 Capabilities are injected. A node’s literal `runsOn` and `capabilities` fields are checked before its `execute` module is loaded.
 
-`server/` is the project-scoped Node application host. It owns project paths, compilation, HTTP/WebSocket transport, media serving, Python workers, shell policy, and credentials. It is separately manifested and is not a third contracts/runtime workspace.
+`server/` is the project-scoped Node application host. It owns project paths, compilation, HTTP transport, media serving, Python workers, shell policy, and credentials. It is separately manifested and is not a third contracts/runtime workspace.
 
 ## Applications and controllers
 
@@ -83,14 +83,17 @@ Execution failures resolve to a failed `RunResult`; API misuse and invalid prefl
 
 Project node modules are trusted code. Capabilities describe support and portability; they are not a sandbox.
 
-All project HTTP APIs require an exact allowed Host and reject hostile or null
-Origins. Filesystem resolution checks both lexical paths and canonical existing
-targets or parents, so symlinks cannot escape the project root.
+All project HTTP APIs require an exact allowed Host. Origin is validated when
+present and hostile or null Origins are rejected; same-origin GETs may omit it.
+Filesystem resolution checks lexical paths and canonical existing targets or
+parents. Project panels may additionally resolve beneath the canonical target
+of the project-owned `shared/` link; other project paths remain root-confined.
 
 Shell execution uses configured aliases and `spawn(executable, args, { shell:
 false })`, bounded input/output/time, dangerous request-environment-key
-rejection, process-tree cancellation, redacted audits, and a loopback-only
-capability route. Remote-bound servers expose no shell or process capability
+rejection, process-tree cancellation, redacted audits, and capability-token
+routes. Sensitive routes are enabled on loopback or through explicit exact
+trusted-host configuration; an untrusted remote bind exposes no capability
 bootstrap.
 
 ## Compatibility and migration

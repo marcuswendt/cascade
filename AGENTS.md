@@ -34,6 +34,38 @@ my-project/
 
 Use `cascade new <name>` to create a project. Run `cascade ./` from its root to open Studio, `cascade validate <graph.cascade>` for validation, `cascade check <graph.cascade>` for static definition/type checks, `cascade inspect <graph.cascade>` for a JSON summary, and `cascade run <graph.cascade>` for headless execution.
 
+## Launch Studio
+
+For a browser on the same machine, use the secure loopback default:
+
+```bash
+cascade ./ --port 3030
+```
+
+For a workstation reached by hostname over a trusted VPN or LAN, bind the
+network interfaces and allow the exact hostname in the browser URL:
+
+```bash
+cascade ./ --host KURO --port 3030
+```
+
+Open `http://KURO:3030`. Before launching,
+check that the intended port is free or belongs to the expected Cascade process;
+never start a second instance on an occupied/default port or kill an unknown
+process. Verify the named route after startup:
+
+```bash
+curl -fsS http://KURO:3030/health
+curl -fsS http://KURO:3030/api/graph
+```
+
+Remote access is explicit: a specific non-loopback `--host` is also the default
+trusted browser hostname. Use `--trusted-host` only when the bind address and
+browser hostname differ. Hostnames are exact and case-insensitive; wildcard
+binds are rejected. Unknown flags and invalid ports are fatal. Every peer that
+can reach this interface can access trusted project APIs, so use an authenticated
+private VPN/interface and never expose Studio directly to the public internet.
+
 Project panels are trusted Studio extensions, not graph/runtime modules. Put them in `panels/<name>/index.ts`, type them from `cascade/studio/panel`, and return an instance disposer from `mount`. A parameter action such as `panel:asset-browser` opens one. Never import a project panel from a node, runtime host, or headless application.
 
 ## Create a deterministic node
@@ -92,7 +124,7 @@ Definition rules:
 1. Add or update a focused regression test.
 2. Make the smallest change at the owning layer.
 3. Prefer deletion or an existing utility over another wrapper.
-4. Run the focused test, then `npm run check`, `npm run test:run`, `npm run build:cli`, `npm --prefix server run build`, and `npm run build` when the affected surface warrants it.
+4. Run the focused test, then `npm run check`, `npm run test:run`, `npm --prefix server run build`, `npm run build`, and `npm run build:cli` when the affected surface warrants it. Keep the CLI build last because Vite refreshes `dist/`.
 5. For package/public API changes, also test the packed tarball from an empty temporary project.
 
 Do not add dependencies without a concrete need. Do not create extra packages unless they need independent publication or versioning.
@@ -100,7 +132,7 @@ Do not add dependencies without a concrete need. Do not create extra packages un
 ## Versioning
 
 Cascade `0.2.0` is the 2026 architecture rework. The current release is
-`0.2.1`. Increment the root package and CLI patch version for every committed
+`0.2.2`. Increment the root package and CLI patch version for every committed
 feature or release change (`0.2.2`, `0.2.3`, …), keeping `package.json`, the
 lockfile, and CLI output aligned. Internal private workspaces do not receive
 independent versions unless they become separately published packages.

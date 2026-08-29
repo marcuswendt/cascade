@@ -49,11 +49,10 @@ export default defineConfig({
           'ai-google': ['@google/genai'],
           'ai-openai': ['openai'],
           'dockview': ['dockview-core'],
-          'icons': ['lucide-svelte']
+          'icons': ['@lucide/svelte']
         }
       }
     },
     chunkSizeWarningLimit: 1000
   }
 });
-
