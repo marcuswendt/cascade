@@ -1,5 +1,8 @@
 # Cascade CLI Specification
 
+> Design reference. For currently supported commands and project conventions,
+> use `cascade --help` and [Project authoring](../doc/PROJECT_AUTHORING.md).
+
 > **Status**: Draft  
 > **Author**: Marcus Wendt <marcus@field.io>  
 > **Last Updated**: December 2025
@@ -238,12 +241,12 @@ Project-level configuration file.
 ```yaml
 # Cascade Project Configuration
 name: my-project
-version: 0.1.0
+version: 0.2.1
 author: Name <email@example.com>
 description: Project description
 
 # Cascade version constraint
-cascade: ">=0.3.0"
+cascade: ">=0.2.1"
 
 # Project paths
 paths:
@@ -391,34 +394,19 @@ packages/
 
 ### Headless Execution
 
-The CLI uses `@cascade/core` directly without any UI dependencies:
+The CLI uses the public headless runtime without any Studio dependencies:
 
 ```typescript
-// packages/@cascade/cli/src/commands/run.ts
-import { Graph, GraphRunner } from '@cascade/core';
-import { loadProject } from '../utils/project';
+import { createRuntime } from 'cascade/runtime';
+import { createNodeRuntimeHost } from 'cascade/runtime/node';
 
-export async function run(graphPath: string, options: RunOptions) {
-  // Load and parse graph
-  const project = await loadProject(graphPath);
-  const graph = Graph.fromJSON(project.graph);
-  
-  // Create headless runner
-  const runner = new GraphRunner({
-    headless: true,
-    timeout: options.timeout,
-    outputDir: options.output
-  });
-  
-  // Execute
-  const results = await runner.execute(graph, {
-    node: options.node,
-    verbose: options.verbose
-  });
-  
-  // Output results
-  await writeResults(results, options);
-}
+const runtime = createRuntime({
+  host: createNodeRuntimeHost({ modules, assets })
+});
+const graph = await runtime.load(document);
+const result = await graph.run({
+  target: { kind: 'node', nodeId: entryNode }
+});
 ```
 
 ## Templates

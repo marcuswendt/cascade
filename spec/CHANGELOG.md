@@ -1,108 +1,38 @@
 # Changelog
 
-All notable changes to Cascade will be documented in this file.
+## [0.2.1] - 2026-08-29
 
-## [0.3.0] - December 2025
+- Removed generated release artifacts and tracked build output from the
+  repository.
+- Tightened repository ignore rules and consolidated follow-up documentation.
+- Protected every project API with exact Host/Origin checks and added realpath
+  confinement for reads and writes.
+- Added explicit retry behavior for failed cooks without automatic retry loops.
 
-### Performance Optimizations
+## [0.2.0] - 2026-08-29
 
-- O(1) node, port, and connection lookups using Map indices
-- Lazy (pull-based) graph evaluation - only compute what's needed
-- Parallel node execution for independent branches
-- Lightweight value fingerprinting (avoid expensive JSON.stringify)
-- RAF-based viewer polling with throttling
-- Zoom center caching for smooth canvas interaction
-- Timer node cleanup (memory leak fix)
+First major architecture rework since Cascade began in 2025.
 
-### Lens System (Image Processing)
+- Split deterministic public contracts and the environment-neutral headless
+  runtime into two internal workspaces, while keeping one published `cascade`
+  package and CLI.
+- Added literal TypeScript node definitions, static extraction, validation,
+  presets, triggers, cancellation, inspection, and Node/browser hosts.
+- Added a graph-owned cook scheduler with coalescing, branch propagation, staged
+  outputs, progress state, and Studio feedback.
+- Implemented persistent subnets, generic project panels and value renderers,
+  project settings, external credentials, authorized network access, and
+  allowlisted shell/process stages.
+- Added project scaffolding, node scaffolding, validation, strict static checks,
+  graph inspection, headless execution, and packed-consumer tests.
+- Removed Electron and project-specific application code from Cascade core.
+- Reduced the tracked codebase while adding the new runtime, security tests, and
+  authoring guidance.
 
-- High-performance `ImageBuffer` class with Float32Array channels
-- 9 built-in image processing nodes:
-  - Generators: Checkers, Color, Noise, Ramp
-  - Filters: Blur (box, gaussian, bilateral), Composite, Resize, NormalMap, Image
-- Resolution control system (input1/input2/largest/smallest/custom)
-- Fit modes: Fill, Fit, Stretch, Native
-- 20+ blend modes in Composite node
-- Bilinear interpolation for resize operations
+## [0.1.0] - 2025
 
-### Testing Infrastructure
+- Initial visual node workspace, compatibility graph engine, live TypeScript
+  editing, assets, annotations, Viewer, and Inspector.
 
-- 605+ tests across 23 test files
-- Performance regression tests for critical paths
-- Workflow integration tests
-- AI code generation tests
-- UI testing setup with jsdom
-
-### UI Improvements
-
-- Color-coded ports by data type
-- Custom node creation dialog with base class selection
-- Dynamic subnet ports from Input/Output nodes
-- Improved viewer with ImageBuffer support
-
-## [0.2.0] - December 2025ß
-
-### Major Changes
-
-- Upgraded to Svelte 5 with modern runes-based reactivity
-- Dockview integration for flexible panel management
-  - Drag and drop panels to rearrange layout
-  - Add new panels with "+" button in tab headers
-  - Minimize/restore panels by clicking tab titles
-  - Layout auto-saved to localStorage
-
-### Features
-
-- Undo/redo functionality (Cmd+Z / Cmd+Shift+Z)
-- Select all nodes and annotations (Cmd+A)
-- Consolidated node picker (Create menu and Tab-menu share same component)
-- Unified nodes and annotations with common base class hierarchy
-- Improved annotation positioning and grouping
-- Streamlined UI: moved file menu into Graph tab header
-
-### Bug Fixes
-
-- Fixed node type serialization bug causing "Invalid node type format" errors
-- Enhanced graph serialization and node ID handling
-- Improved node execution and connection logic
-
-## [0.1.0] - November 2025
-
-### Initial Release
-
-- Complete visual programming framework
-- Live code editing with Monaco Editor
-- NPM package integration via esm.sh CDN
-- Asset management system (images, audio, data)
-- Export to standalone HTML files
-- Modern UI with keyboard shortcuts
-
-### Core Features
-
-- Node System with id, type, name, position, preview
-- Port System with trigger and param ports
-- Graph execution engine with topological sort
-- Canvas with pan/zoom functionality
-- Connection drawing between ports
-- State preservation during recompilation
-
-### Editor Features
-
-- Monaco Editor integration with TypeScript support
-- Double-click to edit node code
-- Shift+Enter compilation
-- Error display on nodes
-- Package search (Cmd+K)
-- Inspector panel for node parameters
-
----
-
-## Historical Development
-
-Development phase documentation archived in `spec/archive/`:
-
-- Phase 1-3 implementation checklist
-- Phase 8 completion report
-- Dockview migration spec
-- Settings panel implementation
-- Implementation status reports
+Historical development reports and superseded desktop designs are retained in
+`spec/archive/`.

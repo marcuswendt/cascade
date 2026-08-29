@@ -83,7 +83,15 @@ Execution failures resolve to a failed `RunResult`; API misuse and invalid prefl
 
 Project node modules are trusted code. Capabilities describe support and portability; they are not a sandbox.
 
-Shell execution uses configured aliases and `spawn(executable, args, { shell: false })`, plus lexical and realpath confinement, bounded input/output/time, dangerous request-environment-key rejection, process-tree cancellation, redacted audits, and a loopback-only authenticated browser compatibility route. Remote-bound servers expose no shell route or capability bootstrap.
+All project HTTP APIs require an exact allowed Host and reject hostile or null
+Origins. Filesystem resolution checks both lexical paths and canonical existing
+targets or parents, so symlinks cannot escape the project root.
+
+Shell execution uses configured aliases and `spawn(executable, args, { shell:
+false })`, bounded input/output/time, dangerous request-environment-key
+rejection, process-tree cancellation, redacted audits, and a loopback-only
+capability route. Remote-bound servers expose no shell or process capability
+bootstrap.
 
 ## Compatibility and migration
 

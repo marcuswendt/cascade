@@ -138,8 +138,10 @@ src/editor/          optional Svelte Studio
 src/nodes/           current built-in and legacy node implementation
 src/engine/          current compatibility services
 server/              project-scoped Node host and transports
+scripts/             package build and release verification tooling
 tests/               behavior, workflow, security, and performance tests
 spec/                accepted feature specifications
+doc/                 authoring guides and implementation plans
 ```
 
 The root `cascade` package is the distribution and CLI owner. The two internal workspaces define architectural boundaries; they are not independently published until independent versioning or external consumption requires it.
@@ -154,7 +156,14 @@ Existing files without `parent` fields remain root-level graphs. Invalid parent 
 
 Shell execution is server-only and allowlisted in the project’s `cascade.json`. Cascade passes a fixed executable and argument array to `spawn(..., { shell: false })`; it does not accept shell command strings or interpolation. Working directories are project-confined, input/output is bounded, dangerous request-time environment overrides are rejected, and cancellation terminates the process tree. Commands inherit the server environment, then apply project-configured and explicitly allowed request overrides.
 
-The browser shell compatibility route exists only on loopback and requires exact Host/Origin checks plus a process-lifetime capability token. Remote-bound servers do not expose it.
+Every project API requires an exact allowed Host and rejects hostile or null
+Origins; Cascade never enables wildcard CORS for local project data. Filesystem
+paths are checked lexically and through real paths so project symlinks cannot
+escape the opened root.
+
+The browser shell and process routes exist only on loopback and additionally
+require process-lifetime capability tokens. Remote-bound servers do not expose
+them.
 
 ## More documentation
 

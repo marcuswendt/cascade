@@ -1,34 +1,23 @@
-# Improve Annotations
+# Cascade follow-up work
 
-Text annotation boxes should automatically size based on text-entry.
-Text annotation dragging is awkward.
+This file tracks only unresolved product work. Completed release history lives
+in [spec/CHANGELOG.md](spec/CHANGELOG.md); architecture decisions live in
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
-Check key shortcuts for annotations work.
+## Studio migration
 
+- Move remaining built-in nodes from the compatibility `Graph`/`Node` engine to
+  deterministic definitions and `cascade/runtime`.
+- Make subnet collapse/extract a fully transactional runtime operation.
+- Reduce the existing Svelte accessibility and unused-style warnings.
 
-## Server (local + online)
+## Creative workspace
 
-X implemented phase 1
-TODO implement phase 2
+- Improve text annotation auto-sizing, dragging, and keyboard shortcuts.
+- Finish Quill chat cables, model selection, and UI polish.
 
-## QUILL Chat Flow
+## Distribution and cloud
 
-- UI bugfixes
-- cables
-- model auto select
-
-
-
-## Command Line Interface
-
-- implement CASCADE_CLI_SPEC.md
-
-
-
-
-
-- move server to src/server
-- Update VERSION.md
-- Update ARCHITECTURE.md
-- Update README.md
-- review specs with what was actually implemented and what is still to be implemented
+- Design cloud project storage against the current server-owned project APIs.
+- Add end-to-end browser coverage for project creation, saving, panels, and
+  headless execution.
