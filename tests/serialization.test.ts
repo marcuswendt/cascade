@@ -172,6 +172,43 @@ describe('Serialization', () => {
     });
   });
 
+  describe('Project metadata', () => {
+    /**
+     * The name was read only from inside `if (json.project)` — the block that
+     * carries npm packages — so a graph without packages, which is most of
+     * them, lost its name on load and then wrote 'Cascade Graph' back over it
+     * on the next save. The browser tab leads with this name, so the symptom
+     * was every project's tab reading the same thing.
+     */
+    it('keeps metadata.name through a load with no project block', () => {
+      const loaded = Graph.fromJSON({
+        version: '0.2',
+        metadata: { name: 'Cloud Posters' },
+        nodes: [],
+      });
+
+      expect(loaded.project.name).toBe('Cloud Posters');
+      expect(loaded.toJSON().metadata.name).toBe('Cloud Posters');
+    });
+
+    it('keeps metadata.name when a project block is present', () => {
+      const loaded = Graph.fromJSON({
+        version: '0.2',
+        metadata: { name: 'Cloud Plots' },
+        project: { packages: [] },
+        nodes: [],
+      });
+
+      expect(loaded.project.name).toBe('Cloud Plots');
+    });
+
+    it('falls back to the default name when the file names none', () => {
+      const loaded = Graph.fromJSON({ version: '0.2', nodes: [] });
+
+      expect(loaded.toJSON().metadata.name).toBe('Cascade Graph');
+    });
+  });
+
   describe('Multiple nodes serialization', () => {
     it('should serialize multiple nodes', () => {
       for (let i = 0; i < 5; i++) {

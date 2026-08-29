@@ -6,7 +6,7 @@
 > **Scope**: `src/nodes/Graph.ts`, `server/src/routes/`, `server/src/runtime/`, `server/src/project.ts`
 
 Two independent changes, both found by building a real project against the
-current core (`Cascade/observatory-cloud-posters`, 23 node modules). Neither is
+current core (`Cascade/cloud-posters`, 23 node modules). Neither is
 speculative: each one is a workaround that project is carrying today.
 
 They can be implemented in either order by different people. Part 1 is small
@@ -140,7 +140,7 @@ will happen:
 
 ## Acceptance
 
-Against `~/Documents/Cascade/observatory-cloud-posters`, which is a real
+Against `~/Documents/Cascade/cloud-posters`, which is a real
 23-node graph with two chains that want to be subnets:
 
 1. Select the five `destroy-*` nodes, Cmd+G, save, reload. One subnet node,
@@ -151,7 +151,7 @@ Against `~/Documents/Cascade/observatory-cloud-posters`, which is a real
 3. Nest: put the destruction subnet inside another subnet, save, reload.
 4. Delete a subnet containing children. Nothing is left orphaned in the file
    or in `_elements`.
-5. Load any pre-existing `.cascade` file — `observatory-cloud-plots`'
+5. Load any pre-existing `.cascade` file — `cloud-plots`'
    `cloud-plots.cascade` is the one to use — and confirm a byte-identical
    round trip through save.
 
@@ -169,7 +169,7 @@ this and does not need the editor.
 browser and cannot spawn anything itself, so **any** subprocess a project needs
 has to be dressed up as a Python script.
 
-`Cascade/observatory-cloud-posters` carries the consequence. Everything in it
+`Cascade/cloud-posters` carries the consequence. Everything in it
 is TypeScript except a Python shim whose entire job is:
 
 ```python
@@ -314,7 +314,7 @@ logic in a module both the route and the CLI import, not inside the route.
   buffered form covers every current use.
 - **A persistent worker for shell commands.** `/api/exec`'s worker exists to
   keep a torch model warm. A CLI has no warm state; per-call spawn is correct.
-- **Retiring `/api/exec`.** `observatory-cloud-plots` depends on it and on the
+- **Retiring `/api/exec`.** `cloud-plots` depends on it and on the
   Python worker's warm model. Leave both alone.
 
 ## Acceptance
@@ -326,7 +326,7 @@ logic in a module both the route and the CLI import, not inside the route.
 3. `cwd` escaping the project root is refused by `resolveWithinRoot`.
 4. A command that hangs is killed at the timeout and reports `timedOut: true`.
 5. A non-zero exit surfaces stderr rather than an empty result.
-6. `observatory-cloud-posters` deletes `nodes/_shared/node_cli.py`,
+6. `cloud-posters` deletes `nodes/_shared/node_cli.py`,
    `nodes/_shared/worker.py` and `shared/bridge/stages.py`'s three CLI stages,
    replacing them with `runJson` calls, and behaves identically. Only the
    Real-ESRGAN stage stays on `/api/exec`, which is the correct division: a
@@ -334,3 +334,174 @@ logic in a module both the route and the CLI import, not inside the route.
 
 That last one is the test that matters. It is the project the change exists
 for, and it is sitting in `~/Documents/Cascade` ready to be converted.
+
+---
+
+# Part 3 — Project settings, and where configuration belongs
+
+Added 2026-08-29, from Marcus: *"Perhaps we should allow the user to edit
+meta-data in file > project settings? Project name: Cloud Plots. Also this
+would be a good place to add a dictionary of config settings, e.g. API keys
+that could be used by the project's nodes."*
+
+Yes to the dialog. Two things need deciding first, because getting them wrong
+is expensive later: **what a "project" is** versus what a graph is, and
+**whether secrets go in it**. The second one is a no, and the reason is worth
+reading before the dialog gets built.
+
+## 3.1 The bug underneath the request
+
+The browser tab now leads with the project name — `Cloud Plots - Cascade`
+rather than `Cascade - cloud-plots` (`App.svelte` `updateWindowTitle()`).
+That change needed a fix first, and it is the kind of thing a settings dialog
+would otherwise have quietly inherited:
+
+`Graph.fromJSON()` read `metadata.name` **only from inside `if (json.project)`**
+— the block that carries npm packages. A graph with no packages, which is most
+of them, dropped its name on load and then wrote `'Cascade Graph'` back over it
+on the next save. Every project's tab said the same thing because every
+project's name had been erased. Fixed, with three tests in
+`tests/serialization.test.ts`.
+
+One of the same shape is still there and should go in this pass:
+`toJSON()` writes `metadata.created: new Date().toISOString()` on **every**
+save, so `created` is always the moment of the last save. Read it from the
+existing file and only generate one when there is none.
+
+## 3.2 Two kinds of configuration, and they are not the same file
+
+There are now two candidates, and conflating them is the trap:
+
+| | `.cascade` file, `metadata` | `cascade.json` at the project root |
+|---|---|---|
+| Describes | **this graph** | **this folder** |
+| How many | one per graph, and a folder may hold several | exactly one |
+| Travels | with the graph, wherever it is copied | with the repo |
+| Holds | name, description, author, created | allowed commands, paths, defaults |
+
+`ProjectRoot` already contemplates several graphs in one folder —
+`listGraphFiles()` and its comment about `test-quill`'s three. So *"Project
+name: Cloud Plots"* is ambiguous as stated, and the answer is that both exist:
+
+- **Graph name** → `metadata.name` in the `.cascade` file. `Cloud Plots`.
+- **Project name** → `cascade.json`, covering every graph in the folder.
+
+The title resolves graph name, then project name, then file name. A folder with
+one graph — the common case — shows the same string either way, so the
+distinction costs the user nothing and stops being wrong the moment a second
+graph appears.
+
+`cascade.json` is the same file Part 2 introduces for the shell allowlist.
+Do not add a second one.
+
+## 3.3 API keys: not here
+
+**A key must never go in `cascade.json` or in a `.cascade` file.** Both are in
+git — `cloud-plots`, `cloud-posters` and `cloud-shared` are all GitHub repos
+pushed today — and a key committed once is a key that has to be rotated, not
+deleted.
+
+There is a second reason that is specific to Cascade and easier to miss. The
+server serves project files to the page through `/api/media`. Anything in the
+project directory is readable by **any** page that can reach localhost, not
+only by Cascade's own. A key in the project is a key one fetch away from any
+tab the user has open.
+
+The precedent is already written down: `CASCADE_CLI_SPEC.md` puts credentials
+in `~/.cascade/credentials.yaml`, outside every project and never committed.
+Keep that, and let the project **name** what it needs rather than hold it:
+
+```json
+{
+  "name": "Cloud Plots",
+  "commands": { "observatory": "~/.local/bin/observatory" },
+  "credentials": ["anthropic", "magnific"],
+  "settings": { "workingWidth": 1400, "model": "claude-sonnet-4-20250514" }
+}
+```
+
+`credentials` is a list of names, so Cascade can say *"this graph needs a
+Magnific key and you have not set one"* before a node fails halfway through a
+cook. The values stay in `~/.cascade/credentials.yaml`.
+
+### How a node then uses one
+
+Two tiers, and the split matters:
+
+**Server-side nodes** (`runsOn: 'server'` — anything going through `/api/exec`
+or `/api/shell`) get credentials injected into the subprocess environment by
+the server, from the names the project declared. The key never enters the page.
+This already covers most real cases: the CLI, the upscaler, anything with its
+own auth.
+
+**Browser nodes calling an HTTP API** must not be handed the raw key, because a
+key in page memory is a key in the devtools console and in any bundle that gets
+exported. Give them a proxy instead:
+
+```ts
+import { authorizedFetch } from 'cascade/net';
+const res = await authorizedFetch('anthropic', 'https://api.anthropic.com/v1/messages', {
+  method: 'POST', body: JSON.stringify(payload),
+});
+```
+
+The server attaches the credential's header and forwards. The page names the
+credential; it never holds it. Which host each credential may be sent to is
+part of the credential's own definition, so a name cannot be used to
+exfiltrate a key to somewhere else.
+
+That is more work than reading a key out of a config file, and it is the
+difference between a tool that is safe to open someone else's graph in and one
+that is not.
+
+### What a settings dictionary *should* hold
+
+Everything that is not a secret, and there is plenty of it: model names,
+endpoints, default working resolution, output directory, units. Expose it
+read-only to nodes:
+
+```ts
+import { config } from 'cascade/config';
+const width = config.number('workingWidth', 1400);
+```
+
+Worth having on its own merits — `cloud-plots` currently carries a default
+working width as a parameter on one node, which is fine until two nodes need to
+agree.
+
+## 3.4 The dialog
+
+**File → Project Settings…**, editing both files from one place, each field
+labelled with which one it writes.
+
+From the `.cascade` file: name, description, author. `created` shown read-only
+once 3.1's second bug is fixed.
+
+From `cascade.json`: project name, allowed commands, required credentials
+(with a live "set" / "not set" against `~/.cascade/credentials.yaml`, never
+showing a value), and the settings dictionary as editable key/value pairs.
+
+Three rules:
+
+- **Never render a credential's value**, not even masked. Show whether it is
+  set, and a link to `cascade credentials set <name>`.
+- **Editing graph metadata marks the graph dirty**; editing `cascade.json`
+  writes immediately, because it is not part of the undo history and pretending
+  otherwise will lose edits.
+- **A missing `cascade.json` is normal.** Create it on first save from the
+  dialog, never on open.
+
+## Acceptance
+
+1. A graph with `metadata.name` and no `project` block keeps its name through
+   load, save, and reload. *(Done — `tests/serialization.test.ts`.)*
+2. The tab reads `Cloud Plots - Cascade`, and `Cloud Plots * - Cascade` when
+   dirty. *(Done.)*
+3. `created` survives a save.
+4. A folder with two `.cascade` files shows each graph's own name, and both
+   report the same project name.
+5. A credential is usable by a server-side node and by a browser node through
+   the proxy, and appears nowhere in the page's memory, the built bundle, or
+   any file in the project directory.
+6. Opening a graph that declares a credential the user has not set says so up
+   front rather than failing mid-cook.

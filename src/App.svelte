@@ -618,11 +618,23 @@
         return;
       }
       const dirtyIndicator = hasUnsavedChanges ? ' *' : '';
-      if (documentName && documentName !== 'Untitled') {
-        document.title = `Cascade - ${documentName}${dirtyIndicator}`;
-      } else {
-        document.title = `Cascade - Untitled${dirtyIndicator}`;
-      }
+
+      /**
+       * The project's name comes first, because that is what a tab is being
+       * scanned for — a row of tabs all reading "Cascade - …" is a row you
+       * have to read to the end of. The app's name still follows, so the tab
+       * says what it is.
+       *
+       * The graph's own `metadata.name` wins when it has one; otherwise the
+       * file name, which is what an unnamed graph is actually known by.
+       */
+      const projectName =
+        graph?.project?.name && graph.project.name !== 'Cascade Graph'
+          ? graph.project.name
+          : documentName && documentName !== 'Untitled'
+            ? documentName
+            : 'Untitled';
+      document.title = `${projectName}${dirtyIndicator} - Cascade`;
     }
   }
 

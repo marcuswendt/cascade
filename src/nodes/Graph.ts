@@ -1256,10 +1256,22 @@ export class Graph {
     const graph = new Graph(assetManager, packageManager);
     const version = json.version || '0.1';
 
+    /**
+     * The project's name, read whether or not the file carries a `project`
+     * block. It used to be read only inside the `if (json.project)` below, so
+     * a graph with no npm packages — which is most of them — dropped its name
+     * on load and then wrote 'Cascade Graph' back over it on the next save.
+     * The name is metadata about the graph, not about its packages.
+     */
+    if (json.metadata?.name) {
+      graph.project = { ...graph.project, name: json.metadata.name };
+    }
+
     // Load project configuration (v0.2)
     if (json.project) {
       graph.project = {
-        name: json.metadata?.name,
+        ...graph.project,
+        name: json.metadata?.name ?? graph.project.name,
         packages: json.project.packages || []
       };
       // Update module resolver with project packages
