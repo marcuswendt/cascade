@@ -4,8 +4,8 @@ A handoff document. Two things: a new extension point in Cascade, and the first
 thing built on it.
 
 **Goal.** A project can ship its own dockable window. The first one is a moment
-browser for the `observatory-*` projects — a grid of thumbnails you open from a
-button on the `observatory-moment` node and click to choose a moment.
+browser for the `archive-cli-*` projects — a grid of thumbnails you open from a
+button on the `archive-item` node and click to choose a moment.
 
 Build the extension point first. The browser is the proof it works, not the
 point of it.
@@ -23,7 +23,7 @@ exactly one of them:
 | Type renderers | **Cascade** | `src/editor/components/registerRenderers.ts` |
 | Panels | **Cascade** | `src/editor/panels/*.svelte` |
 
-`ObservatoryMoment.svelte` and `CloudAnalystMetadata.svelte` currently live
+`ArchiveItem.svelte` and `ArchiveAnalysisMetadata.svelte` currently live
 inside Cascade because there was no other way to ship them. That was called out
 as a seam when they were added; a moment browser makes it untenable. Cascade
 should not know what a moment is.
@@ -46,7 +46,7 @@ export function unmount(): void { … }
 ```
 
 compiled through exactly the same path as a node module. No Svelte compiler on
-the server, no vendoring into Cascade, and the panel ships from `cloud-shared`
+the server, no vendoring into Cascade, and the panel ships from `shared-project`
 where it belongs.
 
 ### Server
@@ -104,53 +104,81 @@ names the panel to open.
 
 ```ts
 node.param('moment_id', '', {
-  type: 'observatory.moment.id',
+  type: 'archive.item.id',
   label: 'Moment',
-  action: 'panel:observatory-moments',
+  action: 'panel:archive-items',
 });
 ```
 
-The node stays the source of truth, and `observatory-moment` gains one line.
+The node stays the source of truth, and `archive-item` gains one line.
 
 ---
 
 ## The moment browser itself
 
-Lives in `cloud-shared/panels/observatory-moments/`.
+Lives in `shared-project/panels/archive-items/`.
 
 A grid of tiles: thumbnail, date, title beneath. Newest first. Click selects and
 closes — that is the whole interaction. Filters along the top for a date range
 and source; sort by instant or capture count. The CLI already does all of that:
-`observatory moments list [--limit] [--has] [--missing] [--since] [--until]
+`archive-cli moments list [--limit] [--has] [--missing] [--since] [--until]
 [--source] [--sort instant|captures] --json`.
 
-`stage_moments_list` in `cloud-shared/bridge/stages.py` already calls it and
+`stage_moments_list` in `shared-project/bridge/stages.py` already calls it and
 takes `limit`. It needs the other flags passed through — a small change.
 
-### The hard part: thumbnails
+### Thumbnails — solved upstream, 2026-08-29
 
-`moments list --json` returns `id`, `instant`, `title`, `members`. **No image.**
-Getting a thumbnail means downloading that moment's photos. 74 moments was
-679 MB. The existing web picker shows grey "no photo" tiles for exactly this
-reason.
+**This section used to describe the hardest part of the panel. It no longer
+applies.** The archive shipped preview serving in response to the feedback note,
+and the design below is what to build against. The lazy-per-tile-download
+approach previously planned here is obsolete — do not build it.
 
-Three approaches. Do the first two; the third is not ours to build.
+`moments list --json` now returns on every row:
 
-1. **Ask for less.** `moments list --has photo` filters at source, so the grid
-   never contains a moment that cannot show one. One flag, and it removes most
-   of the empty tiles.
-2. **Fetch lazily, on scroll.** An `IntersectionObserver` per tile: download a
-   moment's photo only when the tile is about to be visible, at thumbnail size,
-   and never for a moment scrolled past. Opening the browser then costs one
-   screen of images rather than the archive. Keep an in-flight cap (4–6) so a
-   fast scroll does not open fifty connections.
-3. **A thumbnail endpoint** — one small image per moment without the full asset.
-   The real fix, and an Observatory API question rather than a Cascade one.
-   Worth raising separately; the first two make the panel good without it.
+```json
+{
+  "id": "…", "instant": "…", "title": null, "members": 1,
+  "photoCount": 5, "videoCount": 0,
+  "preview": {
+    "captureId": "…", "assetId": "…",
+    "pixelWidth": 4032, "pixelHeight": 3024,
+    "widths": [320, 1280],
+    "urls": { "320": "https://…?w=320&exp=…&sig=…", "1280": "…" },
+    "expiresAt": "…"
+  }
+}
+```
 
-Downloads land in `cloud-shared/cache/observatory-downloads/`, shared between
-projects, so a moment you browsed to is already local when you select it and the
-first cook is instant.
+One call renders the whole grid. Verified here: **1.24 s for 200 moments**,
+against roughly 2 s *per tile* before. The URLs are signed and need no
+credentials — an unauthenticated `curl` returned a 320×240 JPEG, 19 KB, in
+0.44 s — so they go straight into `<img src>` and the browser does parallelism,
+caching, lazy loading and cancellation itself.
+
+Three rules. Each one, got wrong, looks like flaky images rather than a mistake:
+
+1. **Branch on `preview`, not on `photoCount`.** `photoCount > 0` means the
+   moment has photographs; `preview` present means one can actually be drawn.
+   The gap is real — measured on this archive, 180 of 200 moments have
+   `photoCount > 0` and 179 have a preview, so exactly one has photographs and
+   no renderable preview. There was also one video-only moment
+   (`videoCount > 0`, `photoCount === 0`). Give video its own affordance rather
+   than an empty tile.
+2. **The URLs expire, `expiresAt` on the row (15 minutes).** Never cache them to
+   disk or bake them into a saved artifact. On a `403 preview_link_expired`,
+   refetch the *listing* — one call for the whole page, not one per tile. Treat
+   `invalid_preview_signature` as a real bug, not as a refresh.
+3. **Pick a width from `widths`**, currently `[320, 1280]`. Asking for a width
+   that is not stored returns the nearest one, which will not be the size the
+   layout expects.
+
+**The bridge needs no change.** `stage_moments_list` returns the CLI rows
+verbatim, so the new fields already arrive — verified end to end through
+`/api/exec`, with `preview.urls` and `expiresAt` intact at the panel layer.
+
+Previews are for *choosing*. The plot source stays the full-resolution
+`captures download`, which is unchanged and still hash-verified.
 
 ---
 
@@ -158,11 +186,12 @@ first cook is instant.
 
 1. **The extension point.** `/api/panels`, `listPanels()`, the `mount`/`unmount`
    contract, the Svelte host, lazy registration, the `PanelApi`. Nothing
-   observatory-specific — build it against a stub panel that renders "hello".
+   archive-cli-specific — build it against a stub panel that renders "hello".
 2. **The action parameter** and its button in the Inspector.
-3. **The browser** in `cloud-shared/panels/observatory-moments/` — grid,
-   filters, lazy thumbnails, selection writes `moment_id`.
-4. **Move the two observatory renderers out of Cascade** into the project. The
+3. **The browser** — grid, filters, selection writes `moment_id`. Thumbnails
+   come from the listing's `preview.urls`; see the section above for the three
+   rules that make them reliable.
+4. **Move the two archive-cli renderers out of Cascade** into the project. The
    same machinery now allows it, and it closes the seam rather than widening it.
 
 Step 4 is the one to not skip. It is the difference between having added an
@@ -174,13 +203,15 @@ extension point and having added a second special case.
 
 - A project with no panels behaves exactly as now; `/api/panels` returns empty
   and nothing appears in the menu.
-- A panel added to `cloud-shared/panels/` appears in the panel menu of both
+- A panel added to `shared-project/panels/` appears in the panel menu of both
   projects that symlink `shared`, with no change to Cascade.
 - The moment browser opens from the node button, lists moments, and clicking one
   sets `moment_id` — after which undo works and the value survives a save.
-- Opening the browser downloads only the visible tiles. Measure it: opening on a
-  74-moment archive should fetch on the order of one screen, not 679 MB.
-- `src/editor/components/registerRenderers.ts` no longer mentions `observatory`.
+- The grid renders from **one** listing call. A tile shows an image when the row
+  has a `preview` and a video affordance when it has `videoCount` without one —
+  never an empty tile because nobody asked.
+- An expired signature refetches the listing once, not once per tile.
+- `src/editor/components/registerRenderers.ts` no longer mentions `archive-cli`.
 
 ---
 
@@ -197,8 +228,8 @@ extension point and having added a second special case.
 | `src/editor/panels/ProjectPanelHost.svelte` | new; one host for every project panel |
 | `src/editor/Inspector.svelte` | render an `action` parameter as a button |
 | `src/types/node.types.ts` | `ParamOptions.action` — exists, give it meaning |
-| `cloud-shared/panels/observatory-moments/` | new; the browser |
-| `cloud-shared/bridge/stages.py` | pass the CLI's filter flags through `moments-list` |
+| `shared-project/panels/archive-items/` | new; the browser |
+| `shared-project/bridge/stages.py` | pass the CLI's filter flags through `moments-list` |
 
 ## One caution
 
