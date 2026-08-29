@@ -165,12 +165,17 @@ Three rules. Each one, got wrong, looks like flaky images rather than a mistake:
 1. **Branch on `preview`, not on the counts.** `photoCount`/`videoCount` say the
    moment holds media; `preview` present says something can actually be drawn.
    Measured on this archive: 237 moments, 218 hold media, **217 are drawable**.
-   The single gap is `a7825ffb-6518-44da-9915-81fa3bf012c4`. It is not a preview
-   failure: asset `a7825ffb/cee5055e` is a HEIC whose bytes are gone from blob
-   storage while its row remains — the photograph itself is lost, so there is
-   nothing to make a preview from. Confirmed upstream; no backfill closes it.
-   Do not chase it as a picker bug, and expect the archive's counts to move by
-   one if it is ever cleaned up.
+   The single gap is `a7825ffb-6518-44da-9915-81fa3bf012c4`, and it is not a
+   preview failure. That capture is `status: uploading` with `finalizedAt` null
+   — an upload that stopped part-way and never completed, so its bytes were
+   never stored rather than lost. `observatory doctor` reports it. It may
+   resolve on its own if the upload ever finishes, so do not chase it as a
+   picker bug and do not treat the count as fixed.
+
+   The picker consequence is the same either way: one row holds media and
+   cannot be drawn, and the branch has to handle it. Which is the argument for
+   branching on `preview` rather than on the counts — the reasons a row is
+   undrawable are not knowable from here and will change over time.
 
    **A video-only moment is no longer part of that gap** (changed upstream
    2026-08-29). Every video now carries a poster frame at both rungs, so a
