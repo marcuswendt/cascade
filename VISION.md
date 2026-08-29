@@ -21,9 +21,12 @@ Users can create new node types and graph elements with custom code, parameters,
 **Open & Long-Term**
 Cascade is open source, built on open web standards. Creative work made with Cascade should exist for the long term, free from licensing concerns or platform lock-in.
 
-## Roadmap
+## Product Shape
 
-Currently a single-user standalone app. Future versions will introduce server-based collaborative features.
+Cascade has three deliberately separate surfaces: a browser Studio for authoring,
+a local server for project files and trusted process capabilities, and a neutral
+headless runtime for embedded or backend execution. Projects own their custom
+nodes, panels, settings, and renderers; the Cascade core stays project-agnostic.
 
 ## Acknowledgements
 

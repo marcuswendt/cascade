@@ -33,7 +33,8 @@
     propsUpdateCounter = node ? (counters.get(node.id) || 0) : 0;
   }
 
-  $: hasError = node.error !== null;
+  $: cookState = node.cookState;
+  $: hasError = cookState === 'error' || node.error !== null;
   // A project node's own declared icon wins over Cascade's built-in table,
   // which only knows the stdlib and hands everything else the same cog.
   $: nodeIcon = (() => {
@@ -46,7 +47,8 @@
    *  another — which is faster to read than any label. */
   $: nodeColor = (node as any).color || null;
   $: isBypassed = node.bypass;
-  $: isCooking = node.cook;
+  $: isCookEnabled = node.cook;
+  $: isCooking = cookState === 'cooking';
   $: isChatNode = node.type === 'Chat' || node.type.endsWith('.Chat');
   // Include propsUpdateCounter to force re-read when props change
   $: chatNodeState = isChatNode && propsUpdateCounter >= 0 ? (node as ChatNode).getState() : null;
@@ -136,9 +138,14 @@
   // Reactive statements to track port changes
   // $graphStructure is referenced so these recompute when ports appear during a
   // cook — see stores/graphStructure.ts.
-  $: inputs = ($graphStructure, node.inputs);
-  $: outputs = ($graphStructure, node.outputs);
-  $: position = ($graphStructure, node.position);
+  function afterStructureChange<T>(version: number, value: T): T {
+    void version;
+    return value;
+  }
+
+  $: inputs = afterStructureChange($graphStructure, node.inputs);
+  $: outputs = afterStructureChange($graphStructure, node.outputs);
+  $: position = afterStructureChange($graphStructure, node.position);
 
   // Group variadic inputs by base name, showing only one pill per group
   // Non-variadic inputs are shown individually
@@ -399,7 +406,10 @@
   class:error={hasError}
   class:dragging={isDragging}
   class:bypassed={isBypassed}
+  class:stale={cookState === 'stale'}
+  class:queued={cookState === 'queued'}
   class:cooking={isCooking}
+  data-cook-state={cookState}
   style="left: {position.x}px; top: {position.y}px; opacity: {node.bypass ? 0.5 : 1}"
   data-node-id={node.id}
   on:click={(e) => {
@@ -619,7 +629,7 @@
           <!-- Cook button (right side) -->
           <button
             class="node-button cook-button"
-            class:active={isCooking}
+            class:active={isCookEnabled}
             aria-label="Cook node"
             title="Cook (C)"
             on:click={handleCookClick}
@@ -751,6 +761,10 @@
   
   .node.error {
     --node-border-color: #ff4444;
+  }
+
+  .node.stale .node-container {
+    opacity: 0.52;
   }
   
   .node-container {
@@ -897,6 +911,45 @@
     padding: 0;
     gap: 0;
     margin: 0;
+  }
+
+  /* Cook feedback is its own visual channel. The pseudo-element leaves both
+     the authored --node-fill and the selection box-shadow untouched. */
+  .node.queued .body::after,
+  .node.cooking .body::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border: 2px solid rgba(91, 192, 235, 0.78);
+    border-radius: 8px;
+    pointer-events: none;
+  }
+
+  .node.queued .body::after {
+    border-style: dashed;
+    opacity: 0.55;
+  }
+
+  .node.cooking .body::after {
+    animation: cascade-cook-pulse 1.15s ease-in-out infinite;
+  }
+
+  @keyframes cascade-cook-pulse {
+    0%, 100% {
+      opacity: 0.45;
+      transform: scale(0.98);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.035);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .node.cooking .body::after {
+      animation: none;
+      opacity: 1;
+    }
   }
   
   /* Selection has to survive whatever colour the node was given, so it is a
@@ -1267,4 +1320,3 @@
     align-items: center;
   }
 </style>
-

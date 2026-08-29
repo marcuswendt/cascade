@@ -4,6 +4,8 @@ import { typeToPackagePath, isStandardLibraryNode } from '../utils/nodeTypeUtils
 import { normalizeColor, isColorValue } from '../utils/colorUtils.js';
 import { expressionEngine } from '../engine/expressions/index.js';
 
+export type CookState = 'clean' | 'stale' | 'queued' | 'cooking' | 'error';
+
 /**
  * Node - Unified base class for all graph elements
  *
@@ -76,7 +78,9 @@ export class Node {
   // Execution state
   protected hasExecuted: boolean = false;
   protected lastInputHash: string = '';
-  protected manualDirty: boolean = false;
+  cookState: CookState = 'stale';
+  private cookGeneration = 0;
+  private stagedOutputs: Map<OutputPort, unknown> | null = null;
   executionTimeout: number = 30000;
 
   // Cook info - performance tracking
@@ -203,20 +207,7 @@ export class Node {
       connections: [],
       options,
 
-      setValue: (value: T) => {
-        port.value = value;
-        port.connections.forEach(conn => {
-          const targetNode = this.graph.getNode(conn.to.nodeId);
-          if (targetNode) {
-            // O(1) port lookup via index map
-            const targetPort = targetNode.getInputPortById(conn.to.portId);
-            if (targetPort) {
-              targetPort.value = value;
-              if (targetPort.onChange) targetPort.onChange(value);
-            }
-          }
-        });
-      },
+      setValue: (value: T) => this.setOutputValue(port, value),
 
       trigger: (props?: any) => {
         port.connections.forEach(conn => {
@@ -246,6 +237,23 @@ export class Node {
     return index >= 0 && index < this.outputs.length ? this.outputs[index] : null;
   }
 
+  /** Update the element id and every derived port id as one operation. */
+  renameId(newId: string): ReadonlyMap<string, string> {
+    const oldId = this.id;
+    const renamed = new Map<string, string>();
+    this.id = newId;
+    this._portMap.clear();
+    for (const port of [...this.inputs, ...this.outputs]) {
+      const oldPortId = port.id;
+      port.id = oldPortId.startsWith(`${oldId}_`)
+        ? `${newId}${oldPortId.slice(oldId.length)}`
+        : oldPortId;
+      renamed.set(oldPortId, port.id);
+      this._portMap.set(port.id, port);
+    }
+    return renamed;
+  }
+
   getPort(portId: string): InputPort | OutputPort | null {
     return this._portMap.get(portId) || null;
   }
@@ -253,6 +261,25 @@ export class Node {
   getInputPortById(portId: string): InputPort | null {
     const port = this._portMap.get(portId);
     return port && 'defaultValue' in port ? port as InputPort : null;
+  }
+
+  private setOutputValue<T>(port: OutputPort<T>, value: T): void {
+    if (this.stagedOutputs) {
+      this.stagedOutputs.set(port as OutputPort, value);
+      return;
+    }
+    this.commitOutputValue(port, value);
+  }
+
+  private commitOutputValue<T>(port: OutputPort<T>, value: T): void {
+    port.value = value;
+    for (const connection of port.connections) {
+      const targetNode = this.graph.getNode(connection.to.nodeId);
+      const targetPort = targetNode?.getInputPortById(connection.to.portId);
+      if (!targetPort) continue;
+      targetPort.value = value;
+      targetPort.onChange?.(value);
+    }
   }
 
   // ============ Props System ============
@@ -263,7 +290,10 @@ export class Node {
    */
   addParm<T>(name: string, config: Prop<T>): void {
     this.props[name] = config as Prop;
-    this.markDirty();
+    // Dynamic nodes redeclare their shape inside execute(). That declaration
+    // is part of the current cook, not a new authored change; rescheduling it
+    // would create an endless generation loop.
+    if (this.cookState !== 'cooking') this.markDirty();
   }
 
   /**
@@ -932,7 +962,20 @@ export class Node {
   // ============ Dirty Tracking ============
 
   markDirty(): void {
-    this.manualDirty = true;
+    this.graph.scheduler.markStale(this);
+  }
+
+  /** @internal Scheduler-owned invalidation primitive. */
+  invalidateCook(): void {
+    this.cookGeneration++;
+    this.setCookState('stale');
+  }
+
+  /** @internal Scheduler-owned state transition. */
+  setCookState(state: CookState): void {
+    if (this.cookState === state) return;
+    this.cookState = state;
+    this.graph.scheduler.notifyNodeStateChange();
   }
 
   /**
@@ -959,7 +1002,8 @@ export class Node {
     }
 
     // For HTMLCanvasElement/HTMLImageElement, use dimensions
-    if (value instanceof HTMLCanvasElement || value instanceof HTMLImageElement) {
+    if ((typeof HTMLCanvasElement !== 'undefined' && value instanceof HTMLCanvasElement) ||
+        (typeof HTMLImageElement !== 'undefined' && value instanceof HTMLImageElement)) {
       return `el:${value.width}x${value.height}`;
     }
 
@@ -978,7 +1022,7 @@ export class Node {
   }
 
   get isDirty(): boolean {
-    if (!this.hasExecuted || this.manualDirty) return true;
+    if (!this.hasExecuted || this.cookState !== 'clean') return true;
     return this.calculateInputHash() !== this.lastInputHash;
   }
 
@@ -986,24 +1030,7 @@ export class Node {
    * Mark all downstream nodes as dirty (lazy propagation)
    */
   markDownstreamDirty(): void {
-    const visited = new Set<string>();
-
-    const propagate = (node: Node) => {
-      for (const output of node.outputs) {
-        for (const conn of output.connections) {
-          if (visited.has(conn.to.nodeId)) continue;
-          visited.add(conn.to.nodeId);
-
-          const downstream = this.graph.getNode(conn.to.nodeId);
-          if (downstream) {
-            downstream.manualDirty = true;
-            propagate(downstream);
-          }
-        }
-      }
-    };
-
-    propagate(this);
+    this.graph.scheduler.markDownstreamStale(this);
   }
 
   /**
@@ -1012,44 +1039,8 @@ export class Node {
    */
   async requestOutput(): Promise<void> {
     if (!this.isDirty) return;
-
-    // Collect dirty upstream nodes (depth-first for dependency order)
-    const dirtyUpstream = this.collectDirtyUpstream();
-
-    // Execute upstream in order (already sorted by depth-first collection)
-    for (const node of dirtyUpstream) {
-      if (node.isDirty) {
-        await node.execute();
-      }
-    }
-
-    // Execute this node
-    await this.execute();
-  }
-
-  private collectDirtyUpstream(): Node[] {
-    const result: Node[] = [];
-    const visited = new Set<string>();
-
-    const collect = (node: Node) => {
-      for (const input of node.inputs) {
-        for (const conn of input.connections) {
-          if (visited.has(conn.from.nodeId)) continue;
-          visited.add(conn.from.nodeId);
-
-          const upstream = this.graph.getNode(conn.from.nodeId);
-          if (upstream) {
-            collect(upstream); // Depth-first: go deeper first
-            if (upstream.isDirty) {
-              result.push(upstream);
-            }
-          }
-        }
-      }
-    };
-
-    collect(this);
-    return result;
+    if (this.cookState === 'clean') this.markDirty();
+    await this.graph.scheduler.flush();
   }
 
   // ============ Lifecycle ============
@@ -1062,12 +1053,7 @@ export class Node {
     this.nodeFunction = fn;
     // Reset execution state so the new function runs as initialization
     this.hasExecuted = false;
-  }
-
-  private createTimeoutPromise(ms: number): Promise<never> {
-    return new Promise((_, reject) => {
-      setTimeout(() => reject(new Error(`Node execution timeout after ${ms}ms`)), ms);
-    });
+    this.markDirty();
   }
 
   async execute(): Promise<void> {
@@ -1075,13 +1061,16 @@ export class Node {
     const hasExecution = !!this.nodeFunction || this.onCook !== Node.prototype.onCook;
 
     if (!hasExecution) {
+      this.hasExecuted = true;
+      this.setCookState('clean');
       return;
     }
 
     const needsInitialization = !this.hasExecuted;
 
-    if (!this.shouldExecute() && !needsInitialization && !this.manualDirty) {
+    if (!this.shouldExecute() && !needsInitialization && !this.isDirty) {
       this.executeBypass();
+      this.setCookState('clean');
       return;
     }
 
@@ -1095,31 +1084,53 @@ export class Node {
     // Track cook time
     const startTime = performance.now();
     const startMemory = (performance as any).memory?.usedJSHeapSize ?? 0;
+    const generation = this.cookGeneration;
+    this.stagedOutputs = new Map();
+    this.setCookState('cooking');
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     try {
       // Single entry point: onCook() handles both code-based and class-based nodes
       await Promise.race([
         Promise.resolve(this.onCook()),
-        this.createTimeoutPromise(this.executionTimeout)
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error(`Node execution timeout after ${this.executionTimeout}ms`)),
+            this.executionTimeout
+          );
+        })
       ]);
 
-      this.error = null;
-      this.hasExecuted = true;
-      this.lastInputHash = this.calculateInputHash();
-      this.manualDirty = false;
-
-      await this.callLifecycleHooks(needsInitialization);
+      if (generation === this.cookGeneration) {
+        await this.callLifecycleHooks(needsInitialization);
+        for (const [port, value] of this.stagedOutputs) {
+          this.commitOutputValue(port, value);
+        }
+        this.error = null;
+        this.hasExecuted = true;
+        this.lastInputHash = this.calculateInputHash();
+        this.setCookState('clean');
+      } else {
+        this.setCookState('stale');
+      }
 
       // Update cook info on success
       this.updateCookInfo(startTime, startMemory);
     } catch (err: any) {
-      this.error = err as Error;
-      this.manualDirty = true;
+      if (generation === this.cookGeneration) {
+        this.error = err as Error;
+        this.setCookState('error');
+      } else {
+        this.setCookState('stale');
+      }
       // Still update cook info on error
       this.updateCookInfo(startTime, startMemory);
       if (!err.message?.includes('timeout')) {
         console.error(`Error executing node ${this.id}:`, err);
       }
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      this.stagedOutputs = null;
     }
   }
 
@@ -1222,9 +1233,14 @@ export class Node {
     if (!newId?.trim()) return this.id;
     const sanitizedId = newId.trim().replace(/\s+/g, '');
     if (!sanitizedId) return this.id;
-    this.id = this.graph.generateUniqueNodeId(sanitizedId, this.id);
-    this.markDirty();
+    const uniqueId = this.graph.generateUniqueNodeId(sanitizedId, this.id);
+    if (this.graph.renameElement(this.id, uniqueId)) this.markDirty();
     return this.id;
+  }
+
+  protected isPreviewValue(value: unknown): value is HTMLCanvasElement | HTMLImageElement {
+    return (typeof HTMLCanvasElement !== 'undefined' && value instanceof HTMLCanvasElement) ||
+      (typeof HTMLImageElement !== 'undefined' && value instanceof HTMLImageElement);
   }
 
   // ============ Package Manager ============

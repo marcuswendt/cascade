@@ -1,145 +1,92 @@
-# Cascade Architecture
+# Cascade architecture
 
-> **Important:** This project requires Svelte 5 and compatible tooling:
-> - `svelte`: ^5.0.0
-> - `@sveltejs/vite-plugin-svelte`: ^5.0.0 (must match Svelte major version)
-> - `vite`: ^6.0.0
-> - `svelte-check`: ^4.0.0
->
-> Do NOT downgrade these versions - older versions are incompatible.
+Cascade has four layers with one-way dependencies:
 
-## Source Directory Structure
-
-```
-src/
-├── engine/        # Core runtime (headless)
-├── nodes/         # Node system
-├── editor/        # UI components
-├── types/         # TypeScript type definitions
-├── utils/         # Shared utilities
-├── services/      # Application services
-└── cli/           # Command-line interface
+```text
+contracts <- runtime <- hosts/controllers <- applications
 ```
 
-## Folder Purposes
+The graph engine is a reusable product surface. The neutral runtime is ready for headless hosts; Studio is still migrating from its compatibility `Graph`/`Node` implementation and must not be described as migrated yet.
 
-### `src/engine/` - Core Runtime
-**Runs headlessly (no DOM required)**
+## Contracts
 
-Infrastructure services that power the node graph:
-- `cascade.ts` - Global API (node(), ch(), time(), frame()...)
-- `expressions/` - Expression evaluation engine
-- `AssetManager.ts` - Asset loading (images, JSON, etc.)
-- `GraphValidator.ts` - Graph structure validation
-- `ModuleResolver.ts` - Module/import resolution
-- `PackageManager.ts` - NPM package loading
+`packages/contracts` is dependency-free and owns `.cascade` DTOs and schemas, core and namespaced types, deterministic node definitions, capability interfaces, diagnostics, events, presets, and run results.
 
-**Rule:** If it needs to work in CLI/tests without a browser, it goes here.
+Contracts contain no DOM, Svelte, Express, filesystem, process, or implementation imports. Public types belong here once; other layers import them rather than recreating variants.
 
-### `src/nodes/` - Node System
-**The node graph data model**
+## Runtime
 
-- `Node.ts` - Base class all nodes extend
-- `Graph.ts` - Container that holds nodes and connections
-- `annotations/` - Canvas annotations (text, image, group, line)
-- `core/` - Core utility nodes (Select, Merge, Subnet, Input, Output)
-- `lens/` - Image processing nodes
+`packages/runtime` depends only on contracts and owns definition extraction, module registration, graph validation, scheduling, triggers, cancellation, outputs, hierarchy, inspection, and serialization semantics.
 
-**Rule:** Node definitions and the graph data structure go here.
+The runtime is environment-neutral. It works in Node and browsers without importing either platform’s APIs, and it never imports Studio. Registration is sealed after the first graph load. Each graph permits one active run and has explicit lifecycle states.
 
-### `src/editor/` - Editor UI
-**Browser-only, Svelte components**
+## Hosts
 
-- UI panels (Inspector, Viewer, Code Editor, etc.)
-- Canvas rendering and interaction
-- Code history / undo system
-- File watching for hot reload
-- Keyboard shortcuts, drag-drop, selection
+Hosts adapt the neutral runtime to an environment:
 
-**Rule:** If it renders UI or requires DOM/browser APIs, it goes here.
+- Node: files, assets, media, Python, AI, and shell.
+- Browser: assets, media, WebGL, and AI.
+- Mixed application: an explicit bridge for serializable server stages.
 
-### `src/types/` - Type Definitions
-Shared TypeScript interfaces and types:
-- `node.types.ts` - Port, Prop, Connection types
-- `element.types.ts` - Element type guards
+Capabilities are injected. A node’s literal `runsOn` and `capabilities` fields are checked before its `execute` module is loaded.
 
-### `src/utils/` - Shared Utilities
-Pure functions used across the codebase:
-- `nodeTypeUtils.ts` - Node class registry
-- `colorUtils.ts` - Color parsing/normalization
-- `fileSystem.ts` - File operations
-- `export.ts` - Export utilities
+`server/` is the project-scoped Node application host. It owns project paths, compilation, HTTP/WebSocket transport, media serving, Python workers, shell policy, and credentials. It is separately manifested and is not a third contracts/runtime workspace.
 
-### `src/services/` - Application Services
-Higher-level services that coordinate between modules:
-- `ProjectService.ts` - Project file management
+## Applications and controllers
 
-### `src/cli/` - Command Line Interface
-Node.js CLI for headless execution:
-- `runner.ts` - Headless graph execution
+Studio’s Svelte components under `src/editor` own rendering, selection, panels, and interaction state. Its compatibility graph now has one graph-owned cook scheduler, while `StudioGraphController` centralizes an increasing set of structural mutations and publishes view snapshots. Collapse/extract and the remaining built-ins still need migration before Studio can consume `packages/runtime` directly.
 
-## Decision Guide
+Custom server applications and browser frontends use `cascade/runtime` directly and load no Studio code.
 
-| Need to... | Put it in... |
-|------------|--------------|
-| Add a new node type | `src/nodes/{package}/` |
-| Add expression function | `src/engine/expressions/` |
-| Add UI panel/component | `src/editor/` |
-| Add shared type | `src/types/` |
-| Add pure utility function | `src/utils/` |
-| Add runtime feature (no UI) | `src/engine/` |
-| Add editor-only feature | `src/editor/` |
+## Distribution
 
-## Import Conventions
+The repository has exactly two internal npm workspaces: `@cascade/contracts` and `@cascade/runtime`. The root `cascade` package is the only published package and the only owner of the executable.
 
-```typescript
-// Alias imports (preferred for cross-package)
-import { Node } from '@/nodes/Node';
-import { cascade } from '@/engine/cascade';
+Public subpaths are `cascade/contracts`, `cascade/contracts/schema`, `cascade/runtime`, `cascade/runtime/node`, `cascade/runtime/browser`, and the compatibility `cascade/shell`.
 
-// Relative imports (within same package)
-import { SubnetNode } from './nodes/SubnetNode.js';
-```
+Studio-only project extensions use the type-only `cascade/studio/panel` contract. They are compiled and loaded only by Studio; the neutral runtime and headless hosts never discover or import them.
 
-## Design Principles
+The packed root tarball contains compiled contracts, runtime, declarations, and a self-contained CLI. It must install and type-resolve from an empty project without workspace links or development dependencies. Additional packages require a concrete independent publication/versioning need.
 
-### Naming Conventions
+## Deterministic nodes
 
-Prefer concise, short names over verbose ones:
+`nodes/<Name>/index.ts` maps to `project.<Name>`. New modules export one literal `definition` with `apiVersion: 1` and one typed `execute(context)` function.
 
-- `node.bypass` not `node.bypassed`
-- `node.cook` not `node.cooking`
-- `setBypass()` not `setBypassed()`
+The extractor reads TypeScript syntax and never evaluates the module. Literal primitives, arrays, objects, parentheses, `as const`, and `satisfies` are valid. Identifiers, calls, spreads, computed keys, and other evaluation-dependent syntax are diagnostics.
 
-This applies to properties, methods, and serialization keys.
+`execute` performs computation only. Ports, props, types, execution locus, and capabilities are fixed by `definition`. Existing dynamic modules stay in the Studio/CLI compatibility engine during migration; the headless runtime never interprets them, and a malformed deterministic definition never falls back to dynamic execution.
 
-### No Backwards Compatibility (Development Phase)
+## Graph documents and hierarchy
 
-During active development, we prioritize clean architecture over backwards compatibility. Breaking changes to serialization formats, APIs, and property names are acceptable. This keeps the codebase streamlined and avoids accumulating compatibility shims.
+Authored nodes and annotations remain in flat arrays. Optional `parent` IDs describe subnet membership; IDs are globally unique, and child positions are parent-relative. Connections retain their node/port endpoint format across subnet boundaries.
 
-### Prefer Polymorphism Over Type Discrimination
+Load order is:
 
-Instead of checking types with string literals or switch statements:
+1. Parse and validate authored DTOs.
+2. Resolve hierarchy, falling back invalid links to root with diagnostics.
+3. Materialize node definitions and ports.
+4. Synchronize nested subnet interfaces deepest-first.
+5. Resolve connections and topology.
+6. Commit the complete candidate once.
 
-```typescript
-// Avoid
-if (element.type === 'Text') { ... }
-else if (element.type === 'Image') { ... }
-```
+That sequence describes `packages/runtime`. The compatibility Studio loader preserves older dynamic graphs and is not yet a fully transactional adapter; subnet collapse/extract remain the main structural transaction gap.
 
-Use polymorphic behavior via:
+Callbacks and destruction hooks run after a valid structural commit. They are not rollback state.
 
-1. **Method overrides** - Subclasses override behavior (e.g., `Annotation.execute()` is a no-op)
-2. **`instanceof` checks** - When type discrimination is necessary
-3. **Component registries** - Map class names to UI components
+## Execution
 
-```typescript
-// Preferred
-if (element instanceof Annotation) { ... }
+Data runs follow graph dependencies. Explicit triggers use a FIFO queue, authored fan-out order, monotonic per-run sequence IDs, and cycle rejection. A triggered node receives cooked data ancestors before delivery.
 
-// For UI rendering, use registries keyed by type
-const Component = annotationRegistry.get(annotation.type);
-<svelte:component this={Component} {annotation} />
-```
+Execution failures resolve to a failed `RunResult`; API misuse and invalid preflight reject. Cancellation propagates through capability calls. Inspection and output values are immutable snapshots; browser-only live resources remain host-owned handles.
 
-This keeps the codebase maintainable as new types are added - just create the class and register it.
+## Security
+
+Project node modules are trusted code. Capabilities describe support and portability; they are not a sandbox.
+
+Shell execution uses configured aliases and `spawn(executable, args, { shell: false })`, plus lexical and realpath confinement, bounded input/output/time, dangerous request-environment-key rejection, process-tree cancellation, redacted audits, and a loopback-only authenticated browser compatibility route. Remote-bound servers expose no shell route or capability bootstrap.
+
+## Compatibility and migration
+
+`src/nodes` and `src/engine` remain the compatibility source while built-ins and Studio migrate onto the neutral runtime. Keep compatibility code thin and named. New features belong at the owning contracts/runtime/host/controller layer; do not add a second implementation to the legacy path.
+
+Prefer deletion and direct imports over wrappers. Preserve behavior with focused tests before moving code, then remove the replaced path in the same change when safe.

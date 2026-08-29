@@ -2,3 +2,8 @@
 **/node_modules
 **/dist
 **/release
+vite.config.ts.timestamp-*.mjs
+.omx/
+**/.vite/
+**/coverage/
+**/*.tsbuildinfo

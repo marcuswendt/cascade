@@ -1,16 +1,11 @@
 /**
  * Renderers for values that deserve more than a one-line summary.
  *
- * Keyed by type name, so adding one is registering a component rather than
- * editing a chain of conditionals inside the Inspector. Cascade registers the
- * core types here; namespaced project types register alongside them.
- *
- * The seam is deliberate and not yet finished: these are compiled into Cascade,
- * so a project can't ship its own renderer without a build. The registry is what
- * makes that a later change to ONE file rather than a rewrite — a project
- * manifest naming a component is the obvious next step.
+ * Core Svelte renderers and project-owned DOM renderers share this lookup, but
+ * keep separate lifecycles. Project implementations stay in their repository.
  */
-import type { ComponentType } from 'svelte';
+import type { Component } from 'svelte';
+import ProjectValueRendererHost from './ProjectValueRendererHost.svelte';
 
 export interface RendererProps {
   value: any;
@@ -20,13 +15,22 @@ export interface RendererProps {
   onChange?: (value: any) => void;
 }
 
-const renderers = new Map<string, ComponentType>();
+type RendererComponent = Component<any>;
+export type TypeRendererEntry =
+  | { kind: 'svelte'; component: RendererComponent }
+  | { kind: 'project'; component: typeof ProjectValueRendererHost; panelName: string; rendererType: string };
 
-export function registerTypeRenderer(type: string, component: ComponentType): void {
-  renderers.set(type, component);
+const renderers = new Map<string, TypeRendererEntry>();
+
+export function registerTypeRenderer(type: string, component: RendererComponent): void {
+  renderers.set(type, { kind: 'svelte', component });
 }
 
-export function typeRenderer(type: string | undefined): ComponentType | null {
+export function registerProjectTypeRenderer(type: string, panelName: string): void {
+  renderers.set(type, { kind: 'project', component: ProjectValueRendererHost, panelName, rendererType: type });
+}
+
+export function typeRenderer(type: string | undefined): TypeRendererEntry | null {
   if (!type) return null;
   return renderers.get(type) ?? null;
 }

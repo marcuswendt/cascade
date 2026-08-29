@@ -76,8 +76,7 @@ export class InputNode extends Node {
         this.output.setValue(parentInput.value);
 
         // Pass through preview
-        if (parentInput.value instanceof HTMLCanvasElement ||
-            parentInput.value instanceof HTMLImageElement) {
+        if (this.isPreviewValue(parentInput.value)) {
           this.preview = parentInput.value;
         } else {
           this.preview = null;

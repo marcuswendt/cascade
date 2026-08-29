@@ -121,6 +121,54 @@ describe('Path System', () => {
     });
   });
 
+  describe('Graph.nodeByPath()', () => {
+    it('walks every absolute path segment', () => {
+      const effects = new SubnetNode('effects', graph);
+      const blur = new Node('blur1', 'Blur', graph);
+      graph.addElement(effects);
+      graph.addElement(blur);
+      effects.addChild(blur);
+
+      expect(graph.nodeByPath('/effects/blur1')).toBe(blur);
+      expect(graph.nodeByPath('/wrong/blur1')).toBeNull();
+      expect(graph.nodeByPath('/blur1')).toBeNull();
+    });
+
+    it('returns null when an intermediate segment is not a network', () => {
+      const plain = new Node('plain', 'Plain', graph);
+      const child = new Node('child', 'Child', graph);
+      graph.addElement(plain);
+      graph.addElement(child);
+
+      expect(graph.nodeByPath('/plain/child')).toBeNull();
+    });
+  });
+
+  describe('Graph.reparentElement()', () => {
+    it('moves nodes between networks and rejects cycles', () => {
+      const outer = new SubnetNode('outer', graph);
+      const inner = new SubnetNode('inner', graph);
+      const child = new Node('child', 'Plain', graph);
+      graph.addElement(outer);
+      graph.addElement(inner);
+      graph.addElement(child);
+
+      expect(graph.reparentElement(inner, outer)).toBe(true);
+      expect(graph.reparentElement(child, inner)).toBe(true);
+      expect(inner.children()).toContain(child);
+
+      expect(graph.reparentElement(child, outer)).toBe(true);
+      expect(inner.children()).not.toContain(child);
+      expect(outer.children()).toContain(child);
+      expect(child.parent).toBe(outer);
+
+      expect(graph.reparentElement(outer, inner)).toBe(false);
+      expect(graph.reparentElement(child, null)).toBe(true);
+      expect(child.parent).toBeNull();
+      expect(outer.children()).not.toContain(child);
+    });
+  });
+
   describe('Node.relativePathTo()', () => {
     let root: SubnetNode;
     let effects: SubnetNode;
@@ -252,6 +300,61 @@ describe('Path System', () => {
     it('should return cooking node for displayNode', () => {
       node1.cook = true;
       expect(subnet.displayNode()).toBe(node1);
+    });
+  });
+
+  describe('Hierarchy removal', () => {
+    it('removes a subnet descendants, incident connections, and pending connections', () => {
+      const source = new Node('source', 'Source', graph);
+      const subnet = new SubnetNode('subnet', graph);
+      const nested = new SubnetNode('nested', graph);
+      const child = new Node('child', 'Child', graph);
+      const target = new Node('target', 'Target', graph);
+      for (const node of [source, subnet, nested, child, target]) graph.addElement(node);
+      subnet.addChild(nested);
+      nested.addChild(child);
+
+      const sourceOut = source.out('value');
+      const childIn = child.in('value');
+      const childOut = child.out('value');
+      const targetIn = target.in('value');
+      graph.connect(sourceOut, childIn);
+      graph.connect(childOut, targetIn);
+      (graph as any)._connectionsToRestore = [
+        [['source', 0, 'value'], ['child', 0, 'value']],
+        [['target', 0, 'value'], ['source', 0, 'value']],
+      ];
+
+      graph.removeElement('subnet');
+
+      expect(graph.elements.map(node => node.id)).toEqual(['source', 'target']);
+      expect(graph.connections).toHaveLength(0);
+      expect(sourceOut.connections).toHaveLength(0);
+      expect(targetIn.connections).toHaveLength(0);
+      expect((graph as any)._connectionsToRestore).toEqual([
+        [['target', 0, 'value'], ['source', 0, 'value']],
+      ]);
+      expect(nested.parent).toBeNull();
+      expect(child.parent).toBeNull();
+    });
+
+    it('detaches a directly removed child and destroys descendants deepest-first', () => {
+      const destroyed: string[] = [];
+      const subnet = new SubnetNode('subnet', graph);
+      const nested = new SubnetNode('nested', graph);
+      const child = new Node('child', 'Child', graph);
+      for (const node of [subnet, nested, child]) graph.addElement(node);
+      subnet.addChild(nested);
+      nested.addChild(child);
+      child.onDestroy = () => destroyed.push('child');
+      nested.onDestroy = () => destroyed.push('nested');
+
+      graph.removeElement('nested');
+
+      expect(subnet.children()).toEqual([]);
+      expect(graph.getNode('nested')).toBeNull();
+      expect(graph.getNode('child')).toBeNull();
+      expect(destroyed).toEqual(['child', 'nested']);
     });
   });
 

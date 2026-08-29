@@ -109,7 +109,7 @@ export async function executeNodeCode(
 
     // Force execution
     node.markDirty();
-    await node.execute();
+    await graph.execute(node);
 
     // Restore bypass state
     if (wasBypassed) {

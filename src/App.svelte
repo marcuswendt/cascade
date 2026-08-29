@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import DockviewContainer from './editor/dockview/DockviewContainer.svelte';
   import MenuBar from './editor/MenuBar.svelte';
   import NodePanel from './editor/NodePanel.svelte';
@@ -9,11 +9,14 @@
   import ColorPalette from './editor/components/ColorPalette.svelte';
   import { bumpGraphStructure } from './editor/stores/graphStructure';
   import { layoutTopDown, edgesFromConnections } from '@/utils/autoLayout';
+  import CookStatusStrip from './editor/CookStatusStrip.svelte';
+  import type { CookStatus } from '@/nodes/CookScheduler';
 
   // Lazy-loaded dialog components
   let ExportDialog: any = null;
   let SettingsDialog: any = null;
   let VersionHistoryDialog: any = null;
+  let ProjectSettings: any = null;
 
   async function loadVersionHistoryDialog() {
     if (!VersionHistoryDialog) {
@@ -35,12 +38,15 @@
       SettingsDialog = module.default;
     }
   }
+  async function loadProjectSettingsDialog() {
+    if (!ProjectSettings) ProjectSettings = (await import('./editor/panels/ProjectSettings.svelte')).default;
+  }
   import type { AIServiceType } from './editor/stores/settingsStore';
   import { serializeGraph, saveGraphWithPicker, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
-  import { isElectron, onAnyMenuCommand, showSaveDialog, fileExists, getAppPath, writeFile, setDocumentDirty, onOpenGraph, onOpenProject, getCurrentGraph, getCurrentProject, setCurrentGraph } from './lib/electron';
   import { Graph } from '@/nodes/Graph';
   import { Node } from '@/nodes/Node';
   import { GraphEditorAdapter } from './editor/GraphEditorAdapter';
+  import { StudioGraphController } from './editor/StudioGraphController';
   import { incrementPropUpdateCounter } from './editor/stores/propUpdateStore';
   import {
     recordSnapshotImmediate,
@@ -69,8 +75,41 @@
   let globalMousePosition = { x: 0, y: 0 }; // Track mouse position globally
   let exportDialogOpen = false;
   let settingsDialogOpen = false;
+  let projectSettingsOpen = false;
   let settingsInitialService: AIServiceType | null = null;
   let graph: Graph | undefined = undefined;
+  const studioGraph = new StudioGraphController(() => graph);
+  let isGraphLoading = true;
+  let subscribedGraph: Graph | undefined;
+  let unsubscribeCookStatus: (() => void) | undefined;
+  let cookStatus: Readonly<CookStatus> = {
+    phase: 'idle',
+    total: 0,
+    completed: 0,
+    currentNode: null,
+    startedAt: null,
+    elapsed: 0
+  };
+
+  // Scheduler progress is the graph-level source of truth. Rebind whenever a
+  // document replaces the Graph instance and keep no parallel cook state here.
+  $: if (graph !== subscribedGraph) {
+    unsubscribeCookStatus?.();
+    subscribedGraph = graph;
+    cookStatus = graph?.scheduler.status ?? {
+      phase: 'idle',
+      total: 0,
+      completed: 0,
+      currentNode: null,
+      startedAt: null,
+      elapsed: 0
+    };
+    unsubscribeCookStatus = graph?.scheduler.subscribe(status => {
+      cookStatus = status;
+    });
+  }
+
+  onDestroy(() => unsubscribeCookStatus?.());
   let documentName = 'Untitled';
   let currentFilePath: string | null = null;
   // Set when the graph was opened from the `cascade` server (the project's own
@@ -79,6 +118,8 @@
   // overwrite the project file.
   let projectGraphFile: string | null = null;
   let versionHistoryOpen = false;
+  let missingProjectCredentials: string[] = [];
+  let projectManifestName = '';
   let colorPaletteOpen = false;
 
   /**
@@ -194,6 +235,9 @@
         break;
       case 'settings':
         loadSettingsDialog().then(() => settingsDialogOpen = true);
+        break;
+      case 'projectSettings':
+        loadProjectSettingsDialog().then(() => projectSettingsOpen = true);
         break;
       case 'about':
         alert('Cascade - Visual Programming Framework\nVersion 1.0.0');
@@ -337,10 +381,8 @@
       }
 
       // Restore connections now that ports exist
-      graph.restoreConnections();
+      studioGraph.restoreConnections();
       await tick();
-      graph.connections = [...graph.connections];
-      graph.elements = [...graph.elements];
 
       // Cook the graph in dependency order. Two reasons this is no longer a
       // parallel map: `n.code` is empty for project-source nodes (their module is
@@ -413,10 +455,8 @@
         }
 
         // Restore connections now that ports exist
-        graph.restoreConnections();
+        studioGraph.restoreConnections();
         await tick();
-        graph.connections = [...graph.connections];
-        graph.elements = [...graph.elements];
 
         // Cook the graph in dependency order. Two reasons this is no longer a
         // parallel map: `n.code` is empty for project-source nodes (their module is
@@ -425,7 +465,7 @@
         // each node before its inputs exist, so everything downstream of a source
         // bails out on the first pass. graph.execute() walks the topological order
         // the engine already computes.
-        cookGraph().catch(err => console.warn('Graph execution failed:', err));
+        await cookGraph().catch(err => console.warn('Graph execution failed:', err));
 
         setTimeout(() => {
           if (dockviewContainerRef && dockviewContainerRef.centerOnNodes) {
@@ -441,15 +481,7 @@
     if (!graph) return;
 
     if (currentFilePath) {
-      if (isElectron) {
-        // Write directly to file in Electron
-        const content = serializeGraph(graph);
-        const result = await writeFile(currentFilePath, content);
-        if (!result.success) {
-          alert('Failed to save: ' + result.error);
-          return;
-        }
-      } else if (projectGraphFile) {
+      if (projectGraphFile) {
         // Served by the `cascade` CLI: write back to the project file itself
         // rather than through a download picker. The server commits the file
         // on every save, which is what File > Version History reads.
@@ -464,8 +496,8 @@
           return;
         }
       } else {
-        // Browser: use File System Access API or download
-        await saveGraphWithPicker(graph, currentFilePath);
+        const savedFilename = await saveGraphWithPicker(graph, currentFilePath);
+        if (!savedFilename) return;
       }
       hasUnsavedChanges = false;
       updateWindowTitle();
@@ -475,94 +507,16 @@
     }
   }
 
-  /**
-   * Generate a unique filename by appending/incrementing a number suffix
-   * E.g., if "Untitled.cascade" exists, try "Untitled1.cascade", "Untitled2.cascade", etc.
-   */
-  async function getUniqueFilename(baseName: string, directory: string): Promise<string> {
-    // Strip any existing number suffix and extension
-    const nameWithoutExt = baseName.replace(/\.cascade$/, '');
-    const match = nameWithoutExt.match(/^(.+?)(\d+)?$/);
-    const coreName = match?.[1] || nameWithoutExt;
-
-    // Start with the base name (no number)
-    let candidate = `${coreName}.cascade`;
-    let fullPath = `${directory}/${candidate}`;
-
-    if (!(await fileExists(fullPath))) {
-      return candidate;
-    }
-
-    // Try incrementing numbers starting from 1
-    let counter = 1;
-    while (counter < 1000) { // Safety limit
-      candidate = `${coreName}${counter}.cascade`;
-      fullPath = `${directory}/${candidate}`;
-      if (!(await fileExists(fullPath))) {
-        return candidate;
-      }
-      counter++;
-    }
-
-    // Fallback: use timestamp
-    return `${coreName}-${Date.now()}.cascade`;
-  }
-
   async function handleSaveAs() {
     if (!graph) return;
 
-    if (isElectron) {
-      // Get the current project folder as default location
-      const projectDir = await getCurrentProject();
-      const defaultDir = projectDir || await getAppPath('documents') || '';
+    const suggestedName = documentName === 'Untitled' ? 'my-project.cascade' : `${documentName}.cascade`;
+    const savedFilename = await saveGraphWithPicker(graph, suggestedName);
+    if (!savedFilename) return;
 
-      // Generate a suggested filename
-      const baseName = documentName.includes('/')
-        ? documentName.split('/').pop()?.replace(/\.cascade$/, '') || 'untitled'
-        : documentName.replace(/\.cascade$/, '');
-      const suggestedName = baseName === 'Untitled' ? 'new-graph.cascade' : `${baseName}.cascade`;
-      const defaultPath = defaultDir ? `${defaultDir}/${suggestedName}` : suggestedName;
-
-      // Use native Electron save dialog
-      const filePath = await showSaveDialog({
-        defaultPath,
-        filters: [{ name: 'Cascade Files', extensions: ['cascade'] }],
-        title: 'Save Graph As'
-      });
-      if (!filePath) return; // User cancelled
-
-      // Write file directly to disk
-      const content = serializeGraph(graph);
-      const result = await writeFile(filePath, content);
-      if (!result.success) {
-        alert('Failed to save: ' + result.error);
-        return;
-      }
-
-      // Notify main process of new graph path (updates native window title)
-      await setCurrentGraph(filePath);
-
-      // Update current file path and document name
-      currentFilePath = filePath;
-      projectGraphFile = null;
-
-      // Format path for display with ~ for home directory
-      const homeDir = await getAppPath('home');
-      if (homeDir && filePath.startsWith(homeDir)) {
-        documentName = '~' + filePath.slice(homeDir.length);
-      } else {
-        documentName = filePath;
-      }
-    } else {
-      // Browser: use File System Access API (single native dialog)
-      const suggestedName = documentName === 'Untitled' ? 'my-project.cascade' : `${documentName}.cascade`;
-      const savedFilename = await saveGraphWithPicker(graph, suggestedName);
-      if (!savedFilename) return; // User cancelled
-
-      documentName = savedFilename.replace(/\.cascade$/, '');
-      currentFilePath = savedFilename;
-      projectGraphFile = null;
-    }
+    documentName = savedFilename.replace(/\.cascade$/, '');
+    currentFilePath = savedFilename;
+    projectGraphFile = null;
 
     hasUnsavedChanges = false;
     updateWindowTitle();
@@ -594,12 +548,12 @@
         try {
           const nodeFunction = new Function('node', 'graph', node.code);
           node.setFunction(nodeFunction);
-          node.execute();
         } catch (err) {
           console.warn('Failed to execute node ' + node.id + ':', err);
         }
       }
     });
+    void cookGraph().catch(err => console.warn('Failed to initialize duplicated graph:', err));
     
     // Center canvas on nodes after duplicating
     setTimeout(() => {
@@ -611,12 +565,6 @@
 
   function updateWindowTitle() {
     if (typeof document !== 'undefined') {
-      // In Electron, the main process manages the window title
-      // to show the full file path. Only set document.title in browser mode.
-      // Check window.cascade directly to avoid module load timing issues.
-      if ((window as any).cascade?.isElectron) {
-        return;
-      }
       const dirtyIndicator = hasUnsavedChanges ? ' *' : '';
 
       /**
@@ -631,6 +579,8 @@
       const projectName =
         graph?.project?.name && graph.project.name !== 'Cascade Graph'
           ? graph.project.name
+          : projectManifestName
+            ? projectManifestName
           : documentName && documentName !== 'Untitled'
             ? documentName
             : 'Untitled';
@@ -672,10 +622,8 @@
     }
 
     // Restore connections now that ports exist
-    graph.restoreConnections();
+    studioGraph.restoreConnections();
     await tick();
-    graph.connections = [...graph.connections];
-    graph.elements = [...graph.elements];
 
     // Restore selection
     selectedNode = snapshot.selectedNodeId ? graph.getNode(snapshot.selectedNodeId) : null;
@@ -731,10 +679,6 @@
   // Update window title when unsaved changes state changes
   $: if (typeof hasUnsavedChanges !== 'undefined') {
     updateWindowTitle();
-    // In Electron, notify main process about dirty state
-    if (window.cascade?.isElectron) {
-      setDocumentDirty(hasUnsavedChanges);
-    }
   }
 
   /**
@@ -758,18 +702,9 @@
     for (let pass = 0; pass < maxPasses; pass++) {
       await graph.execute();
       // Ports that appeared during this pass may let more connections bind.
-      graph.restoreConnections();
+      studioGraph.restoreConnections();
 
-      // Tell the canvas. Ports and wires come into existence across passes, and
-      // an assignment is what Svelte watches — without these the graph rendered
-      // as loose nodes with no wires until some other interaction (select-all,
-      // a drag) happened to force a redraw. Written against `graph` rather than
-      // a parameter deliberately: the compiler only instruments assignments to
-      // the component's own reactive variable.
-      graph.connections = [...graph.connections];
-      graph.elements = [...graph.elements];
-      // Ports and wires came into existence during this pass; tell the nodes.
-      bumpGraphStructure();
+      // The Studio controller publishes any ports and wires created this pass.
       await tick();
 
       const resolved = graph.nodes.reduce(
@@ -799,9 +734,8 @@
 
   /**
    * Ask the `cascade` server which graph this project opens with, and fetch it.
-   * Returns null when the app isn't served by the CLI (plain static hosting,
-   * Electron) or when the project has no unambiguous default — in both cases
-   * startup falls through to the bundled empty graph.
+   * Returns null when the app isn't served by the CLI or when the project has
+   * no unambiguous default; startup then falls through to the bundled graph.
    */
   async function loadProjectGraph(): Promise<{ filename: string; json: any } | null> {
     try {
@@ -859,10 +793,8 @@
       }
     }
 
-    graph.restoreConnections();
+    studioGraph.restoreConnections();
     await tick();
-    graph.connections = [...graph.connections];
-    graph.elements = [...graph.elements];
 
     // Cook the graph in dependency order. Two reasons this is no longer a
     // parallel map: `n.code` is empty for project-source nodes (their module is
@@ -972,42 +904,18 @@
     if (!graph) {
       try {
         let json: any;
-        let loadedFromElectron = false;
-
-        // In Electron, check if there's a graph from command line args
-        if (window.cascadeElectron) {
-          const graphPath = await getCurrentGraph();
-          if (graphPath) {
-            console.log('[Startup] Loading graph from Electron:', graphPath);
-            const content = await window.cascadeElectron.fs.readFile(graphPath);
-            json = JSON.parse(content);
-            currentFilePath = graphPath;
-            projectGraphFile = null;
-            loadedFromElectron = true;
-
-            // Format path for display
-            const homeDir = await getAppPath('home');
-            if (homeDir && graphPath.startsWith(homeDir)) {
-              documentName = '~' + graphPath.slice(homeDir.length);
-            } else {
-              documentName = graphPath;
-            }
-          }
-        }
 
         // Served by the `cascade` CLI: open the project's own graph. The
         // server resolves which one — the file named on the command line
-        // (`cascade cloud-plots.cascade`), else `index.cascade`, else the
+        // (`cascade artwork.cascade`), else `index.cascade`, else the
         // sole `.cascade` file in the directory `cascade` was launched in.
-        if (!json && !window.cascadeElectron) {
-          const projectGraph = await loadProjectGraph();
-          if (projectGraph) {
-            console.log('[Startup] Loading project graph from server:', projectGraph.filename);
-            json = projectGraph.json;
-            currentFilePath = projectGraph.filename;
-            documentName = projectGraph.filename;
-            projectGraphFile = projectGraph.filename;
-          }
+        const projectGraph = await loadProjectGraph();
+        if (projectGraph) {
+          console.log('[Startup] Loading project graph from server:', projectGraph.filename);
+          json = projectGraph.json;
+          currentFilePath = projectGraph.filename;
+          documentName = projectGraph.filename;
+          projectGraphFile = projectGraph.filename;
         }
 
         // Fall back to default graph
@@ -1027,6 +935,15 @@
         graph = adapter.getGraph();
         hasUnsavedChanges = false;
         updateWindowTitle();
+        if (projectGraphFile) {
+          try {
+            const { loadProjectSettings } = await import('./editor/projectSettingsApi');
+            const projectState = await loadProjectSettings();
+            missingProjectCredentials = projectState.missingCredentials;
+            projectManifestName = projectState.manifest.name;
+            updateWindowTitle();
+          } catch { missingProjectCredentials = []; }
+        }
 
         // Wait for annotation ports to be initialized (especially image annotations)
         await graph.waitForAnnotationPorts();
@@ -1045,17 +962,19 @@
         }
 
         // Restore connections now that ports exist
-        graph.restoreConnections();
+        studioGraph.restoreConnections();
 
         // Force reactivity updates
         await tick();
-        graph.connections = [...graph.connections];
-        graph.elements = [...graph.elements];
 
         // Cook in dependency order — see the note on the other call sites: the
         // n.code filter skips every project-source node, and a parallel map runs
         // each node before its inputs exist.
-        cookGraph().catch(err => console.warn('Graph execution failed:', err));
+        if (missingProjectCredentials.length === 0) {
+          await cookGraph().catch(err => console.warn('Graph execution failed:', err));
+        } else {
+          console.warn(`[Startup] Cook deferred until required credentials are set: ${missingProjectCredentials.join(', ')}`);
+        }
 
         // Center canvas on nodes after loading
         setTimeout(() => {
@@ -1074,112 +993,8 @@
         updateWindowTitle();
       }
     }
+    isGraphLoading = false;
     })(); // End of async IIFE for graph loading
-
-    // Listen for graph open events from main process (Electron)
-    const unsubOpenGraph = onOpenGraph(async (slug: string) => {
-      console.log('[Renderer] onOpenGraph received:', slug);
-      hasUnsavedChanges = false;
-
-      // Get the full path from main process
-      const graphPath = await getCurrentGraph();
-      if (!graphPath) {
-        documentName = slug;
-        return;
-      }
-
-      currentFilePath = graphPath;
-      projectGraphFile = null;
-
-      // Format path for display, replacing home dir with ~
-      const homeDir = await getAppPath('home');
-      if (homeDir && graphPath.startsWith(homeDir)) {
-        documentName = '~' + graphPath.slice(homeDir.length);
-      } else {
-        documentName = graphPath;
-      }
-
-      // Load the graph from the file system
-      try {
-        const content = await window.cascadeElectron!.fs.readFile(graphPath);
-        const json = JSON.parse(content);
-
-        // Load graph from JSON
-        const adapter = GraphEditorAdapter.fromJSON(json);
-        graph = adapter.getGraph();
-
-        // Wait for annotation ports to be initialized
-        await graph.waitForAnnotationPorts();
-
-        // Set up node functions
-        for (const node of graph.nodes) {
-          if (node.code) {
-            try {
-              const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
-              const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
-              node.setFunction(nodeFunction);
-            } catch (err) {
-              console.warn('Failed to set function for node ' + node.id + ':', err);
-            }
-          }
-        }
-
-        // Restore connections now that ports exist
-        graph.restoreConnections();
-
-        // Force reactivity updates
-        await tick();
-        graph.connections = [...graph.connections];
-        graph.elements = [...graph.elements];
-
-        // Execute nodes in parallel in the background
-        const nodesToExecute = graph.nodes.filter(n => n.code);
-        if (nodesToExecute.length > 0) {
-          Promise.all(nodesToExecute.map(async (node) => {
-            try {
-              await node.execute();
-            } catch (err) {
-              console.warn('Failed to execute node ' + node.id + ':', err);
-            }
-          })).catch(err => {
-            console.warn('Some nodes failed to execute:', err);
-          });
-        }
-
-        console.log('[Renderer] Graph loaded from:', graphPath);
-      } catch (err) {
-        console.error('[Renderer] Failed to load graph:', err);
-      }
-    });
-
-    // Listen for project open events from main process (Electron)
-    const unsubOpenProject = onOpenProject(async (projectPath: string) => {
-      console.log('[Renderer] onOpenProject received:', projectPath);
-      hasUnsavedChanges = false;
-      // Check if there's a current graph, otherwise show project name
-      const graphPath = await getCurrentGraph();
-      if (graphPath) {
-        currentFilePath = graphPath;
-        projectGraphFile = null;
-        // Format path for display, replacing home dir with ~
-        const homeDir = await getAppPath('home');
-        if (homeDir && graphPath.startsWith(homeDir)) {
-          documentName = '~' + graphPath.slice(homeDir.length);
-        } else {
-          documentName = graphPath;
-        }
-      } else {
-        // No graph open yet, show project path
-        const homeDir = await getAppPath('home');
-        if (homeDir && projectPath.startsWith(homeDir)) {
-          documentName = '~' + projectPath.slice(homeDir.length);
-        } else {
-          documentName = projectPath;
-        }
-        currentFilePath = null;
-        projectGraphFile = null;
-      }
-    });
 
     // Track global mouse position
     function handleMouseMove(e: MouseEvent) {
@@ -1367,26 +1182,22 @@
         loadSettingsDialog().then(() => settingsDialogOpen = true);
       }
 
-      // New/Open/Save shortcuts:
-      // - Electron: Use Cmd/Ctrl (system-level shortcuts)
-      // - Browser: Use Alt to avoid conflicting with browser shortcuts (Cmd+N, Cmd+O, Cmd+S)
-      const fileModifier = isElectron
-        ? (e.metaKey || e.ctrlKey)
-        : e.altKey;
+      // File shortcuts use Alt to avoid conflicting with browser shortcuts.
+      const fileModifier = e.altKey;
 
-      // ⌘N / Alt+N - New project
+      // Alt+N - New project
       if (fileModifier && e.key === 'n' && !e.shiftKey) {
         e.preventDefault();
         handleNewProject();
       }
 
-      // ⌘O / Alt+O - Open project
+      // Alt+O - Open project
       if (fileModifier && e.key === 'o' && !e.shiftKey) {
         e.preventDefault();
         handleOpenProject();
       }
 
-      // ⌘S / Alt+S - Save project
+      // Alt+S - Save project
       if (fileModifier && e.key === 's') {
         e.preventDefault();
         if (e.shiftKey) {
@@ -1522,60 +1333,16 @@
     
     window.addEventListener('keydown', handleKeyDown);
 
-    // Electron native menu command handlers
-    let unsubElectronMenu: (() => void) | null = null;
-    if (isElectron) {
-      unsubElectronMenu = onAnyMenuCommand((command) => {
-        switch (command) {
-          case 'newProject':
-            handleMenuAction('new');
-            break;
-          case 'openProject':
-            handleMenuAction('open');
-            break;
-          case 'save':
-            handleMenuAction('save');
-            break;
-          case 'saveAs':
-            handleMenuAction('saveAs');
-            break;
-          case 'exportHTML':
-            handleMenuAction('export');
-            break;
-          case 'createNode':
-            // Open node panel in center of screen
-            activeLibrary = 'core';
-            nodePanelFixedPosition = null; // Use mouse position
-            break;
-          case 'homeView':
-            dockviewContainerRef?.centerOnNodes();
-            break;
-          case 'selectAll':
-            dockviewContainerRef?.selectAll?.();
-            break;
-          case 'deleteSelected':
-            dockviewContainerRef?.deleteSelected?.();
-            break;
-          case 'preferences':
-            handleMenuAction('settings');
-            break;
-        }
-      });
-    }
-
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('mousemove', handleMouseMove);
-      unsubElectronMenu?.();
       unsubSettingsRequest();
-      unsubOpenGraph?.();
-      unsubOpenProject?.();
     };
   });
 </script>
 
-<div class="app" class:presentation-mode={presentationMode} class:electron={isElectron}>
-  {#if !presentationMode && !isElectron}
+<div class="app" class:presentation-mode={presentationMode}>
+  {#if !presentationMode}
     <MenuBar
       documentName={displayName}
       canUndo={$canUndo}
@@ -1592,11 +1359,6 @@
         updateWindowTitle();
       }}
     />
-  {:else if !presentationMode && isElectron}
-    <!-- Minimal title bar for Electron - just document name, avoids traffic lights -->
-    <div class="electron-titlebar">
-      <span class="electron-title">{displayName}</span>
-    </div>
   {/if}
   <DockviewContainer
     bind:this={dockviewContainerRef}
@@ -1633,6 +1395,14 @@
       activeCategory = null;
     }}
   />
+
+  <CookStatusStrip loading={isGraphLoading} status={cookStatus} />
+  {#if missingProjectCredentials.length}
+    <div class="credential-warning" role="alert">
+      Missing project credentials: {missingProjectCredentials.join(', ')}.
+      <button on:click={() => loadProjectSettingsDialog().then(() => projectSettingsOpen = true)}>Open Project Settings</button>
+    </div>
+  {/if}
   
   {#if activeLibrary || activeCategory}
     <NodePanel
@@ -1689,6 +1459,22 @@
       }}
     />
   {/if}
+
+  {#if graph && ProjectSettings}
+    <svelte:component
+      this={ProjectSettings}
+      {graph}
+      bind:open={projectSettingsOpen}
+      on:save={(event: CustomEvent<{ graphName: string; projectName: string; missingCredentials: string[] }>) => {
+        documentName = event.detail.graphName || documentName;
+        projectManifestName = event.detail.projectName;
+        missingProjectCredentials = event.detail.missingCredentials;
+        hasUnsavedChanges = true;
+        updateWindowTitle();
+      }}
+      on:close={() => projectSettingsOpen = false}
+    />
+  {/if}
 </div>
 
 <style>
@@ -1707,6 +1493,9 @@
     position: relative;
   }
 
+  .credential-warning { background: #4a2a16; color: #ffd3b6; padding: 7px 12px; font-size: 12px; display: flex; gap: 8px; align-items: center; }
+  .credential-warning button { margin-left: auto; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 4px; cursor: pointer; }
+
   .app :global(.dockview-container) {
     flex: 1;
     width: 100%;
@@ -1716,24 +1505,4 @@
     height: 100vh;
   }
 
-  /* Electron: Minimal title bar that avoids traffic lights */
-  .electron-titlebar {
-    height: 38px;
-    background: #1a1a1a;
-    border-bottom: 1px solid #333;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    -webkit-app-region: drag;
-    user-select: none;
-    flex-shrink: 0;
-  }
-
-  .electron-title {
-    color: #fff;
-    font-size: 13px;
-    font-weight: 500;
-    opacity: 0.9;
-  }
 </style>
-

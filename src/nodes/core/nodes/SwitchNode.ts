@@ -72,8 +72,7 @@ export class SwitchNode extends Node {
       this.output.setValue(selectedInput.value);
 
       // Use input's preview if it's a canvas/image
-      if (selectedInput.value instanceof HTMLCanvasElement ||
-          selectedInput.value instanceof HTMLImageElement) {
+      if (this.isPreviewValue(selectedInput.value)) {
         this.preview = selectedInput.value;
       } else {
         this.preview = null;

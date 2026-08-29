@@ -33,7 +33,7 @@ const RASTER = new Set(['.png', '.jpg', '.jpeg', '.webp', '.tif', '.tiff', '.avi
 
 /**
  * A .npy float array — a mask, a signal, a density or height field. Nine of the
- * cloud-plots stages emit one, and none of them could be looked at: the array
+ * many numeric stages emit one, and none of them could be looked at: the array
  * isn't an image, so the viewer had nothing to show and those stages were
  * effectively uninspectable. Rendering the array to greyscale here makes every
  * stage of a pipeline something you can open and zoom into, which is the whole

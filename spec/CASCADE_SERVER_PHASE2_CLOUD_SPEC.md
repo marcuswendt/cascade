@@ -2,9 +2,9 @@
 
 ## Overview
 
-Add cloud storage to Cascade, enabling users to save projects online, access them from anywhere, and eventually share with others. Builds on top of the local mode storage adapter architecture.
+Add cloud storage to Cascade, enabling users to save projects online, access them from anywhere, and eventually share with others. This document predates the server-owned project architecture and remains a future design note.
 
-**Prerequisites:** Phase 1 (Local Mode) complete - StorageAdapter interface exists.
+**Prerequisites:** reconcile this proposal with the current server-owned project APIs.
 
 **Goal:** Users can sign in and save/load projects from cascade.field.io while the same editor works both locally and in the cloud.
 
@@ -12,20 +12,14 @@ Add cloud storage to Cascade, enabling users to save projects online, access the
 
 ## Architecture
 
-### Dual-Mode Storage
+### Historical dual-mode sketch
 
 The editor uses the same `StorageAdapter` interface for both modes:
 
 ```typescript
 // Mode selection based on environment
-export function createStorageAdapter(projectSlug?: string): StorageAdapter {
-  if (window.__CASCADE_LOCAL__) {
-    // Electron app - use filesystem
-    return new LocalStorageAdapter(currentProjectPath);
-  } else {
-    // Web app - use cloud API
-    return new CloudStorageAdapter(currentUser.username, projectSlug);
-  }
+export function createStorageAdapter(projectSlug: string): StorageAdapter {
+  return new CloudStorageAdapter(currentUser.username, projectSlug);
 }
 ```
 

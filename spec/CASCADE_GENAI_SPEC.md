@@ -1219,12 +1219,10 @@ class Artboard extends Annotation {
 
 ## Runtime Environment
 
-Cascade runs in one of two modes, both with full file system access:
-
-1. **Electron App** - Desktop application with Node.js backend
-2. **Server Mode** - Web frontend with Express backend
-
-File operations use the existing `FileSystemService` abstraction which routes to the appropriate backend. The cache system (`$project/cache/generate/`) works identically in both modes.
+Cascade runs as a browser Studio backed by the local Cascade server, or headlessly
+through its Node.js runtime and CLI. The server owns filesystem access; browser
+modules use the narrow project APIs. The cache system (`$project/cache/generate/`)
+is shared by interactive and headless workflows.
 
 ---
 

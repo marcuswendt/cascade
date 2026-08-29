@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-  import { dockviewStore, PANEL_TYPES } from './dockview-store.svelte';
+  import { dockviewStore, panelTypes, setProjectPanelTypes } from './dockview-store.svelte';
   import { registerPanelComponent, registerLazyPanelComponent, setSharedContext } from './renderer';
   import type { PanelContext, PanelType } from './types';
   import type { Graph } from '@/nodes/Graph';
@@ -17,6 +17,9 @@
   // are only fetched the first time a 'code' panel is actually created —
   // see registerLazyPanelComponent below and renderer.ts's own note.
   import CookInfoPanel from '../panels/CookInfoPanel.svelte';
+  import ProjectPanelHost from '../panels/ProjectPanelHost.svelte';
+  import { discoverProjectPanels } from '../projectPanels';
+  import { registerProjectTypeRenderer } from '../components/typeRenderers';
 
   // Import Dockview styles
   import 'dockview-core/dist/styles/dockview.css';
@@ -71,6 +74,10 @@
     },
     onOpenNodePanel: (position?: { x: number; y: number }) => {
       dispatch('openNodePanel', position);
+    },
+    onPanelAction: (action: string, nodeId: string) => {
+      if (action.startsWith('panel:')) dockviewStore.openProjectPanel(action.slice('panel:'.length), nodeId);
+      else dispatch('action', { action, nodeId });
     }
   } satisfies PanelContext;
 
@@ -141,7 +148,7 @@
     showAddPanelMenu = false;
   }
 
-  onMount(() => {
+  onMount(async () => {
     // Register all panel components
     registerPanelComponent('graph', GraphPanel, 'Graph');
     registerPanelComponent('inspector', InspectorPanel, 'Inspector');
@@ -149,6 +156,18 @@
     registerPanelComponent('log', LogPanel, 'Log');
     registerLazyPanelComponent('code', () => import('../panels/CodePanel.svelte'), 'Code');
     registerPanelComponent('info', CookInfoPanel, 'Node Info');
+
+    try {
+      const panels = await discoverProjectPanels();
+      setProjectPanelTypes(panels);
+      for (const panel of panels) {
+        registerPanelComponent(`project:${panel.name}`, ProjectPanelHost, panel.title);
+        for (const type of panel.rendererTypes ?? []) registerProjectTypeRenderer(type, panel.name);
+      }
+    } catch (error) {
+      console.warn('Failed to discover project panels:', error);
+      setProjectPanelTypes([]);
+    }
 
     // Set callback for add panel button
     dockviewStore.onAddPanelClick = handleAddPanelClick;
@@ -185,7 +204,7 @@
     style="left: {addPanelMenuPosition.x}px; top: {addPanelMenuPosition.y}px"
     on:click|stopPropagation
   >
-    {#each PANEL_TYPES as panelType}
+    {#each $panelTypes as panelType}
       <button
         class="add-panel-option"
         on:click={() => handleAddPanelSelect(panelType.type)}

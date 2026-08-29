@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Symlinks the built `cascade` CLI onto ~/.local/bin so it's runnable from
 # any directory — same convention this machine already uses for the
-# `observatory` CLI (~/.local/bin/observatory). Run `npm run build` first.
+# project CLIs installed outside npm. Run `npm run build` first.
 set -euo pipefail
 
 SERVER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

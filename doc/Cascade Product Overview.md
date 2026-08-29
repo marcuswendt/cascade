@@ -53,7 +53,7 @@ Multi-turn conversational AI with visual context:
 - **HTML Export** — One-click standalone export with base64 assets
 - **Project Files** — Save/load `.cascade` files with full state preservation
 - **Asset Management** — Drag-drop import for images, audio, data files
-- **Native App** — Electron-based desktop application for macOS/Windows/Linux
+- **Local Studio** — browser UI served by the project-scoped Cascade CLI
 
 ---
 
@@ -134,7 +134,7 @@ Build on the foundation:
 
 - **Local-first** — Everything on your machine, your data stays yours
 - **Code-native** — Real TypeScript/JavaScript, not a visual subset
-- **Desktop app** — Electron for native file access and performance
+- **Web-native Studio** — one browser UI backed by the same local/server host used headlessly
 - **JSON storage** — No database, human-readable files
 - **Modern stack** — Svelte 5, TypeScript 5, Vite 6, Monaco Editor
 

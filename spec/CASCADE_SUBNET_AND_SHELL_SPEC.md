@@ -6,7 +6,7 @@
 > **Scope**: `src/nodes/Graph.ts`, `server/src/routes/`, `server/src/runtime/`, `server/src/project.ts`
 
 Two independent changes, both found by building a real project against the
-current core (`Cascade/cloud-posters`, 23 node modules). Neither is
+current core (`Cascade/example-project`, 23 node modules). Neither is
 speculative: each one is a workaround that project is carrying today.
 
 They can be implemented in either order by different people. Part 1 is small
@@ -140,7 +140,7 @@ will happen:
 
 ## Acceptance
 
-Against `~/Documents/Cascade/cloud-posters`, which is a real
+Against `~/Documents/Cascade/example-project`, which is a real
 23-node graph with two chains that want to be subnets:
 
 1. Select the five `destroy-*` nodes, Cmd+G, save, reload. One subnet node,
@@ -151,8 +151,8 @@ Against `~/Documents/Cascade/cloud-posters`, which is a real
 3. Nest: put the destruction subnet inside another subnet, save, reload.
 4. Delete a subnet containing children. Nothing is left orphaned in the file
    or in `_elements`.
-5. Load any pre-existing `.cascade` file — `cloud-plots`'
-   `cloud-plots.cascade` is the one to use — and confirm a byte-identical
+5. Load any pre-existing `.cascade` file — `example-project`'
+   `example-project.cascade` is the one to use — and confirm a byte-identical
    round trip through save.
 
 A unit test on `Graph.toJSON()` / `Graph.fromJSON()` alone catches most of
@@ -169,11 +169,11 @@ this and does not need the editor.
 browser and cannot spawn anything itself, so **any** subprocess a project needs
 has to be dressed up as a Python script.
 
-`Cascade/cloud-posters` carries the consequence. Everything in it
+`Cascade/example-project` carries the consequence. Everything in it
 is TypeScript except a Python shim whose entire job is:
 
 ```python
-subprocess.run([OBSERVATORY_BIN, *args], capture_output=True, text=True)
+subprocess.run([ARCHIVE_CLI_BIN, *args], capture_output=True, text=True)
 ```
 
 That is a twenty-line file, a worker process, and a Python dependency, to run
@@ -223,8 +223,8 @@ import { runJson } from 'cascade/shell';
 export const runsOn = 'server';
 
 export async function execute(node: any) {
-  const data = await runJson('observatory', ['captures', 'envelope', id, '--json']);
-  node.out('envelope', 'param', { type: 'observatory.envelope' }).setValue(data.data);
+  const data = await runJson('archive-cli', ['captures', 'envelope', id, '--json']);
+  node.out('envelope', 'param', { type: 'archive-cli.envelope' }).setValue(data.data);
 }
 ```
 
@@ -233,7 +233,7 @@ export async function execute(node: any) {
 `POST /api/shell`
 
 ```json
-{ "command": "observatory", "args": ["moments", "list", "--json"],
+{ "command": "archive-cli", "args": ["moments", "list", "--json"],
   "cwd": "subdir", "timeout": 120000, "stdin": null, "env": {} }
 ```
 
@@ -266,7 +266,7 @@ Rules:
 ```json
 {
   "commands": {
-    "observatory": "~/.local/bin/observatory",
+    "archive-cli": "~/.local/bin/archive-cli",
     "ffmpeg": "ffmpeg"
   },
   "shell": { "timeout": 120000 }
@@ -314,7 +314,7 @@ logic in a module both the route and the CLI import, not inside the route.
   buffered form covers every current use.
 - **A persistent worker for shell commands.** `/api/exec`'s worker exists to
   keep a torch model warm. A CLI has no warm state; per-call spawn is correct.
-- **Retiring `/api/exec`.** `cloud-plots` depends on it and on the
+- **Retiring `/api/exec`.** `example-project` depends on it and on the
   Python worker's warm model. Leave both alone.
 
 ## Acceptance
@@ -326,7 +326,7 @@ logic in a module both the route and the CLI import, not inside the route.
 3. `cwd` escaping the project root is refused by `resolveWithinRoot`.
 4. A command that hangs is killed at the timeout and reports `timedOut: true`.
 5. A non-zero exit surfaces stderr rather than an empty result.
-6. `cloud-posters` deletes `nodes/_shared/node_cli.py`,
+6. `example-project` deletes `nodes/_shared/node_cli.py`,
    `nodes/_shared/worker.py` and `shared/bridge/stages.py`'s three CLI stages,
    replacing them with `runJson` calls, and behaves identically. Only the
    Real-ESRGAN stage stays on `/api/exec`, which is the correct division: a
@@ -352,7 +352,7 @@ reading before the dialog gets built.
 ## 3.1 The bug underneath the request
 
 The browser tab now leads with the project name — `Cloud Plots - Cascade`
-rather than `Cascade - cloud-plots` (`App.svelte` `updateWindowTitle()`).
+rather than `Cascade - example-project` (`App.svelte` `updateWindowTitle()`).
 That change needed a fix first, and it is the kind of thing a settings dialog
 would otherwise have quietly inherited:
 
@@ -397,7 +397,7 @@ Do not add a second one.
 ## 3.3 API keys: not here
 
 **A key must never go in `cascade.json` or in a `.cascade` file.** Both are in
-git — `cloud-plots`, `cloud-posters` and `cloud-shared` are all GitHub repos
+git — `example-project`, `example-project` and `shared-project` are all GitHub repos
 pushed today — and a key committed once is a key that has to be rotated, not
 deleted.
 
@@ -414,7 +414,7 @@ Keep that, and let the project **name** what it needs rather than hold it:
 ```json
 {
   "name": "Cloud Plots",
-  "commands": { "observatory": "~/.local/bin/observatory" },
+  "commands": { "archive-cli": "~/.local/bin/archive-cli" },
   "credentials": ["anthropic", "magnific"],
   "settings": { "workingWidth": 1400, "model": "claude-sonnet-4-20250514" }
 }
@@ -465,7 +465,7 @@ import { config } from 'cascade/config';
 const width = config.number('workingWidth', 1400);
 ```
 
-Worth having on its own merits — `cloud-plots` currently carries a default
+Worth having on its own merits — `example-project` currently carries a default
 working width as a parameter on one node, which is fine until two nodes need to
 agree.
 
@@ -484,7 +484,8 @@ showing a value), and the settings dictionary as editable key/value pairs.
 Three rules:
 
 - **Never render a credential's value**, not even masked. Show whether it is
-  set, and a link to `cascade credentials set <name>`.
+  set and identify `~/.cascade/credentials.yaml` (or `CASCADE_CREDENTIALS`) as
+  the external configuration location.
 - **Editing graph metadata marks the graph dirty**; editing `cascade.json`
   writes immediately, because it is not part of the undo history and pretending
   otherwise will lose edits.

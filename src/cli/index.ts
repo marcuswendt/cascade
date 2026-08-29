@@ -3,14 +3,24 @@
 import { runGraph } from './runner.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { readFileSync } from 'node:fs';
 
-const VERSION = '0.1.0';
+const VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version as string;
 
 async function main() {
   const args = process.argv.slice(2);
 
+  // Project/Studio commands share the root executable. The server entry is
+  // bundled into the published CLI, so installed projects never depend on the
+  // private server package or workspace links.
+  if (!['run', 'validate', 'check', 'inspect'].includes(args[0] ?? '') && !args.includes('--version') && !args.includes('--help') && !args.includes('-h')) {
+    const { runStudioCli } = await import('../../server/src/cliCommands.js');
+    await runStudioCli(args);
+    return;
+  }
+
   // Handle version flag
-  if (args.includes('--version') || args.includes('-v')) {
+  if (args.includes('--version')) {
     console.log(`Cascade CLI v${VERSION}`);
     process.exit(0);
   }
@@ -21,12 +31,23 @@ async function main() {
 Cascade Graph Execution CLI
 
 Usage:
+  cascade [project-directory | graph-file] [--no-open]
+  cascade new <name>
+  cascade node <Name> [project-directory]
+  cascade projects [directory]
   cascade run <graph-file> [options]
   cascade validate <graph-file> [options]
+  cascade check <graph-file> [options]
+  cascade inspect <graph-file>
 
 Commands:
+  new       Create a Cascade project
+  node      Create a deterministic custom node
+  projects  Show or set the default projects directory
   run       Execute a graph file
   validate  Validate a graph file without executing
+  check     Statically check node definitions, types, and graph structure
+  inspect   Print a machine-readable graph and node-definition summary
 
 Options:
   --entry-node <id>  Execute from a specific entry node
@@ -36,6 +57,9 @@ Options:
   --help, -h         Show this help message
 
 Examples:
+  cascade ./
+  cascade new my-artwork
+  cascade node Multiply ./my-artwork
   cascade run graph.cascade
   cascade run graph.cascade --entry-node node_123
   cascade validate graph.cascade
@@ -48,8 +72,8 @@ Examples:
   const command = args[0];
   const fileArg = args[1];
 
-  if (!command || (command !== 'run' && command !== 'validate')) {
-    console.error('Error: Invalid command. Use "run" or "validate"');
+  if (!command || !['run', 'validate', 'check', 'inspect'].includes(command)) {
+    console.error('Error: Invalid command');
     console.error('Run "cascade --help" for usage information');
     process.exit(1);
   }
@@ -73,10 +97,14 @@ Examples:
     file: string;
     entryNode?: string;
     validateOnly?: boolean;
+    checkOnly?: boolean;
+    inspectOnly?: boolean;
     verbose?: boolean;
   } = {
     file: fileArg,
-    validateOnly: command === 'validate'
+    validateOnly: command === 'validate',
+    checkOnly: command === 'check',
+    inspectOnly: command === 'inspect'
   };
 
   // Parse flags
@@ -106,4 +134,3 @@ main().catch(error => {
   console.error('Unexpected error:', error);
   process.exit(1);
 });
-

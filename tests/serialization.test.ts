@@ -3,10 +3,12 @@
  * Tests for graph save/load functionality (toJSON)
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Graph } from '@/nodes/Graph';
 import { Node } from '@/nodes/Node';
 import { SubnetNode } from '@/nodes/core/nodes/SubnetNode';
+import { Annotation } from '@/nodes/annotations/Annotation';
+import '@/nodes/core';
 
 describe('Serialization', () => {
   let graph: Graph;
@@ -125,6 +127,19 @@ describe('Serialization', () => {
       expect(json.metadata.created).toBeDefined();
       expect(json.metadata.modified).toBeDefined();
     });
+
+    it('preserves the graph creation timestamp across saves', () => {
+      const created = '2024-01-02T03:04:05.000Z';
+      const loaded = Graph.fromJSON({
+        version: '0.2',
+        metadata: { name: 'Archive', created },
+        nodes: [],
+        connections: [],
+      });
+
+      expect(loaded.toJSON().metadata.created).toBe(created);
+      expect(loaded.toJSON().metadata.created).toBe(created);
+    });
   });
 
   describe('Graph.fromJSON() static method', () => {
@@ -158,17 +173,96 @@ describe('Serialization', () => {
       expect(subnetData.module).toContain('Subnet');
     });
 
-    it('should serialize subnet with children', () => {
+    it('serializes node and annotation parents without nesting elements', () => {
       const subnet = new SubnetNode('mySubnet', graph);
       const child = new Node('child1', 'Test', graph);
+      const note = new Annotation('note1', 'Text', graph);
       graph.addElement(subnet);
+      graph.addElement(child);
+      graph.addElement(note);
       subnet.addChild(child);
+      subnet.addChild(note);
 
       const json = graph.toJSON();
 
-      // Subnet should be in the output
-      const subnetData = json.nodes.find((n: any) => n.id === 'mySubnet');
-      expect(subnetData).toBeDefined();
+      expect(json.nodes.find((n: any) => n.id === 'mySubnet')).not.toHaveProperty('parent');
+      expect(json.nodes.find((n: any) => n.id === 'child1')).toMatchObject({ parent: 'mySubnet' });
+      expect(json.annotations.find((a: any) => a.id === 'note1')).toMatchObject({ parent: 'mySubnet' });
+    });
+
+    it('restores nested hierarchy, relative positions, ports, and connections', () => {
+      const loaded = Graph.fromJSON({
+        version: '0.2',
+        nodes: [
+          { id: 'source', module: 'local.Source', source: 'embedded', position: [0, 0], outputs: [{ name: 'value' }] },
+          { id: 'outer', module: 'cascade.core.Subnet', source: 'stdlib', position: [100, 200] },
+          { id: 'inner', module: 'cascade.core.Subnet', source: 'stdlib', parent: 'outer', position: [20, 30] },
+          { id: 'inner-input', module: 'cascade.core.Input', source: 'stdlib', parent: 'inner', position: [4, 5], props: { inputIndex: 2 } },
+        ],
+        annotations: [
+          { id: 'note', type: 'text', parent: 'inner', position: [8, 9], content: 'nested' },
+        ],
+        connections: [[['source', 0, 'value'], ['inner', 2, 'input_2']]],
+      });
+
+      const outer = loaded.getNode('outer')!;
+      const inner = loaded.getNode('inner')!;
+      const input = loaded.getNode('inner-input')!;
+      const note = loaded.getAnnotation('note')!;
+
+      expect(inner.parent).toBe(outer);
+      expect(input.parent).toBe(inner);
+      expect(note.parent).toBe(inner);
+      expect(inner.children()).toEqual([input, note]);
+      expect(input.position).toEqual({ x: 4, y: 5 });
+      expect(inner.inputs).toHaveLength(3);
+      expect(loaded.connections).toHaveLength(1);
+    });
+
+    it.each([
+      ['missing parent', 'missing', 'child'],
+      ['non-network parent', 'plain', 'child'],
+      ['self parent', 'child', 'child'],
+    ])('keeps a child at root for a %s', (_case, parent, child) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const loaded = Graph.fromJSON({
+        version: '0.2',
+        nodes: [
+          { id: 'plain', module: 'local.Plain', source: 'embedded', position: [0, 0] },
+          { id: child, module: 'local.Child', source: 'embedded', parent, position: [1, 2] },
+        ],
+      });
+
+      expect(loaded.getNode(child)?.parent).toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`"${child}"`));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`"${parent}"`));
+      warn.mockRestore();
+    });
+
+    it('breaks a parent cycle without dropping either node', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const loaded = Graph.fromJSON({
+        version: '0.2',
+        nodes: [
+          { id: 'a', module: 'cascade.core.Subnet', source: 'stdlib', parent: 'b', position: [0, 0] },
+          { id: 'b', module: 'cascade.core.Subnet', source: 'stdlib', parent: 'a', position: [0, 0] },
+        ],
+      });
+
+      expect(loaded.nodes).toHaveLength(2);
+      expect(loaded.getNode('a')?.parent).toBe(loaded.getNode('b'));
+      expect(loaded.getNode('b')?.parent).toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('cycle'));
+      warn.mockRestore();
+    });
+
+    it('does not add parent fields to a legacy flat document', () => {
+      const loaded = Graph.fromJSON({
+        version: '0.2',
+        nodes: [{ id: 'flat', module: 'local.Flat', source: 'embedded', position: [12, 34] }],
+      });
+
+      expect(loaded.toJSON().nodes[0]).not.toHaveProperty('parent');
     });
   });
 
@@ -200,6 +294,20 @@ describe('Serialization', () => {
       });
 
       expect(loaded.project.name).toBe('Cloud Plots');
+    });
+
+    it('round-trips graph description, author, and creation timestamp', () => {
+      const loaded = Graph.fromJSON({
+        version: '0.2',
+        metadata: { name: 'Print Study', description: 'A generative edition', author: 'Studio', created: '2024-01-02T03:04:05.000Z' },
+        nodes: [],
+      });
+
+      expect(loaded.project).toMatchObject({ name: 'Print Study', description: 'A generative edition', author: 'Studio' });
+      expect(loaded.created).toBe('2024-01-02T03:04:05.000Z');
+      expect(loaded.toJSON().metadata).toMatchObject({
+        name: 'Print Study', description: 'A generative edition', author: 'Studio', created: '2024-01-02T03:04:05.000Z',
+      });
     });
 
     it('falls back to the default name when the file names none', () => {

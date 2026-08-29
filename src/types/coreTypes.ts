@@ -5,7 +5,7 @@
  *
  * The set is deliberately small. A type earns its place by needing its own
  * editor, its own port colour, or its own conversion rules; anything else is an
- * `object` with a shape. Special nodes extend by NAMESPACE — `observatory.moment`
+ * `object` with a shape. Special nodes extend by NAMESPACE — `archive.item`
  * — so a project can add what it needs without competing with core for names,
  * and anything unnamespaced is core by definition.
  */
@@ -61,7 +61,7 @@ export const CORE_TYPES = [
 ] as const;
 
 export type CoreType = (typeof CORE_TYPES)[number];
-/** A core type, or a namespaced project type like `observatory.moment`. */
+/** A core type, or a namespaced project type like `archive.item`. */
 export type CascadeType = CoreType | (string & {});
 
 const CORE_SET = new Set<string>(CORE_TYPES);
@@ -70,7 +70,7 @@ export function isCoreType(type: string): boolean {
   return CORE_SET.has(type);
 }
 
-/** `observatory.moment` -> `observatory`; a core type has no namespace. */
+/** `archive.item` -> `archive`; a core type has no namespace. */
 export function typeNamespace(type: string): string | null {
   const dot = type.indexOf('.');
   return dot > 0 ? type.slice(0, dot) : null;
@@ -175,7 +175,7 @@ export const TYPE_COLORS: Record<string, string> = {
 };
 
 /** Project types get a colour derived from their namespace, so every
- *  `observatory.*` port reads as one family without core knowing about them. */
+ *  `archive.*` port reads as one family without core knowing about it. */
 export function typeColor(type: string | undefined): string {
   if (!type) return TYPE_COLORS.any;
   if (TYPE_COLORS[type]) return TYPE_COLORS[type];

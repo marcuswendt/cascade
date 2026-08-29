@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runGraph, type RunOptions } from '@/cli/runner';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { Graph } from '@/nodes/Graph';
 
 // Mock fs/promises
 vi.mock('fs/promises', () => ({
@@ -159,6 +160,40 @@ describe('CLI Runner', () => {
 
       expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('Loading graph from'));
 
+      mockConsoleLog.mockRestore();
+    });
+
+    it('should exit with structured diagnostics when a legacy node cook fails', async () => {
+      const mockGraphData = { version: '0.2', nodes: [{ id: 'broken' }], connections: [] };
+      vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(mockGraphData));
+      const brokenNode = { id: 'broken', error: null, inputs: [{}], outputs: [] } as any;
+      const graph = {
+        elements: [brokenNode],
+        nodes: [brokenNode],
+        connections: [],
+        restoreConnections: vi.fn(),
+        validate: vi.fn(() => ({ errors: [], warnings: [] })),
+        execute: vi.fn(async () => {
+          brokenNode.error = new Error('deliberate failure');
+        })
+      } as any;
+      vi.spyOn(Graph, 'fromJSON').mockReturnValue(graph);
+      const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => {
+        throw new Error('process.exit called');
+      });
+      const mockConsoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const mockConsoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      await expect(runGraph({ file: '/test/legacy.cascade', verbose: true }))
+        .rejects.toThrow('process.exit called');
+      expect(mockConsoleError).toHaveBeenCalledWith('Graph execution failed:');
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        '  - node/cook-failed [broken]: deliberate failure'
+      );
+      expect(mockConsoleLog).not.toHaveBeenCalledWith('Graph execution completed');
+
+      mockExit.mockRestore();
+      mockConsoleError.mockRestore();
       mockConsoleLog.mockRestore();
     });
   });

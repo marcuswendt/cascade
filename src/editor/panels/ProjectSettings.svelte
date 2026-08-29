@@ -4,13 +4,14 @@
   import type { ProjectPackage } from '@/types/node.types';
   import Icon from '../Icon.svelte';
   import { X, Plus, Trash2, FolderOpen, Package, AlertCircle } from 'lucide-svelte';
+  import { loadProjectSettings, saveProjectSettings, type ProjectSettingsDto } from '../projectSettingsApi';
 
   export let open = false;
   export let graph: Graph | undefined = undefined;
 
   const dispatch = createEventDispatcher<{
     close: void;
-    save: { packages: ProjectPackage[] };
+    save: { packages: ProjectPackage[]; graphName: string; projectName: string; missingCredentials: string[] };
   }>();
 
   // Local state for editing
@@ -19,6 +20,16 @@
   let newPackageAlias = '';
   let showAddForm = false;
   let error = '';
+  let graphName = '';
+  let graphDescription = '';
+  let graphAuthor = '';
+  let projectName = '';
+  let commandsJson = '{}';
+  let settingsJson = '{}';
+  let credentialNames = '';
+  let credentialStatus: ProjectSettingsDto['requiredCredentials'] = [];
+  let loadedForOpen = false;
+  let projectAvailable = false;
 
   // Sync with graph when opening
   $: if (open && graph) {
@@ -29,20 +40,59 @@
     newPackageAlias = '';
   }
 
+  $: if (!open) loadedForOpen = false;
+  $: if (open && graph && !loadedForOpen) {
+    loadedForOpen = true;
+    graphName = graph.project.name ?? '';
+    graphDescription = graph.project.description ?? '';
+    graphAuthor = graph.project.author ?? '';
+    loadProjectSettings().then((state) => {
+      projectAvailable = true;
+      projectName = state.manifest.name;
+      commandsJson = JSON.stringify(state.manifest.commands, null, 2);
+      settingsJson = JSON.stringify(state.manifest.settings, null, 2);
+      credentialNames = state.manifest.credentials.join('\n');
+      credentialStatus = state.requiredCredentials;
+    }).catch(() => { projectAvailable = false; });
+  }
+
   function handleClose() {
     open = false;
     dispatch('close');
   }
 
-  function handleSave() {
+  async function handleSave() {
+    error = '';
+    let commands: Record<string, string>;
+    let settings: Record<string, unknown>;
+    try {
+      commands = JSON.parse(commandsJson || '{}');
+      settings = JSON.parse(settingsJson || '{}');
+      if (projectAvailable) {
+        const state = await saveProjectSettings({
+          name: projectName.trim(), commands, settings,
+          credentials: credentialNames.split(/\r?\n|,/).map((name) => name.trim()).filter(Boolean),
+        });
+        credentialStatus = state.requiredCredentials;
+      }
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+      return;
+    }
     if (graph) {
+      graph.project.name = graphName.trim();
+      graph.project.description = graphDescription.trim();
+      graph.project.author = graphAuthor.trim();
       graph.project.packages = [...packages];
       // Update module resolver
       packages.forEach(pkg => {
         graph.moduleResolver.addProjectPackage(pkg);
       });
     }
-    dispatch('save', { packages: [...packages] });
+    dispatch('save', {
+      packages: [...packages], graphName: graphName.trim(), projectName: projectName.trim(),
+      missingCredentials: credentialStatus.filter((item) => !item.set).map((item) => item.name),
+    });
     handleClose();
   }
 
@@ -125,6 +175,30 @@
       </div>
 
       <div class="modal-body">
+        <section class="section">
+          <h3>Graph Metadata <small>(current .cascade file)</small></h3>
+          <div class="form-row"><label for="graph-name">Name</label><input id="graph-name" bind:value={graphName} /></div>
+          <div class="form-row"><label for="graph-description">Description</label><input id="graph-description" bind:value={graphDescription} /></div>
+          <div class="form-row"><label for="graph-author">Author</label><input id="graph-author" bind:value={graphAuthor} /></div>
+          <div class="form-row"><label>Created</label><input value={graph?.created ?? ''} readonly /></div>
+        </section>
+
+        <section class="section">
+          <h3>Project Manifest <small>(cascade.json, shared by every graph)</small></h3>
+          <div class="form-row"><label for="project-name">Project name</label><input id="project-name" bind:value={projectName} /></div>
+          <div class="form-row"><label for="commands-json">Allowed commands</label><textarea id="commands-json" rows="4" bind:value={commandsJson}></textarea></div>
+          <div class="form-row"><label for="settings-json">Node settings</label><textarea id="settings-json" rows="5" bind:value={settingsJson}></textarea></div>
+          <div class="form-row"><label for="credentials-list">Required credentials</label><textarea id="credentials-list" rows="3" bind:value={credentialNames} placeholder="one credential name per line"></textarea></div>
+          {#if credentialStatus.length}
+            <div class="credentials-status">
+              {#each credentialStatus as credential}
+                <span class:set={credential.set}>{credential.name}: {credential.set ? 'set' : 'not set'}</span>
+              {/each}
+              <small>Add missing values to <code>~/.cascade/credentials.yaml</code> or the file named by <code>CASCADE_CREDENTIALS</code>. Values are never shown here.</small>
+            </div>
+          {/if}
+        </section>
+
         <section class="section">
           <h3>Project Packages</h3>
           <p class="section-description">
@@ -457,7 +531,8 @@
     margin-bottom: 6px;
   }
 
-  .form-row input {
+  .form-row input,
+  .form-row textarea {
     width: 100%;
     padding: 10px 12px;
     background: #252526;
@@ -466,9 +541,12 @@
     color: #fff;
     font-size: 14px;
     font-family: 'SF Mono', Monaco, monospace;
+    box-sizing: border-box;
+    resize: vertical;
   }
 
-  .form-row input:focus {
+  .form-row input:focus,
+  .form-row textarea:focus {
     outline: none;
     border-color: #4a9eff;
   }
@@ -476,6 +554,12 @@
   .form-row input::placeholder {
     color: #666;
   }
+
+  .section h3 small { color: #777; font-weight: 400; }
+  .credentials-status { display: flex; flex-wrap: wrap; gap: 8px; color: #ff9b7a; font-size: 12px; }
+  .credentials-status span { padding: 4px 8px; background: rgba(255, 90, 70, .1); border-radius: 4px; }
+  .credentials-status span.set { color: #79d89a; background: rgba(70, 190, 110, .1); }
+  .credentials-status small { flex-basis: 100%; color: #888; }
 
   .input-with-button {
     display: flex;

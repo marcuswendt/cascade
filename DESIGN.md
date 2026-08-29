@@ -4,8 +4,8 @@
 
 - Status: Active
 - Last refreshed: 2026-08-29
-- Primary product surfaces: infinite graph canvas, Inspector, Viewer, node ports, project-defined workbenches
-- Evidence reviewed: `VISION.md`, `ARCHITECTURE.md`, `src/types/coreTypes.ts`, `src/editor/Inspector.svelte`, `src/editor/Viewer.svelte`, `src/editor/components/PortEditor.svelte`, `src/editor/components/typeRenderers.ts`, Dockview theme styles
+- Primary product surfaces: reusable graph runtime, optional Studio workbench, headless Node/browser hosts, Inspector, Viewer, node ports, project-defined workbenches
+- Evidence reviewed: `VISION.md`, `ARCHITECTURE.md`, `spec/CASCADE_SUBNET_AND_SHELL_SPEC.md`, `src/types/coreTypes.ts`, `src/editor/Inspector.svelte`, `src/editor/Viewer.svelte`, `src/editor/components/PortEditor.svelte`, `src/editor/components/typeRenderers.ts`, and the approved plans under `.omx/plans/`
 
 ## Brand
 
@@ -15,9 +15,9 @@
 
 ## Product goals
 
-- Goals: make every graph value understandable and, when meaningful, editable; keep browser/Python/WebGL values visually coherent; let project namespaces extend presentation without changing core UI
-- Non-goals: spreadsheet-scale data editing, full 3D DCC tooling, silent expensive conversions, or bespoke conditionals for every node type
-- Success signals: every `CORE_TYPES` member has a useful Inspector and Viewer state; connected/output values are clearly read-only; project renderers plug into the same contract; large values remain responsive
+- Goals: provide a stable reusable platform for generative design across interactive web work, high-resolution print, motion, video, sound, WebGL, and Python/AI workflows; separate authored algorithms from platform and Studio concerns; make every graph stage inspectable; let projects reuse deterministic custom nodes without rebuilding file, version, preset, workspace, or execution infrastructure
+- Non-goals: spreadsheet-scale data editing, full 3D DCC tooling, silent expensive conversions, bespoke conditionals for every node type, executing user modules to discover metadata, or requiring the Studio UI to run a graph
+- Success signals: the same `.cascade` graph runs in Studio, a Node server, or a UI-free browser host; node contracts are statically inspectable and TypeScript-checkable; every `CORE_TYPES` member has a useful Inspector and Viewer state; connected/output values are clearly read-only; project renderers plug into the same contract; large values remain responsive
 
 ## Personas and jobs
 
@@ -38,7 +38,52 @@
 - Edit only what can be authored honestly: inputs may edit portable values; connected inputs and outputs are read-only; live GPU textures are inspected, not fabricated through form fields.
 - Expensive context changes stay explicit: texture readback, server materialization, and file writes are actions or nodes, never invisible UI coercions.
 - Project types extend by registration, not central switch statements.
+- The graph runtime is a product surface independent from Studio. Headless hosts consume it now; Studio's compatibility graph has one scheduler/controller boundary but still requires a deliberate built-in and structural-command migration before it consumes the neutral runtime directly.
+- Node metadata is deterministic. A literal exported definition declares ports, properties, types, execution locus, and capabilities; `execute` performs computation only.
+- Hosts provide explicit capabilities. File, Python, media, AI, WebGL, and shell access are never ambient runtime assumptions.
+- Neutral-runtime graph loads are atomic. Compatibility Studio collapse/extract are a known migration gap and must move behind transactional structural commands before that guarantee applies to every editor operation.
 - Tradeoff: geometry editors favor transparent structured editing and previews over specialized CAD interactions in this pass.
+
+## Architecture
+
+- `@cascade/contracts` is the dependency-free source of truth for graph documents, core and namespaced types, deterministic node definitions, diagnostics, run results, capabilities, and schemas.
+- `@cascade/runtime` is the deterministic environment-neutral graph loader, validator, scheduler, serializer, trigger engine, and hierarchy implementation. It depends only on contracts; dynamic compatibility remains in Studio/CLI during migration.
+- The root `cascade` package is the sole published distribution and CLI owner. It exposes `cascade/contracts`, `cascade/contracts/schema`, `cascade/runtime`, `cascade/runtime/node`, `cascade/runtime/browser`, and the compatibility `cascade/shell` entry point.
+- Node and browser hosts inject only the capabilities they support. Browser-only WebGL and server-only file, Python, and shell capabilities make portability constraints explicit before execution.
+- The Studio owns canvas/view classes and a single `StudioGraphController`; its compatibility `Graph`/`Node` engine is still being reduced. Custom frontends and backend services use the neutral runtime directly and do not load editor code.
+- Python interoperability remains a host capability for exotic libraries and compute stages. Exchange values cross explicit typed node boundaries rather than leaking Python process details into the neutral runtime.
+- Internal packages remain two workspaces until independent versioning or external consumption justifies separate publication. More npm packages are not a goal by themselves.
+
+## Graph and node conventions
+
+- A custom node lives at `nodes/<Name>/index.ts`; its folder identity resolves to `project.<Name>`.
+- The module exports a literal `definition` and a typed `execute`. Static inspection accepts JSON-like literals, arrays, parentheses, `as const`, and `satisfies`; identifiers, calls, spreads, computed properties, and other evaluation-dependent syntax are rejected.
+- `definition.runsOn` is required (`portable`, `browser`, or `server`), and declared capabilities must be valid for that locus.
+- Trigger events are explicit, queued FIFO, and fan out in authored connection order. Data dependencies cook before a gated trigger target. Trigger cycles are rejected.
+- `.cascade` documents retain a flat authored element list. Optional `parent` identifiers describe nested subnets for nodes and annotations; child positions are relative to their parent network.
+- Loading prepares and validates authored elements, hierarchy, executable nodes, ports, connections, pending connections, and topology before one assignment-only structural commit.
+- Existing dynamic modules remain supported by the current Studio/CLI engine during migration. The headless runtime is deterministic-only, and malformed definitions never fall back to dynamic execution.
+
+## Headless and deployment model
+
+- `createRuntime()` is the common entry point for Studio, Node services, UI-free browser embeds, tests, and custom web frontends.
+- Registration is sealed after the first graph load. A loaded graph supports inspect, input/property/preset mutation, trigger, run, cancel, subscription, output retrieval, and disposal without editor dependencies.
+- One run is active per graph; there is no hidden run queue. API misuse rejects, while graph execution resolves to an explicit success/failure/cancelled result.
+- A graph may run wholly in a backend, wholly in a compatible browser, or across an explicitly designed bridge. The runtime never silently moves a stage between hosts.
+- File loading/saving, format versioning, presets, project paths, and workspace conveniences belong to stable platform services around the neutral runtime, not to individual generative algorithms.
+
+## Security boundaries
+
+- User node modules are trusted project code, not a sandbox. Deterministic definitions improve inspection, tooling, and portability; they do not create an isolation boundary.
+- Shell is a server-only capability backed by one project-scoped service. Projects invoke configured aliases as a fixed executable plus argument array with `shell: false`; arbitrary executables, interpolation, unsafe working directories, dangerous request-time environment overrides, and unbounded output are rejected. The subprocess inherits the server environment before project and allowlisted request overrides are applied.
+- Browser shell transport is loopback-only, uses exact Host and Origin checks plus a process-lifetime random capability token, has route-local request limits, and never logs tokens, paths, arguments, environment, stdin, stdout, or stderr.
+- Timeout, cancellation, and output limits terminate the full process tree and wait for closure before reporting completion.
+
+## Agent workflow contract
+
+- Repository guidance must let a code agent find the project manifest, graph documents, nodes, assets, presets, runtime host, and verification commands without reverse-engineering Studio internals.
+- Project creation and node creation use canonical templates and CLI checks. A good agent workflow is: inspect contracts, author a literal definition, implement typed computation, run static definition extraction and TypeScript checks, then run the graph headlessly before opening Studio.
+- Public contracts and examples favor small composable modules, direct imports, explicit capabilities, and deletion of redundant wrappers. Agent guidance must name deprecated compatibility paths and their migration target.
 
 ## Visual language
 

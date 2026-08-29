@@ -1,27 +1,22 @@
 {
   "name": "cascade-server",
   "version": "2.0.0",
+  "private": true,
   "type": "module",
-  "bin": {
-    "cascade": "./dist/cli.js"
-  },
   "scripts": {
     "dev": "tsx watch src/cli.ts",
-    "build": "tsc && mkdir -p dist/runtime && cp src/runtime/io.ts dist/runtime/io.ts",
-    "start": "node dist/cli.js",
-    "link": "bash scripts/link-cli.sh"
+    "build": "tsc && mkdir -p dist/runtime && cp src/runtime/io.ts src/runtime/shell.ts src/runtime/net.ts dist/runtime/",
+    "start": "node dist/cli.js"
   },
   "dependencies": {
     "chokidar": "^4.0.0",
-    "cors": "^2.8.5",
-    "esbuild": "^0.24.2",
+    "esbuild": "^0.28.2",
     "express": "^5.1.0",
-    "multer": "^1.4.5-lts.1",
+    "multer": "^2.3.0",
     "sharp": "^0.35.4",
-    "ws": "^8.18.0"
+    "ws": "^8.21.3"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/multer": "^1.4.12",
     "@types/node": "^24.0.0",

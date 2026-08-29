@@ -10,6 +10,7 @@
   import { coerceImageRef, normalizeType, typeColor } from '@/types/coreTypes';
   import CoreValue from './components/CoreValue.svelte';
   import { inferCascadeType, mediaUrl } from './components/typePresentation';
+  import { rasterizeGeometry, type GeometryKind } from '@/utils/geometryRaster';
 
   export let graph: Graph | undefined;
   export let selectedNode: Node | null = null;
@@ -113,7 +114,7 @@
    */
   // .npy is here on purpose: the mask, signal, height and density stages emit a
   // float array, and the media route renders one to greyscale. Without it those
-  // stages — nine of the twenty-two in cloud-plots — have no picture at all, and
+  // numeric and geometry stages often have no picture at all, and
   // a pipeline you can't look at halfway through isn't inspectable.
   /** Zoom and pan per node+image, so a re-cook doesn't throw away where you
    *  were looking. Cleared naturally when the page reloads. */
@@ -230,6 +231,13 @@
           currentViewer = 'image';
         } else if (activeOutputType === 'image' && imagePathFromValue(outputPort.value)) {
           currentViewer = 'image';
+        } else if (GEOMETRY_KINDS.has(activeOutputType) && geometryUrl) {
+          // Geometry is shown as an image because that is what it gets drawn
+          // to — which gives points and chains the same pan, zoom and Fit as
+          // every other stage rather than a second, worse viewport. Only once
+          // the draw has finished; until then it falls through to the typed
+          // view, which says what the value is.
+          currentViewer = 'image';
         } else {
           currentViewer = 'typed';
         }
@@ -243,6 +251,11 @@
           currentViewer = 'text';
         }
       } else if (findImagePath(displayNode)) {
+        currentViewer = 'image';
+      } else if (GEOMETRY_KINDS.has(activeOutputType)) {
+        // Points, chains and segments are shown as an image because that is
+        // what they are drawn to — which gets them the same pan and zoom as
+        // every other stage rather than a second, worse viewport.
         currentViewer = 'image';
       } else {
         currentViewer = 'empty';
@@ -305,12 +318,52 @@
    * server resizes and re-encodes per request, which is what makes that
    * affordable — and never above the file's own resolution.
    */
+  const GEOMETRY_KINDS = new Set(['points', 'lines', 'polyline', 'rects']);
+
+  /**
+   * Geometry drawn to an image, so it can use the same viewport as everything
+   * else — pan, zoom, Fit, 1:1.
+   *
+   * A pipeline that ends in marks has stages whose output is a point set or a
+   * bundle of chains, and those were the ones you could not look at:
+   * stipple-points reported seven thousand points and showed nothing at all.
+   */
+  let geometryUrl: string | null = null;
+  let geometrySummary = '';
+  let geometryKey = '';
+
+  // Draw whenever the selected output is geometry. Reactive rather than driven
+  // from the render path: the render needs the image to already exist to decide
+  // it has something to show, so asking for it there is a chicken and egg.
+  $: if (activeOutput && GEOMETRY_KINDS.has(activeOutputType)) {
+    refreshGeometry(activeOutput, activeOutputType as GeometryKind);
+  }
+
+  async function refreshGeometry(port: any, kind: GeometryKind) {
+    // Drawing thousands of marks is not free, so it happens once per value
+    // rather than once per render.
+    const key = `${displayNode?.id}:${port?.id}:${kind}:${valueFingerprint(port?.value)}`;
+    if (key === geometryKey) return;
+    geometryKey = key;
+    try {
+      const raster = await rasterizeGeometry(port.value, kind);
+      geometryUrl = raster?.url ?? null;
+      geometrySummary = raster?.summary ?? '';
+    } catch (err) {
+      console.warn('[Viewer] could not draw geometry:', err);
+      geometryUrl = null;
+      geometrySummary = '';
+    }
+    if (geometryUrl) renderImage();
+  }
+
   /** The image path the viewer should currently be showing, or null when the
    *  current selection isn't a file-backed image. */
   function mountedSourceFor(): string | null {
     if (displayAnnotation) return null;
     if (!displayNode) return null;
     if (displayNode.preview instanceof HTMLImageElement) return null;
+    if (geometryUrl && GEOMETRY_KINDS.has(activeOutputType)) return geometryUrl;
     return findImagePath(displayNode);
   }
 
@@ -572,7 +625,9 @@
         if (outputPort?.value instanceof HTMLImageElement) {
           image = outputPort.value;
         } else {
-          imageSrc = imagePathFromValue(outputPort?.value) ?? findImagePath(displayNode);
+          imageSrc = (GEOMETRY_KINDS.has(activeOutputType) ? geometryUrl : null)
+            ?? imagePathFromValue(outputPort?.value)
+            ?? findImagePath(displayNode);
         }
       }
     }
@@ -727,6 +782,10 @@
       return `canvas:${outputPort.value.width}x${outputPort.value.height}:${displayNode.id}:${displayNode.cookInfo?.cookCount ?? 0}`;
     } else if (outputPort?.value instanceof HTMLImageElement) {
       return `img:${outputPort.value.src}`;
+    } else if (GEOMETRY_KINDS.has(activeOutputType) && outputPort?.value !== undefined) {
+      // Kick off the draw; the key guard makes a repeat call free.
+      refreshGeometry(outputPort, activeOutputType as GeometryKind);
+      return geometryUrl ? `geometry:${geometryKey}` : `data:${outputPort.id}:${valueFingerprint(outputPort.value)}`;
     } else if (outputPort?.value !== undefined) {
       // No cook count here. Evaluating the displayed node is what increments it,
       // and the viewer evaluates the displayed node — so including it made the

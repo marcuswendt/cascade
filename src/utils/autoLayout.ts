@@ -29,8 +29,8 @@
  *     connects to, as far as its neighbours allow, so a chain runs down the
  *     page instead of stepping side to side.
  *
- * Measured on the two real graphs this was built against, cloud-plots (21
- * nodes, 37 edges) and cloud-posters (23, 35). See the numbers in the commit.
+ * Measured on two representative production graphs (21 nodes / 37 edges and
+ * 23 nodes / 35 edges). See the numbers in the commit.
  */
 
 export interface LayoutNode {

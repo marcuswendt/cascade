@@ -11,17 +11,27 @@ import {
 import type { CascadePanelParams, PanelType } from './types';
 import { createSvelteRenderer, togglePanelLock, panelLockStore, sharedContextStore } from './renderer';
 import { get } from 'svelte/store';
+import { writable } from 'svelte/store';
+import type { ProjectPanelMeta } from '../projectPanels';
 
 const STORAGE_KEY = 'cascade-dockview-layout';
 
 // Panel types available for creation
-export const PANEL_TYPES: { type: PanelType; label: string; icon: string }[] = [
+export const BUILT_IN_PANEL_TYPES: { type: PanelType; label: string; icon: string }[] = [
   { type: 'graph', label: 'Graph', icon: '⬡' },
   { type: 'viewer', label: 'Viewer', icon: '👁' },
   { type: 'inspector', label: 'Inspector', icon: '⚙' },
   { type: 'info', label: 'Node Info', icon: 'ℹ' },
   { type: 'log', label: 'Log', icon: '📋' },
 ];
+export const panelTypes = writable([...BUILT_IN_PANEL_TYPES]);
+
+export function setProjectPanelTypes(panels: ProjectPanelMeta[]): void {
+  panelTypes.set([
+    ...BUILT_IN_PANEL_TYPES,
+    ...panels.map(panel => ({ type: `project:${panel.name}` as PanelType, label: panel.title, icon: panel.icon ?? '▣' })),
+  ]);
+}
 
 class DockviewStore {
   // Svelte 5 runes for reactive state
@@ -324,9 +334,14 @@ class DockviewStore {
     if (!this._api) return;
 
     // Generate unique ID
-    const timestamp = Date.now();
-    const id = `${type}-${timestamp}`;
-    const title = type.charAt(0).toUpperCase() + type.slice(1);
+    const projectPanelName = type.startsWith('project:') ? type.slice('project:'.length) : undefined;
+    const id = projectPanelName ? type : `${type}-${Date.now()}`;
+    if (projectPanelName && this._panels.has(id)) {
+      this.focusPanel(id);
+      return;
+    }
+    const entry = get(panelTypes).find(panel => panel.type === type);
+    const title = entry?.label ?? type.charAt(0).toUpperCase() + type.slice(1);
 
     // Find the group and get a reference panel
     const group = this._api.getGroup(groupId);
@@ -341,7 +356,26 @@ class DockviewStore {
       type,
       title,
       position: 'within',
-      referencePanel: refPanel?.id
+      referencePanel: refPanel?.id,
+      params: projectPanelName ? { projectPanelName } : undefined,
+    });
+  }
+
+  openProjectPanel(name: string, sourceNodeId?: string): void {
+    const type = `project:${name}` as PanelType;
+    const id = sourceNodeId ? `${type}:${sourceNodeId}` : type;
+    if (this._panels.has(id)) {
+      this.focusPanel(id);
+      return;
+    }
+    const reference = this._activePanel || [...this._panels.keys()][0];
+    this.addPanel({
+      id,
+      type,
+      title: get(panelTypes).find(panel => panel.type === type)?.label ?? name,
+      position: reference ? 'within' : undefined,
+      referencePanel: reference,
+      params: { projectPanelName: name, sourceNodeId },
     });
   }
 
@@ -518,11 +552,13 @@ class DockviewStore {
    * be opened on-demand when user double-clicks a node
    */
   private filterCodePanelsFromLayout(layout: SerializedDockview): void {
+    const available = new Set(get(panelTypes).map(panel => panel.type));
     // Filter panels object
     if (layout.panels) {
       const filteredPanels: Record<string, any> = {};
       for (const [id, panel] of Object.entries(layout.panels as Record<string, any>)) {
-        if (!id.startsWith('code-')) {
+        const component = (panel as any)?.component;
+        if (!id.startsWith('code-') && (!String(component).startsWith('project:') || available.has(component))) {
           filteredPanels[id] = panel;
         }
       }
@@ -531,19 +567,19 @@ class DockviewStore {
 
     // Filter grid views recursively
     if (layout.grid?.root) {
-      this.filterCodePanelsFromGridNode(layout.grid.root);
+      this.filterCodePanelsFromGridNode(layout.grid.root, new Set(Object.keys(layout.panels ?? {})));
     }
   }
 
   /**
    * Recursively filter code panel IDs from grid node views
    */
-  private filterCodePanelsFromGridNode(node: any): void {
+  private filterCodePanelsFromGridNode(node: any, availableIds?: Set<string>): void {
     if (!node) return;
 
     if (node.type === 'leaf' && node.data?.views) {
       // Filter out code panel IDs from views array
-      node.data.views = node.data.views.filter((viewId: string) => !viewId.startsWith('code-'));
+      node.data.views = node.data.views.filter((viewId: string) => !viewId.startsWith('code-') && (!availableIds || availableIds.has(viewId)));
       // Update activeView if it was a code panel
       if (node.data.activeView?.startsWith('code-')) {
         node.data.activeView = node.data.views[0] || null;
@@ -551,7 +587,7 @@ class DockviewStore {
     } else if (node.type === 'branch' && node.data) {
       // Recurse into branch children
       for (const child of node.data) {
-        this.filterCodePanelsFromGridNode(child);
+        this.filterCodePanelsFromGridNode(child, availableIds);
       }
     }
   }

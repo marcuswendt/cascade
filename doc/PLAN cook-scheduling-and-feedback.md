@@ -34,7 +34,7 @@ recompute". Everything else here is secondary to it.
 
 `src/App.svelte`, `cookGraph()` runs `graph.execute()` up to 16 times and stops
 when neither the resolved-output count nor the pending-connection count moves.
-On cloud-plots it settles after 8–10 passes over 21 nodes: on the order of
+On example-project it settles after 8–10 passes over 21 nodes: on the order of
 **200 node executions to do 21 nodes of work**.
 
 It exists for a real reason (see *The hard constraint* below) and it is only
@@ -68,7 +68,7 @@ Two stages instead:
 - **Later:** let a node declare its ports statically, so the shape is known
   before anything runs and the fixpoint retires. The convention introduced
   recently — *a node declares its whole shape (parameters, inputs, outputs)
-  before any early return* — is half of this already. Every node in cloud-plots
+  before any early return* — is half of this already. Every node in example-project
   follows it.
 
 ---
@@ -160,7 +160,7 @@ graph that looks idle for four seconds reads as broken.
 "Feels faster" is not a measure. Instrument `cookInfo.cookCount` and assert:
 
 - Changing a parameter executes **exactly** the node plus its transitive
-  dependents. On cloud-plots, nudging a stipple parameter must not re-run
+  dependents. On example-project, nudging a stipple parameter must not re-run
   segmentation or the depth signal.
 - A cold load executes each node a small constant number of times, not ~10×.
 - Dragging a slider across its range produces one cook per pause, not one per

@@ -20,6 +20,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import type { ProjectRoot } from './project.js';
+import { readProjectManifest } from './projectConfig.js';
 
 const __dirname_compile = path.dirname(fileURLToPath(import.meta.url));
 
@@ -30,23 +31,26 @@ const __dirname_compile = path.dirname(fileURLToPath(import.meta.url));
  * definition and every project gets the same one. Resolved from this file's
  * install location, so it works wherever the CLI is run from.
  */
-function cascadeRuntimePlugin(): esbuild.Plugin {
+function cascadeRuntimePlugin(project: ProjectRoot): esbuild.Plugin {
   return {
     name: 'cascade-runtime',
     setup(build) {
-      build.onResolve({ filter: /^cascade\/io$/ }, () => ({
-        path: 'cascade/io',
+      build.onResolve({ filter: /^cascade\/(?:io|shell|net|config)$/ }, (args) => ({
+        path: args.path,
         namespace: 'cascade-runtime',
       }));
-      build.onLoad({ filter: /.*/, namespace: 'cascade-runtime' }, () => {
+      build.onLoad({ filter: /.*/, namespace: 'cascade-runtime' }, (args) => {
+        if (args.path === 'cascade/config') {
+          return { contents: configRuntimeSource(readProjectManifest(project.root).settings), loader: 'ts' as const };
+        }
         // Beside this file when running from src (tsx), one level up in dist.
         const candidates = [
-          path.join(__dirname_compile, 'runtime', 'io.ts'),
-          path.join(__dirname_compile, '..', 'src', 'runtime', 'io.ts'),
+          path.join(__dirname_compile, 'runtime', `${args.path.slice('cascade/'.length)}.ts`),
+          path.join(__dirname_compile, '..', 'src', 'runtime', `${args.path.slice('cascade/'.length)}.ts`),
         ];
         const found = candidates.find((c) => fs.existsSync(c));
         if (!found) {
-          return { errors: [{ text: `cascade/io runtime not found (looked in ${candidates.join(', ')})` }] };
+          return { errors: [{ text: `${args.path} runtime not found (looked in ${candidates.join(', ')})` }] };
         }
         return { contents: fs.readFileSync(found, 'utf-8'), loader: 'ts' as const, resolveDir: path.dirname(found) };
       });
@@ -60,21 +64,26 @@ export interface CompileResult {
   errors: string[];
 }
 
-const commonOptions: esbuild.BuildOptions = {
-  bundle: true,
-  format: 'esm',
-  platform: 'browser',
-  target: 'es2022',
-  write: false,
-  logLevel: 'silent',
-  plugins: [cascadeRuntimePlugin()],
-};
+function commonOptions(project: ProjectRoot): esbuild.BuildOptions {
+  return { bundle: true, format: 'esm', platform: 'browser', target: 'es2022', write: false,
+    logLevel: 'silent', plugins: [cascadeRuntimePlugin(project)] };
+}
 
 export async function compileProjectModule(project: ProjectRoot, moduleName: string): Promise<CompileResult> {
-  const entryPath = project.resolve(`nodes/${moduleName}/index.ts`);
   try {
-    const result = await esbuild.build({ ...commonOptions, entryPoints: [entryPath] });
-    return toResult(result);
+    // Classification is also a preflight: server-only imports such as
+    // cascade/shell must not be smuggled into an explicitly browser module.
+    await project.moduleRunsOn(moduleName);
+    return await compileEntry(project, project.resolve(`nodes/${moduleName}/index.ts`));
+  } catch (err) {
+    return { ok: false, code: '', errors: [errorMessage(err)] };
+  }
+}
+
+/** Compile a project panel as browser ESM without importing it on the server. */
+export async function compileProjectPanel(project: ProjectRoot, panelName: string): Promise<CompileResult> {
+  try {
+    return await compileEntry(project, await project.resolvePanelEntry(panelName));
   } catch (err) {
     return { ok: false, code: '', errors: [errorMessage(err)] };
   }
@@ -83,7 +92,7 @@ export async function compileProjectModule(project: ProjectRoot, moduleName: str
 export async function compileEmbedded(project: ProjectRoot, code: string): Promise<CompileResult> {
   try {
     const result = await esbuild.build({
-      ...commonOptions,
+      ...commonOptions(project),
       stdin: {
         contents: code,
         loader: 'ts',
@@ -101,6 +110,23 @@ function toResult(result: esbuild.BuildResult): CompileResult {
   const errors = result.errors.map((e) => e.text);
   const code = result.outputFiles?.[0]?.text ?? '';
   return { ok: errors.length === 0, code, errors };
+}
+
+async function compileEntry(project: ProjectRoot, entryPath: string): Promise<CompileResult> {
+  return toResult(await esbuild.build({ ...commonOptions(project), entryPoints: [entryPath] }));
+}
+
+function configRuntimeSource(settings: Readonly<Record<string, unknown>>): string {
+  return `function deepFreeze(value) { if (value && typeof value === 'object') { for (const item of Object.values(value)) deepFreeze(item); Object.freeze(value); } return value; }
+const values = deepFreeze(${JSON.stringify(settings)});
+function value(name) { return Object.prototype.hasOwnProperty.call(values, name) ? values[name] : undefined; }
+export const config = Object.freeze({
+  get(name, fallback) { return value(name) ?? fallback; },
+  string(name, fallback = '') { const item = value(name); return typeof item === 'string' ? item : fallback; },
+  number(name, fallback = 0) { const item = value(name); return typeof item === 'number' && Number.isFinite(item) ? item : fallback; },
+  boolean(name, fallback = false) { const item = value(name); return typeof item === 'boolean' ? item : fallback; },
+  has(name) { return value(name) !== undefined; }
+});`;
 }
 
 function errorMessage(err: unknown): string {

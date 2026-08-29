@@ -1,5 +1,4 @@
 import express from 'express';
-import cors from 'cors';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import path from 'path';
@@ -8,11 +7,19 @@ import { fileURLToPath } from 'url';
 import { createGraphRouter } from './routes/graph.js';
 import { createAssetsRouter } from './routes/assets.js';
 import { createNodesRouter } from './routes/nodes.js';
+import { createPanelsRouter } from './routes/panels.js';
 import { createExecRouter } from './routes/exec.js';
+import { createShellRouter } from './routes/shell.js';
+import { createProjectSettingsRouter } from './routes/projectSettings.js';
+import { createNetRouter } from './routes/net.js';
+import { createProjectRequestBoundary, type ServerSecurityOptions } from './security.js';
 import { createMediaRouter } from './routes/media.js';
 import { aiRouter } from './routes/ai.js';
 import { setupWebSocket } from './services/websocket.js';
 import { ProjectRoot } from './project.js';
+
+export { createDirectShellCapability } from './shell/service.js';
+export type { ShellCapability, ShellRunOptions, ShellRunResult } from './shell/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,18 +29,43 @@ const __dirname = path.dirname(__filename);
 // project directory.
 const CASCADE_DIST = path.resolve(__dirname, '..', '..', 'dist');
 
-export function startServer(project: ProjectRoot, opts: { port?: number; wsPort?: number } = {}) {
+export interface StartServerOptions {
+  readonly port?: number;
+  readonly wsPort?: number | false;
+  readonly host?: string;
+  readonly trustedOrigins?: readonly string[];
+  /** @deprecated Use trustedOrigins. */
+  readonly trustedShellOrigins?: readonly string[];
+}
+
+export function startServer(project: ProjectRoot, opts: StartServerOptions = {}) {
   const app = express();
   const PORT = opts.port ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : 3030);
   const WS_PORT = opts.wsPort ?? (process.env.WS_PORT ? parseInt(process.env.WS_PORT, 10) : 3031);
+  const HOST = opts.host ?? '127.0.0.1';
+  const security: ServerSecurityOptions = Object.freeze({
+    host: HOST,
+    port: PORT,
+    trustedOrigins: Object.freeze([...(opts.trustedOrigins ?? opts.trustedShellOrigins ?? (
+      HOST === '127.0.0.1' || HOST === 'localhost'
+        ? [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]
+        : HOST === '::1' ? [`http://[::1]:${PORT}`] : []
+    ))]),
+  });
 
-  app.use(cors());
-  // The pipeline posts whole primitive sets through /api/exec — a stipple
-  // render is thousands of dashes, a hatch pass thousands of curves, and
-  // both terminal render nodes take all of them at once. Express's 100kb
-  // default rejected exactly those two nodes with an HTML error page, which
-  // surfaced in the graph as "Unexpected token '<'". Local single-user
-  // server, so the ceiling is generous on purpose.
+  // Process endpoints own their authentication and bounded parsers, so they
+  // must run before the broad project parsers below. Each router terminates
+  // its protected prefix.
+  app.use('/api/shell', createShellRouter(project.shell, security));
+  app.use('/api/exec', createExecRouter(project, security));
+  app.use('/api/net', createNetRouter(project, security));
+  app.use('/api/project', createProjectSettingsRouter(project, security));
+
+  const projectBoundary = createProjectRequestBoundary(security);
+  app.use('/api', projectBoundary.guard);
+  app.options('/api/{*splat}', projectBoundary.preflight);
+  // Project graphs and assets may carry large media-derived values. Process
+  // routes above use smaller independent limits.
   app.use(express.json({ limit: '512mb' }));
   app.use(express.urlencoded({ extended: true, limit: '512mb' }));
 
@@ -52,7 +84,7 @@ export function startServer(project: ProjectRoot, opts: { port?: number; wsPort?
   app.use('/api/graph', createGraphRouter(project));
   app.use('/api/assets', createAssetsRouter(project));
   app.use('/api/nodes', createNodesRouter(project));
-  app.use('/api/exec', createExecRouter(project));
+  app.use('/api/panels', createPanelsRouter(project));
   app.use('/api/media', createMediaRouter(project));
   app.use('/api/ai', aiRouter);
 
@@ -75,13 +107,16 @@ export function startServer(project: ProjectRoot, opts: { port?: number; wsPort?
   }
 
   const server = createServer(app);
-  const wss = new WebSocketServer({ port: WS_PORT });
-  setupWebSocket(wss, project);
+  if (WS_PORT !== false) {
+    const wss = new WebSocketServer({ port: WS_PORT, host: HOST });
+    setupWebSocket(wss, project);
+    server.once('close', () => wss.close());
+  }
 
-  server.listen(PORT, () => {
-    console.log(`🚀 Cascade running on http://localhost:${PORT}`);
+  server.listen(PORT, HOST, () => {
+    console.log(`🚀 Cascade running on http://${HOST}:${PORT}`);
     console.log(`📁 Project: ${project.root}${project.isGitRepo ? ' (git)' : ' (not a git repo yet)'}`);
-    console.log(`📡 WebSocket on ws://localhost:${WS_PORT}`);
+    if (WS_PORT !== false) console.log(`📡 WebSocket on ws://${HOST}:${WS_PORT}`);
   });
 
   return server;

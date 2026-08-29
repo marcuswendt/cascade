@@ -1,16 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { isElectron, isMac } from '../lib/electron';
 
   export let documentName: string = 'Untitled';
   export let canUndo: boolean = false;
   export let canRedo: boolean = false;
 
   const dispatch = createEventDispatcher();
-
-  // In Electron on macOS, we have native menus and need space for traffic lights
-  const useNativeMenu = isElectron && isMac;
-  const trafficLightPadding = isElectron && isMac;
 
   let activeMenu: string | null = null;
   let editingName = false;
@@ -76,8 +71,8 @@
     }
   }
 
-  // In browser, file shortcuts use Alt to avoid conflicting with browser shortcuts
-  const fileModKey = isElectron ? '⌘' : '⌥';
+  // File shortcuts use Alt to avoid conflicting with browser shortcuts.
+  const fileModKey = '⌥';
 
   $: fileMenuItems = [
     { label: 'New Project', action: 'new', shortcut: `${fileModKey}N` },
@@ -122,10 +117,9 @@
 
 <svelte:window on:click={handleClickOutside} />
 
-<div class="menu-bar" class:electron-mac={trafficLightPadding}>
+<div class="menu-bar">
   <div class="menu-left">
-    {#if !useNativeMenu}
-      <!-- File Menu (browser only - Electron uses native menu) -->
+      <!-- File Menu -->
       <div class="menu-item" class:active={activeMenu === 'file'}>
         <button class="menu-button" on:click={() => handleMenuClick('file')}>
           File
@@ -151,7 +145,7 @@
         {/if}
       </div>
 
-      <!-- Edit Menu (browser only) -->
+      <!-- Edit Menu -->
       <div class="menu-item" class:active={activeMenu === 'edit'}>
         <button class="menu-button" on:click={() => handleMenuClick('edit')}>
           Edit
@@ -178,7 +172,6 @@
           </div>
         {/if}
       </div>
-    {/if}
 
     <!-- Create Menu - always shown, opens NodePanel directly -->
     <div class="menu-item">
@@ -191,8 +184,7 @@
       </button>
     </div>
 
-    {#if !useNativeMenu}
-      <!-- View Menu (browser only) -->
+      <!-- View Menu -->
       <div class="menu-item" class:active={activeMenu === 'view'}>
         <button class="menu-button" on:click={() => handleMenuClick('view')}>
           View
@@ -217,7 +209,6 @@
           </div>
         {/if}
       </div>
-    {/if}
   </div>
 
   <div class="menu-center">
@@ -251,34 +242,25 @@
     background: #1a1a1a;
     border-bottom: 1px solid #333;
     padding: 0 8px;
-    -webkit-app-region: drag;
     user-select: none;
-  }
-
-  /* Add padding for macOS traffic lights in Electron */
-  .menu-bar.electron-mac {
-    padding-left: 80px;
   }
 
   .menu-left {
     display: flex;
     align-items: center;
     gap: 2px;
-    -webkit-app-region: no-drag;
   }
 
   .menu-center {
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
-    -webkit-app-region: no-drag;
   }
 
   .menu-right {
     display: flex;
     align-items: center;
     gap: 8px;
-    -webkit-app-region: no-drag;
   }
 
   .menu-item {

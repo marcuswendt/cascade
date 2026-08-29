@@ -22,6 +22,7 @@ import { packagePathToType, isStandardLibraryNode, getNodeClass, getNodeDisplayN
 import { loadProjectModule, loadEmbeddedModule } from '../engine/nodeModuleLoader.js';
 import { normalizeColor, isColorValue } from '../utils/colorUtils.js';
 import { canConnect, normalizeType } from '../types/coreTypes.js';
+import { CookScheduler } from './CookScheduler.js';
 
 // Current file format version
 export const GRAPH_FORMAT_VERSION = '0.2';
@@ -75,6 +76,9 @@ export class Graph {
 
   // Project configuration (v0.2)
   project: ProjectConfig = { packages: [] };
+  private createdAt = new Date().toISOString();
+
+  get created(): string { return this.createdAt; }
 
   /**
    * Unified elements array (computations and annotations)
@@ -94,6 +98,7 @@ export class Graph {
 
   // Execution Control
   cookingNodes: Set<Node> = new Set();
+  readonly scheduler: CookScheduler;
 
   // Execution state
   executionState: ExecutionState = 'idle';
@@ -105,6 +110,7 @@ export class Graph {
     this.assetManager = assetManager || new AssetManager();
     this.packageManager = packageManager || new PackageManager();
     this.moduleResolver = moduleResolver || createModuleResolver();
+    this.scheduler = new CookScheduler(this);
   }
   
   /**
@@ -208,10 +214,12 @@ export class Graph {
     const segments = path.slice(1).split('/').filter(s => s.length > 0);
     if (segments.length === 0) return null;
 
-    // For now, flat graph - just find by ID (last segment)
-    // When subnets are implemented, this will traverse the hierarchy
-    const nodeId = segments[segments.length - 1];
-    return this.getNode(nodeId);
+    let current = this.nodes.find(node => !node.parent && node.id === segments[0]) ?? null;
+    for (let index = 1; current && index < segments.length; index++) {
+      if (!current.isNetwork()) return null;
+      current = current.children().find(child => child.id === segments[index]) ?? null;
+    }
+    return current;
   }
 
   /**
@@ -224,33 +232,90 @@ export class Graph {
   }
 
   /**
+   * Move an element between networks while keeping both sides of the parent
+   * relationship consistent. Structural editor code must use this instead of
+   * mutating `parent` or `_children` directly.
+   */
+  reparentElement(element: Node, parent: Node | null): boolean {
+    if (parent) {
+      if (!parent.isNetwork() || parent === element) return false;
+      for (let ancestor: Node | null = parent; ancestor; ancestor = ancestor.parent) {
+        if (ancestor === element) return false;
+      }
+    }
+    if (element.parent === parent) return true;
+
+    const previous = element.parent;
+    if (previous) {
+      const removeChild = (previous as any).removeChild;
+      if (typeof removeChild === 'function') removeChild.call(previous, element);
+      else {
+        (previous as any)._children = previous.children().filter(child => child !== element);
+        element.parent = null;
+      }
+    }
+
+    if (parent) {
+      const addChild = (parent as any).addChild;
+      if (typeof addChild === 'function') addChild.call(parent, element);
+      else {
+        element.parent = parent;
+        (parent as any)._children.push(element);
+      }
+    }
+    this.invalidateTopologicalOrder();
+    return true;
+  }
+
+  /**
    * Remove an element from the graph
    */
   removeElement(id: string): void {
     const element = this._elementMap.get(id);
-    if (element) {
-      // Call onDestroy if element has the method
-      if (element.onDestroy) {
-        element.onDestroy();
-      }
+    if (!element) return;
 
-      // Remove connections
-      this.connections = this.connections.filter(
-        c => c.from.nodeId !== id && c.to.nodeId !== id
-      );
+    const removed: Node[] = [];
+    const visited = new Set<Node>();
+    const collect = (candidate: Node): void => {
+      if (visited.has(candidate)) return;
+      visited.add(candidate);
+      candidate.children().forEach(collect);
+      removed.push(candidate);
+    };
+    collect(element);
 
-      // Remove from array and map
-      const index = this._elements.indexOf(element);
-      if (index >= 0) {
-        this._elements.splice(index, 1);
-      }
-      this._elementMap.delete(id);
+    const removedIds = new Set(removed.map(candidate => candidate.id));
+    this.connections
+      .filter(connection => removedIds.has(connection.from.nodeId) || removedIds.has(connection.to.nodeId))
+      .forEach(connection => this.disconnect(connection.id));
 
-      // Remove from cookingNodes if present (for Viewer cleanup)
-      this.cookingNodes.delete(element as Node);
-
-      this.invalidateTopologicalOrder();
+    const pending = (this as any)._connectionsToRestore;
+    if (Array.isArray(pending)) {
+      (this as any)._connectionsToRestore = pending.filter((connection: any) => {
+        const fromId = Array.isArray(connection?.[0]) ? connection[0][0] : undefined;
+        const toId = Array.isArray(connection?.[1]) ? connection[1][0] : undefined;
+        return !removedIds.has(fromId) && !removedIds.has(toId);
+      });
     }
+
+    this._elements = this._elements.filter(candidate => !removedIds.has(candidate.id));
+    for (const candidate of removed) {
+      this._elementMap.delete(candidate.id);
+      this.cookingNodes.delete(candidate);
+    }
+
+    // `removed` is deepest-first, so every child is detached before its parent.
+    for (const candidate of removed) {
+      const parent = candidate.parent;
+      if (parent) {
+        const removeChild = (parent as any).removeChild;
+        if (typeof removeChild === 'function') removeChild.call(parent, candidate);
+        else candidate.parent = null;
+      }
+    }
+
+    this.invalidateTopologicalOrder();
+    for (const candidate of removed) candidate.onDestroy?.();
   }
 
   /**
@@ -258,13 +323,35 @@ export class Graph {
    */
   renameElement(oldId: string, newId: string): boolean {
     const element = this._elementMap.get(oldId);
-    if (!element) return false;
+    if (!element || !newId || (oldId !== newId && this._elementMap.has(newId))) return false;
+    if (oldId === newId) return true;
 
-    // Update the map
+    const renamedPorts = element.renameId(newId);
     this._elementMap.delete(oldId);
-    element.id = newId;
     this._elementMap.set(newId, element);
 
+    for (const connection of this.connections) {
+      if (connection.from.nodeId === oldId) connection.from.nodeId = newId;
+      if (connection.to.nodeId === oldId) connection.to.nodeId = newId;
+      connection.from.portId = renamedPorts.get(connection.from.portId) ?? connection.from.portId;
+      connection.to.portId = renamedPorts.get(connection.to.portId) ?? connection.to.portId;
+    }
+
+    const pending = (this as any)._connectionsToRestore;
+    if (Array.isArray(pending)) {
+      for (const connection of pending) {
+        for (const endpoint of Array.isArray(connection) ? connection : []) {
+          if (Array.isArray(endpoint) && endpoint[0] === oldId) endpoint[0] = newId;
+        }
+      }
+    }
+    for (const annotation of this.annotations) {
+      if (Array.isArray(annotation.containedElements)) {
+        annotation.containedElements = annotation.containedElements.map(id => id === oldId ? newId : id);
+      }
+    }
+
+    this.invalidateTopologicalOrder();
     return true;
   }
 
@@ -490,6 +577,11 @@ export class Graph {
     // Check for type mismatches and set warnings on the target node
     this.updateTypeMismatchWarnings(toParsed.elementId);
 
+    // A structural input change invalidates exactly the target branch. This is
+    // also what advances the bounded cold-load fixpoint as ports appear and
+    // pending connections become bindable between passes.
+    this.getNode(toParsed.elementId)?.markDirty();
+
     return connection;
   }
 
@@ -531,6 +623,7 @@ export class Graph {
 
     // Re-check type mismatches after disconnection
     this.updateTypeMismatchWarnings(conn.to.nodeId);
+    this.getNode(conn.to.nodeId)?.markDirty();
   }
 
   /**
@@ -554,30 +647,14 @@ export class Graph {
    * Execute graph using topological sort for proper ordering
    */
   async execute(entryNode?: Node) {
-    if (this.executionState === 'running') {
+    if (this.scheduler.isRunning) {
       console.warn('Graph execution already in progress');
       return;
     }
 
     this.executionState = 'running';
-    
     try {
-      if (entryNode) {
-        // Execute from specific entry point
-        await this.executeFromEntry(entryNode);
-      } else {
-        // Execute all entry points (computations with no input connections)
-        const entryPoints = this.nodes
-          .filter(comp => comp.inputs.every(p => p.connections.length === 0));
-        
-        if (entryPoints.length === 0) {
-          console.warn('No entry points found in graph');
-          return;
-        }
-        
-        // Execute all entry points in parallel
-        await Promise.all(entryPoints.map(node => this.executeFromEntry(node)));
-      }
+      await this.scheduler.flush(entryNode);
     } finally {
       this.executionState = 'idle';
     }
@@ -587,7 +664,7 @@ export class Graph {
    * Get or compute topological order for the entire graph
    * Caches the result until graph structure changes
    */
-  private getTopologicalOrder(): string[] {
+  getTopologicalOrder(): string[] {
     if (this.cachedTopologicalOrder) {
       return this.cachedTopologicalOrder;
     }
@@ -601,86 +678,6 @@ export class Graph {
    */
   private invalidateTopologicalOrder(): void {
     this.cachedTopologicalOrder = null;
-  }
-  
-  /**
-   * Execute from a specific entry computation using topological sort
-   */
-  private async executeFromEntry(entryNode: Node) {
-    // Build dependency graph starting from entry computation
-    const nodesToExecute = new Set<Node>();
-    const visited = new Set<string>();
-
-    const collectDownstream = (node: Node) => {
-      if (visited.has(node.id)) return;
-      visited.add(node.id);
-      nodesToExecute.add(node);
-      
-      // Collect all downstream computations
-      for (const output of node.outputs) {
-        for (const conn of output.connections) {
-          const downstreamNode = this.getNode(conn.to.nodeId);
-          if (downstreamNode) {
-            collectDownstream(downstreamNode);
-          }
-        }
-      }
-    };
-    
-    collectDownstream(entryNode);
-    
-    // Create a subgraph with only these computations for topological sort
-    const subgraph = new Graph(this.assetManager, this.packageManager);
-    subgraph._elements = Array.from(nodesToExecute);
-    subgraph.connections = this.connections.filter(conn => {
-      const fromNode = this.getNode(conn.from.nodeId);
-      const toNode = this.getNode(conn.to.nodeId);
-      return fromNode && toNode && nodesToExecute.has(fromNode) && nodesToExecute.has(toNode);
-    });
-    
-    // Get topological order for this subgraph
-    const sortedNodeIds = GraphValidator.topologicalSort(subgraph);
-    
-    // Group computations by dependency level for parallel execution
-    const nodeLevels: Node[][] = [];
-    const nodeToLevel = new Map<string, number>();
-    
-    // Calculate level for each computation (distance from entry point)
-    const calculateLevel = (nodeId: string): number => {
-      if (nodeToLevel.has(nodeId)) {
-        return nodeToLevel.get(nodeId)!;
-      }
-      
-      const node = this.getNode(nodeId);
-      if (!node) return 0;
-      
-      let maxUpstreamLevel = -1;
-      for (const input of node.inputs) {
-        for (const conn of input.connections) {
-          const upstreamLevel = calculateLevel(conn.from.nodeId);
-          maxUpstreamLevel = Math.max(maxUpstreamLevel, upstreamLevel);
-        }
-      }
-      
-      const level = maxUpstreamLevel + 1;
-      nodeToLevel.set(nodeId, level);
-      
-      // Ensure level array is large enough
-      while (nodeLevels.length <= level) {
-        nodeLevels.push([]);
-      }
-      nodeLevels[level].push(node);
-      
-      return level;
-    };
-    
-    // Calculate levels for all computations
-    sortedNodeIds.forEach(nodeId => calculateLevel(nodeId));
-    
-    // Execute computations level by level, with parallel execution within each level
-    for (const level of nodeLevels) {
-      await Promise.all(level.map(node => node.execute()));
-    }
   }
   
   stop() {
@@ -1011,8 +1008,10 @@ export class Graph {
       version: GRAPH_FORMAT_VERSION,
       metadata: {
         name: this.project.name || 'Cascade Graph',
-        created: new Date().toISOString(),
-        modified: new Date().toISOString()
+        created: this.createdAt,
+        modified: new Date().toISOString(),
+        ...(this.project.description ? { description: this.project.description } : {}),
+        ...(this.project.author ? { author: this.project.author } : {})
       }
     };
 
@@ -1078,6 +1077,8 @@ export class Graph {
         if (ann.style) serialized.style = ann.style;
         if (ann.caption !== undefined) serialized.caption = ann.caption;
         if (ann.containedElements) serialized.containedElements = ann.containedElements;
+        // Positions are relative to the parent subnet when this field is present.
+        if (ann.parent) serialized.parent = ann.parent.id;
         return serialized;
       });
     }
@@ -1176,6 +1177,11 @@ export class Graph {
       result.color = (node as any).color;
     }
 
+    // Positions are relative to the parent subnet when this field is present.
+    if (node.parent) {
+      result.parent = node.parent.id;
+    }
+
     /**
      * Parameters — the node's own values. Only those that differ from the code
      * default, plus anything promoted to a pin, so a file records decisions
@@ -1196,7 +1202,7 @@ export class Graph {
      * a port value and nothing else. Without this, saving discarded every one
      * of them — the graph reloaded with code defaults, and a setting that was
      * live a moment ago was simply gone. Caught by a save wiping the default
-     * moment out of cloud-plots, after which the loader had nothing to load.
+     * source out of a project graph, after which the loader had nothing to load.
      *
      * A connected port is skipped: its value belongs to the node upstream and
      * is recomputed on the next cook, so writing it down would only preserve a
@@ -1255,6 +1261,7 @@ export class Graph {
   static fromJSON(json: any, assetManager?: AssetManager, packageManager?: PackageManager): Graph {
     const graph = new Graph(assetManager, packageManager);
     const version = json.version || '0.1';
+    if (typeof json.metadata?.created === 'string') graph.createdAt = json.metadata.created;
 
     /**
      * The project's name, read whether or not the file carries a `project`
@@ -1263,15 +1270,20 @@ export class Graph {
      * on load and then wrote 'Cascade Graph' back over it on the next save.
      * The name is metadata about the graph, not about its packages.
      */
-    if (json.metadata?.name) {
-      graph.project = { ...graph.project, name: json.metadata.name };
-    }
+    graph.project = {
+      ...graph.project,
+      ...(typeof json.metadata?.name === 'string' ? { name: json.metadata.name } : {}),
+      ...(typeof json.metadata?.description === 'string' ? { description: json.metadata.description } : {}),
+      ...(typeof json.metadata?.author === 'string' ? { author: json.metadata.author } : {}),
+    };
 
     // Load project configuration (v0.2)
     if (json.project) {
       graph.project = {
         ...graph.project,
         name: json.metadata?.name ?? graph.project.name,
+        description: json.metadata?.description ?? graph.project.description,
+        author: json.metadata?.author ?? graph.project.author,
         packages: json.project.packages || []
       };
       // Update module resolver with project packages
@@ -1583,6 +1595,68 @@ export class Graph {
       // No annotations, so initialization is already complete
       (graph as any)._annotationPortsInitialized = Promise.resolve();
     }
+
+    const authoredElements = [
+      ...(Array.isArray(json.nodes) ? json.nodes : []),
+      ...(Array.isArray(json.annotations) ? json.annotations : []),
+    ];
+    for (const elementData of authoredElements) {
+      if (typeof elementData?.parent !== 'string') continue;
+
+      const child = graph.getElement(elementData.id);
+      const parent = graph.getElement(elementData.parent);
+      const warn = (reason: string) => console.warn(
+        `Parent link for "${elementData.id}" to "${elementData.parent}" ignored: ${reason}; element loaded at root.`
+      );
+
+      if (!child) continue;
+      if (!parent) {
+        warn('parent does not exist');
+        continue;
+      }
+      if (child === parent) {
+        warn('self-parenting is invalid');
+        continue;
+      }
+      if (!parent.isNetwork()) {
+        warn('parent is not a network');
+        continue;
+      }
+
+      let ancestor: Node | null = parent;
+      let closesCycle = false;
+      const visited = new Set<Node>();
+      while (ancestor && !visited.has(ancestor)) {
+        if (ancestor === child) {
+          closesCycle = true;
+          break;
+        }
+        visited.add(ancestor);
+        ancestor = ancestor.parent;
+      }
+      if (closesCycle) {
+        warn('parent cycle detected');
+        continue;
+      }
+
+      graph.reparentElement(child, parent);
+    }
+
+    const depth = (node: Node): number => {
+      let value = 0;
+      let parent = node.parent;
+      const visited = new Set<Node>();
+      while (parent && !visited.has(parent)) {
+        visited.add(parent);
+        value++;
+        parent = parent.parent;
+      }
+      return value;
+    };
+    graph.nodes
+      .filter(node => node.isNetwork())
+      .sort((left, right) => depth(right) - depth(left))
+      .forEach(node => (node as any).syncPorts?.());
     
     // Store connections to restore after nodes execute
     (graph as any)._connectionsToRestore = connectionsToRestore;
@@ -1701,4 +1775,3 @@ export class Graph {
     }
   }
 }
-

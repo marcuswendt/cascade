@@ -360,6 +360,8 @@ describe('Node ID management', () => {
     expect(node.id).toBe(newId);
     expect(node.id).not.toBe(originalId);
     expect(node.isDirty).toBe(true);
+    expect(graph.getNode(originalId)).toBeNull();
+    expect(graph.getNode(newId)).toBe(node);
   });
 
   it('should generate unique ID on rename conflict', () => {
@@ -381,5 +383,32 @@ describe('Node ID management', () => {
     const currentId = node.id;
     const newId = node.rename('   ');
     expect(newId).toBe(currentId);
+  });
+
+  it('should clear the execution timeout after a successful cook', async () => {
+    vi.useFakeTimers();
+    try {
+      node.setFunction(() => {});
+      graph.scheduler.dispose();
+      await node.execute();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('should clear the execution timeout after a failed cook', async () => {
+    vi.useFakeTimers();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      node.setFunction(() => { throw new Error('failure'); });
+      graph.scheduler.dispose();
+      await node.execute();
+      expect(node.error?.message).toBe('failure');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      consoleError.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

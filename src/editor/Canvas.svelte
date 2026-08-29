@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { onMount, tick, createEventDispatcher } from 'svelte';
+  import { onMount, onDestroy, tick, createEventDispatcher } from 'svelte';
   import { Graph, type CanvasAnnotation } from '@/nodes/Graph';
   import { Annotation } from '@/nodes/annotations/Annotation';
   import { TextAnnotation } from '@/nodes/annotations/Text';
   import { annotationRegistry } from './annotations';
   import NodeUI from './NodeUI.svelte';
+  import { StudioGraphController } from './StudioGraphController';
   import { graphStructure } from './stores/graphStructure';
   import type { Node } from '@/nodes/Node';
   import type { Connection } from '@/types/node.types';
@@ -28,6 +29,27 @@
   export let selectedAnnotation: string | null = null;
   export let transform: { x: number; y: number; zoom: number } | undefined = undefined;
   export let onRecordHistory: (() => void) | undefined = undefined;
+
+  const studioGraph = new StudioGraphController(() => graph);
+
+  let subscribedScheduler: typeof graph.scheduler | undefined;
+  let unsubscribeScheduler: (() => void) | undefined;
+  let cookRevision = 0;
+
+  // The scheduler owns cook state. This subscription only invalidates the
+  // presentation when that state changes; it does not mirror or reinterpret it.
+  $: {
+    const scheduler = graph.scheduler;
+    if (scheduler !== subscribedScheduler) {
+      unsubscribeScheduler?.();
+      subscribedScheduler = scheduler;
+      unsubscribeScheduler = scheduler.subscribe(() => {
+        cookRevision += 1;
+      });
+    }
+  }
+
+  onDestroy(() => unsubscribeScheduler?.());
 
   // Helper to record history using Canvas's graph reference directly
   // This ensures we capture the correct graph state
@@ -262,12 +284,7 @@
    * This ensures SubnetNode.syncPorts() is called when Input/Output nodes are added
    */
   function addChildToNetwork(parent: Node, child: Node): void {
-    if ((parent as any).addChild) {
-      (parent as any).addChild(child);
-    } else {
-      child.parent = parent;
-      (parent as any)._children.push(child);
-    }
+    graph.reparentElement(child, parent);
   }
 
   // Collapse selected nodes into a new subnet (Cmd+G)
@@ -322,7 +339,6 @@
       x: (bounds.minX + bounds.maxX) / 2,
       y: (bounds.minY + bounds.maxY) / 2
     });
-    subnet.id = graph.generateUniqueNodeId('subnet');
 
     // Set parent to current network if we're inside one
     if (currentNetwork) {
@@ -331,13 +347,6 @@
 
     // Move nodes into the subnet (set parent, adjust positions)
     nodesToCollapse.forEach(node => {
-      // Remove from current parent's children if it exists
-      if (node.parent && node.parent !== subnet) {
-        const parentChildren = (node.parent as any)._children;
-        const idx = parentChildren.indexOf(node);
-        if (idx !== -1) parentChildren.splice(idx, 1);
-      }
-
       // Adjust position relative to subnet center
       node.position = {
         x: node.position.x - subnet.position.x,
@@ -354,7 +363,6 @@
         x: bounds.minX - subnet.position.x - 150,
         y: bounds.minY - subnet.position.y + (index * 80)
       });
-      inputNode.id = graph.generateUniqueNodeId('input');
       addChildToNetwork(subnet, inputNode);
 
       // Set input index
@@ -414,9 +422,7 @@
       }
     });
 
-    // Update graph reactivity
-    graph.nodes = [...graph.nodes];
-    graph.connections = [...graph.connections];
+    studioGraph.refresh({ nodes: true, connections: true });
 
     // Select the new subnet
     selectedNodes = [subnet.id];
@@ -514,20 +520,13 @@
 
     // Move regular nodes out of the subnet to its parent
     regularNodes.forEach(node => {
-      // Remove from subnet's children
-      (subnetNode as any)._children = (subnetNode as any)._children.filter((n: Node) => n !== node);
-
       // Adjust position back to world coordinates
       node.position = {
         x: node.position.x + subnetNode.position.x,
         y: node.position.y + subnetNode.position.y
       };
 
-      // Set new parent
-      node.parent = subnetParent;
-      if (subnetParent) {
-        (subnetParent as any)._children.push(node);
-      }
+      graph.reparentElement(node, subnetParent);
     });
 
     // Delete Input/Output nodes and their connections
@@ -537,9 +536,6 @@
         conn => conn.from.nodeId === node.id || conn.to.nodeId === node.id
       );
       connectionsToRemove.forEach(conn => graph.disconnect(conn.id));
-
-      // Remove from subnet children
-      (subnetNode as any)._children = (subnetNode as any)._children.filter((n: Node) => n !== node);
 
       // Remove from graph
       graph.removeNode(node.id);
@@ -582,17 +578,10 @@
     );
     remainingConns.forEach(conn => graph.disconnect(conn.id));
 
-    // Remove subnet from its parent's children
-    if (subnetParent) {
-      (subnetParent as any)._children = (subnetParent as any)._children.filter((n: Node) => n !== subnetNode);
-    }
-
     // Delete the subnet
     graph.removeNode(subnetNode.id);
 
-    // Update graph reactivity
-    graph.nodes = [...graph.nodes];
-    graph.connections = [...graph.connections];
+    studioGraph.refresh({ nodes: true, connections: true });
 
     // Select the extracted nodes
     selectedNodes = regularNodes.map(n => n.id);
@@ -826,7 +815,7 @@ node.onReady = () => {
           graph.connect(blurOutputPort, normalMapImagePort);
         }
         
-        graph.connections = [...graph.connections];
+        studioGraph.refresh({ connections: true });
         
         // Execute Composite node and its upstream dependencies to ensure outputs are ready
         await graph.execute(compositeNode);
@@ -849,7 +838,10 @@ node.onReady = () => {
 
   // Reactive statement to show only nodes in current network level
   // At root: show nodes without parent; Inside subnet: show subnet's children
-  $: nodes = visibleNodes;
+  $: nodes = (() => {
+    void cookRevision;
+    return visibleNodes;
+  })();
   
   // Force reactivity when node ports change
   // Guard against undefined nodes/ports during reactive updates
@@ -922,6 +914,11 @@ node.onReady = () => {
     return selection.includes(conn.from.nodeId) || selection.includes(conn.to.nodeId);
   }
 
+  function isConnectionProcessing(conn: Connection): boolean {
+    const target = graph.getNode(conn.to.nodeId);
+    return target?.cookState === 'queued' || target?.cookState === 'cooking';
+  }
+
   // Dimmed first, highlighted last — see the each block below.
   $: orderedConnections = [
     ...connections.filter(c => !isConnectionHighlighted(c, selectedNodes, hoveredConnection?.connectionId)),
@@ -931,6 +928,7 @@ node.onReady = () => {
   // Filter connections to only show those between visible nodes
   // Also filter out duplicates and depend on nodePositions/nodePorts for reactivity
   $: {
+    cookRevision;
     // Reference nodePositions, nodePorts, annotations to make connections reactive to changes
     nodePositions;
     nodePorts;
@@ -1648,7 +1646,7 @@ node.onReady = () => {
                     }
                   }
 
-                  graph.connections = [...graph.connections];
+                  studioGraph.refresh({ connections: true });
                 } catch (err) {
                   console.error('Failed to connect:', err);
                 }
@@ -1665,10 +1663,7 @@ node.onReady = () => {
         // Not over a port - if dragging from connected port, disconnect it
         if (draggingFromConnectedPort) {
           recordHistory();
-          draggingFromConnectedPort.connectionIds.forEach(connId => {
-            graph.disconnect(connId);
-          });
-          graph.connections = [...graph.connections];
+          studioGraph.disconnectMany(draggingFromConnectedPort.connectionIds);
           draggingFromConnectedPort = null;
         }
         // Cancel connection
@@ -1922,7 +1917,7 @@ node.onReady = () => {
         const oldId = newNode.id;
         const newId = graph.generateUniqueNodeId(sourceNode.id, oldId);
         nodeIdMap.set(oldNodeId, newId);
-        graph.renameElement(oldId, newId);
+        studioGraph.renameElement(oldId, newId);
 
         // Copy properties
         newNode.code = sourceNode.code || '';
@@ -1931,8 +1926,7 @@ node.onReady = () => {
 
         // Set parent to current network level
         if (currentNetwork) {
-          newNode.parent = currentNetwork;
-          (currentNetwork as any)._children.push(newNode);
+          graph.reparentElement(newNode, currentNetwork);
         }
 
         newNodeIds.push(newId);
@@ -1940,7 +1934,7 @@ node.onReady = () => {
         // Execute the node to initialize ports
         if (newNode.code) {
           try {
-            await newNode.execute();
+            await graph.execute(newNode);
           } catch (err) {
             console.warn('Failed to execute duplicated node:', err);
           }
@@ -2034,8 +2028,7 @@ node.onReady = () => {
         };
 
         if (currentNetwork) {
-          newAnnotation.parent = currentNetwork;
-          (currentNetwork as any)._children.push(newAnnotation);
+          graph.reparentElement(newAnnotation, currentNetwork);
         }
 
         graph.addAnnotation(newAnnotation);
@@ -2184,9 +2177,7 @@ node.onReady = () => {
 
   function handleVariadicDisconnect(connectionId: string) {
     recordHistory();
-    graph.disconnect(connectionId);
-    graph.connections = [...graph.connections];
-    graph.nodes = [...graph.nodes]; // Force reactivity for node UI update
+    studioGraph.disconnect(connectionId);
   }
 
   // Annotation state
@@ -2216,8 +2207,7 @@ node.onReady = () => {
       e.preventDefault();
       e.stopPropagation();
       recordHistory();
-      graph.disconnect(ctrlClickConnection);
-      graph.connections = [...graph.connections];
+      studioGraph.disconnect(ctrlClickConnection);
       hoveredConnection = null;
       ctrlClickConnection = null;
       return;
@@ -2234,8 +2224,7 @@ node.onReady = () => {
         e.preventDefault();
         e.stopPropagation();
         recordHistory();
-        graph.disconnect(hovered.id);
-        graph.connections = [...graph.connections];
+        studioGraph.disconnect(hovered.id);
         hoveredConnection = null;
         return;
       }
@@ -2758,7 +2747,7 @@ node.onReady = () => {
           const oldId = newNode.id;
           const newId = graph.generateUniqueNodeId(nodeData.id, oldId);
           nodeIdMap.set(nodeData.id, newId);
-          graph.renameElement(oldId, newId);
+          studioGraph.renameElement(oldId, newId);
 
           // Copy properties
           newNode.code = nodeData.code || '';
@@ -2767,8 +2756,7 @@ node.onReady = () => {
 
           // Set parent to current network level
           if (currentNetwork) {
-            newNode.parent = currentNetwork;
-            (currentNetwork as any)._children.push(newNode);
+            graph.reparentElement(newNode, currentNetwork);
           }
 
           newNodes.push(newNode);
@@ -2776,7 +2764,7 @@ node.onReady = () => {
           // Execute the node to initialize ports
           if (newNode.code) {
             try {
-              await newNode.execute();
+              await graph.execute(newNode);
             } catch (e) {
               console.warn('Failed to execute pasted node:', e);
             }
@@ -2858,8 +2846,7 @@ node.onReady = () => {
 
           // Set parent to current network level
           if (currentNetwork) {
-            newAnnotation.parent = currentNetwork;
-            (currentNetwork as any)._children.push(newAnnotation);
+            graph.reparentElement(newAnnotation, currentNetwork);
           }
 
           graph.addAnnotation(newAnnotation);
@@ -3147,7 +3134,7 @@ node.onReady = () => {
         
         // Execute the node code to define props
         console.log(`Executing node ${nodeType}, props before:`, Object.keys(newNode.props).length);
-        await newNode.execute();
+        await graph.execute(newNode);
         console.log(`Node ${nodeType} executed, props after:`, Object.keys(newNode.props).length, Object.keys(newNode.props));
         if (newNode.error) {
           console.error(`Node ${nodeType} execution error:`, newNode.error);
@@ -3205,9 +3192,7 @@ node.onReady = () => {
       autoConnectSelectedNodes(allSelectedSources, newNode);
     }
 
-    graph.nodes = [...graph.nodes];
-    // Force connections to re-render by updating the array reference
-    graph.connections = [...graph.connections];
+    studioGraph.refresh({ nodes: true, connections: true });
     
     // Pan canvas to center on the new node
     // Convert node position to screen coordinates
@@ -3835,7 +3820,7 @@ node.onReady = () => {
               }
             }
 
-            graph.connections = [...graph.connections];
+            studioGraph.refresh({ connections: true });
           }
         }
       }
@@ -4137,8 +4122,7 @@ node.onReady = () => {
           newNode.bypass = node.bypass;
           // Set parent to current network level
           if (currentNetwork) {
-            newNode.parent = currentNetwork;
-            (currentNetwork as any)._children.push(newNode);
+            graph.reparentElement(newNode, currentNetwork);
           }
           newNodes.push(newNode);
         });
@@ -4273,9 +4257,7 @@ node.onReady = () => {
     const contextIn = newNode.inputs.find(p => p.name === 'context');
     if (contextOut && contextIn) {
       try {
-        graph.connect(contextOut, contextIn);
-        // Update connections to trigger wire rendering
-        graph.connections = [...graph.connections];
+        studioGraph.connect(contextOut, contextIn);
       } catch (e) {
         console.warn('Failed to connect context ports:', e);
       }
@@ -4305,7 +4287,7 @@ node.onReady = () => {
     await tick();
     // Use requestAnimationFrame to ensure CSS transform is applied before recalculating
     requestAnimationFrame(() => {
-      graph.connections = [...graph.connections];
+      studioGraph.refresh({ connections: true });
     });
 
     // Signal NodeUI to focus the prompt input after DOM update
@@ -4451,6 +4433,7 @@ node.onReady = () => {
         {@const midY = (fromPos.y + toPos.y) / 2}
         {@const curveOffset = Math.abs(toPos.y - fromPos.y) * 0.5}
         {@const isTrigger = conn.type === 'trigger'}
+        {@const isProcessing = isConnectionProcessing(conn)}
         <!-- Invisible wider path for better hit testing -->
         <path
           d="M {fromPos.x} {fromPos.y} C {fromPos.x} {fromPos.y + curveOffset} {toPos.x} {toPos.y - curveOffset} {toPos.x} {toPos.y}"
@@ -4467,9 +4450,10 @@ node.onReady = () => {
           stroke={connectionColor}
           stroke-width="2"
           stroke-opacity={isHighlighted ? 1 : DIMMED_WIRE_OPACITY}
-          stroke-dasharray={isTrigger ? "3 3" : "none"}
+          stroke-dasharray={isProcessing ? "8 6" : (isTrigger ? "3 3" : "none")}
           class="connection"
           class:trigger-connection={isTrigger}
+          class:processing-connection={isProcessing}
           class:inactive={!isActive}
         />
       {/if}
@@ -4613,6 +4597,22 @@ node.onReady = () => {
     touch-action: none;
     -webkit-user-select: none;
     user-select: none;
+  }
+
+  .connection.processing-connection {
+    animation: cascade-connection-flow 0.7s linear infinite;
+  }
+
+  @keyframes cascade-connection-flow {
+    to {
+      stroke-dashoffset: -14;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .connection.processing-connection {
+      animation: none;
+    }
   }
   
   .canvas.select-tool {

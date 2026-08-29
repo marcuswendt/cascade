@@ -133,6 +133,23 @@ describe('Graph', () => {
       expect(graph.connections).toHaveLength(0);
     });
 
+    it('renames a connected node and all structural references atomically', () => {
+      const connection = graph.connect(nodeA.outputs[0], nodeB.inputs[0]);
+      const oldOutputId = nodeA.outputs[0].id;
+
+      expect(graph.renameElement('nodeA', 'source')).toBe(true);
+      expect(graph.getNode('nodeA')).toBeNull();
+      expect(graph.getNode('source')).toBe(nodeA);
+      expect(nodeA.outputs[0].id).toBe('source_out_0');
+      expect(nodeA.getPort(oldOutputId)).toBeNull();
+      expect(nodeA.getPort('source_out_0')).toBe(nodeA.outputs[0]);
+      expect(connection.from).toEqual({ nodeId: 'source', portId: 'source_out_0' });
+      expect(graph.toJSON().connections[0][0][0]).toBe('source');
+
+      expect(graph.renameElement('source', 'nodeB')).toBe(false);
+      expect(graph.getNode('source')).toBe(nodeA);
+    });
+
     it('should prevent duplicate connections', () => {
       graph.connect(nodeA.outputs[0], nodeB.inputs[0]);
 

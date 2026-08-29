@@ -91,14 +91,16 @@ describe('Element Lookup Performance', () => {
       nodes.push(node);
     }
 
-    // Look up each node
+    // Keep assertions outside the timed loop so this measures lookup cost,
+    // not the test framework's matcher overhead.
+    let foundCount = 0;
     const start = performance.now();
     for (let i = 0; i < 1000; i++) {
-      const found = graph.getElement(`node${i}`);
-      expect(found).toBe(nodes[i]);
+      if (graph.getElement(`node${i}`) === nodes[i]) foundCount++;
     }
     const elapsed = performance.now() - start;
 
+    expect(foundCount).toBe(1000);
     expect(elapsed).toBeLessThan(THRESHOLDS.LOOKUP_1000);
   });
 
@@ -111,14 +113,14 @@ describe('Element Lookup Performance', () => {
       nodeIds.push(node.id);
     }
 
-    // Look up each node
+    let foundCount = 0;
     const start = performance.now();
     for (const id of nodeIds) {
-      const found = graph.getElement(id);
-      expect(found).not.toBeNull();
+      if (graph.getElement(id)) foundCount++;
     }
     const elapsed = performance.now() - start;
 
+    expect(foundCount).toBe(10000);
     expect(elapsed).toBeLessThan(THRESHOLDS.LOOKUP_10000);
   });
 

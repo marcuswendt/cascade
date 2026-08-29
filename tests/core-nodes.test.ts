@@ -260,3 +260,32 @@ describe('Core node metadata', () => {
     expect(node.type).toBe('Subnet');
   });
 });
+
+describe('Core nodes in headless environments', () => {
+  it('passes values without requiring browser element constructors', async () => {
+    const graph = new Graph();
+    const parent = new Node('parent', 'Test', graph);
+    const input = new InputNode('input', graph);
+    const output = new OutputNode('output', graph);
+    const switchNode = new SwitchNode('switch', graph);
+    graph.addElement(parent);
+    graph.addElement(input);
+    input.parent = parent;
+    graph.addElement(output);
+    graph.addElement(switchNode);
+
+    parent.in('value', { answer: 42 }).value = { answer: 42 };
+    switchNode.in('input_0', null).value = 'selected';
+    output.inputs[0].value = 'result';
+
+    await input.execute();
+    await switchNode.execute();
+    await output.execute();
+
+    expect(input.outputs[0].value).toEqual({ answer: 42 });
+    expect(switchNode.outputs[0].value).toBe('selected');
+    expect(input.error).toBeNull();
+    expect(switchNode.error).toBeNull();
+    expect(output.error).toBeNull();
+  });
+});

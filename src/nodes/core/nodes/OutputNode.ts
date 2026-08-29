@@ -54,8 +54,7 @@ export class OutputNode extends Node {
     // Pass through the input value and preview
     const input = this.inputs[0];
     if (input) {
-      if (input.value instanceof HTMLCanvasElement ||
-          input.value instanceof HTMLImageElement) {
+      if (this.isPreviewValue(input.value)) {
         this.preview = input.value;
       } else {
         this.preview = null;

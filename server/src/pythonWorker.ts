@@ -1,11 +1,7 @@
 /**
  * Manages one persistent Python worker process per project — replacing a
- * fresh subprocess per node execution for the shared stage dispatcher
- * (nodes/_shared/worker.py), so a lazily-loaded model (MiDaS in
- * signal-depth: ~7s to construct+load weights) stays warm across calls
- * instead of reloading every single time. Verified live: a cold
- * signal-depth call took 3.55s, a second call against the same warm
- * worker took 0.02s.
+ * fresh subprocess per stage execution for a project-declared worker, so
+ * lazily-loaded models stay warm across calls instead of reloading each time.
  *
  * Protocol: newline-delimited JSON on stdin/stdout, correlated by a
  * per-call incrementing id — see worker.py's own docstring. The Python
@@ -17,7 +13,6 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import readline from 'readline';
 import type { ProjectRoot } from './project.js';
 
-const WORKER_ENTRYPOINT = 'nodes/_shared/worker.py';
 const REQUEST_TIMEOUT_MS = 120_000;
 
 interface PendingRequest {
@@ -27,19 +22,25 @@ interface PendingRequest {
 
 export class PythonWorker {
   private project: ProjectRoot;
+  private entrypoint: string;
+  private python: 'python' | 'python3';
+  private env: NodeJS.ProcessEnv;
   private proc: ChildProcessWithoutNullStreams | null = null;
   private nextId = 1;
   private pending = new Map<number, PendingRequest>();
 
-  constructor(project: ProjectRoot) {
+  constructor(project: ProjectRoot, entrypoint: string, python: 'python' | 'python3' = 'python3', env: NodeJS.ProcessEnv = process.env) {
     this.project = project;
+    this.entrypoint = entrypoint;
+    this.python = python;
+    this.env = env;
   }
 
   private ensureStarted(): ChildProcessWithoutNullStreams {
     if (this.proc && !this.proc.killed) return this.proc;
 
-    const scriptPath = this.project.resolve(WORKER_ENTRYPOINT);
-    const proc = spawn('python3', [scriptPath], { cwd: this.project.root });
+    const scriptPath = this.project.resolve(this.entrypoint);
+    const proc = spawn(this.python, [scriptPath], { cwd: this.project.root, env: this.env });
 
     readline.createInterface({ input: proc.stdout }).on('line', (line) => this.handleLine(line));
     proc.stderr.on('data', (chunk) => console.error('[python-worker]', chunk.toString().trimEnd()));

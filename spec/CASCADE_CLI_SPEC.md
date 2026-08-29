@@ -12,9 +12,9 @@ The `cascade` CLI is a Node.js/TypeScript command-line utility for working with 
 
 | Product | Description |
 |---------|-------------|
-| **Cascade.app** | Electron-wrapped visual editor with integrated server |
-| **cascade** | CLI utility for project management and headless execution |
-| **@cascade/core** | Shared engine used by both app and CLI |
+| **Cascade Studio** | Browser editor served by the project-scoped Cascade host |
+| **cascade** | CLI for Studio, project management, validation, and headless execution |
+| **cascade/runtime** | Neutral graph runtime used by custom frontends and services |
 
 ## Installation
 
@@ -222,24 +222,12 @@ Examples:
   cascade upgrade ./old-project --check
 ```
 
-### `cascade credentials`
+### Credentials
 
-Manage API credentials (stored in ~/.cascade/credentials.yaml).
-
-```bash
-cascade credentials <action> [options]
-
-Actions:
-  list                  List configured credentials (keys only)
-  set <service>         Set credentials for a service
-  remove <service>      Remove credentials for a service
-  path                  Show credentials file path
-
-Examples:
-  cascade credentials list
-  cascade credentials set strava
-  cascade credentials remove whoop
-```
+Credential values are intentionally managed outside the project and outside
+the current CLI surface. Add them to `~/.cascade/credentials.yaml`, or point
+`CASCADE_CREDENTIALS` at another file. Cascade reports presence only and never
+renders stored values.
 
 ## Configuration
 
@@ -381,31 +369,23 @@ packages/
 │   ├── package.json
 │   └── tsconfig.json
 │
-├── @cascade/core/             # Shared engine
-│   ├── src/
-│   │   ├── engine/            # Execution engine
-│   │   ├── nodes/             # Node system
-│   │   ├── graph/             # Graph model
-│   │   └── types/             # TypeScript types
-│   └── package.json
-│
-└── @cascade/app/              # Electron app (uses @cascade/core)
-    └── ...
+├── @cascade/contracts/        # Deterministic graph and node contracts
+└── @cascade/runtime/          # Headless graph execution
 ```
 
 ### Dependency Graph
 
 ```
 ┌─────────────────┐     ┌─────────────────┐
-│  Cascade.app    │     │   cascade CLI   │
-│  (Electron)     │     │   (Node.js)     │
+│ Cascade Studio  │     │   cascade CLI   │
+│   (Browser)     │     │   (Node.js)     │
 └────────┬────────┘     └────────┬────────┘
          │                       │
          └───────────┬───────────┘
                      │
               ┌──────▼──────┐
-              │ @cascade/   │
-              │    core     │
+              │ contracts + │
+              │   runtime   │
               └─────────────┘
 ```
 

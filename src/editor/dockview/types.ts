@@ -6,8 +6,9 @@ import type {
 import type { Graph } from '@/nodes/Graph';
 import type { Node } from '@/nodes/Node';
 
-// Panel type identifiers
-export type PanelType = 'graph' | 'inspector' | 'viewer' | 'log' | 'code' | 'info';
+export type BuiltInPanelType = 'graph' | 'inspector' | 'viewer' | 'log' | 'code' | 'info';
+export type ProjectPanelType = `project:${string}`;
+export type PanelType = BuiltInPanelType | ProjectPanelType;
 
 // Parameters passed to each panel
 export interface CascadePanelParams {
@@ -17,6 +18,8 @@ export interface CascadePanelParams {
   // Panel-specific params
   nodeId?: string;      // For inspector/code panels
   graphId?: string;     // For graph panels
+  projectPanelName?: string;
+  sourceNodeId?: string;
 }
 
 // Shared context passed to all panels
@@ -36,6 +39,7 @@ export interface PanelContext {
   onAction?: (action: string) => void;
   onNameChange?: (name: string) => void;
   onOpenNodePanel?: (position?: { x: number; y: number }) => void;
+  onPanelAction?: (action: string, nodeId: string) => void;
 }
 
 // Store state

@@ -376,7 +376,8 @@ declare const graph: any;
       // Mark dirty to force execution even if node was already executed
       node.markDirty();
 
-      await node.execute();
+      if (!graph) throw new Error('Cannot compile a node without its graph');
+      await graph.execute(node);
 
       // Restore bypass state
       if (wasBypassed) {

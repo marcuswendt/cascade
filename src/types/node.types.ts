@@ -131,6 +131,8 @@ export interface ExternalModule {
  */
 export interface ProjectConfig {
   name?: string;
+  description?: string;
+  author?: string;
   packages: ProjectPackage[];
 }
 

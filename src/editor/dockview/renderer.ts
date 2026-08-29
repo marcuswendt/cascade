@@ -137,7 +137,8 @@ export function createSvelteRenderer(
       onNodeSelect: context?.onNodeSelect,
       onAnnotationSelect: context?.onAnnotationSelect,
       onToolChange: context?.onToolChange,
-      onOpenNodePanel: context?.onOpenNodePanel
+      onOpenNodePanel: context?.onOpenNodePanel,
+      onPanelAction: context?.onPanelAction,
     };
   }
 

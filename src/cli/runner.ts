@@ -4,16 +4,19 @@ import { AssetManager, NodeAssetLoader } from '../engine/AssetManager.js';
 import { PackageManager } from '../engine/PackageManager.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { checkProjectGraph, inspectProjectGraph, runDeterministicProjectGraph, validateProjectGraph } from './projectRuntime.js';
 
 export interface RunOptions {
   file: string;
   entryNode?: string;
   validateOnly?: boolean;
+  checkOnly?: boolean;
+  inspectOnly?: boolean;
   verbose?: boolean;
 }
 
 export async function runGraph(options: RunOptions): Promise<void> {
-  const { file, entryNode, validateOnly, verbose } = options;
+  const { file, entryNode, validateOnly, checkOnly, inspectOnly, verbose } = options;
 
   if (verbose) {
     console.log(`Loading graph from: ${file}`);
@@ -35,6 +38,23 @@ export async function runGraph(options: RunOptions): Promise<void> {
   const assetLoader = new NodeAssetLoader(fs, path);
   const assetManager = new AssetManager(projectRoot, assetLoader);
   const packageManager = new PackageManager();
+
+  if (validateOnly || checkOnly) {
+    if (checkOnly) await checkProjectGraph(file, graphData);
+    else await validateProjectGraph(file, graphData);
+    console.log(checkOnly ? 'Static check passed!' : 'Graph validation passed!');
+    return;
+  }
+
+  if (inspectOnly) {
+    console.log(JSON.stringify(await inspectProjectGraph(file, graphData), null, 2));
+    return;
+  }
+
+  if (await runDeterministicProjectGraph(file, graphData, entryNode)) {
+    if (verbose) console.log('Graph execution completed');
+    return;
+  }
 
   // Create graph from JSON
   let graph: Graph;
@@ -112,11 +132,6 @@ export async function runGraph(options: RunOptions): Promise<void> {
     console.log(`Graph loaded: ${nodeCount} nodes, ${graph.connections.length} connections`);
   }
 
-  if (validateOnly) {
-    console.log('Graph validation passed!');
-    return;
-  }
-
   // Execute graph
   try {
     if (entryNode) {
@@ -135,6 +150,15 @@ export async function runGraph(options: RunOptions): Promise<void> {
       }
       await graph.execute();
     }
+
+    const failedNodes = graph.nodes.filter(node => node.error !== null);
+    if (failedNodes.length > 0) {
+      console.error('Graph execution failed:');
+      for (const node of failedNodes) {
+        console.error(`  - node/cook-failed [${node.id}]: ${node.error?.message ?? 'Unknown cook error'}`);
+      }
+      process.exit(1);
+    }
     
     if (verbose) {
       console.log('Graph execution completed');
@@ -147,4 +171,3 @@ export async function runGraph(options: RunOptions): Promise<void> {
     process.exit(1);
   }
 }
-

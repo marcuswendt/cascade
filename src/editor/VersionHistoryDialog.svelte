@@ -2,7 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { X } from 'lucide-svelte';
 
-  /** The project graph's filename, e.g. "cloud-plots.cascade". */
+  /** The project graph's filename, e.g. "index.cascade". */
   export let filename: string | null = null;
   export let open = false;
 

@@ -31,7 +31,11 @@
   $: matrixSide = isMatrix ? Math.sqrt(components) : 0;
   $: wantsInteger = isIntegerType(effectiveType);
   $: labels = effectiveType === 'color' ? ['R', 'G', 'B', 'A'] : ['X', 'Y', 'Z', 'W'].slice(0, components);
-  $: renderer = typeRenderer(effectiveType);
+  // Object and array renderers are viewers. Keep the validated JSON editor for
+  // writable parameters; named custom renderers may still provide onChange.
+  $: renderer = !readOnly && (effectiveType === 'object' || effectiveType === 'array')
+    ? null
+    : typeRenderer(effectiveType);
 
   /**
    * A parameter is "bounded" when its declaration gives both a min and a max.
@@ -53,7 +57,6 @@
   $: image = effectiveType === 'image' ? coerceImageRef(value) : null;
   $: imageSrc = image ? mediaUrl(image.path, { width: mode === 'view' ? 1800 : 320 }) : '';
   $: color = normalizeColorTuple(value);
-  $: companionPort = node?.inputs?.find?.((candidate: any) => candidate.name === 'moment_id') ?? null;
 
   function commit(next: any) {
     if (!readOnly && onChange) onChange(next);
@@ -89,16 +92,27 @@
 
 <div class="core-value mode-{mode}" data-type={effectiveType}>
   {#if renderer}
-    <svelte:component
-      this={renderer}
-      {value}
-      {port}
-      {readOnly}
-      {mode}
-      {node}
-      momentIdPort={companionPort}
-      onChange={readOnly ? null : commit}
-    />
+    {#if renderer.kind === 'project'}
+      <svelte:component
+        this={renderer.component}
+        {value}
+        {readOnly}
+        {mode}
+        onChange={readOnly ? null : commit}
+        panelName={renderer.panelName}
+        rendererType={renderer.rendererType}
+      />
+    {:else}
+      <svelte:component
+        this={renderer.component}
+        {value}
+        {port}
+        {readOnly}
+        {mode}
+        {node}
+        onChange={readOnly ? null : commit}
+      />
+    {/if}
   {:else if isMatrix}
     <div class="matrix" style="grid-template-columns: repeat({matrixSide}, minmax(0, 1fr))">
       {#each Array(components) as _, index}

@@ -18,6 +18,7 @@
   import ExpressionInput from './components/ExpressionInput.svelte';
   import { propUpdateCounters } from './stores/propUpdateStore';
   import { normalizeColor, colorToHex } from '@/utils/colorUtils';
+  import { setStudioParameter } from './StudioParameterController';
 
   export let node: Node | null = null;
   export let annotation: CanvasAnnotation | null = null;
@@ -25,6 +26,7 @@
   export let position: 'right' | 'left' = 'right';
   export let skipAnimation: boolean = false;
   export let onRecordHistory: (() => void) | undefined = undefined;
+  export let onAction: ((action: string, nodeId: string) => void) | undefined = undefined;
 
   // Track if history was recorded for current editing session
   let historyRecordedForCurrentEdit = false;
@@ -90,7 +92,12 @@
     sectionVersion += 1;
   }
 
-  $: openSections = (sectionVersion, node ? sectionsFor(node.id) : { inputs: false, params: true, outputs: false });
+  function currentSections(version: number) {
+    void version;
+    return node ? sectionsFor(node.id) : { inputs: false, params: true, outputs: false };
+  }
+
+  $: openSections = currentSections(sectionVersion);
 
   onMount(() => {
     const timer = setInterval(() => {
@@ -129,7 +136,9 @@
 
   /** The node's own values. Dependent ones (`visibleWhen`) drop out until the
    *  parameter they depend on is set. */
-  $: parameters = (portsVersion, node?.parameters ?? []).filter((p: any) => {
+  function currentParameters(version: number) {
+    void version;
+    return (node?.parameters ?? []).filter((p: any) => {
     if (typeof p.options?.visibleWhen !== 'function') return true;
     try {
       const current = Object.fromEntries((node?.parameters ?? []).map((q: any) => [q.name, q.value]));
@@ -137,7 +146,10 @@
     } catch {
       return true;
     }
-  });
+    });
+  }
+
+  $: parameters = currentParameters(portsVersion);
 
   // Kept for the older props-based path below.
   $: paramInputs = [];
@@ -204,8 +216,8 @@
     }
   }
   
-  /** Set an unconnected input and re-cook, so the change is visible immediately
-   *  rather than at the next unrelated evaluation. */
+  /** Set an unconnected input. Dirty propagation and coalesced cooking are
+   * owned by the graph scheduler. */
   function handlePortChange(port: any, value: any) {
     if (!node) return;
     maybeRecordHistory();
@@ -214,33 +226,20 @@
       try { port.onChange(value); } catch (err) { console.warn('port onChange failed:', err); }
     }
     node.markDirty?.();
-    node.execute?.().catch((err: unknown) => console.warn('Node execution failed:', err));
-  }
-
-  /**
-   * An OUTPUT's renderer can still be an editor when what it edits is an input
-   * elsewhere on the node — the moment browser sits on the `moment` output but
-   * writes the id the loader reads. Without this the natural place to pick a
-   * moment would be a field on the opposite side of the panel from the frames
-   * it chooses between.
-   */
-  function companionChange(_port: any, value: any) {
-    if (!node) return;
-    const target = node.inputs?.find((p: any) => p.name === 'moment_id');
-    if (!target) return;
-    handlePortChange(target, value);
   }
 
   function handleParamChange(parameter: any, value: any) {
     if (!node) return;
-    maybeRecordHistory();
-    node.setParameter(parameter.name, value);
-    node.execute?.().catch((err: unknown) => console.warn('Node execution failed:', err));
+    setStudioParameter(node, parameter.name, value, maybeRecordHistory);
     // Deliberately no re-key here. Rebuilding the row on every commit destroys
     // the control being used — a slider drag lost focus after one step, because
     // the element under the pointer was replaced between events. The value is
     // already on the parameter; the input owns its own display until something
     // outside the panel changes it.
+  }
+
+  function handleParameterAction(parameter: any) {
+    if (node && parameter.options?.action) onAction?.(parameter.options.action, node.id);
   }
 
   /** Promote a parameter to an input pin, or demote it back. */
@@ -1379,19 +1378,25 @@
             {#key node.id}
               {#each parameters as parameter (parameter.name)}
                 <div class="parameter">
-                  <PortEditor
-                    port={{
-                      name: parameter.options?.label ?? parameter.name,
-                      dataType: parameter.dataType,
-                      value: parameter.value,
-                      connections: [],
-                      options: parameter.options ?? {},
-                    }}
-                    {node}
-                    direction="input"
-                    onChange={(value) => handleParamChange(parameter, value)}
-                  />
-                  {#if parameter.options?.promotable !== false}
+                  {#if parameter.options?.action}
+                    <button class="parameter-action" on:click={() => handleParameterAction(parameter)}>
+                      {parameter.options?.label ?? parameter.name}
+                    </button>
+                  {:else}
+                    <PortEditor
+                      port={{
+                        name: parameter.options?.label ?? parameter.name,
+                        dataType: parameter.dataType,
+                        value: parameter.value,
+                        connections: [],
+                        options: parameter.options ?? {},
+                      }}
+                      {node}
+                      direction="input"
+                      onChange={(value) => handleParamChange(parameter, value)}
+                    />
+                  {/if}
+                  {#if !parameter.options?.action && parameter.options?.promotable !== false}
                     <button
                       class="promote"
                       class:on={parameter.promoted}
@@ -1422,7 +1427,7 @@
                 {port}
                 {node}
                 direction="output"
-                onChange={(value) => companionChange(port, value)}
+                onChange={undefined}
               />
             {/each}
           {/key}
@@ -1430,7 +1435,7 @@
         </div>
       {/if}
 
-      {#if propControls.length === 0 && portParams.length === 0 && outputs.length === 0}
+      {#if propControls.length === 0 && portParams.length === 0 && parameters.length === 0 && outputs.length === 0}
         <div class="empty-state">
           Nothing to show — this node has no parameters or outputs yet
         </div>

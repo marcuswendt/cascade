@@ -15,6 +15,7 @@
   export let selectedNode: Node | null = null;
   export let selectedAnnotation: string | null = null;
   export let onRecordHistory: (() => void) | undefined = undefined;
+  export let onPanelAction: ((action: string, nodeId: string) => void) | undefined = undefined;
 
   // The node/annotation to actually display (locked or selected)
   $: lockState = $panelLockStore.get(panelId);
@@ -31,6 +32,7 @@
     selectedNode = $sharedContextStore.selectedNode;
     selectedAnnotation = $sharedContextStore.selectedAnnotation;
     onRecordHistory = $sharedContextStore.onRecordHistory;
+    onPanelAction = $sharedContextStore.onPanelAction;
   }
 
   // Get annotation when displayAnnotationId changes
@@ -65,6 +67,7 @@
     position="right"
     skipAnimation={true}
     {onRecordHistory}
+    onAction={onPanelAction}
   />
 </div>
 

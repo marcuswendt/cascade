@@ -48,7 +48,7 @@ export function getPortColor(port: InputPort | OutputPort): string {
 
   // A declared core type answers this outright — including the vectors,
   // matrices, geometry and image types, and any namespaced project type, which
-  // gets a colour from its namespace so `observatory.*` reads as one family.
+  // gets a colour from its namespace so `archive.*` reads as one family.
   if (port.dataType && port.dataType !== 'any') {
     return typeColor(port.dataType);
   }
@@ -120,4 +120,3 @@ export function getConnectionColor(port: OutputPort | null, isActive: boolean = 
   }
   return getPortColor(port);
 }
-
