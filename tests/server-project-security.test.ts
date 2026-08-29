@@ -130,4 +130,18 @@ describe('project API security boundary', () => {
     expect(write.status).toBe(400);
     expect(fs.existsSync(path.join(outside, 'new.bin'))).toBe(false);
   });
+
+  it('serves media from the project shared link without allowing other symlink escapes', async () => {
+    if (process.platform === 'win32') return;
+    const { base, root } = await fixture();
+    const shared = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-project-shared-'));
+    roots.push(shared);
+    fs.mkdirSync(path.join(shared, 'cache'));
+    fs.writeFileSync(path.join(shared, 'cache', 'preview.txt'), 'shared media');
+    fs.symlinkSync(shared, path.join(root, 'shared'));
+
+    const response = await fetch(`${base}/api/media/shared/cache/preview.txt?raw=1`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('shared media');
+  });
 });

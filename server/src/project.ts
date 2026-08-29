@@ -80,6 +80,18 @@ export class ProjectRoot {
     return resolveWithinRoot(this.root, relativePath);
   }
 
+  /** Resolve browser-readable project media. `shared/` is the one intentional
+   * external root: projects use it for reusable nodes, panels, and cached source
+   * assets. Its canonical target remains independently confined, while every
+   * other symlink escape is rejected by resolve(). */
+  resolveMedia(relativePath: string): string {
+    const normalized = relativePath.split('\\').join('/');
+    if (normalized === 'shared' || normalized.startsWith('shared/')) {
+      return this.resolveShared(...normalized.split('/').slice(1));
+    }
+    return this.resolve(relativePath);
+  }
+
   get isGitRepo(): boolean {
     return fssync.existsSync(path.join(this.root, '.git'));
   }

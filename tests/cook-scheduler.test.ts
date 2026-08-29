@@ -85,6 +85,25 @@ describe('CookScheduler', () => {
     expect(node.cookState).toBe('clean');
   });
 
+  it('joins an active cook instead of returning before it finishes', async () => {
+    const node = new Node('node', 'Test', graph);
+    graph.addElement(node);
+    let release!: () => void;
+    node.setFunction(() => new Promise<void>(resolve => { release = resolve; }));
+
+    const firstCook = graph.execute();
+    await vi.waitFor(() => expect(node.cookState).toBe('cooking'));
+    let secondFinished = false;
+    const secondCook = graph.execute().then(() => { secondFinished = true; });
+    await Promise.resolve();
+    expect(secondFinished).toBe(false);
+
+    release();
+    await Promise.all([firstCook, secondCook]);
+    expect(secondFinished).toBe(true);
+    expect(node.cookState).toBe('clean');
+  });
+
   it('continues unrelated branches after an error and leaves dependents stale', async () => {
     const failing = new Node('failing', 'Test', graph);
     const blocked = new Node('blocked', 'Test', graph);

@@ -207,7 +207,7 @@ export function createMediaRouter(project: ProjectRoot): Router {
     let full: string;
     const rel = (req.params as any).mediaPath?.join('/') ?? '';
     try {
-      full = project.resolve(rel);
+      full = project.resolveMedia(rel);
     } catch (err) {
       res.status(err instanceof PathSafetyError ? 400 : 500).json({ error: String(err) });
       return;

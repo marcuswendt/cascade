@@ -647,11 +647,6 @@ export class Graph {
    * Execute graph using topological sort for proper ordering
    */
   async execute(entryNode?: Node) {
-    if (this.scheduler.isRunning) {
-      console.warn('Graph execution already in progress');
-      return;
-    }
-
     this.executionState = 'running';
     try {
       await this.scheduler.flush(entryNode);

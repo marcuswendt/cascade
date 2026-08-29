@@ -129,7 +129,7 @@ describe('Graph Execution', () => {
       expect(executionOrder).not.toContain('B');
     });
 
-    it('should not execute already running graph', async () => {
+    it('should join an already running graph execution without cooking twice', async () => {
       const node = new Node('test', 'TestType', graph);
       let executionCount = 0;
 
@@ -141,14 +141,12 @@ describe('Graph Execution', () => {
       graph.addElement(node);
 
       // Start two executions simultaneously
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const exec1 = graph.execute();
-      const exec2 = graph.execute(); // Should warn and skip
+      const exec2 = graph.execute();
 
       await Promise.all([exec1, exec2]);
 
-      expect(consoleSpy).toHaveBeenCalledWith('Graph execution already in progress');
-      consoleSpy.mockRestore();
+      expect(executionCount).toBe(1);
     });
 
     it('should reset execution state after completion', async () => {
