@@ -3,6 +3,12 @@
 A handoff document. Two things: a new extension point in Cascade, and the first
 thing built on it.
 
+> Implementation note: architecture review replaced the module-global
+> `unmount()` proposal with a disposer returned by each `mount()` call. Project
+> value renderers use a separate `mount`/`update`/`dispose` lifecycle. Discovery
+> checks exact `panels/<name>/index.ts` and `shared/panels/<name>/index.ts`
+> entries, with the project-local entry taking precedence.
+
 **Goal.** A project can ship its own dockable window. The first one is a moment
 browser for the `archive-cli-*` projects — a grid of thumbnails you open from a
 button on the `archive-item` node and click to choose a moment.
@@ -41,8 +47,7 @@ into it. So a project panel is a plain TypeScript module:
 export const title = 'Moments';
 export const icon = 'Aperture';
 
-export function mount(element: HTMLElement, api: PanelApi): void { … }
-export function unmount(): void { … }
+export function mount(element: HTMLElement, api: PanelApi): void | (() => void) { … }
 ```
 
 compiled through exactly the same path as a node module. No Svelte compiler on
@@ -53,10 +58,8 @@ where it belongs.
 
 Mirror the nodes routes — same shape, same plugin, same error handling:
 
-- `GET /api/panels` → `{ panels: [{ name, title, icon }] }`, read from
-  `panels/<name>/index.ts` at the project root (and through the `shared`
-  symlink, which `ProjectRoot.resolve` already permits because it resolves
-  lexically).
+- `GET /api/panels` → `{ panels: [{ name, title, icon }] }`, read from exact
+  `panels/<name>/index.ts` and `shared/panels/<name>/index.ts` entries.
 - `GET /api/panels/:name/compiled` → the compiled ESM.
 
 `ProjectRoot` gains `listPanels()` and `panelMeta(name)`, alongside the existing
@@ -67,8 +70,8 @@ Mirror the nodes routes — same shape, same plugin, same error handling:
 `registerLazyPanelComponent(type, loader, defaultTitle)` in
 `src/editor/dockview/renderer.ts` already exists and is exactly the hook: the
 loader fetches and imports the compiled module. Wrap each project panel in one
-thin Svelte host component that owns a `<div>` and calls the module's
-`mount`/`unmount` — one host for all of them, written once.
+thin Svelte host component that owns a `<div>` and calls the module's `mount`,
+then invokes its returned disposer — one host for all of them, written once.
 
 Add the discovered panels to `PANEL_TYPES` in
 `src/editor/dockview/dockview-store.svelte.ts` so they appear in the panel menu
@@ -145,34 +148,44 @@ approach previously planned here is obsolete — do not build it.
     "pixelWidth": 4032, "pixelHeight": 3024,
     "widths": [320, 1280],
     "urls": { "320": "https://…?w=320&exp=…&sig=…", "1280": "…" },
-    "expiresAt": "…"
+    "expiresAt": "…",
+    "kind": "photo"
   }
 }
 ```
 
-One call renders the whole grid. Verified here: **1.24 s for 200 moments**,
-against roughly 2 s *per tile* before. The URLs are signed and need no
+One call renders the whole grid. Verified here: **1.05–1.27 s for 300 moments**
+over three runs, against roughly 2 s *per tile* before. The URLs are signed and need no
 credentials — an unauthenticated `curl` returned a 320×240 JPEG, 19 KB, in
 0.44 s — so they go straight into `<img src>` and the browser does parallelism,
 caching, lazy loading and cancellation itself.
 
 Three rules. Each one, got wrong, looks like flaky images rather than a mistake:
 
-1. **Branch on `preview`, not on `photoCount`.** `photoCount > 0` means the
-   moment has photographs; `preview` present means one can actually be drawn.
-   The gap is real — measured on this archive, 180 of 200 moments have
-   `photoCount > 0` and 179 have a preview, so exactly one has photographs and
-   no renderable preview. That one is asset `a7825ffb/cee5055e`, whose original
-   bytes are missing from storage rather than undecodable — a known hole,
-   confirmed upstream, and it will not close by re-running the backfill. Do not
-   treat it as a bug in the picker. There was also one video-only moment
-   (`videoCount > 0`, `photoCount === 0`). Give video its own affordance rather
-   than an empty tile.
+1. **Branch on `preview`, not on the counts.** `photoCount`/`videoCount` say the
+   moment holds media; `preview` present says something can actually be drawn.
+   Measured on this archive: 237 moments, 218 hold media, **217 are drawable**.
+   The single gap is `a7825ffb-6518-44da-9915-81fa3bf012c4` — asset
+   `a7825ffb/cee5055e`, whose original bytes are missing from storage rather
+   than undecodable. A known hole, confirmed upstream, and no backfill closes
+   it. Do not chase it as a picker bug.
+
+   **A video-only moment is no longer part of that gap** (changed upstream
+   2026-08-29). Every video now carries a poster frame at both rungs, so a
+   video-led moment has a `preview` like any other. An earlier version of this
+   plan told you to draw a placeholder for those — that is wrong, delete the
+   thought.
 2. **The URLs expire, `expiresAt` on the row (15 minutes).** Never cache them to
    disk or bake them into a saved artifact. On a `403 preview_link_expired`,
    refetch the *listing* — one call for the whole page, not one per tile. Treat
    `invalid_preview_signature` as a real bug, not as a refresh.
-3. **Pick a width from `widths`**, currently `[320, 1280]`. Asking for a width
+3. **Honour `preview.kind`** — `"photo"` or `"video"`. A poster is a still
+   lifted out of a movie, not a picture someone framed, so mark it with a play
+   glyph rather than presenting it as a photograph. The listing prefers a
+   photograph and only falls back to a poster, so a moment holding both leads
+   with the photograph. Rare in practice — 215 photo against 2 video on this
+   archive — so build it correctly and do not spend much on it.
+4. **Pick a width from `widths`**, currently `[320, 1280]`. Asking for a width
    that is not stored returns the nearest one, which will not be the size the
    layout expects.
 
@@ -187,7 +200,7 @@ Previews are for *choosing*. The plot source stays the full-resolution
 
 ## Order of work
 
-1. **The extension point.** `/api/panels`, `listPanels()`, the `mount`/`unmount`
+1. **The extension point.** `/api/panels`, `listPanels()`, the per-instance `mount` disposer
    contract, the Svelte host, lazy registration, the `PanelApi`. Nothing
    archive-cli-specific — build it against a stub panel that renders "hello".
 2. **The action parameter** and its button in the Inspector.
@@ -225,7 +238,7 @@ extension point and having added a second special case.
 | `server/src/project.ts` | `listPanels()`, `panelMeta()` — mirror `listNodeModules()` / `moduleIcon()` |
 | `server/src/routes/panels.ts` | new; mirror `routes/nodes.ts` |
 | `server/src/index.ts` | mount the route |
-| `server/src/compile.ts` | reuse as-is; the `cascade/io` plugin applies unchanged |
+| `server/src/compile.ts` | extract one shared browser-entry compiler; keep node and panel preflight separate |
 | `src/editor/dockview/renderer.ts` | `registerLazyPanelComponent` already exists |
 | `src/editor/dockview/dockview-store.svelte.ts` | `PANEL_TYPES` becomes dynamic |
 | `src/editor/panels/ProjectPanelHost.svelte` | new; one host for every project panel |
