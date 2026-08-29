@@ -14,6 +14,22 @@ describe('CookScheduler', () => {
     graph = new Graph();
   });
 
+  it('preserves numeric range metadata when a parameter is promoted', () => {
+    const node = new Node('node', 'Test', graph);
+    graph.addElement(node);
+    node.param('contribution', 0.3, { type: 'float', min: 0, max: 1, step: 0.01 });
+
+    node.setParameterPromoted('contribution', true);
+
+    expect(node.inputs[0]?.options).toMatchObject({
+      type: 'float',
+      promoted: true,
+      min: 0,
+      max: 1,
+      step: 0.01,
+    });
+  });
+
   it('cooks exactly a changed node and its transitive dependents', async () => {
     const source = new Node('source', 'Test', graph);
     const middle = new Node('middle', 'Test', graph);

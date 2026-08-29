@@ -548,7 +548,11 @@ export class Node {
     // A promoted parameter reads from its pin whenever something is connected,
     // and falls back to its own value when nothing is.
     if (parameter.promoted) {
-      const port = this.in(name, parameter.value, { type: parameter.dataType, promoted: true } as PortOptions);
+      const port = this.in(name, parameter.value, {
+        ...parameter.options,
+        type: parameter.dataType,
+        promoted: true,
+      } as PortOptions);
       (port as any).fromParameter = name;
       if (port.connections.length > 0 && port.value !== undefined && port.value !== null) {
         return { ...parameter, value: port.value as T };
@@ -565,7 +569,11 @@ export class Node {
     parameter.promoted = promoted;
 
     if (promoted) {
-      const port = this.in(name, parameter.value, { type: parameter.dataType, promoted: true } as PortOptions);
+      const port = this.in(name, parameter.value, {
+        ...parameter.options,
+        type: parameter.dataType,
+        promoted: true,
+      } as PortOptions);
       (port as any).fromParameter = name;
     } else {
       const index = this.inputs.findIndex(p => p.name === name);

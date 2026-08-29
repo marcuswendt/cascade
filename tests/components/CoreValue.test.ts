@@ -5,6 +5,23 @@ import CoreValue from '@/editor/components/CoreValue.svelte';
 import { CORE_TYPES } from '@/types/coreTypes';
 
 describe('CoreValue', () => {
+  it('renders a slider and numeric input for a bounded scalar parameter', async () => {
+    const onChange = vi.fn();
+    const { getByRole, getByLabelText } = render(CoreValue, {
+      props: {
+        type: 'float',
+        value: 0.3,
+        port: { options: { min: 0, max: 1, step: 0.01 } },
+        onChange,
+      },
+    });
+
+    expect(getByRole('slider')).toBeTruthy();
+    await fireEvent.input(getByRole('slider'), { target: { value: '0.65' } });
+    expect(onChange).toHaveBeenCalledWith(0.65);
+    expect(getByLabelText('float value')).toBeTruthy();
+  });
+
   it('edits vector components through the shared editor', async () => {
     const onChange = vi.fn();
     const { getByLabelText } = render(CoreValue, {
