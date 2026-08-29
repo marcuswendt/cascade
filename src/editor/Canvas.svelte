@@ -871,13 +871,18 @@ node.onReady = () => {
    * auto-layout the nodes moved and the wires kept their old geometry until a
    * pan happened to force a recompute, which is exactly the stale-wire symptom.
    */
-  $: nodePositions = ($graphStructure, nodes)
+  function positionsAfterStructureChange(version: number, currentNodes: typeof nodes) {
+    void version;
+    return currentNodes
     .filter(n => n && n.position)
     .map(n => ({
       id: n.id,
       x: n.position.x,
       y: n.position.y
     }));
+  }
+
+  $: nodePositions = positionsAfterStructureChange($graphStructure, nodes);
   
   // Track annotation positions to force connection re-renders when annotations move or load
   // Create independent objects to prevent any reference sharing issues
@@ -892,6 +897,36 @@ node.onReady = () => {
   
   // Declare connections variable
   let connections: Connection[] = [];
+
+  /**
+   * Wires sit at half brightness until they concern the selected node.
+   *
+   * Marcus's own reading of a full graph: the wires were brighter than the
+   * nodes, so the picture read as a tangle of colour with the boxes behind it.
+   * Halving them puts the nodes in front, and lifting only the selected node's
+   * own wires back to full turns selection into the answer to "what goes in
+   * and what comes out" — which is the question you actually select a node to
+   * ask.
+   *
+   * A hovered wire lifts too, so the ctrl-to-cut affordance still finds you.
+   */
+  const DIMMED_WIRE_OPACITY = 0.5;
+
+  function isConnectionHighlighted(
+    conn: Connection,
+    selection: string[],
+    hoveredId: string | undefined
+  ): boolean {
+    if (conn.id === hoveredId) return true;
+    if (selection.length === 0) return false;
+    return selection.includes(conn.from.nodeId) || selection.includes(conn.to.nodeId);
+  }
+
+  // Dimmed first, highlighted last — see the each block below.
+  $: orderedConnections = [
+    ...connections.filter(c => !isConnectionHighlighted(c, selectedNodes, hoveredConnection?.connectionId)),
+    ...connections.filter(c => isConnectionHighlighted(c, selectedNodes, hoveredConnection?.connectionId)),
+  ];
   
   // Filter connections to only show those between visible nodes
   // Also filter out duplicates and depend on nodePositions/nodePorts for reactivity
@@ -4392,8 +4427,11 @@ node.onReady = () => {
     class="connections-layer"
     style="transform: translate({internalTransform.x}px, {internalTransform.y}px) scale({internalTransform.zoom})"
   >
-    <!-- Existing connections -->
-    {#each connections as conn (conn.id)}
+    <!-- Existing connections.
+         Ordered so highlighted wires paint LAST. SVG has no z-index — a wire
+         at full brightness drawn first still ends up under every dimmed one
+         crossing it, which is the opposite of the point. -->
+    {#each orderedConnections as conn (conn.id)}
       {@const fromNodePos = nodePositions.find(np => np.id === conn.from.nodeId)}
       {@const toNodePos = nodePositions.find(np => np.id === conn.to.nodeId)}
       <!-- {@const fromAnnPos = annotationPositions.find(ap => `ann_${ap.id}` === conn.from.nodeId)}
@@ -4409,6 +4447,7 @@ node.onReady = () => {
         {@const fromPort = fromNode?.outputs.find(p => p.id === conn.from.portId) || fromAnnotation?.outputs?.find(p => p.id === conn.from.portId)}
         {@const isActive = !(toNode as any)?.isInputActive || (toNode as any).isInputActive(conn.to.portId)}
         {@const connectionColor = isActive ? (fromPort ? getPortColor(fromPort) : '#888') : DATA_TYPE_COLORS.inactive}
+        {@const isHighlighted = isConnectionHighlighted(conn, selectedNodes, hoveredConnection?.connectionId)}
         {@const midY = (fromPos.y + toPos.y) / 2}
         {@const curveOffset = Math.abs(toPos.y - fromPos.y) * 0.5}
         {@const isTrigger = conn.type === 'trigger'}
@@ -4427,6 +4466,7 @@ node.onReady = () => {
           fill="none"
           stroke={connectionColor}
           stroke-width="2"
+          stroke-opacity={isHighlighted ? 1 : DIMMED_WIRE_OPACITY}
           stroke-dasharray={isTrigger ? "3 3" : "none"}
           class="connection"
           class:trigger-connection={isTrigger}
@@ -4732,4 +4772,3 @@ node.onReady = () => {
     transform-origin: top left;
   }
 </style>
-
