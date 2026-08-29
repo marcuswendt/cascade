@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { dockviewStore, PANEL_TYPES } from './dockview-store.svelte';
-  import { registerPanelComponent, setSharedContext } from './renderer';
+  import { registerPanelComponent, registerLazyPanelComponent, setSharedContext } from './renderer';
   import type { PanelContext, PanelType } from './types';
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
@@ -11,7 +11,11 @@
   import InspectorPanel from '../panels/InspectorPanel.svelte';
   import ViewerPanel from '../panels/ViewerPanel.svelte';
   import LogPanel from '../panels/LogPanel.svelte';
-  import CodePanel from '../panels/CodePanel.svelte';
+  // CodePanel is intentionally NOT statically imported — round 32: "load
+  // Monaco only on demand when someone opens that editor view (mostly
+  // they don't)". It (and CodeEditor.svelte, and monaco-editor itself)
+  // are only fetched the first time a 'code' panel is actually created —
+  // see registerLazyPanelComponent below and renderer.ts's own note.
   import CookInfoPanel from '../panels/CookInfoPanel.svelte';
 
   // Import Dockview styles
@@ -143,7 +147,7 @@
     registerPanelComponent('inspector', InspectorPanel, 'Inspector');
     registerPanelComponent('viewer', ViewerPanel, 'Viewer');
     registerPanelComponent('log', LogPanel, 'Log');
-    registerPanelComponent('code', CodePanel, 'Code');
+    registerLazyPanelComponent('code', () => import('../panels/CodePanel.svelte'), 'Code');
     registerPanelComponent('info', CookInfoPanel, 'Node Info');
 
     // Set callback for add panel button

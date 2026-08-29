@@ -1,6 +1,49 @@
+import type { CascadeType } from './coreTypes';
+
 export type PortType = 'trigger' | 'param';
-export type DataType = 'number' | 'string' | 'boolean' | 'color' | 'asset' | 'array' | 'object' | 'any';
-export type PropControlType = 'number' | 'int' | 'slider' | 'text' | 'textarea' | 'color' | 'image' | 'boolean' | 'select' | 'vector' | 'vec2' | 'vec3' | 'vec2i' | 'vec3i' | 'range' | 'button' | 'folder' | 'group' | 'colorramp';
+
+/**
+ * A port's type. The core vocabulary lives in coreTypes.ts; `number` and
+ * `boolean` are kept here as aliases of `float` and `bool` because existing
+ * nodes and saved graphs use them, and a rename that breaks every file on disk
+ * is not worth the tidiness.
+ */
+export type DataType = CascadeType | 'number' | 'boolean';
+
+/**
+ * A node's own value — not a pin. See Node.param().
+ *
+ * `promoted` turns it into an input pin so it can be driven from upstream;
+ * `visibleWhen` is what lets one parameter depend on another, so a frame picker
+ * can appear only once a moment has been chosen rather than sitting there empty.
+ */
+export interface NodeParameter<T = any> {
+  name: string;
+  value: T;
+  defaultValue: T;
+  dataType: DataType;
+  promoted: boolean;
+  options: ParamOptions;
+}
+
+export interface ParamOptions {
+  type?: DataType;
+  /** Inspector label; defaults to the name. */
+  label?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  /** For a choice parameter. */
+  choices?: Array<{ value: any; label: string }>;
+  /** Renders as a button that fires this action rather than an editable field. */
+  action?: string;
+  /** Show this parameter only when the predicate holds — dependent parameters. */
+  visibleWhen?: (params: Record<string, any>) => boolean;
+  /** Refuse promotion for a parameter that could never sensibly be driven. */
+  promotable?: boolean;
+}
+
+export type PropControlType = 'number' | 'int' | 'slider' | 'text' | 'textarea' | 'color' | 'image' | 'boolean' | 'select' | 'vector' | 'vec2' | 'vec3' | 'vec4' | 'vec2i' | 'vec3i' | 'vec4i' | 'mat2' | 'mat3' | 'mat4' | 'range' | 'button' | 'folder' | 'group' | 'colorramp';
 
 // ============================================================================
 // Node Source System (v0.2)
@@ -154,6 +197,9 @@ export interface Prop<T = any> {
     locked?: boolean; // For vector inputs
     integer?: boolean; // Explicit integer mode
     small?: boolean; // For button inputs - compact size
+    icon?: string; // For button inputs - icon name (see Icon component)
+    tooltip?: string; // For button inputs - hover tooltip text
+    iconOnly?: boolean; // For button inputs - hide the label, icon only
   };
 
   // Callbacks - context is the Node instance

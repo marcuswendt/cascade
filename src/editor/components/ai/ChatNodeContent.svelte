@@ -9,7 +9,14 @@
 	 */
 	import type { ChatNodeState, ChatStatus, Message } from '@/types/chat.types';
 	import { createEventDispatcher } from 'svelte';
+	import { marked } from 'marked';
 	import Icon from '../../Icon.svelte';
+
+	// Configure marked for chat messages
+	marked.setOptions({
+		breaks: true,
+		gfm: true
+	});
 
 	export let state: ChatNodeState;
 	export let displayMode: 'standard' | 'compact' | 'expanded' = 'standard';
@@ -26,6 +33,8 @@
 				return { icon: 'MessageSquare', label: 'Waiting', class: 'idle' };
 			case 'ready':
 				return { icon: 'Send', label: 'Ready', class: 'ready' };
+			case 'waiting':
+				return { icon: 'Clock', label: 'Waiting for context...', class: 'waiting' };
 			case 'streaming':
 				return { icon: 'Loader', label: 'Generating...', class: 'streaming' };
 			case 'complete':
@@ -68,15 +77,10 @@
 	// Get display text for response (handles streaming)
 	$: displayResponse = state.status === 'streaming' ? state.streamBuffer : state.response;
 
-	// Simple markdown-like formatting for response
-	function formatResponse(text: string | null): string {
+	// Render markdown content
+	function renderMarkdown(text: string | null): string {
 		if (!text) return '';
-		// Escape HTML but preserve line breaks
-		return text
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;')
-			.replace(/\n/g, '<br>');
+		return marked.parse(text) as string;
 	}
 </script>
 
@@ -105,13 +109,16 @@
 		{#if conversations.length > 0}
 			<div class="conversation-history">
 				{#each conversations as message}
-					<div class="message {message.role}">
+					<div class="message {message.role}" class:pending={message.meta?.pending}>
 						<div class="message-header">
 							<Icon name={message.role === 'user' ? 'User' : 'Cloud'} size={12} />
 							<span class="message-role">{message.role === 'user' ? 'You' : (message.meta?.model || 'AI')}</span>
+							{#if message.meta?.pending}
+								<span class="pending-badge">Not sent</span>
+							{/if}
 						</div>
 						<div class="message-content">
-							{@html formatResponse(typeof message.content === 'string' ? message.content : '[Multimodal content]')}
+							{@html renderMarkdown(typeof message.content === 'string' ? message.content : '[Multimodal content]')}
 						</div>
 					</div>
 				{/each}
@@ -120,13 +127,14 @@
 			<!-- Fallback: show current state if no conversation messages -->
 			<div class="conversation-history">
 				{#if state.prompt}
-					<div class="message user">
+					<div class="message user pending">
 						<div class="message-header">
 							<Icon name="User" size={12} />
 							<span class="message-role">You</span>
+							<span class="pending-badge">Not sent</span>
 						</div>
 						<div class="message-content">
-							{@html formatResponse(state.prompt)}
+							{@html renderMarkdown(state.prompt)}
 						</div>
 					</div>
 				{/if}
@@ -144,7 +152,7 @@
 							{/if}
 						</div>
 						<div class="message-content">
-							{@html formatResponse(displayResponse)}
+							{@html renderMarkdown(displayResponse)}
 							{#if state.status === 'streaming'}
 								<span class="cursor">|</span>
 							{/if}
@@ -286,6 +294,11 @@
 	.status-badge.streaming {
 		color: var(--color-warning);
 		background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+	}
+
+	.status-badge.waiting {
+		color: var(--color-warning);
+		background: color-mix(in srgb, var(--color-warning) 10%, transparent);
 	}
 
 	.status-badge.complete {
@@ -456,12 +469,135 @@
 		color: var(--color-success, #4caf50);
 	}
 
+	.message.pending {
+		opacity: 0.7;
+		border-left-style: dashed;
+	}
+
+	.pending-badge {
+		font-size: 9px;
+		padding: 1px 5px;
+		background: var(--color-warning, #ffc107);
+		color: #000;
+		border-radius: 3px;
+		margin-left: auto;
+		text-transform: none;
+		letter-spacing: normal;
+		font-weight: 500;
+	}
+
 	.message-content {
 		font-size: 13px;
 		line-height: 1.6;
 		color: var(--color-text-1, #e0e0e0);
-		white-space: pre-wrap;
 		word-break: break-word;
+	}
+
+	/* Markdown styles */
+	.message-content :global(p) {
+		margin: 0 0 0.75em 0;
+	}
+
+	.message-content :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.message-content :global(code) {
+		background: var(--color-surface-3, #333);
+		padding: 0.15em 0.4em;
+		border-radius: 4px;
+		font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+		font-size: 0.9em;
+	}
+
+	.message-content :global(pre) {
+		background: var(--color-surface-3, #2a2a2a);
+		padding: 12px 16px;
+		border-radius: 6px;
+		overflow-x: auto;
+		margin: 0.75em 0;
+	}
+
+	.message-content :global(pre code) {
+		background: none;
+		padding: 0;
+		font-size: 12px;
+		line-height: 1.5;
+	}
+
+	.message-content :global(a) {
+		color: var(--color-accent, #4a9eff);
+		text-decoration: none;
+	}
+
+	.message-content :global(a:hover) {
+		text-decoration: underline;
+	}
+
+	.message-content :global(ul),
+	.message-content :global(ol) {
+		margin: 0.5em 0;
+		padding-left: 1.5em;
+	}
+
+	.message-content :global(li) {
+		margin: 0.25em 0;
+	}
+
+	.message-content :global(h1),
+	.message-content :global(h2),
+	.message-content :global(h3),
+	.message-content :global(h4) {
+		margin: 1em 0 0.5em 0;
+		font-weight: 600;
+		line-height: 1.3;
+	}
+
+	.message-content :global(h1) { font-size: 1.4em; }
+	.message-content :global(h2) { font-size: 1.25em; }
+	.message-content :global(h3) { font-size: 1.1em; }
+	.message-content :global(h4) { font-size: 1em; }
+
+	.message-content :global(blockquote) {
+		margin: 0.75em 0;
+		padding: 0.5em 1em;
+		border-left: 3px solid var(--color-text-3, #666);
+		color: var(--color-text-2, #b0b0b0);
+		background: var(--color-surface-2, #222);
+		border-radius: 0 4px 4px 0;
+	}
+
+	.message-content :global(hr) {
+		border: none;
+		border-top: 1px solid var(--color-border, #3a3a3a);
+		margin: 1em 0;
+	}
+
+	.message-content :global(table) {
+		border-collapse: collapse;
+		width: 100%;
+		margin: 0.75em 0;
+		font-size: 12px;
+	}
+
+	.message-content :global(th),
+	.message-content :global(td) {
+		border: 1px solid var(--color-border, #3a3a3a);
+		padding: 6px 10px;
+		text-align: left;
+	}
+
+	.message-content :global(th) {
+		background: var(--color-surface-2, #252525);
+		font-weight: 600;
+	}
+
+	.message-content :global(strong) {
+		font-weight: 600;
+	}
+
+	.message-content :global(em) {
+		font-style: italic;
 	}
 
 	.current-exchange {

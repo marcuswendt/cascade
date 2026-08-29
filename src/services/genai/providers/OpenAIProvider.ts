@@ -118,7 +118,7 @@ export class OpenAIProvider extends Provider {
 					style: request.model === 'dall-e-3' ? 'vivid' : undefined
 				});
 
-				const imageData = response.data[0];
+				const imageData = response.data?.[0];
 				if (!imageData?.url) {
 					throw new AIError(AIErrorType.UNKNOWN, 'No image URL in response', {
 						provider: this.id,
@@ -285,9 +285,18 @@ export class OpenAIProvider extends Provider {
 					role: 'system',
 					content: typeof msg.content === 'string' ? msg.content : ''
 				});
+			} else if (msg.role === 'assistant') {
+				// Assistant messages can't carry multi-part content (image_url etc.) in
+				// OpenAI's types — only user messages can. Real assistant replies are
+				// always plain text; coerce rather than widen the push-site type.
+				const content = this.formatMessageContent(msg.content);
+				messages.push({
+					role: 'assistant',
+					content: typeof content === 'string' ? content : ''
+				});
 			} else {
 				messages.push({
-					role: msg.role as 'user' | 'assistant',
+					role: 'user',
 					content: this.formatMessageContent(msg.content)
 				});
 			}

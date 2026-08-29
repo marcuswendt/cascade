@@ -572,7 +572,7 @@ export function onMenuCommand(
 ```yaml
 appId: dev.cascade.app
 productName: Cascade
-copyright: Copyright © 2024 Cascade
+copyright: Copyright © 2025 Cascade
 
 directories:
   output: release
@@ -1242,4 +1242,4 @@ When ready for wider distribution:
 ---
 
 *Specification version: 1.1*
-*Last updated: 2024*
+*Last updated: 2025*

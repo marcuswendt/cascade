@@ -5,6 +5,7 @@
   import type { Graph, CanvasAnnotation } from '@/nodes/Graph';
   import type { Annotation } from '@/nodes/annotations/Annotation';
   import { inferPropControlType } from '@/utils/propUtils';
+  import PortEditor from './components/PortEditor.svelte';
   import NumberInput from './components/NumberInput.svelte';
   import VectorInput from './components/VectorInput.svelte';
   import ColorPicker from './components/ColorPicker.svelte';
@@ -48,8 +49,97 @@
     return () => window.removeEventListener('mouseup', handleMouseUp);
   });
   
-  $: inputs = node?.inputs || [];
-  // Don't show input ports as parameters - they should only be visible as connection points
+  /**
+   * Ports are created and filled by the node's own code, outside anything
+   * Svelte watches — `node.outputs` is pushed to during execute, and a cook
+   * replaces output VALUES without any assignment the compiler can see. So the
+   * panel showed a node's inputs (which exist from load) and no outputs at all,
+   * and never refreshed a value after a re-cook.
+   *
+   * A small tick while a node is selected is the honest fix: it reads the
+   * node's own cook counter and port counts, and bumps a version only when one
+   * of them actually moved, so a still graph costs nothing.
+   */
+  let portsVersion = 0;
+  let portsFingerprint = '';
+
+  /**
+   * Collapsed by default, and remembered per node.
+   *
+   * A node like density-blend has twenty-one inputs, so an always-open panel
+   * means scrolling past a wall of parameters to reach the one you came for.
+   * Per node rather than globally, because which half you care about depends
+   * entirely on the node — a source node is all outputs, a blend is all inputs.
+   * Session-scoped: it is a working preference, not something to write into the
+   * graph file.
+   */
+  const sectionState = new Map<string, { inputs: boolean; params: boolean; outputs: boolean }>();
+  let sectionVersion = 0;
+
+  function sectionsFor(id: string) {
+    // Parameters open by default: they are the node's controls, and the reason
+    // to select a node is usually to change one. Pins stay shut — they are
+    // structure, and the graph already shows them.
+    if (!sectionState.has(id)) sectionState.set(id, { inputs: false, params: true, outputs: false });
+    return sectionState.get(id)!;
+  }
+
+  function toggleSection(id: string, which: 'inputs' | 'params' | 'outputs') {
+    const state = sectionsFor(id);
+    state[which] = !state[which];
+    sectionVersion += 1;
+  }
+
+  $: openSections = (sectionVersion, node ? sectionsFor(node.id) : { inputs: false, params: true, outputs: false });
+
+  onMount(() => {
+    const timer = setInterval(() => {
+      if (!node) return;
+      const next = `${node.id}:${node.cookInfo?.cookCount ?? 0}:${node.inputs?.length ?? 0}:${node.outputs?.length ?? 0}`;
+      if (next !== portsFingerprint) {
+        portsFingerprint = next;
+        portsVersion += 1;
+      }
+    }, 400);
+    return () => clearInterval(timer);
+  });
+
+  function currentPorts<T>(version: number, ports: T[] | undefined): T[] {
+    void version;
+    return ports ?? [];
+  }
+
+  $: inputs = currentPorts(portsVersion, node?.inputs);
+  $: outputs = currentPorts(portsVersion, node?.outputs);
+
+  /**
+   * Every input port, editable when nothing is connected to it.
+   *
+   * A node declares its parameters with `node.in(name, default)`, which makes
+   * them input ports — so a panel that only read `node.props` had nothing to
+   * show for any real node. Unconnected ports ARE the parameters; connected ones
+   * are shown read-only, because typing over a value the next cook will
+   * overwrite is worse than not offering the field.
+   */
+  /**
+   * Real input pins only — a promoted parameter is shown in the Parameters
+   * section, where it belongs, rather than twice.
+   */
+  $: portParams = inputs.filter((p: any) => !p.fromParameter);
+
+  /** The node's own values. Dependent ones (`visibleWhen`) drop out until the
+   *  parameter they depend on is set. */
+  $: parameters = (portsVersion, node?.parameters ?? []).filter((p: any) => {
+    if (typeof p.options?.visibleWhen !== 'function') return true;
+    try {
+      const current = Object.fromEntries((node?.parameters ?? []).map((q: any) => [q.name, q.value]));
+      return p.options.visibleWhen(current);
+    } catch {
+      return true;
+    }
+  });
+
+  // Kept for the older props-based path below.
   $: paramInputs = [];
   // Track props keys explicitly to ensure reactivity when props are added
   // Use a computed that depends on both node and the props object reference
@@ -114,6 +204,55 @@
     }
   }
   
+  /** Set an unconnected input and re-cook, so the change is visible immediately
+   *  rather than at the next unrelated evaluation. */
+  function handlePortChange(port: any, value: any) {
+    if (!node) return;
+    maybeRecordHistory();
+    port.value = value;
+    if (port.onChange) {
+      try { port.onChange(value); } catch (err) { console.warn('port onChange failed:', err); }
+    }
+    node.markDirty?.();
+    node.execute?.().catch((err: unknown) => console.warn('Node execution failed:', err));
+  }
+
+  /**
+   * An OUTPUT's renderer can still be an editor when what it edits is an input
+   * elsewhere on the node — the moment browser sits on the `moment` output but
+   * writes the id the loader reads. Without this the natural place to pick a
+   * moment would be a field on the opposite side of the panel from the frames
+   * it chooses between.
+   */
+  function companionChange(_port: any, value: any) {
+    if (!node) return;
+    const target = node.inputs?.find((p: any) => p.name === 'moment_id');
+    if (!target) return;
+    handlePortChange(target, value);
+  }
+
+  function handleParamChange(parameter: any, value: any) {
+    if (!node) return;
+    maybeRecordHistory();
+    node.setParameter(parameter.name, value);
+    node.execute?.().catch((err: unknown) => console.warn('Node execution failed:', err));
+    // Deliberately no re-key here. Rebuilding the row on every commit destroys
+    // the control being used — a slider drag lost focus after one step, because
+    // the element under the pointer was replaced between events. The value is
+    // already on the parameter; the input owns its own display until something
+    // outside the panel changes it.
+  }
+
+  /** Promote a parameter to an input pin, or demote it back. */
+  function togglePromoted(parameter: any) {
+    if (!node) return;
+    maybeRecordHistory();
+    node.setParameterPromoted(parameter.name, !parameter.promoted);
+    if (graph) graph.elements = [...graph.elements];
+    sectionVersion += 1;
+    portsVersion += 1;
+  }
+
   function handlePropChange([key, prop]: [string, Prop], value: any) {
     if (node) {
       maybeRecordHistory();
@@ -188,10 +327,11 @@
   }
   
   $: {
-    // Initialize all folders as expanded by default
+    // Initialize folder expansion state
+    // Settings folder is collapsed by default, others are expanded
     Object.keys(groupedProps).forEach(folder => {
       if (!(folder in folderExpanded)) {
-        folderExpanded[folder] = true;
+        folderExpanded[folder] = folder !== 'Settings';
       }
     });
   }
@@ -984,11 +1124,15 @@
                       </ExpressionInput>
                     {/key}
                   {:else if controlType === 'color'}
-                    <ColorPicker
-                      {prop}
-                      id={inputId}
-                      onValueChange={(value) => handlePropChange([key, prop], value)}
-                    />
+                    {#key `${key}-${JSON.stringify(prop.value)}-${prop.expression}`}
+                      <ExpressionInput {prop} propKey={key} {node} onValueChange={(value) => handlePropChange([key, prop], value)}>
+                        <ColorPicker
+                          {prop}
+                          id={inputId}
+                          onValueChange={(value) => handlePropChange([key, prop], value)}
+                        />
+                      </ExpressionInput>
+                    {/key}
                   {:else if controlType === 'colorramp'}
                     <ColorRampEditor
                       {prop}
@@ -1002,34 +1146,46 @@
                       onValueChange={(value) => handlePropChange([key, prop], value)}
                     />
                   {:else if controlType === 'text' || controlType === 'textarea'}
-                    {#if controlType === 'textarea'}
-                      <textarea
-                        id={inputId}
-                        class="param-textarea"
-                        value={prop.value || ''}
-                        on:input={(e) => handlePropTextareaInput([key, prop], e)}
-                      ></textarea>
-                    {:else}
-                      <input
-                        id={inputId}
-                        type="text"
-                        class="param-input"
-                        value={prop.value || ''}
-                        on:input={(e) => handlePropTextInput([key, prop], e)}
-                      />
-                    {/if}
+                    {#key `${key}-${prop.expression}`}
+                      <ExpressionInput {prop} propKey={key} {node} onValueChange={(value) => handlePropChange([key, prop], value)}>
+                        {#if controlType === 'textarea'}
+                          <textarea
+                            id={inputId}
+                            class="param-textarea"
+                            value={prop.value || ''}
+                            on:input={(e) => handlePropTextareaInput([key, prop], e)}
+                          ></textarea>
+                        {:else}
+                          <input
+                            id={inputId}
+                            type="text"
+                            class="param-input"
+                            value={prop.value || ''}
+                            on:input={(e) => handlePropTextInput([key, prop], e)}
+                          />
+                        {/if}
+                      </ExpressionInput>
+                    {/key}
                   {:else if controlType === 'boolean'}
-                    <CheckboxInput
-                      {prop}
-                      id={inputId}
-                      onValueChange={(value) => handlePropChange([key, prop], value)}
-                    />
+                    {#key `${key}-${prop.value}-${prop.expression}`}
+                      <ExpressionInput {prop} propKey={key} {node} onValueChange={(value) => handlePropChange([key, prop], value)}>
+                        <CheckboxInput
+                          {prop}
+                          id={inputId}
+                          onValueChange={(value) => handlePropChange([key, prop], value)}
+                        />
+                      </ExpressionInput>
+                    {/key}
                   {:else if controlType === 'select' && prop.params?.options}
-                    <SelectInput
-                      {prop}
-                      id={inputId}
-                      onValueChange={(value) => handlePropChange([key, prop], value)}
-                    />
+                    {#key `${key}-${prop.value}-${prop.expression}`}
+                      <ExpressionInput {prop} propKey={key} {node} onValueChange={(value) => handlePropChange([key, prop], value)}>
+                        <SelectInput
+                          {prop}
+                          id={inputId}
+                          onValueChange={(value) => handlePropChange([key, prop], value)}
+                        />
+                      </ExpressionInput>
+                    {/key}
                   {:else if controlType === 'button'}
                     <ButtonInput
                       {prop}
@@ -1037,6 +1193,14 @@
                       onValueChange={() => {
                         if (typeof prop.value === 'function') {
                           prop.value();
+                        }
+                        // Also call onChange if defined
+                        if (typeof prop.onChange === 'function') {
+                          // onChange's declared signature is (prop, context) — pass
+                          // the prop itself plus `true` as the click-activation
+                          // context, rather than passing `true` where a Prop was
+                          // expected.
+                          prop.onChange(prop, true);
                         }
                       }}
                     />
@@ -1083,11 +1247,15 @@
                     </ExpressionInput>
                   {/key}
                 {:else if controlType === 'color'}
-                  <ColorPicker
-                    {prop}
-                    id={inputId}
-                    onValueChange={(value) => handlePropChange([key, prop], value)}
-                  />
+                  {#key `${key}-${JSON.stringify(prop.value)}-${prop.expression}`}
+                    <ExpressionInput {prop} propKey={key} {node} onValueChange={(value) => handlePropChange([key, prop], value)}>
+                      <ColorPicker
+                        {prop}
+                        id={inputId}
+                        onValueChange={(value) => handlePropChange([key, prop], value)}
+                      />
+                    </ExpressionInput>
+                  {/key}
                 {:else if controlType === 'colorramp'}
                   <ColorRampEditor
                     {prop}
@@ -1101,34 +1269,46 @@
                     onValueChange={(value) => handlePropChange([key, prop], value)}
                   />
                 {:else if controlType === 'text' || controlType === 'textarea'}
-                  {#if controlType === 'textarea'}
-                    <textarea
-                      id={inputId}
-                      class="param-textarea"
-                      value={prop.value || ''}
-                      on:input={(e) => handlePropTextareaInput([key, prop], e)}
-                    ></textarea>
-                  {:else}
-                    <input
-                      id={inputId}
-                      type="text"
-                      class="param-input"
-                      value={prop.value || ''}
-                      on:input={(e) => handlePropTextInput([key, prop], e)}
-                    />
-                  {/if}
+                  {#key `${key}-${prop.expression}`}
+                    <ExpressionInput {prop} propKey={key} {node} onValueChange={(value) => handlePropChange([key, prop], value)}>
+                      {#if controlType === 'textarea'}
+                        <textarea
+                          id={inputId}
+                          class="param-textarea"
+                          value={prop.value || ''}
+                          on:input={(e) => handlePropTextareaInput([key, prop], e)}
+                        ></textarea>
+                      {:else}
+                        <input
+                          id={inputId}
+                          type="text"
+                          class="param-input"
+                          value={prop.value || ''}
+                          on:input={(e) => handlePropTextInput([key, prop], e)}
+                        />
+                      {/if}
+                    </ExpressionInput>
+                  {/key}
                 {:else if controlType === 'boolean'}
-                  <CheckboxInput
-                    {prop}
-                    id={inputId}
-                    onValueChange={(value) => handlePropChange([key, prop], value)}
-                  />
+                  {#key `${key}-${prop.value}-${prop.expression}`}
+                    <ExpressionInput {prop} propKey={key} {node} onValueChange={(value) => handlePropChange([key, prop], value)}>
+                      <CheckboxInput
+                        {prop}
+                        id={inputId}
+                        onValueChange={(value) => handlePropChange([key, prop], value)}
+                      />
+                    </ExpressionInput>
+                  {/key}
                 {:else if controlType === 'select' && prop.params?.options}
-                  <SelectInput
-                    {prop}
-                    id={inputId}
-                    onValueChange={(value) => handlePropChange([key, prop], value)}
-                  />
+                  {#key `${key}-${prop.value}-${prop.expression}`}
+                    <ExpressionInput {prop} propKey={key} {node} onValueChange={(value) => handlePropChange([key, prop], value)}>
+                      <SelectInput
+                        {prop}
+                        id={inputId}
+                        onValueChange={(value) => handlePropChange([key, prop], value)}
+                      />
+                    </ExpressionInput>
+                  {/key}
                 {:else if controlType === 'button'}
                   <ButtonInput
                     {prop}
@@ -1136,6 +1316,12 @@
                     onValueChange={() => {
                       if (typeof prop.value === 'function') {
                         prop.value();
+                      }
+                      // Also call onChange if defined
+                      if (typeof prop.onChange === 'function') {
+                        // see the other two call sites' comment — onChange's
+                        // declared signature is (prop, context)
+                        prop.onChange(prop, true);
                       }
                     }}
                   />
@@ -1154,10 +1340,99 @@
         {/each}
       {/if}
       
-      <!-- Empty state if no props -->
-      {#if propControls.length === 0}
+      <!-- Ports. The parameters of any node that declares them with node.in(),
+           which is every project node, plus its outputs so a stage's result can
+           be read without opening the viewer. -->
+      {#if portParams.length > 0}
+        <div class="port-section">
+          <button class="port-heading" on:click={() => toggleSection(node.id, 'inputs')}>
+            <span class="twisty">{openSections.inputs ? '▾' : '▸'}</span>
+            Inputs
+            <span class="tally">{portParams.length}</span>
+          </button>
+          {#if openSections.inputs}
+          {#key `${node.id}-${propsUpdateCounter}-${propsValueKey}-${portsVersion}`}
+            {#each portParams as port (port.id)}
+              <PortEditor
+                {port}
+                {node}
+                direction="input"
+                onChange={(value) => handlePortChange(port, value)}
+              />
+            {/each}
+          {/key}
+          {/if}
+        </div>
+      {/if}
+
+      <!-- Parameters: the node's own values. Between the pins, in the order the
+           data actually moves — inputs, then what the node does with them, then
+           outputs. -->
+      {#if parameters.length > 0}
+        <div class="port-section">
+          <button class="port-heading" on:click={() => toggleSection(node.id, 'params')}>
+            <span class="twisty">{openSections.params ? '▾' : '▸'}</span>
+            Parameters
+            <span class="tally">{parameters.length}</span>
+          </button>
+          {#if openSections.params}
+            {#key node.id}
+              {#each parameters as parameter (parameter.name)}
+                <div class="parameter">
+                  <PortEditor
+                    port={{
+                      name: parameter.options?.label ?? parameter.name,
+                      dataType: parameter.dataType,
+                      value: parameter.value,
+                      connections: [],
+                      options: parameter.options ?? {},
+                    }}
+                    {node}
+                    direction="input"
+                    onChange={(value) => handleParamChange(parameter, value)}
+                  />
+                  {#if parameter.options?.promotable !== false}
+                    <button
+                      class="promote"
+                      class:on={parameter.promoted}
+                      title={parameter.promoted
+                        ? 'Demote back to a parameter — removes the pin and any wire into it'
+                        : 'Promote to an input pin so it can be driven from another node'}
+                      on:click={() => togglePromoted(parameter)}
+                    >{parameter.promoted ? 'pin ✓' : 'pin'}</button>
+                  {/if}
+                </div>
+              {/each}
+            {/key}
+          {/if}
+        </div>
+      {/if}
+
+      {#if outputs.length > 0}
+        <div class="port-section">
+          <button class="port-heading" on:click={() => toggleSection(node.id, 'outputs')}>
+            <span class="twisty">{openSections.outputs ? '▾' : '▸'}</span>
+            Outputs
+            <span class="tally">{outputs.length}</span>
+          </button>
+          {#if openSections.outputs}
+          {#key `${node.id}-${propsUpdateCounter}-${propsValueKey}-${portsVersion}`}
+            {#each outputs as port (port.id)}
+              <PortEditor
+                {port}
+                {node}
+                direction="output"
+                onChange={(value) => companionChange(port, value)}
+              />
+            {/each}
+          {/key}
+          {/if}
+        </div>
+      {/if}
+
+      {#if propControls.length === 0 && portParams.length === 0 && outputs.length === 0}
         <div class="empty-state">
-          No parameters to edit
+          Nothing to show — this node has no parameters or outputs yet
         </div>
       {/if}
       
@@ -1171,6 +1446,73 @@
 {/if}
 
 <style>
+  .port-section {
+    margin-top: 10px;
+  }
+
+  .port-heading {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    background: none;
+    border: none;
+    border-bottom: 1px solid #333;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6b6b6b;
+    padding: 3px 0;
+    margin-bottom: 2px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+  }
+
+  .port-heading:hover {
+    color: #aaa;
+  }
+
+  .port-heading .twisty {
+    font-size: 8px;
+    width: 8px;
+  }
+
+  .parameter {
+    position: relative;
+  }
+
+  /* Deliberately quiet: promotion is occasional, and a button shouting on every
+     row would drown the values themselves. */
+  .promote {
+    position: absolute;
+    top: 5px;
+    right: 0;
+    background: none;
+    border: 1px solid #333;
+    border-radius: 3px;
+    color: #5a5a5a;
+    font-size: 8px;
+    padding: 0 4px;
+    cursor: pointer;
+  }
+
+  .promote:hover {
+    color: #bbb;
+    border-color: #555;
+  }
+
+  .promote.on {
+    color: #9cdcfe;
+    border-color: #2a4a5e;
+  }
+
+  .port-heading .tally {
+    margin-left: auto;
+    letter-spacing: 0;
+    color: #555;
+  }
+
   .inspector {
     position: relative;
     width: 100%;
@@ -1625,4 +1967,3 @@
     min-width: 0;
   }
 </style>
-

@@ -2,8 +2,8 @@
   import type { Prop } from '@/types/node.types';
   import type { Node } from '@/nodes/Node';
   import type { Graph } from '@/nodes/Graph';
-  import { Sigma, AlertCircle, CircleEqual } from 'lucide-svelte';
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { Sigma, AlertCircle, X } from 'lucide-svelte';
+  import { onMount } from 'svelte';
 
   export let prop: Prop;
   export let propKey: string;
@@ -13,11 +13,23 @@
   // Get graph from node for autocomplete
   $: graph = (node as any).graph as Graph | undefined;
 
-  // Expression mode state
+  // Expression state
   $: hasExpression = !!prop.expression;
   $: expressionError = prop.expressionError;
 
-  let editingExpression = false;
+  // View mode: 'value' shows the normal control, 'expression' shows the expression editor
+  // When there's an expression, default to showing the expression
+  let viewMode: 'value' | 'expression' = 'value';
+
+  // Update viewMode when expression state changes
+  $: if (hasExpression && viewMode === 'value' && !isEditing) {
+    viewMode = 'expression';
+  }
+  $: if (!hasExpression && viewMode === 'expression') {
+    viewMode = 'value';
+  }
+
+  let isEditing = false;
   let expressionText = prop.expression || '';
   let inputElement: HTMLInputElement;
   let showAutocomplete = false;
@@ -34,19 +46,27 @@
   function formatEvaluatedValue(value: any): string {
     if (value === undefined || value === null) return '—';
     if (typeof value === 'number') {
-      // Format numbers nicely (max 4 decimal places)
       if (Number.isInteger(value)) return String(value);
       return value.toFixed(4).replace(/\.?0+$/, '');
     }
     if (Array.isArray(value)) {
-      // Format arrays compactly
       const formatted = value.map(v =>
         typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(2)) : v
       );
       return `[${formatted.join(', ')}]`;
     }
+    if (typeof value === 'boolean') {
+      return value ? 'true' : 'false';
+    }
     if (typeof value === 'string') {
-      return value.length > 20 ? value.slice(0, 17) + '...' : value;
+      return value.length > 30 ? value.slice(0, 27) + '...' : value;
+    }
+    if (typeof value === 'object' && value !== null) {
+      // Handle color objects
+      if ('r' in value && 'g' in value && 'b' in value) {
+        return `rgb(${Math.round(value.r * 255)}, ${Math.round(value.g * 255)}, ${Math.round(value.b * 255)})`;
+      }
+      return JSON.stringify(value).slice(0, 30);
     }
     return String(value);
   }
@@ -66,24 +86,63 @@
     { label: 'lerp(a, b, t)', value: 'lerp(0, 1, )', type: 'func' as const, desc: 'Linear interpolation' },
     { label: 'noise(x)', value: 'noise()', type: 'func' as const, desc: 'Perlin noise (-1 to 1)' },
     { label: 'random(seed)', value: 'random()', type: 'func' as const, desc: 'Deterministic random (0-1)' },
+    { label: 'true', value: 'true', type: 'func' as const, desc: 'Boolean true' },
+    { label: 'false', value: 'false', type: 'func' as const, desc: 'Boolean false' },
     { label: 'Math.sin(x)', value: 'Math.sin()', type: 'func' as const, desc: 'Sine function' },
     { label: 'Math.cos(x)', value: 'Math.cos()', type: 'func' as const, desc: 'Cosine function' },
     { label: 'Math.abs(x)', value: 'Math.abs()', type: 'func' as const, desc: 'Absolute value' },
   ];
 
-  function toggleExpressionMode() {
-    if (hasExpression) {
-      const parm = node.parm(propKey);
-      if (parm) {
-        parm.deleteExpression();
-        node.markDirty();
+  // Toggle between expression and value view
+  function toggleView() {
+    if (!hasExpression) return;
+    viewMode = viewMode === 'expression' ? 'value' : 'expression';
+  }
+
+  // Start adding an expression
+  function startAddExpression(e: MouseEvent) {
+    e.stopPropagation();
+    isEditing = true;
+    viewMode = 'expression';
+    // Initialize with current value as string
+    expressionText = formatInitialExpression(prop.value);
+    setTimeout(() => {
+      inputElement?.focus();
+      inputElement?.select();
+    }, 0);
+  }
+
+  function formatInitialExpression(value: any): string {
+    if (typeof value === 'string') return `"${value}"`;
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (Array.isArray(value)) return `[${value.join(', ')}]`;
+    if (typeof value === 'object' && value !== null) {
+      if ('r' in value && 'g' in value && 'b' in value) {
+        return `{ r: ${value.r}, g: ${value.g}, b: ${value.b}${value.a !== undefined ? `, a: ${value.a}` : ''} }`;
       }
-    } else {
-      editingExpression = true;
-      expressionText = String(prop.value);
-      // Focus input after render
-      setTimeout(() => inputElement?.focus(), 0);
     }
+    return String(value ?? '');
+  }
+
+  // Start editing existing expression
+  function startEditExpression() {
+    isEditing = true;
+    expressionText = prop.expression || '';
+    setTimeout(() => {
+      inputElement?.focus();
+    }, 0);
+  }
+
+  // Remove expression
+  function removeExpression(e: MouseEvent) {
+    e.stopPropagation();
+    const parm = node.parm(propKey);
+    if (parm) {
+      parm.deleteExpression();
+      node.markDirty();
+    }
+    isEditing = false;
+    viewMode = 'value';
   }
 
   function handleExpressionInput(e: Event) {
@@ -99,25 +158,20 @@
       return;
     }
 
-    // Get text before cursor
     const textBeforeCursor = expressionText.slice(0, cursorPosition);
-
-    // Check if we're inside a ch/chs/chv path string
     const pathMatch = textBeforeCursor.match(/ch[sv]?\s*\(\s*['"]([^'"]*?)$/);
 
     if (pathMatch) {
-      // Path autocomplete mode
       const partialPath = pathMatch[1];
       autocompleteItems = getPathSuggestions(partialPath);
       showAutocomplete = autocompleteItems.length > 0;
       selectedIndex = 0;
     } else {
-      // Check if at start of expression or after operator
       const wordMatch = textBeforeCursor.match(/(?:^|[\s(,+\-*/%])(\w*)$/);
       if (wordMatch && wordMatch[1].length > 0) {
         const partial = wordMatch[1].toLowerCase();
         autocompleteItems = expressionFunctions
-          .filter(f => f.label.toLowerCase().startsWith(partial))
+          .filter(f => f.label.toLowerCase().startsWith(partial) || f.value.toLowerCase().startsWith(partial))
           .map(f => ({ label: f.label, value: f.value, type: f.type }));
         showAutocomplete = autocompleteItems.length > 0;
         selectedIndex = 0;
@@ -131,26 +185,20 @@
     if (!graph) return [];
     const suggestions: { label: string; value: string; type: 'node' | 'prop' }[] = [];
 
-    // Determine context: absolute or relative
     const isAbsolute = partialPath.startsWith('/');
-    const isRelative = partialPath.startsWith('.') || partialPath.startsWith('..');
 
-    // Get nodes to search from
     let searchNodes: Node[] = [];
     let pathPrefix = '';
 
     if (isAbsolute) {
-      // Absolute path - search from root
       searchNodes = graph.nodes.filter(n => !n.parent);
       pathPrefix = '/';
     } else if (partialPath.startsWith('../')) {
-      // Parent relative - go up and search siblings
       if (node.parent) {
         searchNodes = node.parent.children().filter(n => n !== node);
         pathPrefix = '../';
       }
     } else if (partialPath.startsWith('./')) {
-      // Self relative - search own props
       const propPartial = partialPath.slice(2).toLowerCase();
       Object.keys(node.props).forEach(propName => {
         if (propName.toLowerCase().startsWith(propPartial)) {
@@ -163,7 +211,6 @@
       });
       return suggestions;
     } else {
-      // No prefix - search siblings and suggest prefixes
       if (node.parent) {
         searchNodes = node.parent.children().filter(n => n !== node);
         pathPrefix = '../';
@@ -173,14 +220,12 @@
       }
     }
 
-    // Get partial path segment after prefix
     const pathAfterPrefix = isAbsolute ? partialPath.slice(1) :
                            partialPath.startsWith('../') ? partialPath.slice(3) :
                            partialPath;
     const segments = pathAfterPrefix.split('/');
     const currentSegment = segments[segments.length - 1].toLowerCase();
 
-    // Navigate to correct level
     let currentNodes = searchNodes;
     for (let i = 0; i < segments.length - 1; i++) {
       const seg = segments[i];
@@ -193,7 +238,6 @@
       }
     }
 
-    // Add matching nodes
     currentNodes.forEach(n => {
       if (n.id.toLowerCase().startsWith(currentSegment)) {
         suggestions.push({
@@ -202,7 +246,6 @@
           type: 'node'
         });
 
-        // Also suggest props on this node
         Object.keys(n.props).forEach(propName => {
           suggestions.push({
             label: `${pathPrefix}${n.id}/${propName}`,
@@ -213,22 +256,18 @@
       }
     });
 
-    return suggestions.slice(0, 10); // Limit results
+    return suggestions.slice(0, 10);
   }
 
   function selectAutocompleteItem(item: typeof autocompleteItems[0]) {
     const textBeforeCursor = expressionText.slice(0, cursorPosition);
     const textAfterCursor = expressionText.slice(cursorPosition);
-
-    // Check if we're in path mode
     const pathMatch = textBeforeCursor.match(/ch[sv]?\s*\(\s*['"]([^'"]*?)$/);
 
     if (pathMatch) {
-      // Replace the partial path
       const beforePath = textBeforeCursor.slice(0, textBeforeCursor.length - pathMatch[1].length);
       expressionText = beforePath + item.value + textAfterCursor;
     } else {
-      // Replace word/function
       const wordMatch = textBeforeCursor.match(/(?:^|[\s(,+\-*/%])(\w*)$/);
       if (wordMatch) {
         const beforeWord = textBeforeCursor.slice(0, textBeforeCursor.length - wordMatch[1].length);
@@ -277,188 +316,337 @@
         node.markDirty();
       }
     }
-    editingExpression = false;
+    isEditing = false;
   }
 
   function cancelExpression() {
     showAutocomplete = false;
     expressionText = prop.expression || '';
-    editingExpression = false;
+    isEditing = false;
+    if (!hasExpression) {
+      viewMode = 'value';
+    }
   }
 
   function handleBlur() {
-    // Delay to allow autocomplete click to register
     setTimeout(() => {
       if (!showAutocomplete) {
-        applyExpression();
+        if (expressionText.trim()) {
+          applyExpression();
+        } else {
+          cancelExpression();
+        }
       }
     }, 150);
   }
+
+  function handleContainerClick(e: MouseEvent) {
+    // If we have an expression and click on the display, toggle or start editing
+    if (hasExpression && viewMode === 'expression' && !isEditing) {
+      const target = e.target as HTMLElement;
+      // If clicking on the expression text itself, start editing
+      if (target.classList.contains('expression-display') || target.closest('.expression-display')) {
+        startEditExpression();
+      }
+    }
+  }
 </script>
 
-<div class="expression-wrapper" class:has-expression={hasExpression} class:has-error={!!expressionError}>
-  <button
-    class="expression-toggle"
-    class:active={hasExpression}
-    on:click={toggleExpressionMode}
-    title={hasExpression ? 'Remove expression' : 'Add expression'}
-  >
-    <Sigma size={12} />
-  </button>
+<div
+  class="expression-wrapper"
+  class:has-expression={hasExpression}
+  class:has-error={!!expressionError}
+  class:editing={isEditing}
+  on:click={handleContainerClick}
+>
+  {#if viewMode === 'expression' && hasExpression}
+    <!-- Expression view: shows expression code -->
+    <div class="expression-view">
+      {#if isEditing}
+        <div class="expression-input-container">
+          <input
+            type="text"
+            class="expression-input"
+            class:error={!!expressionError}
+            bind:this={inputElement}
+            bind:value={expressionText}
+            on:input={handleExpressionInput}
+            on:keydown={handleKeydown}
+            on:blur={handleBlur}
+            placeholder="e.g., ch('../node/value') * 2"
+          />
 
-  {#if hasExpression || editingExpression}
-    <div class="expression-input-container">
-      <input
-        type="text"
-        class="expression-input"
-        class:error={!!expressionError}
-        bind:this={inputElement}
-        bind:value={expressionText}
-        on:input={handleExpressionInput}
-        on:keydown={handleKeydown}
-        on:blur={handleBlur}
-        placeholder="e.g., ch('../timer1/value') * 2"
-      />
-      {#if expressionError}
-        <div class="expression-error" title={expressionError}>
-          <AlertCircle size={12} />
+          {#if showAutocomplete && autocompleteItems.length > 0}
+            <div class="autocomplete-dropdown">
+              {#each autocompleteItems as item, i}
+                <button
+                  class="autocomplete-item"
+                  class:selected={i === selectedIndex}
+                  class:type-node={item.type === 'node'}
+                  class:type-prop={item.type === 'prop'}
+                  class:type-func={item.type === 'func'}
+                  on:mousedown|preventDefault={() => selectAutocompleteItem(item)}
+                  on:mouseenter={() => selectedIndex = i}
+                >
+                  <span class="item-type">{item.type === 'func' ? 'ƒ' : item.type === 'node' ? '□' : '•'}</span>
+                  <span class="item-label">{item.label}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
         </div>
-      {:else if evaluatedDisplay !== null}
-        <div class="expression-value" title="Evaluated value: {evaluatedDisplay}">
-          <CircleEqual size={10} />
-          <span class="value-text">{evaluatedDisplay}</span>
-        </div>
+      {:else}
+        <button class="expression-display" on:click={startEditExpression} title="Click to edit expression">
+          <span class="expression-code">{prop.expression}</span>
+        </button>
       {/if}
 
-      {#if showAutocomplete && autocompleteItems.length > 0}
-        <div class="autocomplete-dropdown">
-          {#each autocompleteItems as item, i}
-            <button
-              class="autocomplete-item"
-              class:selected={i === selectedIndex}
-              class:type-node={item.type === 'node'}
-              class:type-prop={item.type === 'prop'}
-              class:type-func={item.type === 'func'}
-              on:mousedown|preventDefault={() => selectAutocompleteItem(item)}
-              on:mouseenter={() => selectedIndex = i}
-            >
-              <span class="item-type">{item.type === 'func' ? 'ƒ' : item.type === 'node' ? '□' : '•'}</span>
-              <span class="item-label">{item.label}</span>
-            </button>
-          {/each}
-        </div>
-      {/if}
+      <div class="expression-actions">
+        {#if expressionError}
+          <span class="expression-error" title={expressionError}>
+            <AlertCircle size={12} />
+          </span>
+        {:else if evaluatedDisplay !== null}
+          <button
+            class="evaluated-badge"
+            on:click|stopPropagation={toggleView}
+            title="Click to see value: {evaluatedDisplay}"
+          >
+            = {evaluatedDisplay}
+          </button>
+        {/if}
+
+        <button
+          class="remove-expression"
+          on:click={removeExpression}
+          title="Remove expression"
+        >
+          <X size={12} />
+        </button>
+      </div>
     </div>
   {:else}
-    <div class="value-input-container">
+    <!-- Value view: shows normal control -->
+    <div class="value-view" class:expression-active={hasExpression}>
       <slot />
+
+      {#if hasExpression}
+        <button
+          class="toggle-to-expression"
+          on:click|stopPropagation={toggleView}
+          title="Click to see expression"
+        >
+          <Sigma size={10} />
+        </button>
+      {:else}
+        <button
+          class="add-expression"
+          on:click={startAddExpression}
+          title="Add expression"
+        >
+          <Sigma size={10} />
+        </button>
+      {/if}
     </div>
   {/if}
 </div>
 
 <style>
   .expression-wrapper {
+    width: 100%;
+    position: relative;
+  }
+
+  /* Expression view styling */
+  .expression-view {
     display: flex;
     align-items: center;
     gap: 4px;
     width: 100%;
+    min-height: 28px;
+    padding: 4px 8px;
+    background: rgba(74, 158, 255, 0.12);
+    border: 1px solid rgba(74, 158, 255, 0.4);
+    border-radius: 4px;
+    transition: all 0.15s ease;
   }
 
-  .expression-toggle {
-    flex-shrink: 0;
-    width: 20px;
-    height: 20px;
+  .expression-view:hover {
+    background: rgba(74, 158, 255, 0.18);
+  }
+
+  .expression-display {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    background: none;
+    border: none;
     padding: 0;
+    cursor: text;
+    min-width: 0;
+  }
+
+  .expression-code {
+    font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+    font-size: 11px;
+    color: #6ab0ff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .expression-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .evaluated-badge {
+    padding: 2px 6px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+    font-size: 10px;
+    color: #aaa;
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: all 0.15s ease;
+  }
+
+  .evaluated-badge:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
+
+  .expression-error {
+    color: #ff6b6b;
+    display: flex;
+    align-items: center;
+    cursor: help;
+  }
+
+  .remove-expression {
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
     background: transparent;
-    border: 1px solid var(--border-color, #3a3a3a);
+    border: none;
     border-radius: 3px;
-    color: var(--text-secondary, #888);
+    color: #888;
     cursor: pointer;
     transition: all 0.15s ease;
   }
 
-  .expression-toggle:hover {
-    background: var(--bg-hover, #3a3a3a);
-    color: var(--text-primary, #fff);
+  .remove-expression:hover {
+    background: rgba(255, 100, 100, 0.2);
+    color: #ff6b6b;
   }
 
-  .expression-toggle.active {
-    background: var(--accent-color, #4a9eff);
-    border-color: var(--accent-color, #4a9eff);
-    color: white;
-  }
-
+  /* Expression input container */
   .expression-input-container {
     flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 4px;
     position: relative;
+    min-width: 0;
   }
 
   .expression-input {
-    flex: 1;
-    padding: 4px 8px;
-    background: var(--bg-input, #1a1a1a);
-    border: 1px solid var(--accent-color, #4a9eff);
+    width: 100%;
+    padding: 2px 4px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(74, 158, 255, 0.6);
     border-radius: 3px;
-    color: var(--accent-color, #4a9eff);
+    color: #6ab0ff;
     font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
     font-size: 11px;
   }
 
   .expression-input:focus {
     outline: none;
-    border-color: var(--accent-color-bright, #6ab0ff);
-    box-shadow: 0 0 0 1px var(--accent-color, #4a9eff);
+    border-color: #6ab0ff;
+    box-shadow: 0 0 0 1px rgba(74, 158, 255, 0.3);
   }
 
   .expression-input.error {
-    border-color: var(--error-color, #ff4a4a);
-    color: var(--error-color, #ff4a4a);
+    border-color: #ff6b6b;
+    color: #ff6b6b;
   }
 
-  .expression-error {
-    color: var(--error-color, #ff4a4a);
-    cursor: help;
-  }
-
-  .expression-value {
+  /* Value view styling */
+  .value-view {
     display: flex;
     align-items: center;
-    gap: 3px;
-    padding: 2px 6px;
-    background: var(--bg-panel, #252525);
-    border: 1px solid var(--border-color, #3a3a3a);
-    border-radius: 3px;
-    color: var(--text-secondary, #888);
-    font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-    font-size: 10px;
-    white-space: nowrap;
-    max-width: 100px;
-    overflow: hidden;
+    gap: 4px;
+    width: 100%;
+    position: relative;
   }
 
-  .expression-value .value-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .value-view.expression-active {
+    padding: 2px;
+    background: rgba(74, 158, 255, 0.08);
+    border-radius: 4px;
   }
 
-  .value-input-container {
+  .value-view > :global(*:first-child) {
     flex: 1;
     min-width: 0;
   }
 
-  .has-expression .value-input-container {
-    display: none;
+  .add-expression,
+  .toggle-to-expression {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    color: #666;
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
   }
 
-  .has-error .expression-toggle.active {
-    background: var(--error-color, #ff4a4a);
-    border-color: var(--error-color, #ff4a4a);
+  .value-view:hover .add-expression,
+  .value-view:hover .toggle-to-expression {
+    opacity: 1;
+  }
+
+  .add-expression:hover {
+    background: rgba(74, 158, 255, 0.1);
+    border-color: rgba(74, 158, 255, 0.3);
+    color: #4a9eff;
+  }
+
+  .toggle-to-expression {
+    opacity: 1;
+    background: rgba(74, 158, 255, 0.2);
+    border-color: rgba(74, 158, 255, 0.4);
+    color: #4a9eff;
+  }
+
+  .toggle-to-expression:hover {
+    background: rgba(74, 158, 255, 0.3);
+  }
+
+  /* Error state */
+  .has-error .expression-view {
+    background: rgba(255, 100, 100, 0.12);
+    border-color: rgba(255, 100, 100, 0.4);
+  }
+
+  .has-error .expression-code {
+    color: #ff6b6b;
   }
 
   /* Autocomplete dropdown */
@@ -467,9 +655,9 @@
     top: 100%;
     left: 0;
     right: 0;
-    margin-top: 2px;
-    background: var(--bg-panel, #252525);
-    border: 1px solid var(--border-color, #3a3a3a);
+    margin-top: 4px;
+    background: #252525;
+    border: 1px solid #3a3a3a;
     border-radius: 4px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     max-height: 200px;
@@ -485,7 +673,7 @@
     padding: 6px 8px;
     background: transparent;
     border: none;
-    color: var(--text-primary, #fff);
+    color: #fff;
     font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
     font-size: 11px;
     text-align: left;
@@ -494,7 +682,7 @@
 
   .autocomplete-item:hover,
   .autocomplete-item.selected {
-    background: var(--bg-hover, #3a3a3a);
+    background: #3a3a3a;
   }
 
   .item-type {
@@ -504,7 +692,7 @@
   }
 
   .type-func .item-type {
-    color: var(--accent-color, #4a9eff);
+    color: #4a9eff;
   }
 
   .type-node .item-type {

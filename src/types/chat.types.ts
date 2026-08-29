@@ -36,6 +36,8 @@ export interface MessageMeta {
   duration?: number;
   /** Which Chat node created this exchange */
   nodeId?: string;
+  /** Message hasn't been sent yet (pending user action) */
+  pending?: boolean;
 }
 
 /**
@@ -131,6 +133,7 @@ export interface ChatNodeState {
 export type ChatStatus =
   | 'idle' // No prompt, waiting for input
   | 'ready' // Has prompt, ready to send
+  | 'waiting' // Waiting for upstream context before sending
   | 'streaming' // Response actively streaming
   | 'complete' // Response finished successfully
   | 'error' // Generation failed

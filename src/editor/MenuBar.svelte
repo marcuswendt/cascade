@@ -85,6 +85,7 @@
     { type: 'separator' },
     { label: 'Save', action: 'save', shortcut: `${fileModKey}S` },
     { label: 'Save As...', action: 'saveAs', shortcut: `⇧${fileModKey}S` },
+    { label: 'Version History...', action: 'versionHistory' },
     { type: 'separator' },
     { label: 'Export...', action: 'export', shortcut: '⌘E' },
     { type: 'separator' },
@@ -105,6 +106,7 @@
   ];
 
   const viewMenuItems = [
+    { label: 'Clean Up Layout', action: 'cleanUpLayout', shortcut: '⇧L' },
     { label: 'Center on Nodes', action: 'centerOnNodes', shortcut: 'H' },
     { label: 'Reset Layout', action: 'resetLayout', shortcut: '⇧⌘P' },
     { type: 'separator' },

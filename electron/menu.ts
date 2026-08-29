@@ -3,17 +3,120 @@
  *
  * Creates the native application menu with Cascade-specific items.
  * Integrates with the renderer via IPC for menu command handling.
+ * Supports dynamic "Open Recent" submenu with project folders.
  */
 
 import { app, Menu, BrowserWindow, shell, MenuItemConstructorOptions } from 'electron';
+import path from 'path';
+
+/**
+ * Menu handlers for file operations
+ */
+export interface MenuHandlers {
+  onNewProject?: () => void;
+  onOpen?: () => void;
+  onOpenFolder?: () => void;
+  onOpenRecentFolder?: (folderPath: string) => void;
+  onOpenRecentFile?: (filePath: string) => void;
+  onClearRecent?: () => void;
+}
+
+// Store handlers globally so updateRecentMenu can access them
+let storedHandlers: MenuHandlers = {};
+
+// Store recent items globally for menu updates
+let storedRecentFolders: string[] = [];
+let storedRecentFiles: string[] = [];
 
 /**
  * Create and set the application menu
+ *
+ * @param mainWindow - The main BrowserWindow
+ * @param recentFolders - Array of recent project folder paths
+ * @param recentFiles - Array of recent file paths
+ * @param handlers - Optional handlers for file operations
  */
-export function createMenu(mainWindow: BrowserWindow): void {
+export function createMenu(
+  mainWindow: BrowserWindow,
+  recentFolders: string[] = [],
+  recentFiles: string[] = [],
+  handlers: MenuHandlers = {}
+): void {
+  storedHandlers = { ...storedHandlers, ...handlers };
+  storedRecentFolders = recentFolders;
+  storedRecentFiles = recentFiles;
+  const template = buildMenuTemplate(mainWindow, recentFolders, recentFiles, storedHandlers);
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+/**
+ * Update the recent folders and files submenu
+ *
+ * @param mainWindow - The main BrowserWindow
+ * @param recentFolders - Updated array of recent project folder paths
+ * @param recentFiles - Updated array of recent file paths
+ */
+export function updateRecentMenu(
+  mainWindow: BrowserWindow,
+  recentFolders: string[],
+  recentFiles: string[]
+): void {
+  createMenu(mainWindow, recentFolders, recentFiles, storedHandlers);
+}
+
+/**
+ * Build the menu template
+ */
+function buildMenuTemplate(
+  mainWindow: BrowserWindow,
+  recentFolders: string[],
+  recentFiles: string[],
+  handlers: MenuHandlers
+): MenuItemConstructorOptions[] {
   const isMac = process.platform === 'darwin';
 
-  const template: MenuItemConstructorOptions[] = [
+  // Build recent submenu with both projects and files
+  const recentSubmenu: MenuItemConstructorOptions[] = [];
+
+  // Add recent projects section
+  if (recentFolders.length > 0) {
+    recentSubmenu.push({ label: 'Projects', enabled: false });
+    recentSubmenu.push(
+      ...recentFolders.slice(0, 10).map(folder => ({
+        label: path.basename(folder),
+        sublabel: folder,
+        click: () => handlers.onOpenRecentFolder?.(folder),
+      }))
+    );
+  }
+
+  // Add recent files section
+  if (recentFiles.length > 0) {
+    if (recentFolders.length > 0) {
+      recentSubmenu.push({ type: 'separator' as const });
+    }
+    recentSubmenu.push({ label: 'Files', enabled: false });
+    recentSubmenu.push(
+      ...recentFiles.slice(0, 10).map(file => ({
+        label: path.basename(file),
+        sublabel: file,
+        click: () => handlers.onOpenRecentFile?.(file),
+      }))
+    );
+  }
+
+  // Add clear option or empty message
+  if (recentFolders.length > 0 || recentFiles.length > 0) {
+    recentSubmenu.push({ type: 'separator' as const });
+    recentSubmenu.push({
+      label: 'Clear Recent',
+      click: () => handlers.onClearRecent?.(),
+    });
+  } else {
+    recentSubmenu.push({ label: 'No Recent Items', enabled: false });
+  }
+
+  return [
     // ============ App Menu (macOS only) ============
     ...(isMac
       ? [
@@ -26,6 +129,11 @@ export function createMenu(mainWindow: BrowserWindow): void {
                 label: 'Preferences...',
                 accelerator: 'CmdOrCtrl+,',
                 click: () => mainWindow.webContents.send('menu:preferences'),
+              },
+              { type: 'separator' as const },
+              {
+                label: 'Check for Updates...',
+                click: () => mainWindow.webContents.send('menu:checkUpdates'),
               },
               { type: 'separator' as const },
               { role: 'services' as const },
@@ -45,30 +153,30 @@ export function createMenu(mainWindow: BrowserWindow): void {
       label: 'File',
       submenu: [
         {
-          label: 'New Project',
-          accelerator: 'CmdOrCtrl+N',
-          click: () => mainWindow.webContents.send('menu:newProject'),
+          label: 'New Project...',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: () => handlers.onNewProject?.(),
         },
         {
-          label: 'Open Project...',
-          accelerator: 'CmdOrCtrl+O',
-          click: () => mainWindow.webContents.send('menu:openProject'),
+          label: 'New Graph',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => mainWindow.webContents.send('menu:newGraph'),
         },
-        // macOS: Native "Open Recent" submenu
-        ...(isMac
-          ? [
-              {
-                label: 'Open Recent',
-                role: 'recentDocuments' as const,
-                submenu: [
-                  {
-                    label: 'Clear Recent',
-                    role: 'clearRecentDocuments' as const,
-                  },
-                ],
-              },
-            ]
-          : []),
+        { type: 'separator' as const },
+        {
+          label: 'Open...',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => handlers.onOpen?.(),
+        },
+        {
+          label: 'Open Folder...',
+          accelerator: 'CmdOrCtrl+Shift+O',
+          click: () => handlers.onOpenFolder?.(),
+        },
+        {
+          label: 'Open Recent',
+          submenu: recentSubmenu,
+        },
         { type: 'separator' as const },
         {
           label: 'Save',
@@ -79,6 +187,12 @@ export function createMenu(mainWindow: BrowserWindow): void {
           label: 'Save As...',
           accelerator: 'CmdOrCtrl+Shift+S',
           click: () => mainWindow.webContents.send('menu:saveAs'),
+        },
+        { type: 'separator' as const },
+        {
+          label: isMac ? 'Reveal in Finder' : 'Show in Explorer',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => mainWindow.webContents.send('menu:revealInFinder'),
         },
         { type: 'separator' as const },
         {
@@ -117,10 +231,7 @@ export function createMenu(mainWindow: BrowserWindow): void {
               { type: 'separator' as const },
               {
                 label: 'Speech',
-                submenu: [
-                  { role: 'startSpeaking' as const },
-                  { role: 'stopSpeaking' as const },
-                ],
+                submenu: [{ role: 'startSpeaking' as const }, { role: 'stopSpeaking' as const }],
               },
             ]
           : []),
@@ -231,15 +342,20 @@ export function createMenu(mainWindow: BrowserWindow): void {
         { type: 'separator' as const },
         {
           label: 'Report Issue',
-          click: () => shell.openExternal('https://github.com/cascade/cascade/issues'),
+          click: () => shell.openExternal('https://github.com/field-io/cascade/issues'),
         },
         {
           label: 'View on GitHub',
-          click: () => shell.openExternal('https://github.com/cascade/cascade'),
+          click: () => shell.openExternal('https://github.com/field-io/cascade'),
         },
         ...(isMac
           ? []
           : [
+              { type: 'separator' as const },
+              {
+                label: 'Check for Updates...',
+                click: () => mainWindow.webContents.send('menu:checkUpdates'),
+              },
               { type: 'separator' as const },
               {
                 label: 'About Cascade',
@@ -249,18 +365,6 @@ export function createMenu(mainWindow: BrowserWindow): void {
       ] as MenuItemConstructorOptions[],
     },
   ];
-
-  const menu = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menu);
-}
-
-/**
- * Update the menu (useful for enabling/disabling items based on state)
- */
-export function updateMenu(mainWindow: BrowserWindow, state: MenuState): void {
-  // Could implement dynamic menu updates based on app state
-  // For now, just rebuild the menu
-  createMenu(mainWindow);
 }
 
 /**

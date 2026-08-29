@@ -6,6 +6,7 @@
   import Canvas from '../Canvas.svelte';
   import { sharedContextStore } from '../dockview/renderer';
   import { dockviewStore } from '../dockview/dockview-store.svelte';
+  import { ENABLE_CODE_EDITOR } from '@/config/features';
 
   export let panelId: string;
   export let panelParams: CascadePanelParams;
@@ -72,6 +73,9 @@
   }
 
   function handleNodeEdit(e: CustomEvent<{ node: Node }>) {
+    // Round 32: disabled, not removed — see src/config/features.ts.
+    // Node code is written by Claude Code now, not hand-edited in-app.
+    if (!ENABLE_CODE_EDITOR) return;
     const node = e.detail.node;
     if (node) {
       dockviewStore.openCodeEditor(node.id, node.type || 'Code');

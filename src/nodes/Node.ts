@@ -1,4 +1,4 @@
-import type { InputPort, OutputPort, PortOptions, PortType, Prop } from '../types/node.types.js';
+import type { InputPort, OutputPort, PortOptions, PortType, Prop, NodeParameter, ParamOptions, DataType } from '../types/node.types.js';
 import type { Graph } from './Graph.js';
 import { typeToPackagePath, isStandardLibraryNode } from '../utils/nodeTypeUtils.js';
 import { normalizeColor, isColorValue } from '../utils/colorUtils.js';
@@ -9,6 +9,20 @@ import { expressionEngine } from '../engine/expressions/index.js';
  *
  * Subclasses override behavior as needed (e.g., Annotation overrides execute()).
  */
+/** Best guess at a parameter's type from its default, so a node that doesn't
+ *  declare one still gets the right editor. */
+function inferParamType(value: unknown): DataType {
+  if (typeof value === 'number') return Number.isInteger(value) ? 'int' : 'float';
+  if (typeof value === 'boolean') return 'bool';
+  if (typeof value === 'string') return 'string';
+  if (Array.isArray(value) && value.every(v => typeof v === 'number')) {
+    if (value.length === 2) return 'vec2';
+    if (value.length === 3) return 'vec3';
+    if (value.length === 4) return 'vec4';
+  }
+  return 'any';
+}
+
 export class Node {
   // Static callback for UI reactivity (set by editor, not required for headless)
   static onPropParamsChanged?: (nodeId: string) => void;
@@ -34,6 +48,11 @@ export class Node {
   }> = {};
 
   // Variadic inputs
+  /** The node's own values — see param(). Distinct from `props`, which is the
+   *  older lens-node control system. */
+  parameters: NodeParameter[] = [];
+  protected parametersUsedDuringSetup: Set<string> = new Set();
+
   variadic: boolean = false;
   protected variadicDefault: any = null;
 
@@ -136,7 +155,7 @@ export class Node {
           existingPort.value = defaultValue as T;
         }
       }
-      Object.assign(existingPort.options, options);
+      existingPort.options = Object.assign(existingPort.options ?? {}, options);
       return existingPort as InputPort<T>;
     }
 
@@ -158,11 +177,19 @@ export class Node {
     return port;
   }
 
-  out<T>(name: string, portType: PortType = 'param'): OutputPort<T> {
+  /**
+   * Declare an output port. Takes the same `options` as `in()` — an output that
+   * cannot state its type is a hole in the type system: the connection check
+   * only ever sees `any` on one side, and the port draws in the neutral colour
+   * whatever it actually carries.
+   */
+  out<T>(name: string, portType: PortType = 'param', options: PortOptions = {}): OutputPort<T> {
     const existingPort = this.outputs.find(p => p.name === name);
     if (existingPort) {
       this.portsUsedDuringSetup.add(`output_${name}`);
       if (existingPort.portType !== portType) existingPort.portType = portType;
+      if (options.type) existingPort.dataType = options.type;
+      existingPort.options = { ...(existingPort.options ?? {}), ...options };
       return existingPort as OutputPort<T>;
     }
 
@@ -171,10 +198,10 @@ export class Node {
       id: `${this.id}_out_${portIndex}`,
       name,
       portType,
-      dataType: 'any',
+      dataType: options.type || 'any',
       value: undefined as T,
       connections: [],
-      options: {},
+      options,
 
       setValue: (value: T) => {
         port.value = value;
@@ -445,6 +472,88 @@ export class Node {
 
     // Update time dependency flag based on all expressions
     this.updateTimeDependent();
+  }
+
+  // ============ Parameters ============
+
+  /**
+   * A value that belongs to the node — not a pin.
+   *
+   * Cascade only had inputs and outputs, so every setting a node had was
+   * declared as an input port that nobody ever wired. That reads wrong in the
+   * graph (density-blend showed twenty input pins when it has four real inputs
+   * and sixteen settings) and it reads wrong in the Inspector, where a crop
+   * fraction and an incoming image sat in the same list.
+   *
+   * So: inputs are edges from other nodes, parameters are the node's own
+   * values, outputs are edges out.
+   *
+   * A parameter can be PROMOTED to an input pin when you want it driven from
+   * upstream rather than typed — a signal's weight computed by another node,
+   * say. Promotion is per parameter and off by default: making every setting a
+   * pin is how the two got conflated in the first place.
+   */
+  param<T = any>(name: string, defaultValue?: T, options: ParamOptions = {}): NodeParameter<T> {
+    let parameter = this.parameters.find(p => p.name === name) as NodeParameter<T> | undefined;
+
+    if (!parameter) {
+      parameter = {
+        name,
+        value: defaultValue as T,
+        defaultValue: defaultValue as T,
+        dataType: options.type || inferParamType(defaultValue),
+        promoted: false,
+        options,
+      };
+      this.parameters.push(parameter as NodeParameter);
+    } else {
+      // Re-declaring must not reset a value someone set. Only the metadata is
+      // refreshed, so editing a node's code doesn't wipe its settings.
+      if (options.type) parameter.dataType = options.type;
+      parameter.defaultValue = defaultValue as T;
+      Object.assign(parameter.options, options);
+    }
+    this.parametersUsedDuringSetup.add(name);
+
+    // A promoted parameter reads from its pin whenever something is connected,
+    // and falls back to its own value when nothing is.
+    if (parameter.promoted) {
+      const port = this.in(name, parameter.value, { type: parameter.dataType, promoted: true } as PortOptions);
+      (port as any).fromParameter = name;
+      if (port.connections.length > 0 && port.value !== undefined && port.value !== null) {
+        return { ...parameter, value: port.value as T };
+      }
+    }
+
+    return parameter;
+  }
+
+  /** Turn a parameter into an input pin, or back. */
+  setParameterPromoted(name: string, promoted: boolean): void {
+    const parameter = this.parameters.find(p => p.name === name);
+    if (!parameter || parameter.promoted === promoted) return;
+    parameter.promoted = promoted;
+
+    if (promoted) {
+      const port = this.in(name, parameter.value, { type: parameter.dataType, promoted: true } as PortOptions);
+      (port as any).fromParameter = name;
+    } else {
+      const index = this.inputs.findIndex(p => p.name === name);
+      if (index >= 0) {
+        // Drop the wires first: a pin that no longer exists must not leave
+        // dangling connections behind it.
+        [...this.inputs[index].connections].forEach(conn => this.graph?.disconnect(conn.id));
+        this.inputs.splice(index, 1);
+      }
+    }
+    this.markDirty();
+  }
+
+  setParameter(name: string, value: any): void {
+    const parameter = this.parameters.find(p => p.name === name);
+    if (!parameter) return;
+    parameter.value = value;
+    this.markDirty();
   }
 
   // ============ Variadic Inputs ============

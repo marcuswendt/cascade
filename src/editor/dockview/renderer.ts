@@ -8,10 +8,26 @@ import type { CascadePanelParams, PanelContext } from './types';
 import type { Node } from '@/nodes/Node';
 
 // Registry of panel components
-export interface PanelComponentEntry {
-  component: Component<any>;
-  defaultTitle: string;
-}
+// Round 32: "load Monaco only on demand when someone opens that editor
+// view (mostly they don't)" — a panel type can now be registered either
+// eagerly (registerPanelComponent, the existing behavior — every panel
+// type except 'code') or lazily (registerLazyPanelComponent, a loader
+// returning a dynamic `import()`), as two explicit entry shapes rather
+// than one type sniffed at runtime — a Svelte 5 component's compiled
+// function signature isn't a reliable enough signal to branch on. A
+// static `import CodePanel from ...` at the top of DockviewContainer.svelte
+// was pulling monaco-editor (3MB+ minified) into the eagerly-loaded
+// bundle graph regardless of whether the code panel was ever opened —
+// Vite's own manualChunks split for monaco-editor didn't help, since
+// chunk splitting only changes how a chunk is grouped, not WHEN it
+// fetches. Only createSvelteRenderer's init() (below) knows when a panel
+// is actually being created, so that's the one place that can
+// legitimately defer the fetch.
+export type PanelComponentLoader = () => Promise<{ default: Component<any> }>;
+
+export type PanelComponentEntry =
+  | { lazy: false; component: Component<any>; defaultTitle: string }
+  | { lazy: true; loader: PanelComponentLoader; defaultTitle: string };
 
 const componentRegistry = new Map<string, PanelComponentEntry>();
 
@@ -73,7 +89,18 @@ export function registerPanelComponent(
   component: Component<any>,
   defaultTitle: string
 ): void {
-  componentRegistry.set(type, { component, defaultTitle });
+  componentRegistry.set(type, { lazy: false, component, defaultTitle });
+}
+
+/** See PanelComponentEntry's own note — for a panel type whose component
+ * (and its imports) should only be fetched once a panel of that type is
+ * actually created, not at app startup. */
+export function registerLazyPanelComponent(
+  type: string,
+  loader: PanelComponentLoader,
+  defaultTitle: string
+): void {
+  componentRegistry.set(type, { lazy: true, loader, defaultTitle });
 }
 
 export function getPanelComponent(type: string): PanelComponentEntry | undefined {
@@ -88,6 +115,31 @@ export function createSvelteRenderer(
 ): IContentRenderer {
   let instance: Record<string, any> | null = null;
   let container: HTMLElement | null = null;
+  // Round 32: guards the lazy-load path — a panel can be closed (dispose())
+  // while its dynamic import() is still in flight; without this the mount
+  // that resolves afterward would attach to a container dockview has
+  // already torn down.
+  let disposed = false;
+
+  function buildProps(parameters: GroupPanelPartInitParameters) {
+    const context = getSharedContext();
+    return {
+      panelId: params.id,
+      panelParams: params,
+      panelApi: parameters.api,
+      containerApi: parameters.containerApi,
+      graph: context?.graph,
+      selectedNode: context?.selectedNode,
+      selectedAnnotation: context?.selectedAnnotation,
+      activeTool: context?.activeTool || 'select',
+      presentationMode: context?.presentationMode || false,
+      onRecordHistory: context?.onRecordHistory,
+      onNodeSelect: context?.onNodeSelect,
+      onAnnotationSelect: context?.onAnnotationSelect,
+      onToolChange: context?.onToolChange,
+      onOpenNodePanel: context?.onOpenNodePanel
+    };
+  }
 
   return {
     element: document.createElement('div'),
@@ -113,30 +165,27 @@ export function createSvelteRenderer(
         return;
       }
 
-      // Get current shared context
-      const context = getSharedContext();
+      if (!entry.lazy) {
+        instance = mount(entry.component, { target: container, props: buildProps(parameters) });
+        return;
+      }
 
-      // Mount Svelte 5 component
-      instance = mount(entry.component, {
-        target: container,
-        props: {
-          panelId: params.id,
-          panelParams: params,
-          panelApi: parameters.api,
-          containerApi: parameters.containerApi,
-          // Pass shared context props
-          graph: context?.graph,
-          selectedNode: context?.selectedNode,
-          selectedAnnotation: context?.selectedAnnotation,
-          activeTool: context?.activeTool || 'select',
-          presentationMode: context?.presentationMode || false,
-          onRecordHistory: context?.onRecordHistory,
-          onNodeSelect: context?.onNodeSelect,
-          onAnnotationSelect: context?.onAnnotationSelect,
-          onToolChange: context?.onToolChange,
-          onOpenNodePanel: context?.onOpenNodePanel
-        }
-      });
+      // Lazy entry: show a lightweight placeholder immediately (the load
+      // is a real multi-MB fetch, not instant), swap in the real
+      // component once it resolves.
+      container.innerHTML = `<div style="padding: 16px; color: #888;">Loading ${entry.defaultTitle}…</div>`;
+      entry
+        .loader()
+        .then((mod) => {
+          if (disposed || !container) return;
+          container.innerHTML = '';
+          instance = mount(mod.default, { target: container, props: buildProps(parameters) });
+        })
+        .catch((err) => {
+          console.error(`Failed to load panel component for type ${params.type}:`, err);
+          if (disposed || !container) return;
+          container.innerHTML = `<div style="padding: 16px; color: #ff6b6b;">Failed to load ${entry.defaultTitle}: ${String(err)}</div>`;
+        });
     },
 
     update(_event: GroupPanelPartInitParameters): void {
@@ -144,6 +193,7 @@ export function createSvelteRenderer(
     },
 
     dispose(): void {
+      disposed = true;
       if (instance && container) {
         unmount(instance);
         instance = null;

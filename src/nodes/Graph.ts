@@ -18,8 +18,10 @@ import type {
   ProjectConfig,
   NodeSource
 } from '../types/node.types.js';
-import { packagePathToType, isStandardLibraryNode, getNodeClass, compileCustomNode, getNodeDisplayName } from '../utils/nodeTypeUtils.js';
+import { packagePathToType, isStandardLibraryNode, getNodeClass, getNodeDisplayName } from '../utils/nodeTypeUtils.js';
+import { loadProjectModule, loadEmbeddedModule } from '../engine/nodeModuleLoader.js';
 import { normalizeColor, isColorValue } from '../utils/colorUtils.js';
+import { canConnect, normalizeType } from '../types/coreTypes.js';
 
 // Current file format version
 export const GRAPH_FORMAT_VERSION = '0.2';
@@ -359,34 +361,24 @@ export class Graph {
    * Returns a warning message if types don't match, or null if compatible
    */
   checkDataTypeCompatibility(fromPort: any, toPort: any): string | null {
-    const fromType = fromPort.dataType || 'any';
-    const toType = toPort.dataType || 'any';
+    const fromType = normalizeType(fromPort.dataType);
+    const toType = normalizeType(toPort.dataType);
 
-    // 'any' type is compatible with everything
-    if (fromType === 'any' || toType === 'any') {
-      return null;
-    }
+    // The core rule, in coreTypes.ts: widening is implicit, narrowing is not.
+    // vec2i feeds vec2 because nothing is lost; vec2 into vec2i would silently
+    // drop the fraction, and texture into image is a GPU readback — both are
+    // real operations and belong in the graph rather than happening invisibly.
+    if (canConnect(fromType, toType)) return null;
 
-    // Exact match
-    if (fromType === toType) {
-      return null;
-    }
-
-    // Allowed implicit conversions
-    const implicitConversions: Record<string, string[]> = {
-      'number': ['number[]', 'string'],      // number can become array or string
-      'int': ['number', 'number[]', 'string'],
-      'float': ['number', 'number[]', 'string'],
-      'boolean': ['number', 'string'],
-      'string': ['number'],                   // string can be parsed as number
+    // Legacy pairs from before the core set existed, kept so old graphs load.
+    const legacy: Record<string, string[]> = {
+      number: ['number[]', 'string'],
+      float: ['number[]'],
+      int: ['number[]'],
+      string: ['number', 'float', 'int'],
     };
+    if (legacy[fromType]?.includes(toType)) return null;
 
-    const allowed = implicitConversions[fromType];
-    if (allowed && allowed.includes(toType)) {
-      return null; // Implicit conversion allowed
-    }
-
-    // Type mismatch - return warning
     return `Type mismatch: connecting ${fromType} to ${toType}`;
   }
 
@@ -1110,13 +1102,21 @@ export class Graph {
 
         if (!fromPort || !toPort) return null;
 
-        // Return as [[elementId, portIndex], [elementId, portIndex]]
-        return [[fromParsed.elementId, fromParsed.index], [toParsed.elementId, toParsed.index]];
+        // [[elementId, portIndex, portName], [elementId, portIndex, portName]].
+        // The NAME is what a reader should use; the index stays as a fallback
+        // for files and readers that predate it. Index alone was fragile: a
+        // node's ports are created in the order its code calls in()/out(), so
+        // any input pre-seeded in the file takes an earlier index and shifts
+        // every connection after it — silently rewiring the graph.
+        return [
+          [fromParsed.elementId, fromParsed.index, fromPort.name],
+          [toParsed.elementId, toParsed.index, toPort.name],
+        ];
       } catch (err) {
         console.warn(`Failed to parse port ID in connection: ${err}`);
         return null;
       }
-    }).filter((conn): conn is [[string, number], [string, number]] => conn !== null);
+    }).filter((conn): conn is [[string, number, string], [string, number, string]] => conn !== null);
     if (connections.length > 0) {
       result.connections = connections;
     }
@@ -1171,6 +1171,48 @@ export class Graph {
       result.comment = node.comment;
     }
 
+    // A node's colour is a grouping the author chose; it belongs in the file.
+    if ((node as any).color) {
+      result.color = (node as any).color;
+    }
+
+    /**
+     * Parameters — the node's own values. Only those that differ from the code
+     * default, plus anything promoted to a pin, so a file records decisions
+     * rather than restating every default a module already has.
+     */
+    const parameters = (node.parameters ?? [])
+      .filter(p => p.promoted || JSON.stringify(p.value) !== JSON.stringify(p.defaultValue))
+      .map(p => (p.promoted ? { name: p.name, value: p.value, promoted: true } : { name: p.name, value: p.value }));
+    if (parameters.length > 0) {
+      result.params = parameters;
+    }
+
+    /**
+     * Serialize the value of every UNCONNECTED input port.
+     *
+     * This is where a node's parameters actually live: a node declares them
+     * with `node.in(name, default)`, so a value someone set in the Inspector is
+     * a port value and nothing else. Without this, saving discarded every one
+     * of them — the graph reloaded with code defaults, and a setting that was
+     * live a moment ago was simply gone. Caught by a save wiping the default
+     * moment out of cloud-plots, after which the loader had nothing to load.
+     *
+     * A connected port is skipped: its value belongs to the node upstream and
+     * is recomputed on the next cook, so writing it down would only preserve a
+     * stale copy.
+     */
+    const inputValues = node.inputs
+      .filter(port => (port.connections?.length ?? 0) === 0)
+      .filter(port => port.value !== undefined && port.value !== null)
+      .filter(port => typeof port.value !== 'function')
+      .map(port => ({ name: port.name, defaultValue: port.value, dataType: port.dataType }))
+      .filter(port => port.defaultValue !== '' || port.dataType === 'string');
+
+    if (inputValues.length > 0) {
+      result.inputs = inputValues;
+    }
+
     // Serialize props (value and expression if present)
     const props = Object.entries(node.props).reduce((acc, [key, prop]) => {
       let value = prop.value;
@@ -1197,6 +1239,14 @@ export class Graph {
     }
     if (node.cook) {
       result.cook = true;
+    }
+
+    // Call node's serialize() method if it exists (polymorphic serialization)
+    if (typeof (node as any).serialize === 'function') {
+      const nodeState = (node as any).serialize();
+      if (nodeState && Object.keys(nodeState).length > 0) {
+        result.state = nodeState;
+      }
     }
 
     return result;
@@ -1308,6 +1358,30 @@ export class Graph {
       }
       node.code = nodeCode;
       node.comment = nodeData.comment || '';
+      if (nodeData.color) (node as any).color = nodeData.color;
+
+      // Parameters are restored BEFORE the node's code runs, so that when
+      // param() declares one it finds the saved value already there rather than
+      // resetting it to the code default.
+      if (Array.isArray(nodeData.params)) {
+        nodeData.params.forEach((saved: any) => {
+          if (!saved?.name) return;
+          node.parameters.push({
+            name: saved.name,
+            value: saved.value,
+            defaultValue: saved.value,
+            dataType: 'any',
+            promoted: Boolean(saved.promoted),
+            options: {},
+          });
+          // A promoted parameter needs its pin to exist now, or the connection
+          // into it has nothing to bind to on the first pass.
+          if (saved.promoted) {
+            const port = node.in(saved.name, saved.value);
+            (port as any).fromParameter = saved.name;
+          }
+        });
+      }
       graph.addElement(node);
 
       // Ports (inputs/outputs) are no longer serialized - they are defined in node code
@@ -1319,8 +1393,13 @@ export class Graph {
           const port = node.in(portData.name, portData.defaultValue, {
             type: portData.dataType || 'any'
           });
-          // Restore port ID to match saved ID (needed for connection restoration)
-          if (port.id !== portData.id) {
+          // Restore the saved port ID, but ONLY if the file actually carried
+          // one. A hand-authored .cascade lists a node's inputs by name and
+          // default alone, and assigning that missing id overwrote a perfectly
+          // good generated one with undefined — after which every connection
+          // into the node failed with "Invalid port ID format", silently, and
+          // the node never received an input or ran.
+          if (portData.id && port.id !== portData.id) {
             (port as any).id = portData.id;
           }
         });
@@ -1330,8 +1409,9 @@ export class Graph {
         nodeData.outputs.forEach((portData: any) => {
           // Create port using the stored metadata
           const port = node.out(portData.name, portData.portType || 'param');
-          // Restore port ID to match saved ID (needed for connection restoration)
-          if (port.id !== portData.id) {
+          // Same guard as the inputs above — never overwrite a generated id
+          // with an absent one.
+          if (portData.id && port.id !== portData.id) {
             (port as any).id = portData.id;
           }
         });
@@ -1388,13 +1468,33 @@ export class Graph {
       }
 
       // Set up node function - class-based nodes don't need this (they use setup())
-      // Only compile function for custom nodes with code
-      if (!NodeClass && node.code) {
-        try {
-          const nodeFunction = compileCustomNode(node.code);
-          node.setFunction(nodeFunction);
-        } catch (err) {
+      // Custom nodes (project or embedded) are real ES modules compiled
+      // server-side (see nodeModuleLoader.ts) — the load is async, but
+      // setFunction can be called with a stable wrapper immediately: it
+      // awaits the compiled module the first time this node actually
+      // executes, which always happens after fromJSON returns.
+      // Gate on source === 'project' as well as node.code: a project
+      // module's real content lives on disk (loadProjectModule always
+      // fetches fresh), so node.code — only ever a legacy cached snapshot
+      // for that source type — can be empty in a hand-authored or minimal
+      // .cascade file without that meaning "no function to wire up."
+      if (!NodeClass && (source === 'project' || node.code)) {
+        const modulePromise = source === 'project' ? loadProjectModule(nodeType) : loadEmbeddedModule(node.code);
+        node.setFunction((n: unknown, g: unknown) =>
+          modulePromise.then((m) => m.execute(n, g))
+        );
+        modulePromise.catch((err) => {
           console.warn('Failed to compile node ' + node.id + ':', err);
+        });
+      }
+
+      // Call node's deserialize() method if it exists (polymorphic deserialization)
+      // This restores node-specific state like AI responses, cached data, etc.
+      if (nodeData.state && typeof (node as any).deserialize === 'function') {
+        try {
+          (node as any).deserialize(nodeData.state);
+        } catch (err) {
+          console.warn('Failed to deserialize state for node ' + node.id + ':', err);
         }
       }
     });
@@ -1499,8 +1599,8 @@ export class Graph {
       return false;
     }
 
-    const [fromNodeId, fromPortIndex] = connData[0];
-    const [toNodeId, toPortIndex] = connData[1];
+    const [fromNodeId, fromPortIndex, fromPortName] = connData[0];
+    const [toNodeId, toPortIndex, toPortName] = connData[1];
 
     if (typeof fromPortIndex !== 'number' || typeof toPortIndex !== 'number') {
       return false;
@@ -1510,9 +1610,31 @@ export class Graph {
     const toElement = this.getElement(toNodeId);
     if (!fromElement || !toElement) return false;
 
-    // Access ports directly from arrays (works for both computations and annotations)
-    const fromPort = fromElement.outputs?.[fromPortIndex];
-    const toPort = toElement.inputs?.[toPortIndex];
+    // Name first, index as the fallback. A port's index depends on the order the
+    // node's code happens to declare its ports, which changes whenever an input
+    // is pre-seeded in the file or a parameter is added to the module; the name
+    // doesn't. Files written before names existed still resolve by index.
+    const byName = <T extends { name?: string }>(ports: T[] | undefined, name: unknown) =>
+      typeof name === 'string' ? ports?.find(p => p.name === name) : undefined;
+
+    /**
+     * When the file names a port, ONLY the name resolves it — never the index.
+     *
+     * Falling back to the index when a named port isn't found yet is worse than
+     * failing: a port that a node creates late in its own code simply doesn't
+     * exist during the first passes, and the fallback then binds the wire to
+     * whatever happens to sit at that index. Seen live: an edge meant for
+     * `brightness_contribution` landed on `brightness`, so the blend read a
+     * weight where it expected an image and quietly produced nothing. Waiting a
+     * pass costs nothing; guessing costs a silently miswired graph.
+     */
+    const resolve = <T extends { name?: string }>(ports: T[] | undefined, name: unknown, index: number) =>
+      typeof name === 'string' ? byName(ports, name) : ports?.[index];
+
+    const fromPort = resolve(fromElement.outputs, fromPortName, fromPortIndex);
+    const toPort = resolve(toElement.inputs, toPortName, toPortIndex);
+    // Not an error: the target's ports may not exist until its code has run.
+    // restoreConnections() keeps this one pending and tries again next pass.
     if (!fromPort || !toPort) return false;
 
     if (checkDuplicates) {
@@ -1528,7 +1650,11 @@ export class Graph {
     try {
       this.connect(fromPort, toPort);
       return true;
-    } catch {
+    } catch (err) {
+      // A rejection here IS a fault — both ports exist and the graph still
+      // refused the edge. Silence cost a day: every connection into a
+      // hand-authored node failed this way and the graph simply sat there.
+      console.warn(`[connect] ${fromNodeId}[${fromPortIndex}] -> ${toNodeId}[${toPortIndex}] rejected:`, err);
       return false;
     }
   }
@@ -1536,15 +1662,31 @@ export class Graph {
   /**
    * Restore connections that were stored during fromJSON
    */
+  /**
+   * Bind the connections a loaded file described, and KEEP the ones that could
+   * not bind yet.
+   *
+   * A node's ports are created by running its code, so on load a connection
+   * into a node that hasn't executed has no port to attach to. This used to
+   * drop those connections on the floor — the pending list was deleted after
+   * one pass — which meant a graph of code-defined nodes came up almost
+   * entirely unwired, and nothing downstream of a source ever ran. Anything
+   * still unresolved stays pending, so calling this again after another cook
+   * finishes the job.
+   */
   restoreConnections(): void {
     const connectionsToRestore = (this as any)._connectionsToRestore || [];
     if (connectionsToRestore.length === 0) return;
 
-    connectionsToRestore.forEach((connData: any) => {
-      this.tryRestoreConnection(connData, true);
-    });
+    const stillPending = connectionsToRestore.filter(
+      (connData: any) => !this.tryRestoreConnection(connData, true)
+    );
 
-    delete (this as any)._connectionsToRestore;
+    if (stillPending.length > 0) {
+      (this as any)._connectionsToRestore = stillPending;
+    } else {
+      delete (this as any)._connectionsToRestore;
+    }
   }
 }
 

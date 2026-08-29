@@ -11,6 +11,11 @@
 export const isElectron = typeof window !== 'undefined' && !!window.cascade?.isElectron;
 
 /**
+ * Whether running in local mode (Electron with cascadeElectron API)
+ */
+export const isLocalMode = typeof window !== 'undefined' && !!window.cascadeElectron;
+
+/**
  * Current platform: 'darwin', 'win32', 'linux', or 'web'
  */
 export const platform = window.cascade?.platform ?? 'web';
@@ -347,4 +352,169 @@ export function formatShortcut(shortcut: string): string {
       .replace(/\+/g, '');
   }
   return shortcut.replace('CmdOrCtrl', 'Ctrl');
+}
+
+// ============ Local Mode APIs (cascadeElectron) ============
+
+/**
+ * Open folder picker dialog
+ * Returns null in browser mode
+ */
+export async function openFolderDialog(): Promise<string | null> {
+  if (isLocalMode) {
+    return window.cascadeElectron!.openFolderDialog();
+  }
+  return null;
+}
+
+/**
+ * Get current project path
+ * Returns null in browser mode
+ */
+export async function getCurrentProject(): Promise<string | null> {
+  if (isLocalMode) {
+    return window.cascadeElectron!.getCurrentProject();
+  }
+  return null;
+}
+
+/**
+ * Get current graph file path
+ * Returns null in browser mode
+ */
+export async function getCurrentGraph(): Promise<string | null> {
+  if (isLocalMode) {
+    return (window as any).cascadeElectron!.getCurrentGraph();
+  }
+  return null;
+}
+
+/**
+ * Set current graph file path (updates window title in main process)
+ */
+export async function setCurrentGraph(graphPath: string): Promise<void> {
+  if (isLocalMode) {
+    return window.cascadeElectron!.setCurrentGraph(graphPath);
+  }
+}
+
+/**
+ * Get recent project folders
+ * Returns empty array in browser mode
+ */
+export async function getRecentFolders(): Promise<string[]> {
+  if (isLocalMode) {
+    return window.cascadeElectron!.getRecentFolders();
+  }
+  return [];
+}
+
+/**
+ * Reveal file in system file manager
+ */
+export async function revealInFinder(filePath: string): Promise<void> {
+  if (isLocalMode) {
+    return window.cascadeElectron!.revealInFinder(filePath);
+  }
+}
+
+/**
+ * Set document dirty state (updates window title with asterisk)
+ * Also updates macOS proxy icon dirty indicator
+ */
+export async function setDocumentDirty(dirty: boolean): Promise<void> {
+  if (isLocalMode) {
+    return window.cascadeElectron!.setDocumentDirty(dirty);
+  }
+}
+
+/**
+ * Get app preferences
+ */
+export async function getPreferences(): Promise<Record<string, any>> {
+  if (isLocalMode) {
+    return window.cascadeElectron!.getPreferences();
+  }
+  return {};
+}
+
+/**
+ * Set a preference value
+ */
+export async function setPreference(key: string, value: any): Promise<void> {
+  if (isLocalMode) {
+    return window.cascadeElectron!.setPreference(key, value);
+  }
+}
+
+/**
+ * Get AI credentials
+ */
+export async function getCredentials(): Promise<Record<string, any>> {
+  if (isLocalMode) {
+    return window.cascadeElectron!.getCredentials();
+  }
+  return {};
+}
+
+/**
+ * Set AI credentials
+ */
+export async function setCredentials(credentials: Record<string, any>): Promise<void> {
+  if (isLocalMode) {
+    return window.cascadeElectron!.setCredentials(credentials);
+  }
+}
+
+/**
+ * Check for app updates
+ */
+export async function checkForUpdates(): Promise<void> {
+  if (isLocalMode) {
+    return window.cascadeElectron!.checkForUpdates();
+  }
+}
+
+/**
+ * Listen for project open events
+ * Returns unsubscribe function
+ */
+export function onOpenProject(callback: (path: string) => void): () => void {
+  if (isLocalMode) {
+    return window.cascadeElectron!.onOpenProject(callback);
+  }
+  return () => {};
+}
+
+/**
+ * Listen for graph open events
+ * Returns unsubscribe function
+ */
+export function onOpenGraph(callback: (slug: string) => void): () => void {
+  if (isLocalMode) {
+    return window.cascadeElectron!.onOpenGraph(callback);
+  }
+  return () => {};
+}
+
+/**
+ * Listen for menu action events
+ * Returns unsubscribe function
+ */
+export function onMenuAction(callback: (action: string) => void): () => void {
+  if (isLocalMode) {
+    return window.cascadeElectron!.onMenuAction(callback);
+  }
+  return () => {};
+}
+
+/**
+ * Listen for update status events
+ * Returns unsubscribe function
+ */
+export function onUpdateStatus(callback: (status: any) => void): () => void {
+  if (isLocalMode) {
+    return window.cascadeElectron!.onUpdateStatus(callback);
+  }
+  return () => {};
 }

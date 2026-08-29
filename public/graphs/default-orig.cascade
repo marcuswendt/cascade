@@ -1,0 +1,128 @@
+{
+  "version": "0.1",
+  "metadata": {
+    "name": "Cascade Graph",
+    "created": "2025-11-30T18:08:34.327Z",
+    "modified": "2025-11-30T18:08:34.327Z"
+  },
+  "annotations": [
+    {
+      "id": "ann_headline_default",
+      "type": "text",
+      "position": [0, 0],
+      "content": "Hello World - Connections Test",
+      "size": {
+        "width": 500,
+        "height": 40
+      },
+      "style": {
+        "fontSize": 32,
+        "fontWeight": "700",
+        "fontStyle": "normal",
+        "textAlign": "left",
+        "color": "rgb(255,255,255)",
+        "padding": 0,
+        "borderRadius": 0
+      }
+    },
+    {
+      "id": "ann_copy_default",
+      "type": "text",
+      "position": [0, 120],
+      "content": "Cascade is a visual programming framework designed for creative coders who want to build interactive experiences without sacrificing the power of code. Every node is just a TypeScript function, fully inspectable and editable. The visual graph and code are equal partners, not abstractions of each other. This allows you to work visually when it makes sense, and dive into code when you need precision and control.",
+      "size": {
+        "width": 500,
+        "height": 200
+      },
+      "style": {
+        "fontSize": 14,
+        "fontWeight": "normal",
+        "fontStyle": "normal",
+        "textAlign": "left",
+        "color": "rgb(255,255,255)",
+        "padding": 0,
+        "borderRadius": 0
+      }
+    },
+    {
+      "id": "ann_image_cascade",
+      "type": "image",
+      "position": [-445.93601032083075, 254.9487664542571],
+      "src": "public/assets/cascade.jpg",
+      "size": {
+        "width": 200,
+        "height": 150
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "Color1",
+      "type": "cascade.lens.Color",
+      "position": [200, 250],
+      "props": {
+        "color": [1, 1, 1, 1],
+        "resolution": [512, 512]
+      }
+    },
+    {
+      "id": "Checkers1",
+      "type": "cascade.lens.Checkers",
+      "position": [-200, 400],
+      "props": {
+        "color1": [1, 1, 1, 1],
+        "color2": [0, 0, 0, 1],
+        "mode": "size",
+        "size": 32,
+        "divisions": 16,
+        "resolution": [512, 512]
+      }
+    },
+    {
+      "id": "Composite1",
+      "type": "cascade.lens.Composite",
+      "position": [0, 550],
+      "props": {
+        "blendMode": "multiply",
+        "opacity": 1
+      }
+    },
+    {
+      "id": "Blur1",
+      "type": "cascade.lens.Blur",
+      "position": [0, 650],
+      "props": {
+        "radius": 5,
+        "wrapEdges": false
+      }
+    },
+    {
+      "id": "NormalMap1",
+      "type": "cascade.lens.NormalMap",
+      "position": [0, 748.1100174187586],
+      "props": {
+        "scale": 1,
+        "flipX": false,
+        "flipY": false
+      }
+    },
+    {
+      "id": "Composite2",
+      "type": "cascade.lens.Composite",
+      "position": [-136.19497734900557, 874.2393621153204],
+      "props": {
+        "blendMode": "multiply",
+        "opacity": 1
+      },
+      "cook": true
+    }
+  ],
+  "connections": [
+     [["Checkers1", 0], ["Composite1", 0]],
+     [["Color1", 0], ["Composite1", 1]],
+     [["Composite1", 0], ["Blur1", 0]],
+     [["Blur1", 0], ["NormalMap1", 0]],
+     [["ann_image_cascade", 0], ["Composite2", 0]],
+     [["NormalMap1", 0], ["Composite2", 1]]
+  ]
+}

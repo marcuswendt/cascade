@@ -2,7 +2,7 @@
 
 All notable changes to Cascade will be documented in this file.
 
-## [0.3.0] - December 2024
+## [0.3.0] - December 2025
 
 ### Performance Optimizations
 
@@ -40,7 +40,7 @@ All notable changes to Cascade will be documented in this file.
 - Dynamic subnet ports from Input/Output nodes
 - Improved viewer with ImageBuffer support
 
-## [0.2.0] - December 2024
+## [0.2.0] - December 2025ß
 
 ### Major Changes
 
@@ -66,7 +66,7 @@ All notable changes to Cascade will be documented in this file.
 - Enhanced graph serialization and node ID handling
 - Improved node execution and connection logic
 
-## [0.1.0] - November 2024
+## [0.1.0] - November 2025
 
 ### Initial Release
 

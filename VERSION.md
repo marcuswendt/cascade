@@ -2,7 +2,7 @@
 
 ## Current Version: 0.3.0
 
-**Release Date**: December 2024
+**Release Date**: December 2025
 **Status**: Development / Beta
 
 ## Author
@@ -48,7 +48,7 @@
 
 ## Previous Versions
 
-### 0.2.0 (December 2024)
+### 0.2.0 (December 2025)
 
 - Svelte 5 upgrade with runes-based reactivity
 - Dockview integration for flexible panel management

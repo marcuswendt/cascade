@@ -5,10 +5,12 @@
   import { TextAnnotation } from '@/nodes/annotations/Text';
   import { annotationRegistry } from './annotations';
   import NodeUI from './NodeUI.svelte';
+  import { graphStructure } from './stores/graphStructure';
   import type { Node } from '@/nodes/Node';
   import type { Connection } from '@/types/node.types';
   import { marked } from 'marked';
-  import { packagePathToType, getNodeClass, compileCustomNode } from '@/utils/nodeTypeUtils';
+  import { packagePathToType, getNodeClass } from '@/utils/nodeTypeUtils';
+  import { loadEmbeddedModule } from '@/engine/nodeModuleLoader';
   import { getPortColor, getConnectionColor, DATA_TYPE_COLORS } from '@/utils/portColors';
   import { recordSnapshotImmediate } from './stores/historyStore';
   
@@ -860,7 +862,16 @@ node.onReady = () => {
     }));
 
   // Track node positions to force connection re-renders when nodes move
-  $: nodePositions = nodes
+  /**
+   * Node positions, which the connection paths are derived from.
+   *
+   * `$graphStructure` is referenced deliberately. `nodes` is an array of the
+   * same objects whose `.position` is MUTATED in place — by a layout pass, or
+   * by a node's own code — and Svelte cannot see a mutation. So after an
+   * auto-layout the nodes moved and the wires kept their old geometry until a
+   * pan happened to force a recompute, which is exactly the stale-wire symptom.
+   */
+  $: nodePositions = ($graphStructure, nodes)
     .filter(n => n && n.position)
     .map(n => ({
       id: n.id,
@@ -1872,9 +1883,9 @@ node.onReady = () => {
         const modulePath = (sourceNode as any).modulePath || sourceNode.type;
         const newNode = graph.addNode(modulePath, { ...sourceNode.position });
 
-        // Generate unique ID
+        // Generate unique ID (exclude oldId from uniqueness check since addNode created a temp ID)
         const oldId = newNode.id;
-        const newId = graph.generateUniqueNodeId(sourceNode.id);
+        const newId = graph.generateUniqueNodeId(sourceNode.id, oldId);
         nodeIdMap.set(oldNodeId, newId);
         graph.renameElement(oldId, newId);
 
@@ -2708,8 +2719,9 @@ node.onReady = () => {
           });
 
           // Generate unique ID and update the graph's element map
+          // Pass oldId to exclude it from uniqueness check (addNode already created a temp ID)
           const oldId = newNode.id;
-          const newId = graph.generateUniqueNodeId(nodeData.id);
+          const newId = graph.generateUniqueNodeId(nodeData.id, oldId);
           nodeIdMap.set(nodeData.id, newId);
           graph.renameElement(oldId, newId);
 
@@ -3083,8 +3095,8 @@ node.onReady = () => {
       // Compile and execute the node code to initialize props and ports
       try {
         newNode.resetPortTracking();
-        const nodeFunction = compileCustomNode(defaultCode);
-        newNode.setFunction(nodeFunction);
+        const compiled = await loadEmbeddedModule(defaultCode);
+        newNode.setFunction(compiled.execute);
 
         // Ensure node can execute (not bypassed and temporarily cooking)
         // This is necessary because shouldExecute() checks if node is cooking when there are other cooking nodes
@@ -3942,7 +3954,13 @@ node.onReady = () => {
   }
   
   function handleKeyDown(e: KeyboardEvent) {
-    if (e.code === 'Space') {
+    // Don't intercept space when typing in an input field
+    const activeEl = document.activeElement;
+    const isTyping = activeEl instanceof HTMLInputElement ||
+                     activeEl instanceof HTMLTextAreaElement ||
+                     activeEl?.getAttribute('contenteditable') === 'true';
+
+    if (e.code === 'Space' && !isTyping) {
       spacePressed = true;
       e.preventDefault();
     }
@@ -4167,28 +4185,118 @@ node.onReady = () => {
     if (e.code === 'Space') {
       spacePressed = false;
     }
-    
+
     // Track Ctrl key release for scissors icon (check both key and modifier)
     if (e.key === 'Control' || e.key === 'Meta' || (!e.ctrlKey && !e.metaKey)) {
       ctrlPressed = false;
       hoveredConnection = null;
     }
   }
-  
+
+  /**
+   * Handle createFollowUp event from ChatNode
+   * Creates a new ChatNode below the source, connects context, and focuses prompt
+   */
+  async function handleCreateFollowUp(event: Event) {
+    const customEvent = event as CustomEvent<{ sourceNodeId: string }>;
+    const sourceNodeId = customEvent.detail?.sourceNodeId;
+    if (!sourceNodeId) return;
+
+    const sourceNode = graph.getNode(sourceNodeId);
+    if (!sourceNode) return;
+
+    // Calculate position below source node with spacing
+    const spacing = 60;
+    // ChatNodes have a default height around 150px
+    const nodeHeight = 150;
+    const newPosition = {
+      x: sourceNode.position.x,
+      y: sourceNode.position.y + nodeHeight + spacing
+    };
+
+    // Create new ChatNode
+    const newNode = graph.addNode('cascade.quill.Chat', newPosition);
+
+    // Copy model from source node to follow-up node
+    const sourceModel = sourceNode.props.model?.value as string;
+    if (sourceModel && newNode.props.model) {
+      newNode.props.model.value = sourceModel;
+      // Also update the node's internal modelId if it's a ChatNode
+      if ('modelId' in newNode) {
+        (newNode as any).modelId = sourceModel;
+      }
+    }
+
+    // Update nodes array to trigger reactivity
+    graph.nodes = [...graph.nodes];
+
+    // Wait for DOM update before connecting
+    await tick();
+
+    // Connect context ports (source output -> new input)
+    const contextOut = sourceNode.outputs.find(p => p.name === 'context');
+    const contextIn = newNode.inputs.find(p => p.name === 'context');
+    if (contextOut && contextIn) {
+      try {
+        graph.connect(contextOut, contextIn);
+        // Update connections to trigger wire rendering
+        graph.connections = [...graph.connections];
+      } catch (e) {
+        console.warn('Failed to connect context ports:', e);
+      }
+    }
+
+    // Select the new node
+    selectedNodes = [newNode.id];
+    selectedNode = newNode;
+    dispatch('nodeSelect', { node: newNode });
+
+    // Pan to center the new node in viewport
+    const rect = canvas.getBoundingClientRect();
+    const viewportCenterX = rect.width / 2;
+    const viewportCenterY = rect.height / 2;
+    // Center on node's center (assuming ~200px width, 150px height for ChatNode)
+    const nodeCenterX = newPosition.x + 100;
+    const nodeCenterY = newPosition.y + 75;
+    const nodeScreenX = nodeCenterX * internalTransform.zoom + internalTransform.x;
+    const nodeScreenY = nodeCenterY * internalTransform.zoom + internalTransform.y;
+    const panX = viewportCenterX - nodeScreenX;
+    const panY = viewportCenterY - nodeScreenY;
+    internalTransform.x += panX;
+    internalTransform.y += panY;
+    internalTransform = { ...internalTransform };
+
+    // Wait for DOM to update with new transform, then force connection re-render
+    await tick();
+    // Use requestAnimationFrame to ensure CSS transform is applied before recalculating
+    requestAnimationFrame(() => {
+      graph.connections = [...graph.connections];
+    });
+
+    // Signal NodeUI to focus the prompt input after DOM update
+    window.dispatchEvent(new CustomEvent('cascade:focusNodePrompt', {
+      detail: { nodeId: newNode.id }
+    }));
+  }
+
   onMount(() => {
     // If nodes are already initialized, just ensure reactivity
     if (graph.nodes.length > 0) {
       graph.nodes = [...graph.nodes];
     }
     // Otherwise, initializeDefaultNodes() will be called automatically
-    
+
     // Add keyboard listeners
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
-    
+
+    // Add ChatNode follow-up listener
+    window.addEventListener('cascade:createFollowUp', handleCreateFollowUp);
+
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('cascade:createFollowUp', handleCreateFollowUp);
     };
   });
 </script>

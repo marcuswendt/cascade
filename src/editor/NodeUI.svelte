@@ -5,6 +5,9 @@
   import Icon from './Icon.svelte';
   import { getPortColor } from '@/utils/portColors';
   import type { ChatNode } from '@/nodes/quill/nodes/ChatNode';
+  import { propUpdateCounters } from './stores/propUpdateStore';
+  import { runsOnByModule, iconByModule, moduleName, type RunsOn } from './stores/executionLocus';
+  import { graphStructure } from './stores/graphStructure';
 
   export let node: Node;
   export let selected = false;
@@ -12,15 +15,41 @@
 
   const dispatch = createEventDispatcher();
 
+  // Where this node's work happens. Server-side nodes hand their work to the
+  // Python bridge; browser-side nodes do it in the page. Worth seeing at a
+  // glance — it's the difference between a subprocess and a frame.
+  $: runsOn = ((): RunsOn | null => {
+    const name = moduleName((node as any).modulePath);
+    return name ? ($runsOnByModule[name] ?? null) : null;
+  })();
+
   // Track if this is a newly mounted Chat node to auto-focus
   let hasAutoFocused = false;
-  
+
+  // Watch prop update counter to force reactivity when props change
+  let propsUpdateCounter = 0;
+  $: {
+    const counters = $propUpdateCounters;
+    propsUpdateCounter = node ? (counters.get(node.id) || 0) : 0;
+  }
+
   $: hasError = node.error !== null;
-  $: nodeIcon = getNodeIcon(node.type);
+  // A project node's own declared icon wins over Cascade's built-in table,
+  // which only knows the stdlib and hands everything else the same cog.
+  $: nodeIcon = (() => {
+    const mod = moduleName((node as any).modulePath);
+    return (mod && $iconByModule[mod]) || getNodeIcon(node.type);
+  })();
+
+  /** Per-node colour, set from the palette and stored on the node. Used to group
+   *  a pipeline visually — all the density nodes one colour, the signals
+   *  another — which is faster to read than any label. */
+  $: nodeColor = (node as any).color || null;
   $: isBypassed = node.bypass;
   $: isCooking = node.cook;
   $: isChatNode = node.type === 'Chat' || node.type.endsWith('.Chat');
-  $: chatNodeState = isChatNode ? (node as ChatNode).getState() : null;
+  // Include propsUpdateCounter to force re-read when props change
+  $: chatNodeState = isChatNode && propsUpdateCounter >= 0 ? (node as ChatNode).getState() : null;
 
   // Chat node prompt editing state
   let isEditingPrompt = false;
@@ -32,13 +61,28 @@
     promptValue = chatNodeState.prompt || '';
   }
 
-  // Check if editing is disabled (while streaming)
-  $: isPromptDisabled = chatNodeState?.status === 'streaming';
+  // Check if editing is disabled (while streaming or waiting)
+  $: isPromptDisabled = chatNodeState?.status === 'streaming' || chatNodeState?.status === 'waiting';
 
   // Exit editing mode when streaming starts
-  $: if (isPromptDisabled && isEditingPrompt) {
+  $: if (chatNodeState?.status === 'streaming' && isEditingPrompt) {
     isEditingPrompt = false;
   }
+
+  // Listen for focus prompt events (from follow-up creation)
+  onMount(() => {
+    const handleFocusPrompt = (e: Event) => {
+      const customEvent = e as CustomEvent<{ nodeId: string }>;
+      if (customEvent.detail?.nodeId === node.id && isChatNode) {
+        startEditingPrompt();
+      }
+    };
+    window.addEventListener('cascade:focusNodePrompt', handleFocusPrompt);
+
+    return () => {
+      window.removeEventListener('cascade:focusNodePrompt', handleFocusPrompt);
+    };
+  });
 
   function startEditingPrompt() {
     if (!isChatNode) return;
@@ -90,8 +134,11 @@
   }
 
   // Reactive statements to track port changes
-  $: inputs = node.inputs;
-  $: outputs = node.outputs;
+  // $graphStructure is referenced so these recompute when ports appear during a
+  // cook — see stores/graphStructure.ts.
+  $: inputs = ($graphStructure, node.inputs);
+  $: outputs = ($graphStructure, node.outputs);
+  $: position = ($graphStructure, node.position);
 
   // Group variadic inputs by base name, showing only one pill per group
   // Non-variadic inputs are shown individually
@@ -353,7 +400,7 @@
   class:dragging={isDragging}
   class:bypassed={isBypassed}
   class:cooking={isCooking}
-  style="left: {node.position.x}px; top: {node.position.y}px; opacity: {node.bypass ? 0.5 : 1}"
+  style="left: {position.x}px; top: {position.y}px; opacity: {node.bypass ? 0.5 : 1}"
   data-node-id={node.id}
   on:click={(e) => {
     e.stopPropagation();
@@ -394,11 +441,13 @@
         </div>
 
         <!-- Chat body -->
-        <div class="chat-body" class:streaming={chatNodeState.status === 'streaming'}>
+        <div class="chat-body" class:streaming={chatNodeState.status === 'streaming'} class:waiting={chatNodeState.status === 'waiting'}>
           <!-- Status indicator -->
           <div class="chat-status {chatNodeState.status}">
             {#if chatNodeState.status === 'streaming'}
               <span class="status-dot streaming"></span>
+            {:else if chatNodeState.status === 'waiting'}
+              <Icon name="Clock" size={10} />
             {:else if chatNodeState.status === 'complete'}
               <Icon name="Check" size={10} />
             {:else if chatNodeState.status === 'error'}
@@ -429,10 +478,15 @@
                 on:blur={finishEditingPrompt}
                 on:mousedown|stopPropagation
               ></textarea>
-            {:else if promptValue}
-              <div class="chat-text">{promptValue}</div>
             {:else}
-              <span class="chat-placeholder">Enter a prompt...</span>
+              {#key propsUpdateCounter}
+                {@const propPrompt = node.props.prompt?.value || ''}
+                {#if propPrompt}
+                  <div class="chat-text">{propPrompt}</div>
+                {:else}
+                  <span class="chat-placeholder">Enter a prompt...</span>
+                {/if}
+              {/key}
             {/if}
           </div>
 
@@ -538,7 +592,7 @@
           </div>
         {/if}
 
-        <div class="body">
+        <div class="body" style={nodeColor ? `--node-fill:${nodeColor}` : ''}>
           <!-- Bypass button (left side) -->
           <button
             class="node-button bypass-button"
@@ -554,6 +608,13 @@
           <span class="node-icon">
             <Icon name={nodeIcon} size={12} strokeWidth={2} />
           </span>
+
+          {#if runsOn}
+            <span
+              class="locus-badge locus-{runsOn}"
+              title={runsOn === 'server' ? 'Runs on the server (Python bridge)' : 'Runs in the browser'}
+            >{runsOn === 'server' ? 'S' : 'B'}</span>
+          {/if}
 
           <!-- Cook button (right side) -->
           <button
@@ -641,6 +702,34 @@
 
 
 <style>
+  .locus-badge {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 11px;
+    height: 11px;
+    border-radius: 3px;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 11px;
+    text-align: center;
+    letter-spacing: 0;
+    pointer-events: auto;
+    user-select: none;
+  }
+
+  /* Amber for server-side work, blue for in-page. Deliberately quiet: it is a
+     property of the node, not an alert about it. */
+  .locus-server {
+    background: rgba(215, 186, 125, 0.22);
+    color: #d7ba7d;
+  }
+
+  .locus-browser {
+    background: rgba(156, 220, 254, 0.20);
+    color: #9cdcfe;
+  }
+
   .node {
     position: absolute;
     cursor: move;
@@ -785,10 +874,21 @@
     color: #fff;
   }
 
+  /* The node's own colour arrives as a custom property, never as an inline
+     border. An inline style beats any stylesheet rule, so setting the border
+     here directly overrode the selected state and the selection outline
+     silently vanished the moment a node was given a colour. */
   .body {
-    width: 80px;
+    /* Grows to fit its port row rather than clipping it. A node with many
+       parameters — render-preview has fourteen inputs — laid its ports out past
+       the edge of a fixed 80px box, which read as a broken node. Position is
+       relative so the runs-on badge anchors to the box itself and not to the
+       wider row that includes the name label. */
+    min-width: 80px;
+    align-self: stretch;
+    position: relative;
     height: 36px;
-    background: #2a2a2a;
+    background: var(--node-fill, #2a2a2a);
     border-radius: 5px;
     border: 1px solid var(--node-border-color, #444);
     display: flex;
@@ -799,8 +899,12 @@
     margin: 0;
   }
   
+  /* Selection has to survive whatever colour the node was given, so it is a
+     ring outside the border rather than the border itself — a coloured node
+     was making the old border-only cue invisible. */
   .node.selected .body {
     border-color: var(--node-border-color);
+    box-shadow: 0 0 0 2px #4a9eff, 0 0 12px rgba(74, 158, 255, 0.35);
   }
   
   .node.error .body {
@@ -1004,6 +1108,11 @@
     animation: glow-pulse 2s ease-in-out infinite;
   }
 
+  .chat-body.waiting {
+    border-color: #ffc107;
+    box-shadow: 0 0 6px rgba(255, 193, 7, 0.3);
+  }
+
   @keyframes glow-pulse {
     0%, 100% {
       box-shadow: 0 0 8px rgba(74, 158, 255, 0.5), 0 0 16px rgba(74, 158, 255, 0.3);
@@ -1034,6 +1143,11 @@
 
   .chat-status.streaming {
     background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+  }
+
+  .chat-status.waiting {
+    background: rgba(255, 193, 7, 0.15);
     color: #ffc107;
   }
 

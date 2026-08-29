@@ -5,10 +5,22 @@
   import NodePanel from './editor/NodePanel.svelte';
   import { dockviewStore } from './editor/dockview/dockview-store.svelte';
   import { settingsDialogRequest, clearSettingsDialogRequest } from './editor/stores/uiEventStore';
+  import { loadExecutionLocus } from './editor/stores/executionLocus';
+  import ColorPalette from './editor/components/ColorPalette.svelte';
+  import { bumpGraphStructure } from './editor/stores/graphStructure';
+  import { layoutTopDown, edgesFromConnections } from '@/utils/autoLayout';
 
   // Lazy-loaded dialog components
   let ExportDialog: any = null;
   let SettingsDialog: any = null;
+  let VersionHistoryDialog: any = null;
+
+  async function loadVersionHistoryDialog() {
+    if (!VersionHistoryDialog) {
+      const module = await import('./editor/VersionHistoryDialog.svelte');
+      VersionHistoryDialog = module.default;
+    }
+  }
 
   async function loadExportDialog() {
     if (!ExportDialog) {
@@ -25,7 +37,7 @@
   }
   import type { AIServiceType } from './editor/stores/settingsStore';
   import { serializeGraph, saveGraphWithPicker, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
-  import { isElectron, onAnyMenuCommand, showSaveDialog, fileExists, getAppPath, writeFile } from './lib/electron';
+  import { isElectron, onAnyMenuCommand, showSaveDialog, fileExists, getAppPath, writeFile, setDocumentDirty, onOpenGraph, onOpenProject, getCurrentGraph, getCurrentProject, setCurrentGraph } from './lib/electron';
   import { Graph } from '@/nodes/Graph';
   import { Node } from '@/nodes/Node';
   import { GraphEditorAdapter } from './editor/GraphEditorAdapter';
@@ -61,6 +73,32 @@
   let graph: Graph | undefined = undefined;
   let documentName = 'Untitled';
   let currentFilePath: string | null = null;
+  // Set when the graph was opened from the `cascade` server (the project's own
+  // .cascade file). Save writes back to it through the API; cleared the moment
+  // the editor moves to any other document, so an unrelated graph can never
+  // overwrite the project file.
+  let projectGraphFile: string | null = null;
+  let versionHistoryOpen = false;
+  let colorPaletteOpen = false;
+
+  /**
+   * Paint the selected nodes. Stored on the node and saved with the graph, so a
+   * grouping survives the file — the point is to make a pipeline readable
+   * tomorrow, not just for the rest of this session.
+   */
+  function applyNodeColor(color: string | null) {
+    if (!graph) return;
+    const targets = graph.nodes.filter((n: any) => n.selected || n.id === selectedNode?.id);
+    if (targets.length === 0) return;
+    recordHistory();
+    targets.forEach((n: any) => {
+      if (color) n.color = color;
+      else delete n.color;
+    });
+    graph.elements = [...graph.elements];
+    hasUnsavedChanges = true;
+    updateWindowTitle();
+  }
   let hasUnsavedChanges = false;
 
   // Computed display name with dirty indicator
@@ -138,6 +176,13 @@
       case 'save':
         handleSave();
         break;
+      case 'versionHistory':
+        if (!projectGraphFile) {
+          alert('Version history is for a project opened by the cascade CLI — this document has none.');
+          break;
+        }
+        loadVersionHistoryDialog().then(() => versionHistoryOpen = true);
+        break;
       case 'saveAs':
         handleSaveAs();
         break;
@@ -204,6 +249,9 @@
         break;
 
       // View menu
+      case 'cleanUpLayout':
+        cleanUpLayout();
+        break;
       case 'centerOnNodes':
         if (dockviewContainerRef?.centerOnNodes) {
           dockviewContainerRef.centerOnNodes();
@@ -268,6 +316,7 @@
       graph = adapter.getGraph();
       documentName = 'Untitled';
       currentFilePath = null;
+      projectGraphFile = null;
       hasUnsavedChanges = false;
       updateWindowTitle();
 
@@ -293,13 +342,14 @@
       graph.connections = [...graph.connections];
       graph.elements = [...graph.elements];
 
-      // Execute nodes in parallel in background
-      const nodesToExecute = graph.nodes.filter(n => n.code);
-      if (nodesToExecute.length > 0) {
-        Promise.all(nodesToExecute.map(async (node) => {
-          try { await node.execute(); } catch (err) { console.warn('Node execution failed:', err); }
-        })).catch(() => {});
-      }
+      // Cook the graph in dependency order. Two reasons this is no longer a
+      // parallel map: `n.code` is empty for project-source nodes (their module is
+      // fetched compiled from the server, so the filter skipped every one of them
+      // and the graph never cooked at all), and running them all at once executes
+      // each node before its inputs exist, so everything downstream of a source
+      // bails out on the first pass. graph.execute() walks the topological order
+      // the engine already computes.
+      cookGraph().catch(err => console.warn('Graph execution failed:', err));
 
       setTimeout(() => {
         if (dockviewContainerRef && dockviewContainerRef.centerOnNodes) {
@@ -312,6 +362,7 @@
       graph = adapter.getGraph();
       documentName = 'Untitled';
       currentFilePath = null;
+      projectGraphFile = null;
       hasUnsavedChanges = false;
       updateWindowTitle();
     }
@@ -341,6 +392,7 @@
       graph = adapter.getGraph();
         documentName = removeExtension(file.name);
         currentFilePath = file.name;
+        projectGraphFile = null;
         hasUnsavedChanges = false;
         updateWindowTitle();
 
@@ -366,13 +418,14 @@
         graph.connections = [...graph.connections];
         graph.elements = [...graph.elements];
 
-        // Execute nodes in parallel in background
-        const nodesToExecute = graph.nodes.filter(n => n.code);
-        if (nodesToExecute.length > 0) {
-          Promise.all(nodesToExecute.map(async (node) => {
-            try { await node.execute(); } catch (err) { console.warn('Node execution failed:', err); }
-          })).catch(() => {});
-        }
+        // Cook the graph in dependency order. Two reasons this is no longer a
+        // parallel map: `n.code` is empty for project-source nodes (their module is
+        // fetched compiled from the server, so the filter skipped every one of them
+        // and the graph never cooked at all), and running them all at once executes
+        // each node before its inputs exist, so everything downstream of a source
+        // bails out on the first pass. graph.execute() walks the topological order
+        // the engine already computes.
+        cookGraph().catch(err => console.warn('Graph execution failed:', err));
 
         setTimeout(() => {
           if (dockviewContainerRef && dockviewContainerRef.centerOnNodes) {
@@ -394,6 +447,20 @@
         const result = await writeFile(currentFilePath, content);
         if (!result.success) {
           alert('Failed to save: ' + result.error);
+          return;
+        }
+      } else if (projectGraphFile) {
+        // Served by the `cascade` CLI: write back to the project file itself
+        // rather than through a download picker. The server commits the file
+        // on every save, which is what File > Version History reads.
+        const response = await fetch(`/api/graph/${encodeURIComponent(projectGraphFile)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: serializeGraph(graph)
+        });
+        if (!response.ok) {
+          const detail = await response.text();
+          alert(`Failed to save ${projectGraphFile}: ${detail}`);
           return;
         }
       } else {
@@ -445,18 +512,22 @@
     if (!graph) return;
 
     if (isElectron) {
-      // Get the documents directory for checking existing files
-      const documentsDir = await getAppPath('documents') || '';
+      // Get the current project folder as default location
+      const projectDir = await getCurrentProject();
+      const defaultDir = projectDir || await getAppPath('documents') || '';
 
-      // Generate a unique filename based on current document name
-      const uniqueFilename = await getUniqueFilename(documentName, documentsDir);
-      const defaultPath = documentsDir ? `${documentsDir}/${uniqueFilename}` : uniqueFilename;
+      // Generate a suggested filename
+      const baseName = documentName.includes('/')
+        ? documentName.split('/').pop()?.replace(/\.cascade$/, '') || 'untitled'
+        : documentName.replace(/\.cascade$/, '');
+      const suggestedName = baseName === 'Untitled' ? 'new-graph.cascade' : `${baseName}.cascade`;
+      const defaultPath = defaultDir ? `${defaultDir}/${suggestedName}` : suggestedName;
 
       // Use native Electron save dialog
       const filePath = await showSaveDialog({
         defaultPath,
         filters: [{ name: 'Cascade Files', extensions: ['cascade'] }],
-        title: 'Save Project As'
+        title: 'Save Graph As'
       });
       if (!filePath) return; // User cancelled
 
@@ -468,10 +539,20 @@
         return;
       }
 
-      // Extract just the filename without path for display
-      const filename = filePath.split('/').pop() || filePath;
-      documentName = filename.replace(/\.cascade$/, '');
+      // Notify main process of new graph path (updates native window title)
+      await setCurrentGraph(filePath);
+
+      // Update current file path and document name
       currentFilePath = filePath;
+      projectGraphFile = null;
+
+      // Format path for display with ~ for home directory
+      const homeDir = await getAppPath('home');
+      if (homeDir && filePath.startsWith(homeDir)) {
+        documentName = '~' + filePath.slice(homeDir.length);
+      } else {
+        documentName = filePath;
+      }
     } else {
       // Browser: use File System Access API (single native dialog)
       const suggestedName = documentName === 'Untitled' ? 'my-project.cascade' : `${documentName}.cascade`;
@@ -480,6 +561,7 @@
 
       documentName = savedFilename.replace(/\.cascade$/, '');
       currentFilePath = savedFilename;
+      projectGraphFile = null;
     }
 
     hasUnsavedChanges = false;
@@ -503,6 +585,7 @@
     graph = newGraph;
     documentName = documentName + ' Copy';
     currentFilePath = null;
+    projectGraphFile = null;
     updateWindowTitle();
     
     // Execute all nodes to initialize them
@@ -528,6 +611,12 @@
 
   function updateWindowTitle() {
     if (typeof document !== 'undefined') {
+      // In Electron, the main process manages the window title
+      // to show the full file path. Only set document.title in browser mode.
+      // Check window.cascade directly to avoid module load timing issues.
+      if ((window as any).cascade?.isElectron) {
+        return;
+      }
       const dirtyIndicator = hasUnsavedChanges ? ' *' : '';
       if (documentName && documentName !== 'Untitled') {
         document.title = `Cascade - ${documentName}${dirtyIndicator}`;
@@ -580,13 +669,14 @@
     selectedNode = snapshot.selectedNodeId ? graph.getNode(snapshot.selectedNodeId) : null;
     selectedAnnotation = snapshot.selectedAnnotationId;
 
-    // Execute nodes in parallel in background
-    const nodesToExecute = graph.nodes.filter(n => n.code);
-    if (nodesToExecute.length > 0) {
-      Promise.all(nodesToExecute.map(async (node) => {
-        try { await node.execute(); } catch (err) { console.warn('Node execution failed:', err); }
-      })).catch(() => {});
-    }
+    // Cook the graph in dependency order. Two reasons this is no longer a
+    // parallel map: `n.code` is empty for project-source nodes (their module is
+    // fetched compiled from the server, so the filter skipped every one of them
+    // and the graph never cooked at all), and running them all at once executes
+    // each node before its inputs exist, so everything downstream of a source
+    // bails out on the first pass. graph.execute() walks the topological order
+    // the engine already computes.
+    cookGraph().catch(err => console.warn('Graph execution failed:', err));
   }
 
   /**
@@ -629,6 +719,220 @@
   // Update window title when unsaved changes state changes
   $: if (typeof hasUnsavedChanges !== 'undefined') {
     updateWindowTitle();
+    // In Electron, notify main process about dirty state
+    if (window.cascade?.isElectron) {
+      setDocumentDirty(hasUnsavedChanges);
+    }
+  }
+
+  /**
+   * Cook the whole graph, repeatedly, until it stops producing anything new.
+   *
+   * A single pass is not enough, and the reason is structural: a node's PORTS
+   * are created by running its code, so before a node has ever executed it has
+   * no output ports — which means the engine's dependency walk can't see past
+   * it, and every node looks like an entry point with no inputs. One pass
+   * therefore only ever advances the graph by a level or so, and the stages
+   * downstream bail out on missing inputs.
+   *
+   * Repeating until the number of resolved outputs stops growing settles it.
+   * That is affordable only because the stages cache their results — a repeat
+   * pass over already-computed nodes costs close to nothing.
+   */
+  async function cookGraph(maxPasses = 16): Promise<void> {
+    if (!graph) return;
+    let previous = -1;
+    let previousPending = -1;
+    for (let pass = 0; pass < maxPasses; pass++) {
+      await graph.execute();
+      // Ports that appeared during this pass may let more connections bind.
+      graph.restoreConnections();
+
+      // Tell the canvas. Ports and wires come into existence across passes, and
+      // an assignment is what Svelte watches — without these the graph rendered
+      // as loose nodes with no wires until some other interaction (select-all,
+      // a drag) happened to force a redraw. Written against `graph` rather than
+      // a parameter deliberately: the compiler only instruments assignments to
+      // the component's own reactive variable.
+      graph.connections = [...graph.connections];
+      graph.elements = [...graph.elements];
+      // Ports and wires came into existence during this pass; tell the nodes.
+      bumpGraphStructure();
+      await tick();
+
+      const resolved = graph.nodes.reduce(
+        (total: number, node: any) =>
+          total + node.outputs.filter((port: any) => port.value !== undefined && port.value !== null).length,
+        0
+      );
+      const pending = ((graph as any)._connectionsToRestore ?? []).length;
+      // Settled only when NEITHER measure moved. Watching the resolved count
+      // alone stopped a pass too early: a node can become runnable on the very
+      // pass that bound its last connection, and that pass adds a connection
+      // without yet adding an output.
+      if (resolved === previous && pending === previousPending) {
+        console.log(`[Cook] settled after ${pass + 1} passes: ${resolved} outputs` +
+          (pending ? `, ${pending} connections unresolved (bypassed or unrunnable upstream)` : ''));
+        if (pending) {
+          console.log('[Cook] unresolved:', ((graph as any)._connectionsToRestore ?? [])
+            .map((c: any) => `${c[0][0]}.${c[0][2] ?? c[0][1]}->${c[1][0]}.${c[1][2] ?? c[1][1]}`).join(' '));
+        }
+        return;
+      }
+      previous = resolved;
+      previousPending = pending;
+    }
+    console.warn(`[Cook] still changing after ${maxPasses} passes — stopping`);
+  }
+
+  /**
+   * Ask the `cascade` server which graph this project opens with, and fetch it.
+   * Returns null when the app isn't served by the CLI (plain static hosting,
+   * Electron) or when the project has no unambiguous default — in both cases
+   * startup falls through to the bundled empty graph.
+   */
+  async function loadProjectGraph(): Promise<{ filename: string; json: any } | null> {
+    try {
+      const listing = await fetch('/api/graph');
+      if (!listing.ok) return null;
+      const { default: filename } = await listing.json();
+      if (!filename) return null;
+
+      const response = await fetch(`/api/graph/${encodeURIComponent(filename)}`);
+      if (!response.ok) return null;
+      return { filename, json: await response.json() };
+    } catch (err) {
+      console.warn('[Startup] No project graph available from the server:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Load a past version into the editor. Deliberately NOT a git operation:
+   * the old graph becomes the current unsaved document, so nothing on disk
+   * changes until Marcus saves, and saving it writes the next version on top
+   * rather than rewriting anything. Reverting a revert is just another restore.
+   */
+  async function handleRestoreVersion(event: CustomEvent<{ json: any; version: { shortSha: string } }>) {
+    const { json, version } = event.detail;
+    const restoredFile = projectGraphFile;
+    versionHistoryOpen = false;
+
+    if (graph) {
+      graph.nodes.forEach(node => {
+        if (node.onDestroy) node.onDestroy();
+      });
+    }
+    clearHistory();
+
+    const adapter = GraphEditorAdapter.fromJSON(json);
+    graph = adapter.getGraph();
+    // Still the same project file — saving writes the restored graph forward.
+    projectGraphFile = restoredFile;
+    currentFilePath = restoredFile;
+    hasUnsavedChanges = true;
+    updateWindowTitle();
+
+    await graph.waitForAnnotationPorts();
+
+    for (const node of graph.nodes) {
+      if (node.code) {
+        try {
+          const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
+          const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
+          node.setFunction(nodeFunction);
+        } catch (err) {
+          console.warn('Failed to set function for node ' + node.id + ':', err);
+        }
+      }
+    }
+
+    graph.restoreConnections();
+    await tick();
+    graph.connections = [...graph.connections];
+    graph.elements = [...graph.elements];
+
+    // Cook the graph in dependency order. Two reasons this is no longer a
+    // parallel map: `n.code` is empty for project-source nodes (their module is
+    // fetched compiled from the server, so the filter skipped every one of them
+    // and the graph never cooked at all), and running them all at once executes
+    // each node before its inputs exist, so everything downstream of a source
+    // bails out on the first pass. graph.execute() walks the topological order
+    // the engine already computes.
+    cookGraph().catch(err => console.warn('Graph execution failed:', err));
+
+    console.log(`[Version] Restored ${restoredFile} at ${version.shortSha} — unsaved until you save`);
+  }
+
+  /**
+   * Re-lay the graph top to bottom. Cascade puts a node's inputs on its top edge
+   * and its outputs on the bottom, so a downward flow means every wire leaves a
+   * bottom and arrives at a top — no wire has to double back, and far fewer
+   * cross.
+   */
+  async function cleanUpLayout() {
+    if (!graph) return;
+    recordHistory();
+    // Measure what is actually on screen: node widths vary with port count and
+    // a variadic list, and spacing by a fixed pitch overlapped the wide ones.
+    // The WHOLE node: control box plus the name label beside it. Measuring only
+    // the box packed columns to the box width, so long names ran straight over
+    // the next node and became unreadable — which is the width that matters,
+    // since the name is what you navigate by.
+    const widths = new Map<string, number>();
+    document.querySelectorAll('.node').forEach((el) => {
+      const name = el.querySelector('.node-name')?.textContent?.trim();
+      if (!name) return;
+      // offsetWidth, not getBoundingClientRect: the canvas is CSS-transformed,
+      // so a bounding rect is in SCREEN pixels and depends on the current zoom,
+      // while positions are in graph pixels. Dividing by a zoom read from the
+      // wrong place is how the widths came out too small and the nodes packed
+      // on top of each other. offsetWidth is the untransformed layout width.
+      //
+      // The whole node element — box plus label — because that is the footprint
+      // that must not collide, and the label is what you read.
+      widths.set(name, Math.max((el as HTMLElement).offsetWidth, 90));
+    });
+
+    const positions = layoutTopDown(
+      graph.nodes.map((n: any) => n.id),
+      edgesFromConnections(graph.connections),
+      { widths }
+    );
+    graph.nodes.forEach((node: any) => {
+      const next = positions.get(node.id);
+      if (next) node.position = next;
+    });
+    graph.elements = [...graph.elements];
+    bumpGraphStructure();
+
+    /**
+     * Then again after the DOM has caught up.
+     *
+     * Wire geometry is measured from where the port dots actually are on
+     * screen, so the first recompute reads the positions the nodes had a moment
+     * ago — the nodes jump and the wires stay behind, until a pan happens to
+     * recompute them. One tick, then ask again.
+     */
+    hasUnsavedChanges = true;
+    updateWindowTitle();
+
+    /**
+     * Then again once the browser has actually laid the nodes out.
+     *
+     * Wire geometry is measured from where the port dots are on screen, and a
+     * Svelte tick is not enough: the SVG renders in the same flush as the nodes
+     * move, so it reads positions one frame stale. Measured — 78 of 131 wires
+     * shifted, some by 350px, the moment you panned and forced a recompute.
+     * Two animation frames puts the measurement after real layout.
+     */
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      bumpGraphStructure();
+      dockviewContainerRef?.centerOnNodes?.();
+      // Centring moves the canvas transform the measurements are relative to,
+      // so ask once more after that has settled too.
+      requestAnimationFrame(() => requestAnimationFrame(() => bumpGraphStructure()));
+    }));
   }
 
   // Set initial window title
@@ -637,6 +941,10 @@
     Node.onPropParamsChanged = incrementPropUpdateCounter;
 
     updateWindowTitle();
+
+    // Which node modules run server-side vs in the page — drives the badge on
+    // each node. Fire and forget: no badge is a fine outcome if it fails.
+    loadExecutionLocus();
 
     // Subscribe to settings dialog requests from nodes/components
     const unsubSettingsRequest = settingsDialogRequest.subscribe(request => {
@@ -651,17 +959,60 @@
     (async () => {
     if (!graph) {
       try {
-        const response = await fetch('/graphs/default.cascade');
-        if (!response.ok) {
-          throw new Error('Failed to load default graph');
+        let json: any;
+        let loadedFromElectron = false;
+
+        // In Electron, check if there's a graph from command line args
+        if (window.cascadeElectron) {
+          const graphPath = await getCurrentGraph();
+          if (graphPath) {
+            console.log('[Startup] Loading graph from Electron:', graphPath);
+            const content = await window.cascadeElectron.fs.readFile(graphPath);
+            json = JSON.parse(content);
+            currentFilePath = graphPath;
+            projectGraphFile = null;
+            loadedFromElectron = true;
+
+            // Format path for display
+            const homeDir = await getAppPath('home');
+            if (homeDir && graphPath.startsWith(homeDir)) {
+              documentName = '~' + graphPath.slice(homeDir.length);
+            } else {
+              documentName = graphPath;
+            }
+          }
         }
-        const json = await response.json();
-        
-        // Load graph from JSON as a new untitled document
+
+        // Served by the `cascade` CLI: open the project's own graph. The
+        // server resolves which one — the file named on the command line
+        // (`cascade cloud-plots.cascade`), else `index.cascade`, else the
+        // sole `.cascade` file in the directory `cascade` was launched in.
+        if (!json && !window.cascadeElectron) {
+          const projectGraph = await loadProjectGraph();
+          if (projectGraph) {
+            console.log('[Startup] Loading project graph from server:', projectGraph.filename);
+            json = projectGraph.json;
+            currentFilePath = projectGraph.filename;
+            documentName = projectGraph.filename;
+            projectGraphFile = projectGraph.filename;
+          }
+        }
+
+        // Fall back to default graph
+        if (!json) {
+          const response = await fetch('/graphs/default.cascade');
+          if (!response.ok) {
+            throw new Error('Failed to load default graph');
+          }
+          json = await response.json();
+          documentName = 'Untitled';
+          currentFilePath = null;
+          projectGraphFile = null;
+        }
+
+        // Load graph from JSON
         const adapter = GraphEditorAdapter.fromJSON(json);
         graph = adapter.getGraph();
-        documentName = 'Untitled';
-        currentFilePath = null;
         hasUnsavedChanges = false;
         updateWindowTitle();
 
@@ -689,17 +1040,10 @@
         graph.connections = [...graph.connections];
         graph.elements = [...graph.elements];
 
-        // Execute nodes in parallel in the background (non-blocking)
-        const nodesToExecute = graph.nodes.filter(n => n.code);
-        if (nodesToExecute.length > 0) {
-          Promise.all(nodesToExecute.map(async (node) => {
-            try {
-              await node.execute();
-            } catch (err) {
-              console.warn('Background node execution failed for ' + node.id + ':', err);
-            }
-          })).catch(err => console.warn('Node execution batch failed:', err));
-        }
+        // Cook in dependency order — see the note on the other call sites: the
+        // n.code filter skips every project-source node, and a parallel map runs
+        // each node before its inputs exist.
+        cookGraph().catch(err => console.warn('Graph execution failed:', err));
 
         // Center canvas on nodes after loading
         setTimeout(() => {
@@ -714,10 +1058,116 @@
         graph = adapter.getGraph();
         documentName = 'Untitled';
         currentFilePath = null;
+        projectGraphFile = null;
         updateWindowTitle();
       }
     }
     })(); // End of async IIFE for graph loading
+
+    // Listen for graph open events from main process (Electron)
+    const unsubOpenGraph = onOpenGraph(async (slug: string) => {
+      console.log('[Renderer] onOpenGraph received:', slug);
+      hasUnsavedChanges = false;
+
+      // Get the full path from main process
+      const graphPath = await getCurrentGraph();
+      if (!graphPath) {
+        documentName = slug;
+        return;
+      }
+
+      currentFilePath = graphPath;
+      projectGraphFile = null;
+
+      // Format path for display, replacing home dir with ~
+      const homeDir = await getAppPath('home');
+      if (homeDir && graphPath.startsWith(homeDir)) {
+        documentName = '~' + graphPath.slice(homeDir.length);
+      } else {
+        documentName = graphPath;
+      }
+
+      // Load the graph from the file system
+      try {
+        const content = await window.cascadeElectron!.fs.readFile(graphPath);
+        const json = JSON.parse(content);
+
+        // Load graph from JSON
+        const adapter = GraphEditorAdapter.fromJSON(json);
+        graph = adapter.getGraph();
+
+        // Wait for annotation ports to be initialized
+        await graph.waitForAnnotationPorts();
+
+        // Set up node functions
+        for (const node of graph.nodes) {
+          if (node.code) {
+            try {
+              const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
+              const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
+              node.setFunction(nodeFunction);
+            } catch (err) {
+              console.warn('Failed to set function for node ' + node.id + ':', err);
+            }
+          }
+        }
+
+        // Restore connections now that ports exist
+        graph.restoreConnections();
+
+        // Force reactivity updates
+        await tick();
+        graph.connections = [...graph.connections];
+        graph.elements = [...graph.elements];
+
+        // Execute nodes in parallel in the background
+        const nodesToExecute = graph.nodes.filter(n => n.code);
+        if (nodesToExecute.length > 0) {
+          Promise.all(nodesToExecute.map(async (node) => {
+            try {
+              await node.execute();
+            } catch (err) {
+              console.warn('Failed to execute node ' + node.id + ':', err);
+            }
+          })).catch(err => {
+            console.warn('Some nodes failed to execute:', err);
+          });
+        }
+
+        console.log('[Renderer] Graph loaded from:', graphPath);
+      } catch (err) {
+        console.error('[Renderer] Failed to load graph:', err);
+      }
+    });
+
+    // Listen for project open events from main process (Electron)
+    const unsubOpenProject = onOpenProject(async (projectPath: string) => {
+      console.log('[Renderer] onOpenProject received:', projectPath);
+      hasUnsavedChanges = false;
+      // Check if there's a current graph, otherwise show project name
+      const graphPath = await getCurrentGraph();
+      if (graphPath) {
+        currentFilePath = graphPath;
+        projectGraphFile = null;
+        // Format path for display, replacing home dir with ~
+        const homeDir = await getAppPath('home');
+        if (homeDir && graphPath.startsWith(homeDir)) {
+          documentName = '~' + graphPath.slice(homeDir.length);
+        } else {
+          documentName = graphPath;
+        }
+      } else {
+        // No graph open yet, show project path
+        const homeDir = await getAppPath('home');
+        if (homeDir && projectPath.startsWith(homeDir)) {
+          documentName = '~' + projectPath.slice(homeDir.length);
+        } else {
+          documentName = projectPath;
+        }
+        currentFilePath = null;
+        projectGraphFile = null;
+      }
+    });
 
     // Track global mouse position
     function handleMouseMove(e: MouseEvent) {
@@ -727,6 +1177,18 @@
     
     // Keyboard shortcuts
     function handleKeyDown(e: KeyboardEvent) {
+    // C — the node colour palette. This key was the cook toggle; cook moved to
+    // K, which is free and still has a button on every node. Colour earns the
+    // shorter key: it is the grouping you reach for while reading a graph.
+    if ((e.key === 'c' || e.key === 'C') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      const target = e.target as HTMLElement;
+      if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA' && !target.isContentEditable) {
+        e.preventDefault();
+        colorPaletteOpen = !colorPaletteOpen;
+        return;
+      }
+    }
+
       // Presentation mode toggle (⌘. or Ctrl.)
       if ((e.metaKey || e.ctrlKey) && e.key === '.') {
         e.preventDefault();
@@ -942,12 +1404,12 @@
           }
         }
         
-        // C - Toggle cook
-        if (e.key === 'c' || e.key === 'C') {
+        // K - Toggle cook (was C)
+        if (e.key === 'k' || e.key === 'K') {
           if (!e.metaKey && !e.ctrlKey) {
             e.preventDefault();
             if (e.shiftKey) {
-              // Shift+C - Multi-cook (cook this chain)
+              // Shift+K - Multi-cook (cook this chain)
               selectedNode.setCook(true);
               // Cook all downstream nodes
               const cookDownstream = (node: Node) => {
@@ -963,7 +1425,7 @@
               };
               cookDownstream(selectedNode);
             } else {
-              // Normal C: Always clear other cooking nodes first, then toggle this one
+              // Normal K: Always clear other cooking nodes first, then toggle this one
               if (selectedNode.cook) {
                 selectedNode.setCook(false);
               } else {
@@ -984,8 +1446,8 @@
           });
         }
         
-        // Alt+C - Clear all cooking
-        if (e.altKey && (e.key === 'c' || e.key === 'C')) {
+        // Alt+K - Clear all cooking
+        if (e.altKey && (e.key === 'k' || e.key === 'K')) {
           e.preventDefault();
           graph.clearCookingNodes();
         }
@@ -1094,6 +1556,8 @@
       window.removeEventListener('mousemove', handleMouseMove);
       unsubElectronMenu?.();
       unsubSettingsRequest();
+      unsubOpenGraph?.();
+      unsubOpenProject?.();
     };
   });
 </script>
@@ -1182,6 +1646,23 @@
       {graph}
       bind:open={exportDialogOpen}
       on:close={() => exportDialogOpen = false}
+    />
+  {/if}
+
+  <ColorPalette
+    open={colorPaletteOpen}
+    selectionCount={graph ? graph.nodes.filter((n) => (n as any).selected || n.id === selectedNode?.id).length : 0}
+    on:choose={(e) => { applyNodeColor(e.detail); colorPaletteOpen = false; }}
+    on:close={() => (colorPaletteOpen = false)}
+  />
+
+  {#if VersionHistoryDialog}
+    <svelte:component
+      this={VersionHistoryDialog}
+      filename={projectGraphFile}
+      bind:open={versionHistoryOpen}
+      on:restore={handleRestoreVersion}
+      on:close={() => versionHistoryOpen = false}
     />
   {/if}
 

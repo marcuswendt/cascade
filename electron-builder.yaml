@@ -3,7 +3,7 @@
 
 appId: dev.cascade.app
 productName: Cascade
-copyright: Copyright © 2024 Cascade
+copyright: Copyright © 2025 Cascade
 
 directories:
   output: release
@@ -13,19 +13,20 @@ directories:
 files:
   - dist/**/*
   - electron/**/*.js
-  - server/dist/**/*
   - package.json
   - "!**/*.ts"
   - "!**/*.map"
   - "!**/node_modules/.cache"
 
-# Additional resources to copy
-extraResources:
-  - from: server/dist
-    to: server/dist
-
 extraMetadata:
   main: electron/main.js
+
+# Auto-update via GitHub Releases
+publish:
+  provider: github
+  owner: field-io
+  repo: cascade
+  releaseType: release
 
 # macOS Configuration
 mac:
@@ -38,23 +39,21 @@ mac:
       arch:
         - x64
         - arm64
-  icon: resources/icon.icns
+  # icon: resources/icon.icns  # TODO: Add app icon
   category: public.app-category.developer-tools
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
+  darkModeSupport: true
+  notarize: false
 
   # File associations
   fileAssociations:
     - ext: cascade
-      name: Cascade Project
-      description: Cascade Visual Programming Project
-      icon: resources/cascade-doc.icns
-      role: Editor
-    - ext: cascade.json
-      name: Cascade Project JSON
-      description: Cascade Visual Programming Project
+      name: Cascade Graph
+      description: Cascade visual programming graph
+      # icon: resources/cascade-doc.icns  # TODO: Add document icon
       role: Editor
 
   # Protocol handler (deep links)
@@ -75,9 +74,9 @@ dmg:
   window:
     width: 540
     height: 380
-  background: resources/dmg-background.png
+  # background: resources/dmg-background.png  # TODO: Add DMG background
 
-# Windows Configuration (for future use)
+# Windows Configuration
 win:
   target:
     - nsis
@@ -86,12 +85,9 @@ win:
 
   fileAssociations:
     - ext: cascade
-      name: Cascade Project
-      description: Cascade Visual Programming Project
+      name: Cascade Graph
+      description: Cascade visual programming graph
       icon: resources/cascade-doc.ico
-    - ext: cascade.json
-      name: Cascade Project JSON
-      description: Cascade Visual Programming Project
 
 # NSIS installer (Windows)
 nsis:
@@ -101,7 +97,7 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
 
-# Linux Configuration (for future use)
+# Linux Configuration
 linux:
   target:
     - AppImage
@@ -118,14 +114,6 @@ linux:
 # AppImage configuration
 appImage:
   artifactName: "${productName}-${version}-${arch}.AppImage"
-
-# Auto-update (disabled for now - manual updates only)
-# Uncomment when ready for auto-updates via GitHub Releases
-# publish:
-#   provider: github
-#   owner: your-username
-#   repo: cascade
-#   releaseType: release
 
 # Build settings
 asar: true

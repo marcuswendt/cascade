@@ -18,6 +18,7 @@ import type {
 } from '../services/genai/types';
 import { GenerationManager } from '../services/genai/GenerationManager';
 import { AIError, AIErrorType } from '../services/genai/errors';
+import { ENABLE_AI_GENERATION } from '../config/features';
 
 // Generic constructor type for mixin pattern
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -160,6 +161,18 @@ export function AINodeMixin<TBase extends GConstructor<NodeLike>>(Base: TBase) {
 		 * Start a generation
 		 */
 		async generate(): Promise<void> {
+			// Round 32: disabled, not removed — see src/config/features.ts.
+			// Direct Anthropic/Google/OpenAI client calls are off; Claude
+			// Code is how node code/content gets written now.
+			if (!ENABLE_AI_GENERATION) {
+				this.generationError = new AIError(
+					AIErrorType.NO_API_KEY,
+					'AI generation is disabled — Cascade uses Claude Code for content now, not in-app generation.',
+					{ provider: 'anthropic' as ProviderType, retryable: false }
+				);
+				return;
+			}
+
 			if (this.isGenerating) {
 				console.warn('Generation already in progress');
 				return;

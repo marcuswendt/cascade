@@ -591,8 +591,8 @@ node.onReady = () => {
 
   function getSourceBadgeText(): string {
     switch (sourceType) {
-      case 'stdlib': return 'stdlib';
-      case 'embedded': return 'embedded';
+      case 'stdlib': return 'cascade';
+      case 'embedded': return 'external';
       case 'project': return fileStatus === 'synced' ? 'project' : fileStatus;
       default: return '';
     }

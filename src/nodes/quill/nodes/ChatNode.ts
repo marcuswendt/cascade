@@ -7,6 +7,7 @@
  */
 
 import { QuillNode } from '../QuillNode';
+import { Node } from '../../Node';
 import type { Graph } from '../../Graph';
 import type { OutputPort } from '@/types/node.types';
 import type { ImageBuffer } from '@/nodes/lens/ImageBuffer';
@@ -63,6 +64,7 @@ export class ChatNode extends QuillNode {
   frozen = false;
 
   private streamHandler = new ChatStreamHandler();
+  private pendingSend = false;
 
   constructor(id: string, graph: Graph) {
     super(id, 'Chat', graph);
@@ -70,13 +72,21 @@ export class ChatNode extends QuillNode {
   }
 
   protected setup(): void {
-    // === Outputs ===
-    this.setupTextOutput();
+    // === Outputs (context first for proper wiring) ===
     this.contextOutput = this.out('context', 'param');
+    this.setupTextOutput();
 
     // === Inputs ===
     // Context from upstream Chat node (any type, we handle null)
-    this.in('context', null, { description: 'Conversation history from upstream node' });
+    const contextInput = this.in('context', null, {
+      description: 'Conversation history from upstream node'
+    });
+    // Set onChange handler to auto-send when context arrives (if pending)
+    contextInput.onChange = (value: ConversationContext | null) => {
+      if (value && this.pendingSend) {
+        this.send();
+      }
+    };
 
     // System prompt override
     this.in('system', '', { description: 'System prompt override' });
@@ -103,12 +113,17 @@ export class ChatNode extends QuillNode {
       onChange: () => this.handlePromptChange()
     });
 
-    // Send button - compact, no label
+    // Send button - icon only with tooltip
     this.addParm('send', {
-      value: 'Send',
+      value: '',
       type: 'button',
       displayName: '',
-      params: { small: true },
+      params: {
+        small: true,
+        icon: 'ArrowUp',
+        iconOnly: true,
+        tooltip: 'Send (⌘+Enter)'
+      },
       onChange: () => this.send()
     });
 
@@ -194,6 +209,25 @@ export class ChatNode extends QuillNode {
 
     console.log(`[ChatNode] Sending: "${promptText.length > 50 ? promptText.substring(0, 50) + '...' : promptText}"`);
 
+    // Check if we're connected to an upstream context but haven't received it yet
+    const contextPort = this.inputs.find(p => p.name === 'context');
+    const hasContextConnection = contextPort && contextPort.connections.length > 0;
+    const contextValue = contextPort?.value as ConversationContext | null;
+
+    if (hasContextConnection && !contextValue) {
+      // Queue the send - we'll auto-send when context arrives
+      this.pendingSend = true;
+      this.status = 'waiting';
+      this.markDirty();
+      console.log('[ChatNode] Waiting for upstream context...');
+      // Still create follow-up so user can continue typing
+      this.createFollowUp();
+      return;
+    }
+
+    // Clear pending flag if we're actually sending
+    this.pendingSend = false;
+
     // Check if the model's provider is configured
     const modelId = this.props.model?.value ?? this.modelId;
     const model = ProviderRegistry.getModel(modelId);
@@ -276,6 +310,8 @@ export class ChatNode extends QuillNode {
     await this.streamHandler.stream(request, {
       onStart: () => {
         console.log('[ChatNode] Stream started');
+        // Create follow-up node for continuous conversation flow
+        this.createFollowUp();
       },
 
       onDelta: (content) => {
@@ -398,6 +434,23 @@ export class ChatNode extends QuillNode {
   }
 
   /**
+   * Create a follow-up Chat node for continuous conversation flow
+   * Dispatches an event that Canvas handles to create the node
+   * Only creates if context output has no existing connections
+   */
+  createFollowUp(): void {
+    // Don't create follow-up if context output already has a connection
+    if (this.contextOutput.connections && this.contextOutput.connections.length > 0) {
+      console.log('[ChatNode] Context output already connected, skipping follow-up creation');
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent('cascade:createFollowUp', {
+      detail: { sourceNodeId: this.id }
+    }));
+  }
+
+  /**
    * Toggle frozen state
    */
   toggleFreeze(): void {
@@ -452,8 +505,11 @@ export class ChatNode extends QuillNode {
    * Get the current state for UI rendering
    */
   getState(): ChatNodeState {
+    // Prefer props value (source of truth for UI) over instance variable
+    const promptValue = (this.props.prompt?.value as string) || this.prompt;
+
     return {
-      prompt: this.prompt,
+      prompt: promptValue,
       systemPrompt: this.systemPrompt,
       attachments: this.attachments,
       modelId: this.modelId,
@@ -488,13 +544,17 @@ export class ChatNode extends QuillNode {
 
     // Current exchange (if we have a prompt)
     if (this.prompt) {
+      // Mark as pending if we haven't received a response yet
+      const isPending = !this.response && !this.streamBuffer && this.status !== 'streaming' && this.status !== 'waiting';
+
       messages.push({
         role: 'user',
         content: this.prompt,
         meta: {
           id: `${this.id}-user`,
           timestamp: Date.now(),
-          nodeId: this.id
+          nodeId: this.id,
+          pending: isPending
         }
       });
 
@@ -704,5 +764,8 @@ export class ChatNode extends QuillNode {
         this.contextOutput.setValue(this.contextOutputValue);
       }
     }
+
+    // Trigger UI reactivity after deserialize
+    Node.onPropParamsChanged?.(this.id);
   }
 }

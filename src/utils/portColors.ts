@@ -1,5 +1,6 @@
 import type { InputPort, OutputPort, DataType } from '@/types/node.types';
 import { ImageBuffer } from '@/nodes/lens/ImageBuffer';
+import { TYPE_COLORS, typeColor, isImageRef } from '@/types/coreTypes';
 
 /**
  * Color palette for data types
@@ -43,6 +44,19 @@ export function getPortColor(port: InputPort | OutputPort): string {
       port.value instanceof HTMLImageElement ||
       port.value instanceof OffscreenCanvas) {
     return DATA_TYPE_COLORS.image;
+  }
+
+  // A declared core type answers this outright — including the vectors,
+  // matrices, geometry and image types, and any namespaced project type, which
+  // gets a colour from its namespace so `observatory.*` reads as one family.
+  if (port.dataType && port.dataType !== 'any') {
+    return typeColor(port.dataType);
+  }
+
+  // An image reference is recognisable by shape even on an untyped port, which
+  // is what keeps a node written before the descriptor existed readable.
+  if (isImageRef(port.value)) {
+    return TYPE_COLORS.image;
   }
 
   // Check dataType
