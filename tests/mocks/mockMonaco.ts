@@ -92,19 +92,19 @@ export function createMockMonacoModule() {
         uri: { path: '/model' },
       })),
     },
-    languages: {
-      typescript: {
-        typescriptDefaults: {
-          setCompilerOptions: vi.fn(),
-          setExtraLibs: vi.fn(),
-          addExtraLib: vi.fn(),
-          setDiagnosticsOptions: vi.fn(),
-        },
-        javascriptDefaults: {
-          setCompilerOptions: vi.fn(),
-          setExtraLibs: vi.fn(),
-        },
+    typescript: {
+      typescriptDefaults: {
+        setCompilerOptions: vi.fn(),
+        setExtraLibs: vi.fn(),
+        addExtraLib: vi.fn(),
+        setDiagnosticsOptions: vi.fn(),
       },
+      javascriptDefaults: {
+        setCompilerOptions: vi.fn(),
+        setExtraLibs: vi.fn(),
+      },
+    },
+    languages: {
       register: vi.fn(),
       setMonarchTokensProvider: vi.fn(),
       setLanguageConfiguration: vi.fn(),

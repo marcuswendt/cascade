@@ -17,7 +17,7 @@ async function git(cwd: string, args: string[]): Promise<{ stdout: string; stder
 /** Initializes a git repo in `root` if one doesn't already exist. Cascade
  * projects are expected to already be git repos (Marcus's model), but a
  * brand-new project scaffolded fresh has nothing to commit to yet — this
- * makes `cascade ./` work from an empty directory too, without a separate
+ * makes `cascade .` work from an empty directory too, without a separate
  * manual `git init` step. Never re-inits an existing repo. */
 export async function ensureGitRepo(root: string): Promise<void> {
   if (fssync.existsSync(path.join(root, '.git'))) return;

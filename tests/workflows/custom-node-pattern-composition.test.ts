@@ -1,9 +1,9 @@
 /**
- * AI Pattern Composition Workflow Test
+ * Custom Pattern Composition Workflow Test
  *
  * Tests the complete workflow of:
  * 1. Creating a custom LensNode for pattern generation
- * 2. Using AI (Claude) to generate a ZigZag pattern
+ * 2. Compiling project-owned ZigZag pattern code
  * 3. Compositing the result with another pattern (Checkers)
  *
  * @vitest-environment jsdom
@@ -13,14 +13,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Graph } from '@/nodes/Graph';
 import { Node } from '@/nodes/Node';
 import { compileNodeCode, compileAndExecute } from '@/editor/utils/compileNodeCode';
-import { AICodeGenerator } from '@/editor/ai/AICodeGenerator';
 
-// Mock the AI-generated ZigZag pattern code
-// This simulates what Claude would generate when asked:
-// "Create a ZigZag pattern generator similar to CheckerPattern"
+// Project-owned ZigZag pattern code.
 const MOCK_ZIGZAG_CODE = `
 // ZigZagPattern - Generates a zigzag/chevron pattern
-// AI-generated code for procedural zigzag pattern
+// Procedural zigzag pattern
 
 const output = node.out<HTMLCanvasElement>('image');
 
@@ -307,20 +304,20 @@ node.watchProp('opacity', render);
 node.onReady = render;
 `;
 
-describe('AI Pattern Composition Workflow', () => {
+describe('Custom Pattern Composition Workflow', () => {
   let graph: Graph;
 
   beforeEach(() => {
     graph = new Graph();
   });
 
-  describe('Step 1: Create custom ZigZag LensNode with AI', () => {
-    it('should compile AI-generated ZigZag pattern code', async () => {
+  describe('Step 1: Create a custom ZigZag LensNode', () => {
+    it('should compile project-owned ZigZag pattern code', async () => {
       // User creates a new custom LensNode
       const zigzagNode = new Node('local.zigzagpattern', 'local.zigzagpattern', graph);
       graph.addElement(zigzagNode);
 
-      // Compile the AI-generated code
+      // Compile the project-owned code
       const compiled = compileNodeCode(MOCK_ZIGZAG_CODE);
 
       expect(compiled.error).toBeNull();
@@ -481,15 +478,7 @@ describe('AI Pattern Composition Workflow', () => {
       const zigzagNode = new Node('local.zigzagpattern', 'local.zigzagpattern', graph);
       graph.addElement(zigzagNode);
 
-      // === STEP 2: User prompts AI to generate code ===
-      // User: "Generate a ZigZag pattern generator similar to CheckerPattern"
-      // AI returns MOCK_ZIGZAG_CODE
-
-      // Build context for AI (simulated)
-      const context = AICodeGenerator.buildContext(zigzagNode, 'local.zigzagpattern');
-      expect(context.modulePath).toBe('local.zigzagpattern');
-
-      // Compile AI-generated code
+      // === STEP 2: User adds and compiles project-owned code ===
       const zigzagResult = await compileAndExecute(zigzagNode, graph, MOCK_ZIGZAG_CODE);
       expect(zigzagResult.success).toBe(true);
 
@@ -563,61 +552,5 @@ describe('AI Pattern Composition Workflow', () => {
       // Node should be marked dirty after prop changes
       expect(zigzag.isDirty).toBe(true);
     });
-  });
-});
-
-describe('AI Code Generation Context', () => {
-  let graph: Graph;
-
-  beforeEach(() => {
-    graph = new Graph();
-  });
-
-  it('should build proper context for AI code generation', async () => {
-    const node = new Node('local.newpattern', 'local.newpattern', graph);
-    graph.addElement(node);
-
-    // Simulate existing code
-    node.code = '// Empty template';
-
-    const context = AICodeGenerator.buildContext(node, 'local.newpattern');
-
-    expect(context.currentCode).toBe('// Empty template');
-    expect(context.modulePath).toBe('local.newpattern');
-    expect(context.connectedInputs).toEqual([]);
-    expect(context.connectedOutputs).toEqual([]);
-  });
-
-  it('should include connected ports in context', async () => {
-    // Create source and target nodes
-    const sourceNode = new Node('source', 'local.source', graph);
-    const targetNode = new Node('target', 'local.target', graph);
-    graph.addElement(sourceNode);
-    graph.addElement(targetNode);
-
-    // Setup source with output
-    await compileAndExecute(sourceNode, graph, `
-      node.out('image');
-    `);
-
-    // Setup target with input
-    await compileAndExecute(targetNode, graph, `
-      node.in('image', null);
-      node.out('result');
-    `);
-
-    // Connect them
-    graph.connect(
-      sourceNode.outputs.find(p => p.name === 'image')!,
-      targetNode.inputs.find(p => p.name === 'image')!
-    );
-
-    // Build context for target node
-    const context = AICodeGenerator.buildContext(targetNode, 'local.target');
-
-    // Should show connected input
-    expect(context.connectedInputs.length).toBe(1);
-    expect(context.connectedInputs[0].name).toBe('image');
-    expect(context.connectedInputs[0].connected).toBe(true);
   });
 });

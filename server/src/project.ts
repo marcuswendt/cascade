@@ -4,7 +4,7 @@
  * "project" is just any existing git repo with a `.cascade` graph file at
  * its root and a `nodes/<module-name>/index.ts` folder for custom nodes
  * (an existing artwork repo becomes a project exactly as it already sits —
- * no migration, no separate projects database). `cascade ./` starts a
+ * no migration, no separate projects database). `cascade .` starts a
  * server scoped to CWD (or an explicit path argument); there is no
  * project list/switch inside the app — switching projects means running
  * `cascade` in a different directory.

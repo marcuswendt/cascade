@@ -1,13 +1,14 @@
 import {
-  DockviewComponent,
+  createDockview,
   Orientation,
   type DockviewApi,
   type SerializedDockview,
   type AddPanelOptions,
   type IDockviewPanel,
   type DockviewComponentOptions,
+  type DockviewActivePanelChangeEvent,
   type IHeaderActionsRenderer
-} from 'dockview-core';
+} from 'dockview';
 import type { CascadePanelParams, PanelType } from './types';
 import { createSvelteRenderer, togglePanelLock, panelLockStore, sharedContextStore } from './renderer';
 import { get } from 'svelte/store';
@@ -15,6 +16,28 @@ import { writable } from 'svelte/store';
 import type { ProjectPanelMeta } from '../projectPanels';
 
 const STORAGE_KEY = 'cascade-dockview-layout';
+type ResizeAxis = 'width' | 'height';
+type MinimizedGroup = { size: number; minimum: number; axis: ResizeAxis };
+
+export function activePanelId(event: DockviewActivePanelChangeEvent): string | null {
+  return event.panel?.id ?? null;
+}
+
+export function groupResizeAxis(grid: SerializedDockview['grid'], groupId: string): ResizeAxis | null {
+  const visit = (node: any, axis: ResizeAxis): ResizeAxis | null => {
+    if (node?.type === 'leaf') return node.data?.id === groupId ? axis : null;
+    if (node?.type !== 'branch' || !Array.isArray(node.data)) return null;
+    const childAxis = axis === 'width' ? 'height' : 'width';
+    for (const child of node.data) {
+      const match = visit(child, childAxis);
+      if (match) return match;
+    }
+    return null;
+  };
+
+  const rootAxis = grid.orientation === Orientation.HORIZONTAL ? 'width' : 'height';
+  return visit(grid.root, rootAxis);
+}
 
 // Panel types available for creation
 export const BUILT_IN_PANEL_TYPES: { type: PanelType; label: string; icon: string }[] = [
@@ -39,10 +62,7 @@ class DockviewStore {
   private _activePanel = $state<string | null>(null);
   private _panels = $state<Map<string, CascadePanelParams>>(new Map());
   private _isReady = $state(false);
-  private _minimizedGroups = $state<Map<string, { height: number; originalMinHeight: number; originalMinWidth?: number; orientation: 'horizontal' | 'vertical' }>>(new Map());
-
-  // Pending params for panels being added - dockview doesn't pass params to createComponent
-  private _pendingParams = new Map<string, CascadePanelParams>();
+  private _minimizedGroups = $state<Map<string, MinimizedGroup>>(new Map());
 
   // Getters
   get api() { return this._api; }
@@ -61,23 +81,11 @@ class DockviewStore {
     const self = this;
 
     const options: DockviewComponentOptions = {
-      createComponent: (componentOptions: { id: string; name: string; params?: CascadePanelParams }) => {
-        // Dockview doesn't pass params to createComponent, so we check our pending params map first
-        const pendingParams = self._pendingParams.get(componentOptions.id);
-        if (pendingParams) {
-          self._pendingParams.delete(componentOptions.id);
-        }
-
-        // Use pending params if available, otherwise fall back to componentOptions.params
-        const existingParams = pendingParams || componentOptions.params;
-
+      createComponent: (componentOptions) => {
         const params: CascadePanelParams = {
-          // First spread all existing params to preserve nodeId, graphId, etc.
-          ...existingParams,
-          // Then ensure required fields are set
-          id: existingParams?.id || componentOptions.id,
-          type: (existingParams?.type || componentOptions.name) as PanelType,
-          title: existingParams?.title || componentOptions.name.charAt(0).toUpperCase() + componentOptions.name.slice(1)
+          id: componentOptions.id,
+          type: componentOptions.name as PanelType,
+          title: componentOptions.name.charAt(0).toUpperCase() + componentOptions.name.slice(1),
         };
         return createSvelteRenderer(params);
       },
@@ -223,24 +231,24 @@ class DockviewStore {
       defaultTabComponent: 'cascadeTab',
     };
 
-    const dockview = new DockviewComponent(container, options);
+    const api = createDockview(container, options);
 
-    this._api = dockview.api;
+    this._api = api;
 
     // Track active panel changes
-    dockview.api.onDidActivePanelChange((panel: IDockviewPanel | undefined) => {
-      this._activePanel = panel?.id ?? null;
+    api.onDidActivePanelChange((event) => {
+      this._activePanel = activePanelId(event);
     });
 
     // Track panel additions/removals
-    dockview.api.onDidAddPanel((panel: IDockviewPanel) => {
+    api.onDidAddPanel((panel: IDockviewPanel) => {
       const params = panel.params as CascadePanelParams;
       if (params) {
         this._panels = new Map(this._panels).set(panel.id, params);
       }
     });
 
-    dockview.api.onDidRemovePanel((panel: IDockviewPanel) => {
+    api.onDidRemovePanel((panel: IDockviewPanel) => {
       const newPanels = new Map(this._panels);
       newPanels.delete(panel.id);
       this._panels = newPanels;
@@ -291,9 +299,6 @@ class DockviewStore {
         };
       }
     }
-
-    // Store params for createComponent to pick up (dockview doesn't pass params to createComponent)
-    this._pendingParams.set(options.id, panelParams);
 
     this._api.addPanel(addOptions);
   }
@@ -380,57 +385,6 @@ class DockviewStore {
   }
 
   /**
-   * Find the splitview and index for a group by traversing the grid structure
-   */
-  private findGroupInGrid(groupId: string): { splitview: any; index: number; orientation: 'horizontal' | 'vertical'; element: HTMLElement } | null {
-    const apiAny = this._api as any;
-    const component = apiAny?.component;
-    const gridview = component?.gridview;
-    const root = gridview?.root || gridview?._root;
-
-    if (!root) return null;
-
-    // Recursive function to find group in tree
-    const findInNode = (node: any, parentSplitview: any, indexInParent: number): { splitview: any; index: number; orientation: 'horizontal' | 'vertical'; element: HTMLElement } | null => {
-      // Check if this is a leaf node (group)
-      if (node.element?.classList?.contains('dv-groupview')) {
-        // This is a group - check if it matches
-        const groupEl = node.element as HTMLElement;
-        const group = this._api?.getGroup(groupId);
-        if (group) {
-          const firstPanel = group.panels[0];
-          if (firstPanel) {
-            const tabs = groupEl.querySelectorAll('.cascade-tab-title');
-            for (const tab of tabs) {
-              if (tab.textContent === firstPanel.title) {
-                // Orientation can be number (0/1) or string ("HORIZONTAL"/"VERTICAL")
-                const rawOrientation = parentSplitview?.orientation;
-                const isHorizontal = rawOrientation === 0 || rawOrientation === 'HORIZONTAL';
-                const orientation = isHorizontal ? 'horizontal' : 'vertical';
-                return { splitview: parentSplitview, index: indexInParent, orientation, element: groupEl };
-              }
-            }
-          }
-        }
-        return null;
-      }
-
-      // This is a branch node - recurse into children
-      const children = node.children || [];
-      const splitview = node.splitview;
-
-      for (let i = 0; i < children.length; i++) {
-        const result = findInNode(children[i], splitview, i);
-        if (result) return result;
-      }
-
-      return null;
-    };
-
-    return findInNode(root, root.splitview, 0);
-  }
-
-  /**
    * Check if any panel is maximized
    */
   isActivePanelMaximized(): boolean {
@@ -444,16 +398,12 @@ class DockviewStore {
   toggleMaximizeActivePanel(): void {
     if (!this._api) return;
 
-    const apiAny = this._api as any;
-
-    if (apiAny.hasMaximizedGroup?.()) {
-      // Restore from maximized
-      apiAny.exitMaximizedGroup?.();
+    if (this._api.hasMaximizedGroup()) {
+      this._api.exitMaximizedGroup();
     } else {
-      // Maximize the active panel's group
       const activePanel = this._api.getPanel(this._activePanel || '');
       if (activePanel) {
-        apiAny.maximizeGroup?.(activePanel);
+        this._api.maximizeGroup(activePanel);
       }
     }
   }
@@ -470,57 +420,28 @@ class DockviewStore {
     const isMinimized = this._minimizedGroups.has(groupId);
     const savedData = this._minimizedGroups.get(groupId);
 
-    // Find the splitview that contains this group (also returns the element)
-    const location = this.findGroupInGrid(groupId);
-    if (!location) return;
-
-    const { splitview, index, orientation, element: groupEl } = location;
-    const groupAny = group as any;
+    const axis = groupResizeAxis(this._api.toJSON().grid, groupId);
+    if (!axis) return;
 
     if (isMinimized && savedData) {
-      // Restore
-      groupAny._minimumHeight = savedData.originalMinHeight;
-      groupAny._minimumWidth = savedData.originalMinWidth || 100;
-
-      try {
-        splitview.resizeView(index, savedData.height);
-      } catch {
-        // Resize may fail in some layouts
-      }
-
-      // Remove collapsed class
-      groupEl.classList.remove('cascade-collapsed-horizontal');
-
+      group.api.setConstraints(savedData.axis === 'width'
+        ? { minimumWidth: savedData.minimum }
+        : { minimumHeight: savedData.minimum });
+      group.api.setSize({ [savedData.axis]: savedData.size });
       const newMinimized = new Map(this._minimizedGroups);
       newMinimized.delete(groupId);
       this._minimizedGroups = newMinimized;
     } else {
-      // Minimize
-      const currentSize = orientation === 'vertical' ? group.height : group.width;
-
       const newMinimized = new Map(this._minimizedGroups);
       newMinimized.set(groupId, {
-        height: currentSize || 200,
-        originalMinHeight: groupAny._minimumHeight || 100,
-        originalMinWidth: groupAny._minimumWidth || 100,
-        orientation
+        size: group[axis] || 200,
+        minimum: axis === 'width' ? group.minimumWidth : group.minimumHeight,
+        axis,
       });
       this._minimizedGroups = newMinimized;
 
-      // Set minimum to allow collapse
-      groupAny._minimumHeight = 35;
-      groupAny._minimumWidth = 35;
-
-      try {
-        splitview.resizeView(index, 35);
-      } catch {
-        // Resize may fail in some layouts
-      }
-
-      // Add horizontal collapsed class for rotated tabs
-      if (orientation === 'horizontal') {
-        groupEl.classList.add('cascade-collapsed-horizontal');
-      }
+      group.api.setConstraints(axis === 'width' ? { minimumWidth: 35 } : { minimumHeight: 35 });
+      group.api.setSize({ [axis]: 35 });
     }
   }
 
@@ -557,7 +478,7 @@ class DockviewStore {
     if (layout.panels) {
       const filteredPanels: Record<string, any> = {};
       for (const [id, panel] of Object.entries(layout.panels as Record<string, any>)) {
-        const component = (panel as any)?.component;
+        const component = (panel as any)?.contentComponent;
         if (!id.startsWith('code-') && (!String(component).startsWith('project:') || available.has(component))) {
           filteredPanels[id] = panel;
         }
@@ -831,9 +752,12 @@ class DockviewStore {
    */
   dispose(): void {
     this.saveLayout();
+    this._api?.dispose();
     this._api = null;
+    this._activePanel = null;
     this._isReady = false;
     this._panels = new Map();
+    this._minimizedGroups = new Map();
   }
 }
 

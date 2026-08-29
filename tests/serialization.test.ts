@@ -156,6 +156,46 @@ describe('Serialization', () => {
       expect(newGraph.elements).toHaveLength(0);
     });
 
+    it.each([
+      'cascade.lens.Generate',
+      'cascade.lens.Edit',
+      'cascade.quill.Describe',
+      'cascade.quill.Enhance',
+      'cascade.quill.Chat',
+      'cascade.quill.System',
+      'cascade.lens.DoesNotExist',
+    ])('rejects unknown standard-library module %s regardless of serialized source', (moduleId) => {
+      for (const source of [undefined, 'stdlib', 'embedded', 'project'] as const) {
+        const node = {
+          id: `${moduleId}-${source ?? 'omitted'}`,
+          module: moduleId,
+          ...(source === undefined ? {} : { source }),
+        };
+
+        expect(
+          () => Graph.fromJSON({ version: '0.2', nodes: [node], connections: [] }),
+          `${moduleId} with source ${source ?? 'omitted'}`,
+        ).toThrow(moduleId);
+      }
+    });
+
+    it.each([undefined, 'stdlib', 'embedded', 'project'] as const)(
+      'keeps local custom modules loadable when source is %s',
+      (source) => {
+        const loaded = Graph.fromJSON({
+          version: '0.2',
+          nodes: [{
+            id: 'custom',
+            module: 'local.Custom',
+            ...(source === undefined ? {} : { source }),
+          }],
+          connections: [],
+        });
+
+        expect(loaded.getNode('custom')).toMatchObject({ modulePath: 'local.Custom' });
+      },
+    );
+
     // Note: Full node deserialization tests require registered node types
     // These are integration tests that would need the full node library loaded
   });
@@ -288,12 +328,12 @@ describe('Serialization', () => {
     it('keeps metadata.name when a project block is present', () => {
       const loaded = Graph.fromJSON({
         version: '0.2',
-        metadata: { name: 'Cloud Plots' },
+        metadata: { name: 'My Artwork' },
         project: { packages: [] },
         nodes: [],
       });
 
-      expect(loaded.project.name).toBe('Cloud Plots');
+      expect(loaded.project.name).toBe('My Artwork');
     });
 
     it('round-trips graph description, author, and creation timestamp', () => {

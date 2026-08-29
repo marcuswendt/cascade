@@ -61,8 +61,8 @@ Options:
   --help, -h         Show this help message
 
 Examples:
-  cascade ./
-  cascade ./ --host KURO --port 3030
+  cascade .
+  cascade . --host KURO --port 3030
   cascade new my-artwork
   cascade node Multiply ./my-artwork
   cascade run graph.cascade

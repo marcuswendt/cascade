@@ -29,7 +29,7 @@
     "@cascade/contracts": "file:../contracts"
   },
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^6.0.3"
   },
   "scripts": {
     "build": "node ../../scripts/clean-package-dist.mjs runtime && tsc -p tsconfig.json",

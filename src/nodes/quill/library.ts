@@ -20,42 +20,6 @@ export const quillLibrary: Library = {
 					type: 'Prompt'
 				}
 			]
-		},
-		{
-			id: 'ai',
-			label: 'AI Text',
-			nodes: [
-				{
-					name: 'Describe',
-					icon: 'Eye',
-					description: 'Generate text description from an image using AI',
-					type: 'Describe'
-				},
-				{
-					name: 'Enhance',
-					icon: 'Wand2',
-					description: 'Enhance and expand prompts using AI',
-					type: 'Enhance'
-				}
-			]
-		},
-		{
-			id: 'chat',
-			label: 'Chat',
-			nodes: [
-				{
-					name: 'Chat',
-					icon: 'MessageSquare',
-					description: 'Conversational AI with streaming responses',
-					type: 'Chat'
-				},
-				{
-					name: 'System',
-					icon: 'Settings',
-					description: 'System prompt for Chat nodes',
-					type: 'System'
-				}
-			]
 		}
 	]
 };

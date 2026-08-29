@@ -18,8 +18,7 @@ export const lensLibrary: Library = {
         { name: 'Checkers', icon: 'Grid', description: 'Generate a checkerboard pattern', type: 'Checkers' },
         { name: 'Noise', icon: 'Cloud', description: 'Generate procedural noise patterns', type: 'Noise' },
         { name: 'Ramp', icon: 'Gradient', description: 'Generate color ramps', type: 'Ramp' },
-        { name: 'Text', icon: 'Type', description: 'Render text with customizable font and style', type: 'Text' },
-        { name: 'Generate Image', icon: 'Lightbulb', description: 'Generate images from text prompts using AI', type: 'Generate' }
+        { name: 'Text', icon: 'Type', description: 'Render text with customizable font and style', type: 'Text' }
       ]
     },
     {
@@ -27,8 +26,7 @@ export const lensLibrary: Library = {
       label: 'Filter',
       nodes: [
         { name: 'Blur', icon: 'Droplets', description: 'Gaussian blur', type: 'Blur' },
-        { name: 'Normal Map', icon: 'Box', description: 'Compute normal map from height map', type: 'NormalMap' },
-        { name: 'Edit Image', icon: 'Lightbulb', description: 'Edit images using AI prompts', type: 'Edit' }
+        { name: 'Normal Map', icon: 'Box', description: 'Compute normal map from height map', type: 'NormalMap' }
       ]
     },
     {
@@ -48,4 +46,3 @@ export const lensLibrary: Library = {
     }
   ]
 };
-

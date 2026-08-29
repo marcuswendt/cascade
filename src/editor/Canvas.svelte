@@ -9,17 +9,10 @@
   import { graphStructure } from './stores/graphStructure';
   import type { Node } from '@/nodes/Node';
   import type { Connection } from '@/types/node.types';
-  import { marked } from 'marked';
   import { packagePathToType, getNodeClass } from '@/utils/nodeTypeUtils';
   import { loadEmbeddedModule } from '@/engine/nodeModuleLoader';
   import { getPortColor, getConnectionColor, DATA_TYPE_COLORS } from '@/utils/portColors';
   import { recordSnapshotImmediate } from './stores/historyStore';
-  
-  // Configure marked for safe rendering
-  marked.setOptions({
-    breaks: true,
-    gfm: true
-  });
   
   const dispatch = createEventDispatcher();
   
@@ -4212,90 +4205,6 @@ node.onReady = () => {
     }
   }
 
-  /**
-   * Handle createFollowUp event from ChatNode
-   * Creates a new ChatNode below the source, connects context, and focuses prompt
-   */
-  async function handleCreateFollowUp(event: Event) {
-    const customEvent = event as CustomEvent<{ sourceNodeId: string }>;
-    const sourceNodeId = customEvent.detail?.sourceNodeId;
-    if (!sourceNodeId) return;
-
-    const sourceNode = graph.getNode(sourceNodeId);
-    if (!sourceNode) return;
-
-    // Calculate position below source node with spacing
-    const spacing = 60;
-    // ChatNodes have a default height around 150px
-    const nodeHeight = 150;
-    const newPosition = {
-      x: sourceNode.position.x,
-      y: sourceNode.position.y + nodeHeight + spacing
-    };
-
-    // Create new ChatNode
-    const newNode = graph.addNode('cascade.quill.Chat', newPosition);
-
-    // Copy model from source node to follow-up node
-    const sourceModel = sourceNode.props.model?.value as string;
-    if (sourceModel && newNode.props.model) {
-      newNode.props.model.value = sourceModel;
-      // Also update the node's internal modelId if it's a ChatNode
-      if ('modelId' in newNode) {
-        (newNode as any).modelId = sourceModel;
-      }
-    }
-
-    // Update nodes array to trigger reactivity
-    graph.nodes = [...graph.nodes];
-
-    // Wait for DOM update before connecting
-    await tick();
-
-    // Connect context ports (source output -> new input)
-    const contextOut = sourceNode.outputs.find(p => p.name === 'context');
-    const contextIn = newNode.inputs.find(p => p.name === 'context');
-    if (contextOut && contextIn) {
-      try {
-        studioGraph.connect(contextOut, contextIn);
-      } catch (e) {
-        console.warn('Failed to connect context ports:', e);
-      }
-    }
-
-    // Select the new node
-    selectedNodes = [newNode.id];
-    selectedNode = newNode;
-    dispatch('nodeSelect', { node: newNode });
-
-    // Pan to center the new node in viewport
-    const rect = canvas.getBoundingClientRect();
-    const viewportCenterX = rect.width / 2;
-    const viewportCenterY = rect.height / 2;
-    // Center on node's center (assuming ~200px width, 150px height for ChatNode)
-    const nodeCenterX = newPosition.x + 100;
-    const nodeCenterY = newPosition.y + 75;
-    const nodeScreenX = nodeCenterX * internalTransform.zoom + internalTransform.x;
-    const nodeScreenY = nodeCenterY * internalTransform.zoom + internalTransform.y;
-    const panX = viewportCenterX - nodeScreenX;
-    const panY = viewportCenterY - nodeScreenY;
-    internalTransform.x += panX;
-    internalTransform.y += panY;
-    internalTransform = { ...internalTransform };
-
-    // Wait for DOM to update with new transform, then force connection re-render
-    await tick();
-    // Use requestAnimationFrame to ensure CSS transform is applied before recalculating
-    requestAnimationFrame(() => {
-      studioGraph.refresh({ connections: true });
-    });
-
-    // Signal NodeUI to focus the prompt input after DOM update
-    window.dispatchEvent(new CustomEvent('cascade:focusNodePrompt', {
-      detail: { nodeId: newNode.id }
-    }));
-  }
-
   onMount(() => {
     // If nodes are already initialized, just ensure reactivity
     if (graph.nodes.length > 0) {
@@ -4307,13 +4216,9 @@ node.onReady = () => {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
 
-    // Add ChatNode follow-up listener
-    window.addEventListener('cascade:createFollowUp', handleCreateFollowUp);
-
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('cascade:createFollowUp', handleCreateFollowUp);
     };
   });
 </script>

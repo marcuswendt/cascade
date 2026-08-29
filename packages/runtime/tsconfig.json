@@ -12,7 +12,6 @@
     "rootDir": "src",
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
-    "baseUrl": ".",
     "paths": { "@cascade/contracts": ["../contracts/dist/index.d.ts"] }
   },
   "include": ["src/**/*.ts"]

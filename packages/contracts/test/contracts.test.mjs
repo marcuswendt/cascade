@@ -87,6 +87,23 @@ test("rejects malformed containers, unknown fields, trigger extras, and scalar d
   }
 });
 
+test("rejects ai as a core capability while preserving provider-neutral capabilities", () => {
+  assert.deepEqual(validateNodeDefinition({
+    apiVersion: 1,
+    runsOn: "portable",
+    capabilities: ["assets", "media"],
+  }), []);
+
+  const diagnostics = validateNodeDefinition({
+    apiVersion: 1,
+    runsOn: "portable",
+    capabilities: ["ai"],
+  });
+  assert.deepEqual(diagnostics.map(({ code }) => code), [
+    "definition/capability-not-allowed",
+  ]);
+});
+
 test("keeps public type and control schema vocabularies aligned with validation", () => {
   const diagnostics = validateNodeDefinition({
     apiVersion: 1,

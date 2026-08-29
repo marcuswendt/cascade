@@ -22,7 +22,7 @@
   import { registerProjectTypeRenderer } from '../components/typeRenderers';
 
   // Import Dockview styles
-  import 'dockview-core/dist/styles/dockview.css';
+  import 'dockview/dist/styles/dockview.css';
 
   const dispatch = createEventDispatcher();
 

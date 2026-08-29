@@ -1,12 +1,9 @@
 <script lang="ts">
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
   import type { Annotation } from '@/nodes/annotations/Annotation';
   import { ImageBuffer } from '@/nodes/lens/ImageBuffer';
-  import ChatNodeContent from './components/ai/ChatNodeContent.svelte';
-  import type { ChatNode } from '@/nodes/quill/nodes/ChatNode';
-  import { propUpdateCounters } from './stores/propUpdateStore';
   import { coerceImageRef, normalizeType, typeColor } from '@/types/coreTypes';
   import CoreValue from './components/CoreValue.svelte';
   import { inferCascadeType, mediaUrl } from './components/typePresentation';
@@ -17,8 +14,7 @@
   export let selectedAnnotation: Annotation | null = null;
 
   let container: HTMLDivElement;
-  let chatViewerElement: HTMLDivElement;
-  let currentViewer: 'canvas' | 'image' | 'text' | 'typed' | 'chat' | 'empty' = 'empty';
+  let currentViewer: 'canvas' | 'image' | 'text' | 'typed' | 'empty' = 'empty';
   let displayNode: Node | null = null;
   let displayAnnotation: Annotation | null = null;
   let activeOutputId: string | null = null;
@@ -59,50 +55,6 @@
   $: if (graph) {
     // Force reactivity when cooking nodes change
     const _ = graph.cookingNodes?.size;
-  }
-
-  // Check if display node is a Chat node (handle both short and full type names)
-  $: isChatNode = displayNode?.type === 'Chat' || displayNode?.type?.endsWith('.Chat');
-
-  // Watch prop update counter to force reactivity when props change
-  let chatPropsUpdateCounter = 0;
-  $: {
-    const counters = $propUpdateCounters;
-    chatPropsUpdateCounter = displayNode ? (counters.get(displayNode.id) || 0) : 0;
-  }
-
-  // Include chatPropsUpdateCounter to force re-read when props change
-  $: chatNodeState = isChatNode && displayNode && chatPropsUpdateCounter >= 0 ? (displayNode as ChatNode).getState() : null;
-  // Depend on chatNodeState to ensure reactivity when node state changes
-  $: chatConversation = (isChatNode && displayNode && chatNodeState) ? (displayNode as ChatNode).getConversation() : [];
-
-  // Track last displayed chat node to trigger scroll on selection change
-  let lastDisplayedChatNodeId: string | null = null;
-
-  // Scroll to the last user message when a chat node is selected
-  $: if (isChatNode && displayNode && displayNode.id !== lastDisplayedChatNodeId) {
-    lastDisplayedChatNodeId = displayNode.id;
-    scrollToLastUserMessage();
-  } else if (!isChatNode) {
-    // Reset when switching to non-chat node so scroll triggers when returning
-    lastDisplayedChatNodeId = null;
-  }
-
-  async function scrollToLastUserMessage() {
-    // Wait for DOM to update
-    await tick();
-
-    if (!chatViewerElement) return;
-
-    // Find the last user message in the conversation
-    const userMessages = chatViewerElement.querySelectorAll('.message.user');
-    if (userMessages.length > 0) {
-      const lastUserMessage = userMessages[userMessages.length - 1] as HTMLElement;
-      lastUserMessage.scrollIntoView({ behavior: 'instant', block: 'start' });
-    } else {
-      // No user messages yet, scroll to top
-      chatViewerElement.scrollTop = 0;
-    }
   }
 
   /**
@@ -216,9 +168,6 @@
       }
     } else if (!displayNode) {
       currentViewer = 'empty';
-    } else if (displayNode.type === 'Chat' || displayNode.type.endsWith('.Chat')) {
-      // Chat nodes get special viewer
-      currentViewer = 'chat';
     } else {
       portsVersion;
       // The selected output decides the view. Every other core value uses the
@@ -747,9 +696,6 @@
       renderImage();
     } else if (currentViewer === 'text') {
       renderText();
-    } else if (currentViewer === 'chat') {
-      // Chat viewer uses Svelte component - just clear the container
-      if (container) container.innerHTML = '';
     } else if (currentViewer === 'typed') {
       if (container) container.innerHTML = '';
     } else {
@@ -929,7 +875,7 @@
 </script>
 
 <div class="viewer-wrapper">
-  {#if outputPorts.length > 1 && currentViewer !== 'chat'}
+  {#if outputPorts.length > 1}
     <div class="output-switcher" aria-label="Node outputs">
       {#each outputPorts as output (output.id)}
         <button
@@ -945,7 +891,7 @@
   {/if}
 
   <!-- Container for canvas/image/text rendering (manipulated via innerHTML) -->
-  <div class="viewer" bind:this={container} class:hidden={currentViewer === 'chat' || currentViewer === 'typed'}></div>
+  <div class="viewer" bind:this={container} class:hidden={currentViewer === 'typed'}></div>
 
   {#if currentViewer === 'typed' && activeOutput}
     <div class="typed-viewer">
@@ -955,19 +901,6 @@
     </div>
   {/if}
 
-  <!-- Chat viewer (rendered via Svelte, outside innerHTML-manipulated container) -->
-  {#if currentViewer === 'chat' && chatNodeState && displayNode}
-    <div class="chat-viewer" bind:this={chatViewerElement}>
-      <ChatNodeContent
-        state={chatNodeState}
-        displayMode="expanded"
-        conversations={chatConversation}
-        on:send={() => (displayNode as ChatNode).send()}
-        on:cancel={() => (displayNode as ChatNode).cancel()}
-        on:promptChange={(e) => (displayNode as ChatNode).setPrompt(e.detail)}
-      />
-    </div>
-  {/if}
 </div>
 
 <style>
@@ -1065,10 +998,4 @@
     height: 100%;
   }
 
-  .chat-viewer {
-    width: 100%;
-    height: 100%;
-    overflow: auto;
-    background: #0a0a0a;
-  }
 </style>

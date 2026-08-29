@@ -1,5 +1,4 @@
 import type {
-  AICapability,
   AssetCapability,
   AssetRef,
   CascadeAbortSignal,
@@ -70,7 +69,6 @@ export interface RuntimeCapabilities {
   readonly media?: MediaCapability;
   readonly python?: PythonCapability;
   readonly webgl?: WebGLCapability;
-  readonly ai?: AICapability;
   readonly shell?: ShellCapability;
   readonly serverBridge?: ServerBridgeCapability;
 }

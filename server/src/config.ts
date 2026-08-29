@@ -1,7 +1,7 @@
 /**
  * Where Cascade keeps its projects, and how a bare project name resolves.
  *
- * `cascade ./` scoping to the current directory stays the primary way in — this
+ * `cascade .` scoping to the current directory stays the primary way in — this
  * only adds a default home so `cascade new <name>` has somewhere to put things
  * and `cascade <name>` can find a project without a path. Marcus's own call:
  * one folder for all Cascade projects.

@@ -6,7 +6,7 @@
 > **Scope**: `src/nodes/Graph.ts`, `server/src/routes/`, `server/src/runtime/`, `server/src/project.ts`
 
 Two independent changes, both found by building a real project against the
-current core (`Cascade/example-project`, 23 node modules). Neither is
+current core (`Cascade/my-artwork`, 23 node modules). Neither is
 speculative: each one is a workaround that project is carrying today.
 
 They can be implemented in either order by different people. Part 1 is small
@@ -140,7 +140,7 @@ will happen:
 
 ## Acceptance
 
-Against `~/Documents/Cascade/example-project`, which is a real
+Against `~/Documents/Cascade/my-artwork`, which is a real
 23-node graph with two chains that want to be subnets:
 
 1. Select the five `destroy-*` nodes, Cmd+G, save, reload. One subnet node,
@@ -151,8 +151,8 @@ Against `~/Documents/Cascade/example-project`, which is a real
 3. Nest: put the destruction subnet inside another subnet, save, reload.
 4. Delete a subnet containing children. Nothing is left orphaned in the file
    or in `_elements`.
-5. Load any pre-existing `.cascade` file — `example-project`'
-   `example-project.cascade` is the one to use — and confirm a byte-identical
+5. Load any pre-existing `.cascade` file — `my-artwork`'
+   `my-artwork.cascade` is the one to use — and confirm a byte-identical
    round trip through save.
 
 A unit test on `Graph.toJSON()` / `Graph.fromJSON()` alone catches most of
@@ -169,7 +169,7 @@ this and does not need the editor.
 browser and cannot spawn anything itself, so **any** subprocess a project needs
 has to be dressed up as a Python script.
 
-`Cascade/example-project` carries the consequence. Everything in it
+`Cascade/my-artwork` carries the consequence. Everything in it
 is TypeScript except a Python shim whose entire job is:
 
 ```python
@@ -303,9 +303,9 @@ importing it will be classed as a browser node.
 
 ### 2.5 Expose it to the CLI too
 
-`cascade run` in `CASCADE_CLI_SPEC.md` is still unimplemented; whenever it
-lands, a headless graph must reach the same allowlist. Keep the resolution
-logic in a module both the route and the CLI import, not inside the route.
+`cascade run` uses the same project allowlist as the Studio server. Keep the
+resolution logic shared by the route and CLI rather than embedding policy in
+either transport.
 
 ## Explicitly out of scope
 
@@ -314,7 +314,7 @@ logic in a module both the route and the CLI import, not inside the route.
   buffered form covers every current use.
 - **A persistent worker for shell commands.** `/api/exec`'s worker exists to
   keep a torch model warm. A CLI has no warm state; per-call spawn is correct.
-- **Retiring `/api/exec`.** `example-project` depends on it and on the
+- **Retiring `/api/exec`.** `my-artwork` depends on it and on the
   Python worker's warm model. Leave both alone.
 
 ## Acceptance
@@ -326,7 +326,7 @@ logic in a module both the route and the CLI import, not inside the route.
 3. `cwd` escaping the project root is refused by `resolveWithinRoot`.
 4. A command that hangs is killed at the timeout and reports `timedOut: true`.
 5. A non-zero exit surfaces stderr rather than an empty result.
-6. `example-project` deletes `nodes/_shared/node_cli.py`,
+6. `my-artwork` deletes `nodes/_shared/node_cli.py`,
    `nodes/_shared/worker.py` and `shared/bridge/stages.py`'s three CLI stages,
    replacing them with `runJson` calls, and behaves identically. Only the
    Real-ESRGAN stage stays on `/api/exec`, which is the correct division: a
@@ -340,7 +340,7 @@ for, and it is sitting in `~/Documents/Cascade` ready to be converted.
 # Part 3 — Project settings, and where configuration belongs
 
 Added 2026-08-29, from Marcus: *"Perhaps we should allow the user to edit
-meta-data in file > project settings? Project name: Cloud Plots. Also this
+meta-data in file > project settings? Project name: My Artwork. Also this
 would be a good place to add a dictionary of config settings, e.g. API keys
 that could be used by the project's nodes."*
 
@@ -351,8 +351,8 @@ reading before the dialog gets built.
 
 ## 3.1 The bug underneath the request
 
-The browser tab now leads with the project name — `Cloud Plots - Cascade`
-rather than `Cascade - example-project` (`App.svelte` `updateWindowTitle()`).
+The browser tab now leads with the project name — `My Artwork - Cascade`
+rather than `Cascade - my-artwork` (`App.svelte` `updateWindowTitle()`).
 That change needed a fix first, and it is the kind of thing a settings dialog
 would otherwise have quietly inherited:
 
@@ -381,9 +381,9 @@ There are now two candidates, and conflating them is the trap:
 
 `ProjectRoot` already contemplates several graphs in one folder —
 `listGraphFiles()` and its comment about `test-quill`'s three. So *"Project
-name: Cloud Plots"* is ambiguous as stated, and the answer is that both exist:
+name: My Artwork"* is ambiguous as stated, and the answer is that both exist:
 
-- **Graph name** → `metadata.name` in the `.cascade` file. `Cloud Plots`.
+- **Graph name** → `metadata.name` in the `.cascade` file. `My Artwork`.
 - **Project name** → `cascade.json`, covering every graph in the folder.
 
 The title resolves graph name, then project name, then file name. A folder with
@@ -397,26 +397,23 @@ Do not add a second one.
 ## 3.3 API keys: not here
 
 **A key must never go in `cascade.json` or in a `.cascade` file.** Both are in
-git — `example-project`, `example-project` and `shared-project` are all GitHub repos
+git — `my-artwork`, `my-artwork` and `shared-library` are all GitHub repos
 pushed today — and a key committed once is a key that has to be rotated, not
 deleted.
 
 There is a second reason that is specific to Cascade and easier to miss. The
-server serves project files to the page through `/api/media`. Anything in the
-project directory is readable by **any** page that can reach localhost, not
-only by Cascade's own. A key in the project is a key one fetch away from any
-tab the user has open.
+server serves project media to the page. A credential in the project tree risks
+being exposed through a browser-facing surface and must remain outside it.
 
-The precedent is already written down: `CASCADE_CLI_SPEC.md` puts credentials
-in `~/.cascade/credentials.yaml`, outside every project and never committed.
-Keep that, and let the project **name** what it needs rather than hold it:
+Credentials live in `~/.cascade/credentials.yaml`, outside every project and
+never committed. Let the project **name** what it needs rather than hold it:
 
 ```json
 {
-  "name": "Cloud Plots",
-  "commands": { "archive-cli": "~/.local/bin/archive-cli" },
-  "credentials": ["anthropic", "magnific"],
-  "settings": { "workingWidth": 1400, "model": "claude-sonnet-4-20250514" }
+  "name": "My Artwork",
+  "commands": { "renderer": "/usr/local/bin/project-render" },
+  "credentials": ["image-api"],
+  "settings": { "workingWidth": 1400 }
 }
 ```
 
@@ -440,7 +437,7 @@ exported. Give them a proxy instead:
 
 ```ts
 import { authorizedFetch } from 'cascade/net';
-const res = await authorizedFetch('anthropic', 'https://api.anthropic.com/v1/messages', {
+const res = await authorizedFetch('image-api', 'https://api.example.com/v1/render', {
   method: 'POST', body: JSON.stringify(payload),
 });
 ```
@@ -465,7 +462,7 @@ import { config } from 'cascade/config';
 const width = config.number('workingWidth', 1400);
 ```
 
-Worth having on its own merits — `example-project` currently carries a default
+Worth having on its own merits — `my-artwork` currently carries a default
 working width as a parameter on one node, which is fine until two nodes need to
 agree.
 
@@ -496,7 +493,7 @@ Three rules:
 
 1. A graph with `metadata.name` and no `project` block keeps its name through
    load, save, and reload. *(Done — `tests/serialization.test.ts`.)*
-2. The tab reads `Cloud Plots - Cascade`, and `Cloud Plots * - Cascade` when
+2. The tab reads `My Artwork - Cascade`, and `My Artwork * - Cascade` when
    dirty. *(Done.)*
 3. `created` survives a save.
 4. A folder with two `.cascade` files shows each graph's own name, and both

@@ -487,7 +487,7 @@ test("clones definitions and freezes execute context snapshots", async () => {
   const definition = {
     apiVersion: 1,
     runsOn: "portable",
-    capabilities: ["ai"],
+    capabilities: ["assets"],
     inputs: { value: { kind: "data", type: "float", default: 2 } },
     outputs: { result: { kind: "data", type: "float" } },
     props: { factor: { type: "float", default: 3 } },
@@ -511,7 +511,7 @@ test("clones definitions and freezes execute context snapshots", async () => {
   const runtime = createRuntime({
     host: createNodeRuntimeHost({
       modules: { resolve: async () => node },
-      ai: { invoke: async () => null },
+      assets: {},
     }),
   });
   const graph = await runtime.load(

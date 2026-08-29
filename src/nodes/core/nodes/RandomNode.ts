@@ -2,7 +2,7 @@
  * RandomNode - Generates random seeds or picks random choices from a list
  *
  * Two modes:
- * - seed: Generates a random integer for use in AI generation
+ * - seed: Generates a random integer for deterministic procedural generation
  * - choice: Picks a random option from a newline-separated list
  *
  * Supports locking to freeze the current value.

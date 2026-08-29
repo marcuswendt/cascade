@@ -6,7 +6,7 @@ import type {
 const scale = {
   apiVersion: 1,
   runsOn: "portable",
-  capabilities: ["ai"],
+  capabilities: ["assets"],
   inputs: {
     value: { kind: "data", type: "float", default: 0 },
     optional: { kind: "data", type: "float" },
@@ -23,7 +23,7 @@ const execute: NodeExecute<typeof scale> = ({
 }) => {
   const optional = inputs.optional ?? 0;
   outputs.result.set((inputs.value + optional) * props.multiplier);
-  void capabilities.ai;
+  void capabilities.assets;
   // @ts-expect-error Only declared capabilities are available.
   void capabilities.files;
   // @ts-expect-error Float outputs accept numbers, not strings.
@@ -31,6 +31,9 @@ const execute: NodeExecute<typeof scale> = ({
 };
 
 void execute;
+
+// @ts-expect-error AI integrations are project modules, not a core capability.
+const invalidAi: NodeDefinition = { apiVersion: 1, runsOn: "portable", capabilities: ["ai"] };
 
 // @ts-expect-error Shell is server-only.
 const invalidPortable: NodeDefinition = { apiVersion: 1, runsOn: "portable", capabilities: ["shell"] };
@@ -40,3 +43,4 @@ const invalidTexture: NodeDefinition = { apiVersion: 1, runsOn: "server", inputs
 
 void invalidPortable;
 void invalidTexture;
+void invalidAi;

@@ -7,19 +7,23 @@ Cascade projects are filesystem-native. The graph, custom nodes, assets, presets
 ```bash
 cascade new my-artwork
 cd ~/Documents/Cascade/my-artwork
-cascade ./
+cascade .
 ```
 
 For a workstation reached by name over a trusted VPN or LAN, bind deliberately
 and allow the exact hostname used by the browser:
 
 ```bash
-cascade ./ --host KURO --port 3030
+cascade . --host KURO --port 3030
 ```
 
 Open `http://KURO:3030`. Loopback remains the default. Cascade trusts the
 specific non-loopback bind hostname; `--trusted-host` is only needed when the
 browser uses a different hostname. Wildcard remote binds are rejected.
+
+Cascade and generated projects require Node.js 22.13 or newer. Generated
+projects use TypeScript 6 so their static node definitions match Cascade's
+compiler and definition extractor.
 
 `index.cascade` is the default graph name. A project may contain several `.cascade` files; pass one explicitly when there is no unambiguous default:
 
@@ -119,7 +123,7 @@ import { config } from 'cascade/config';
 const width = config.number('workingWidth', 1400);
 ```
 
-Credential values never belong in the project. Cascade reads them from `~/.cascade/credentials.yaml` (or `CASCADE_CREDENTIALS`) and reports only whether each declared name is set. Server stages receive declared values through environment variables. A browser node uses the authorized proxy:
+Credential values never belong in the project. Cascade reads them from `~/.cascade/credentials.yaml` (or `CASCADE_CREDENTIALS`) and reports only whether each declared name is set. Server stages receive declared values through environment variables. A Studio/browser project node can use Cascade's compiler-injected authorized proxy:
 
 ```ts
 import { authorizedFetch } from 'cascade/net';
@@ -127,6 +131,12 @@ const response = await authorizedFetch('image-api', 'https://api.example.com/v1/
   method: 'POST', body: JSON.stringify(payload)
 });
 ```
+
+`cascade/net` is resolved by Cascade's project compiler and backed by the
+Studio server's `/api/net` route. It is not a published package export or a
+neutral headless runtime capability. A standalone headless host must provide
+its own remote-I/O adapter or run the integration through an injected shell,
+Python, or application-specific server bridge.
 
 Browser proxy credentials must declare the exact allowed hosts and header metadata alongside the secret:
 
@@ -188,6 +198,64 @@ export const definition = {
 ```
 
 The runtime refuses unsupported host/capability combinations before executing the graph.
+
+## Integrate external services and AI
+
+Cascade does not embed model providers or a generic `ai` capability. Provider
+SDKs, credentials, model names, retries, and response normalization belong to
+the project that uses them. This keeps graph/runtime contracts stable while
+services evolve.
+
+Keep the node definition provider-neutral and deterministic. For example, a
+server node can invoke a project-owned Python operation and expose the result as
+a normal image:
+
+```ts
+import type {
+  ImageRef,
+  NodeDefinition,
+  NodeExecutionContext
+} from 'cascade/contracts';
+
+export const definition = {
+  apiVersion: 1,
+  label: 'Generate Image',
+  runsOn: 'server',
+  capabilities: ['python'],
+  inputs: {
+    prompt: { kind: 'data', type: 'string', default: '' }
+  },
+  outputs: {
+    image: { kind: 'data', type: 'image' }
+  }
+} as const satisfies NodeDefinition;
+
+export async function execute(
+  context: NodeExecutionContext<typeof definition>
+) {
+  const image = await context.capabilities.python.invoke(
+    { operation: 'generate_image', input: { prompt: context.inputs.prompt } },
+    { signal: context.signal, progress: context.progress }
+  );
+  if (!image || typeof image !== 'object' || !('path' in image)) {
+    throw new Error('generate_image did not return an ImageRef');
+  }
+  context.outputs.image.set(image as ImageRef);
+}
+```
+
+Choose the path that matches the host:
+
+- Studio/browser: use the compiler-injected `cascade/net` proxy with a declared
+  project credential and exact remote-host allowlist.
+- Cascade's server host: use configured Python operations or an allowlisted
+  `cascade/shell` command.
+- Standalone headless embedding: inject the declared capability from the host,
+  or supply an application-owned server bridge that keeps credentials and
+  remote I/O outside the neutral runtime.
+
+Return `ImageRef`, `AssetRef`, or another ordinary Cascade type. Downstream
+nodes should not need to know which service produced the value.
 
 ## Work with `.cascade` files
 

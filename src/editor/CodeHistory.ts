@@ -3,7 +3,7 @@
  *
  * Tracks changes to embedded code with support for:
  * - User edits
- * - AI-generated code (with prompt tracking)
+ * - Agent-authored code (with prompt tracking)
  * - Undo/restore functionality
  * - Diff generation
  */
@@ -319,7 +319,7 @@ export class CodeHistory {
   }
 
   /**
-   * Get recent AI-generated versions with their prompts
+   * Get recent agent-authored versions with their prompts
    */
   getAIVersions(): HistoryEntry[] {
     return this.entries.filter(e => e.author === 'ai');

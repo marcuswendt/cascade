@@ -36,7 +36,7 @@ export function createProject(projectsRoot: string, name: string): string {
       inspect: 'cascade inspect index.cascade',
       run: 'cascade run index.cascade',
     },
-    devDependencies: { cascade: '^0.2.0', typescript: '^5.0.0' },
+    devDependencies: { cascade: '^0.2.0', typescript: '^6.0.0' },
   });
   writeJson(path.join(directory, 'tsconfig.json'), {
     compilerOptions: {
@@ -59,8 +59,8 @@ Read \`node_modules/cascade/AGENTS.md\` before editing graphs or nodes. Prefer d
 - \`npm run check:graph\` — statically check the graph and node definitions.
 - \`npm run validate\` — validate \`index.cascade\`.
 - \`npm run run\` — execute headlessly without Studio.
-- \`cascade ./\` — launch local Studio on loopback.
-- \`cascade ./ --host KURO --port 3030\` — launch for \`http://KURO:3030\` on a trusted VPN/LAN.
+- \`cascade .\` — launch local Studio on loopback.
+- \`cascade . --host KURO --port 3030\` — launch for \`http://KURO:3030\` on a trusted VPN/LAN.
 
 Do not start another Cascade process on an occupied port. Remote access requires
 both the explicit bind address and the exact trusted browser hostname.

@@ -41,7 +41,6 @@
   async function loadProjectSettingsDialog() {
     if (!ProjectSettings) ProjectSettings = (await import('./editor/panels/ProjectSettings.svelte')).default;
   }
-  import type { AIServiceType } from './editor/stores/settingsStore';
   import { serializeGraph, saveGraphWithPicker, loadGraphFromFile, triggerFileInput, removeExtension } from '@/utils/fileSystem';
   import { Graph } from '@/nodes/Graph';
   import { Node } from '@/nodes/Node';
@@ -76,7 +75,6 @@
   let exportDialogOpen = false;
   let settingsDialogOpen = false;
   let projectSettingsOpen = false;
-  let settingsInitialService: AIServiceType | null = null;
   let graph: Graph | undefined = undefined;
   const studioGraph = new StudioGraphController(() => graph);
   let isGraphLoading = true;
@@ -325,6 +323,56 @@
     }
   }
 
+  async function prepareGraphCandidate(json: any): Promise<Graph> {
+    const candidate = GraphEditorAdapter.fromJSON(json).getGraph();
+    try {
+      await candidate.waitForAnnotationPorts();
+
+      for (const node of candidate.nodes) {
+        if (!node.code) continue;
+        try {
+          const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
+          const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
+          node.setFunction(nodeFunction);
+        } catch (error) {
+          console.warn(`Failed to set function for node ${node.id}:`, error);
+        }
+      }
+    } catch (error) {
+      destroyGraph(candidate);
+      throw error;
+    }
+
+    return candidate;
+  }
+
+  function destroyGraph(target: Graph): void {
+    target.nodes.forEach(node => {
+      try {
+        node.onDestroy?.();
+      } catch (error) {
+        console.warn(`Failed to dispose node ${node.id}:`, error);
+      }
+    });
+  }
+
+  async function replaceGraph(candidate: Graph, resetHistory = false): Promise<void> {
+    const previous = graph;
+    graph = candidate;
+
+    try {
+      studioGraph.restoreConnections();
+      await tick();
+    } catch (error) {
+      graph = previous;
+      destroyGraph(candidate);
+      throw error;
+    }
+
+    if (resetHistory) clearHistory();
+    if (previous) destroyGraph(previous);
+  }
+
   async function handleNewProject() {
     if (graph && confirm('Create a new project? Unsaved changes will be lost.')) {
       // User confirmed, proceed with new project
@@ -335,9 +383,6 @@
       return;
     }
 
-    // Clear history when creating new project
-    clearHistory();
-
     // Load default graph from file
     try {
       const response = await fetch('/graphs/default.cascade');
@@ -345,44 +390,13 @@
         throw new Error('Failed to load default graph');
       }
       const json = await response.json();
-      
-      // Clear existing graph if it exists
-      if (graph) {
-        graph.nodes.forEach(node => {
-          if (node.onDestroy) {
-            node.onDestroy();
-          }
-        });
-      }
-      
-      // Load new graph
-      const adapter = GraphEditorAdapter.fromJSON(json);
-      graph = adapter.getGraph();
+      const candidate = await prepareGraphCandidate(json);
+      await replaceGraph(candidate, true);
       documentName = 'Untitled';
       currentFilePath = null;
       projectGraphFile = null;
       hasUnsavedChanges = false;
       updateWindowTitle();
-
-      // Wait for annotation ports to be initialized (especially image annotations)
-      await graph.waitForAnnotationPorts();
-
-      // Set up node functions (fast, synchronous)
-      for (const node of graph.nodes) {
-        if (node.code) {
-          try {
-            const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
-            const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
-            node.setFunction(nodeFunction);
-          } catch (err) {
-            console.warn('Failed to set function for node ' + node.id + ':', err);
-          }
-        }
-      }
-
-      // Restore connections now that ports exist
-      studioGraph.restoreConnections();
-      await tick();
 
       // Cook the graph in dependency order. Two reasons this is no longer a
       // parallel map: `n.code` is empty for project-source nodes (their module is
@@ -400,13 +414,14 @@
       }, 100);
     } catch (error) {
       console.error('Failed to load default graph:', error);
-      const adapter = GraphEditorAdapter.create();
-      graph = adapter.getGraph();
-      documentName = 'Untitled';
-      currentFilePath = null;
-      projectGraphFile = null;
-      hasUnsavedChanges = false;
-      updateWindowTitle();
+      if (!graph) {
+        graph = GraphEditorAdapter.create().getGraph();
+        documentName = 'Untitled';
+        currentFilePath = null;
+        projectGraphFile = null;
+        hasUnsavedChanges = false;
+        updateWindowTitle();
+      }
     }
   }
 
@@ -415,48 +430,14 @@
       const file = await triggerFileInput('.cascade');
       if (!file) return;
 
-      // Clear history when opening new project
-      clearHistory();
-
       const json = await loadGraphFromFile(file);
-
-      // Clear existing graph if it exists
-      if (graph) {
-        graph.nodes.forEach(node => {
-          if (node.onDestroy) {
-            node.onDestroy();
-          }
-        });
-      }
-        
-        // Load new graph
-      const adapter = GraphEditorAdapter.fromJSON(json);
-      graph = adapter.getGraph();
-        documentName = removeExtension(file.name);
-        currentFilePath = file.name;
-        projectGraphFile = null;
-        hasUnsavedChanges = false;
-        updateWindowTitle();
-
-        // Wait for annotation ports to be initialized (especially image annotations)
-        await graph.waitForAnnotationPorts();
-
-        // Set up node functions (fast, synchronous)
-        for (const node of graph.nodes) {
-          if (node.code) {
-            try {
-              const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
-              const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
-              node.setFunction(nodeFunction);
-            } catch (err) {
-              console.warn('Failed to set function for node ' + node.id + ':', err);
-            }
-          }
-        }
-
-        // Restore connections now that ports exist
-        studioGraph.restoreConnections();
-        await tick();
+      const candidate = await prepareGraphCandidate(json);
+      await replaceGraph(candidate, true);
+      documentName = removeExtension(file.name);
+      currentFilePath = file.name;
+      projectGraphFile = null;
+      hasUnsavedChanges = false;
+      updateWindowTitle();
 
         // Cook the graph in dependency order. Two reasons this is no longer a
         // parallel map: `n.code` is empty for project-source nodes (their module is
@@ -465,14 +446,14 @@
         // each node before its inputs exist, so everything downstream of a source
         // bails out on the first pass. graph.execute() walks the topological order
         // the engine already computes.
-        await cookGraph().catch(err => console.warn('Graph execution failed:', err));
+      await cookGraph().catch(err => console.warn('Graph execution failed:', err));
 
-        setTimeout(() => {
-          if (dockviewContainerRef && dockviewContainerRef.centerOnNodes) {
-            dockviewContainerRef.centerOnNodes();
-          }
-        }, 100);
-      } catch (error) {
+      setTimeout(() => {
+        if (dockviewContainerRef && dockviewContainerRef.centerOnNodes) {
+          dockviewContainerRef.centerOnNodes();
+        }
+      }, 100);
+    } catch (error) {
       alert('Failed to open project: ' + (error as Error).message);
     }
   }
@@ -593,37 +574,8 @@
    */
   async function restoreFromSnapshot(snapshot: GraphSnapshot) {
     if (!graph) return;
-
-    // Clean up existing nodes
-    graph.nodes.forEach(node => {
-      if (node.onDestroy) {
-        node.onDestroy();
-      }
-    });
-
-    // Load graph from snapshot JSON
-    const adapter = GraphEditorAdapter.fromJSON(snapshot.json);
-    graph = adapter.getGraph();
-
-    // Wait for annotation ports to be initialized
-    await graph.waitForAnnotationPorts();
-
-    // Set up node functions (fast, synchronous)
-    for (const node of graph.nodes) {
-      if (node.code) {
-        try {
-          const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
-          const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
-          node.setFunction(nodeFunction);
-        } catch (err) {
-          console.warn('Failed to set function for node ' + node.id + ':', err);
-        }
-      }
-    }
-
-    // Restore connections now that ports exist
-    studioGraph.restoreConnections();
-    await tick();
+    const candidate = await prepareGraphCandidate(snapshot.json);
+    await replaceGraph(candidate);
 
     // Restore selection
     selectedNode = snapshot.selectedNodeId ? graph.getNode(snapshot.selectedNodeId) : null;
@@ -762,39 +714,14 @@
   async function handleRestoreVersion(event: CustomEvent<{ json: any; version: { shortSha: string } }>) {
     const { json, version } = event.detail;
     const restoredFile = projectGraphFile;
+    const candidate = await prepareGraphCandidate(json);
+    await replaceGraph(candidate, true);
     versionHistoryOpen = false;
-
-    if (graph) {
-      graph.nodes.forEach(node => {
-        if (node.onDestroy) node.onDestroy();
-      });
-    }
-    clearHistory();
-
-    const adapter = GraphEditorAdapter.fromJSON(json);
-    graph = adapter.getGraph();
     // Still the same project file — saving writes the restored graph forward.
     projectGraphFile = restoredFile;
     currentFilePath = restoredFile;
     hasUnsavedChanges = true;
     updateWindowTitle();
-
-    await graph.waitForAnnotationPorts();
-
-    for (const node of graph.nodes) {
-      if (node.code) {
-        try {
-          const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
-          const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
-          node.setFunction(nodeFunction);
-        } catch (err) {
-          console.warn('Failed to set function for node ' + node.id + ':', err);
-        }
-      }
-    }
-
-    studioGraph.restoreConnections();
-    await tick();
 
     // Cook the graph in dependency order. Two reasons this is no longer a
     // parallel map: `n.code` is empty for project-source nodes (their module is
@@ -891,9 +818,8 @@
     loadExecutionLocus();
 
     // Subscribe to settings dialog requests from nodes/components
-    const unsubSettingsRequest = settingsDialogRequest.subscribe(request => {
-      if (request) {
-        settingsInitialService = request.service;
+    const unsubSettingsRequest = settingsDialogRequest.subscribe(requested => {
+      if (requested) {
         loadSettingsDialog().then(() => settingsDialogOpen = true);
         clearSettingsDialogRequest();
       }
@@ -904,6 +830,9 @@
     if (!graph) {
       try {
         let json: any;
+        let nextDocumentName = 'Untitled';
+        let nextFilePath: string | null = null;
+        let nextProjectGraphFile: string | null = null;
 
         // Served by the `cascade` CLI: open the project's own graph. The
         // server resolves which one — the file named on the command line
@@ -913,9 +842,9 @@
         if (projectGraph) {
           console.log('[Startup] Loading project graph from server:', projectGraph.filename);
           json = projectGraph.json;
-          currentFilePath = projectGraph.filename;
-          documentName = projectGraph.filename;
-          projectGraphFile = projectGraph.filename;
+          nextFilePath = projectGraph.filename;
+          nextDocumentName = projectGraph.filename;
+          nextProjectGraphFile = projectGraph.filename;
         }
 
         // Fall back to default graph
@@ -925,14 +854,13 @@
             throw new Error('Failed to load default graph');
           }
           json = await response.json();
-          documentName = 'Untitled';
-          currentFilePath = null;
-          projectGraphFile = null;
         }
 
-        // Load graph from JSON
-        const adapter = GraphEditorAdapter.fromJSON(json);
-        graph = adapter.getGraph();
+        const candidate = await prepareGraphCandidate(json);
+        await replaceGraph(candidate);
+        documentName = nextDocumentName;
+        currentFilePath = nextFilePath;
+        projectGraphFile = nextProjectGraphFile;
         hasUnsavedChanges = false;
         updateWindowTitle();
         if (projectGraphFile) {
@@ -944,28 +872,6 @@
             updateWindowTitle();
           } catch { missingProjectCredentials = []; }
         }
-
-        // Wait for annotation ports to be initialized (especially image annotations)
-        await graph.waitForAnnotationPorts();
-
-        // Set up node functions (fast, synchronous) - don't execute yet
-        for (const node of graph.nodes) {
-          if (node.code) {
-            try {
-              const wrappedCode = `return (async function(node, graph) {\n${node.code}\n})(node, graph);`;
-              const nodeFunction = new Function('node', 'graph', wrappedCode) as (node: any, graph: any) => Promise<any>;
-              node.setFunction(nodeFunction);
-            } catch (err) {
-              console.warn('Failed to set function for node ' + node.id + ':', err);
-            }
-          }
-        }
-
-        // Restore connections now that ports exist
-        studioGraph.restoreConnections();
-
-        // Force reactivity updates
-        await tick();
 
         // Cook in dependency order — see the note on the other call sites: the
         // n.code filter skips every project-source node, and a parallel map runs
@@ -1452,11 +1358,7 @@
     <svelte:component
       this={SettingsDialog}
       bind:open={settingsDialogOpen}
-      initialService={settingsInitialService}
-      on:close={() => {
-        settingsDialogOpen = false;
-        settingsInitialService = null;
-      }}
+      on:close={() => settingsDialogOpen = false}
     />
   {/if}
 

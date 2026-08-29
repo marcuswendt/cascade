@@ -16,10 +16,10 @@ import type {
 export type RuntimeEnvironment = "portable" | "browser" | "server";
 export type CapabilityForEnvironment<E extends RuntimeEnvironment> =
   E extends "portable"
-    ? "assets" | "media" | "ai"
+    ? "assets" | "media"
     : E extends "browser"
-      ? "assets" | "media" | "webgl" | "ai"
-      : "files" | "assets" | "media" | "python" | "ai" | "shell";
+      ? "assets" | "media" | "webgl"
+      : "files" | "assets" | "media" | "python" | "shell";
 export type DataTypeForEnvironment<E extends RuntimeEnvironment> =
   E extends "browser" ? CascadeType : Exclude<CascadeType, "texture">;
 type ControlFor<T extends CascadeType> = T extends "float"

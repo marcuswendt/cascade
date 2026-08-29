@@ -15,7 +15,7 @@
 
 ## Product goals
 
-- Goals: provide a stable reusable platform for generative design across interactive web work, high-resolution print, motion, video, sound, WebGL, and Python/AI workflows; separate authored algorithms from platform and Studio concerns; make every graph stage inspectable; let projects reuse deterministic custom nodes without rebuilding file, version, preset, workspace, or execution infrastructure
+- Goals: provide a stable reusable platform for generative design across interactive web work, high-resolution print, motion, video, sound, WebGL, Python, and external-service workflows; separate authored algorithms from platform and Studio concerns; make every graph stage inspectable; let projects reuse deterministic custom nodes without rebuilding file, version, preset, workspace, or execution infrastructure
 - Non-goals: spreadsheet-scale data editing, full 3D DCC tooling, silent expensive conversions, bespoke conditionals for every node type, executing user modules to discover metadata, or requiring the Studio UI to run a graph
 - Success signals: the same `.cascade` graph runs in Studio, a Node server, or a UI-free browser host; node contracts are statically inspectable and TypeScript-checkable; every `CORE_TYPES` member has a useful Inspector and Viewer state; connected/output values are clearly read-only; project renderers plug into the same contract; large values remain responsive
 
@@ -40,7 +40,7 @@
 - Project types extend by registration, not central switch statements.
 - The graph runtime is a product surface independent from Studio. Headless hosts consume it now; Studio's compatibility graph has one scheduler/controller boundary but still requires a deliberate built-in and structural-command migration before it consumes the neutral runtime directly.
 - Node metadata is deterministic. A literal exported definition declares ports, properties, types, execution locus, and capabilities; `execute` performs computation only.
-- Hosts provide explicit capabilities. File, Python, media, AI, WebGL, and shell access are never ambient runtime assumptions.
+- Hosts provide explicit capabilities. File, Python, media, WebGL, and shell access are never ambient runtime assumptions. Provider-specific AI abstractions belong to projects or embedding hosts, not Cascade core.
 - Neutral-runtime graph loads are atomic. Compatibility Studio collapse/extract are a known migration gap and must move behind transactional structural commands before that guarantee applies to every editor operation.
 - Tradeoff: geometry editors favor transparent structured editing and previews over specialized CAD interactions in this pass.
 

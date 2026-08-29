@@ -2,7 +2,7 @@ import type {
   DockviewApi,
   SerializedDockview,
   IDockviewPanel
-} from 'dockview-core';
+} from 'dockview';
 import type { Graph } from '@/nodes/Graph';
 import type { Node } from '@/nodes/Node';
 

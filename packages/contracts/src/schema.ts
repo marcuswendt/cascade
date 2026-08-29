@@ -90,14 +90,13 @@ export const nodeDefinitionSchema = {
     ["apiVersion", "runsOn"],
   ),
   allOf: [
-    environmentCapabilities("portable", ["assets", "media", "ai"]),
-    environmentCapabilities("browser", ["assets", "media", "webgl", "ai"]),
+    environmentCapabilities("portable", ["assets", "media"]),
+    environmentCapabilities("browser", ["assets", "media", "webgl"]),
     environmentCapabilities("server", [
       "files",
       "assets",
       "media",
       "python",
-      "ai",
       "shell",
     ]),
   ],

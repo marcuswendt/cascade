@@ -13,7 +13,6 @@ import { createProjectSettingsRouter } from './routes/projectSettings.js';
 import { createNetRouter } from './routes/net.js';
 import { authority, createProjectRequestBoundary, isLoopbackHost, type ServerSecurityOptions } from './security.js';
 import { createMediaRouter } from './routes/media.js';
-import { aiRouter } from './routes/ai.js';
 import { ProjectRoot } from './project.js';
 
 export { createDirectShellCapability } from './shell/service.js';
@@ -86,13 +85,12 @@ export function startServer(project: ProjectRoot, opts: StartServerOptions = {})
   app.use('/api/nodes', createNodesRouter(project));
   app.use('/api/panels', createPanelsRouter(project));
   app.use('/api/media', createMediaRouter(project));
-  app.use('/api/ai', aiRouter);
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', version: '2.0', projectRoot: project.root, isGitRepo: project.isGitRepo });
   });
 
-  // Serves the built Cascade UI itself — "cascade ./" is meant to be one
+  // Serves the built Cascade UI itself — "cascade ." is meant to be one
   // self-contained command, not "run the server, then separately go start
   // the frontend dev server too." Falls through to the API routes above
   // (registered first) for anything under /api or /health.

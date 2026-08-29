@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { marked } from 'marked';
+  import { renderMarkdown } from '@/editor/utils/renderMarkdown';
   import { getPortColor } from '@/utils/portColors';
   import type { Annotation } from '@/nodes/annotations/Annotation';
 
@@ -77,7 +77,7 @@
   {:else}
     <div class="annotation-content">
       {#if annotation.content}
-        {@html marked.parse(annotation.content)}
+        {@html renderMarkdown(annotation.content)}
       {/if}
     </div>
   {/if}

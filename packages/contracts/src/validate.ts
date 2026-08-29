@@ -17,9 +17,9 @@ const RESERVED = new Set(["__proto__", "prototype", "constructor"]);
 const CORE = new Set<string>(CORE_TYPES);
 const CONTROLS = new Set(["number", "slider", "range", "int", "boolean", "text", "textarea", "select", "vector", "matrix", "color", "image", "asset"]);
 const ALLOWED: Record<RuntimeEnvironment, readonly NodeCapabilityName[]> = {
-  portable: ["assets", "media", "ai"],
-  browser: ["assets", "media", "webgl", "ai"],
-  server: ["files", "assets", "media", "python", "ai", "shell"],
+  portable: ["assets", "media"],
+  browser: ["assets", "media", "webgl"],
+  server: ["files", "assets", "media", "python", "shell"],
 };
 const fields = (names: string) => new Set(names.split(" "));
 const TOP_FIELDS = fields(

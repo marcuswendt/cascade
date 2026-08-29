@@ -1,17 +1,15 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import * as monaco from 'monaco-editor';
+  import { monaco } from './monaco';
   import ts from 'typescript';
   import type { Node } from '@/nodes/Node';
   import type { Graph } from '@/nodes/Graph';
   import PackageSearch from './PackageSearch.svelte';
   import type { PackageManager } from '@/engine/PackageManager';
   import Icon from './Icon.svelte';
-  import { Clock, Check, XCircle, Copy, FileOutput, History, Lock, FolderOpen, Sparkles, Loader2 } from '@lucide/svelte';
+  import { Clock, Check, XCircle, Copy, FileOutput, History, Lock, FolderOpen } from '@lucide/svelte';
   import { isStandardLibraryNode, typeToPackagePath, getNodeClass, getNodeSource } from '@/utils/nodeTypeUtils';
   import type { NodeSource, FileStatus } from '@/types/node.types';
-  import { getAICodeGenerator, AICodeGenerator } from './ai/AICodeGenerator';
-  import type { AIProvider } from './ai/types';
   import { settingsStore } from './stores/settingsStore';
 
   /**
@@ -184,21 +182,13 @@ declare const graph: any;
   let fileStatus: FileStatus = 'synced';
   let historyCount = 0;
 
-  // AI prompt state
-  let aiPrompt = '';
-  let aiModel: AIProvider = 'claude';
-  let isGenerating = false;
-  let aiError = '';
-  let streamedCode = '';
-
   // Computed
   $: isReadOnly = sourceType === 'stdlib';
   $: canDuplicate = sourceType === 'stdlib';
   $: canExtract = sourceType === 'embedded';
   $: canShowHistory = sourceType === 'embedded' && historyCount > 0;
 
-  // Update editor font size when settings change
-  $: if (editor && $settingsStore.editor.fontSize) {
+  $: if (editor) {
     editor.updateOptions({ fontSize: $settingsStore.editor.fontSize });
   }
 
@@ -239,21 +229,21 @@ declare const graph: any;
 
     try {
       // Configure Monaco TypeScript environment with node types
-      monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-        target: monaco.languages.typescript.ScriptTarget.ES2020,
+      monaco.typescript.typescriptDefaults.setCompilerOptions({
+        target: monaco.typescript.ScriptTarget.ES2020,
         allowNonTsExtensions: true,
-        moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
-        module: monaco.languages.typescript.ModuleKind.ESNext,
+        moduleResolution: monaco.typescript.ModuleResolutionKind.NodeJs,
+        module: monaco.typescript.ModuleKind.ESNext,
         noEmit: true,
         esModuleInterop: true,
-        jsx: monaco.languages.typescript.JsxEmit.None,
+        jsx: monaco.typescript.JsxEmit.None,
         reactNamespace: "React",
         allowJs: true,
         typeRoots: ["node_modules/@types"]
       });
 
       // Add node type definitions to Monaco
-      monaco.languages.typescript.typescriptDefaults.setExtraLibs([
+      monaco.typescript.typescriptDefaults.setExtraLibs([
         {
           content: NODE_TYPES_DEFINITION,
           filePath: 'file:///node-context.d.ts'
@@ -509,78 +499,6 @@ node.onReady = () => {
     onShowHistory?.();
   }
 
-  async function handleAIGenerate() {
-    if (!aiPrompt.trim() || isGenerating || isReadOnly || !editor) return;
-
-    const generator = getAICodeGenerator();
-
-    // Check if provider is available (API key or CLI fallback for Claude)
-    const available = await generator.isAvailable(aiModel);
-    if (!available) {
-      if (aiModel === 'claude') {
-        aiError = 'Claude API key not configured and CLI not available. Add API key in Settings or install claude CLI.';
-      } else {
-        aiError = `${aiModel} is not configured. Add your API key in Settings.`;
-      }
-      return;
-    }
-
-    isGenerating = true;
-    aiError = '';
-    streamedCode = '';
-
-    // Build context from current node
-    const context = AICodeGenerator.buildContext(node, modulePath);
-
-    // Record history before AI changes
-    onRecordHistory?.();
-
-    try {
-      // Use streaming for better UX
-      await generator.generateStream(
-        {
-          prompt: aiPrompt,
-          context,
-          provider: aiModel,
-          stream: true
-        },
-        {
-          onToken: (token) => {
-            streamedCode += token;
-            // Update editor with streamed code
-            if (editor && !isDestroyed) {
-              editor.setValue(streamedCode);
-            }
-          },
-          onComplete: (result) => {
-            isGenerating = false;
-            if (editor && !isDestroyed) {
-              editor.setValue(result.code);
-              // Auto-compile after successful generation
-              compileNode();
-            }
-            aiPrompt = '';
-          },
-          onError: (error) => {
-            isGenerating = false;
-            aiError = error.message;
-            // Restore original code on error
-            if (editor && !isDestroyed && node.code) {
-              editor.setValue(node.code);
-            }
-          }
-        }
-      );
-    } catch (error: any) {
-      isGenerating = false;
-      aiError = error.message || 'Failed to generate code';
-      // Restore original code on error
-      if (editor && !isDestroyed && node.code) {
-        editor.setValue(node.code);
-      }
-    }
-  }
-
   function getSourceBadgeClass(): string {
     switch (sourceType) {
       case 'stdlib': return 'badge-stdlib';
@@ -678,61 +596,6 @@ node.onReady = () => {
       </button>
     {/if}
   </div>
-
-  <!-- AI Prompt Panel -->
-  {#if !isReadOnly}
-    <div class="ai-panel">
-      <div class="ai-input-row">
-        {#if isGenerating}
-          <div class="ai-spinner">
-            <Loader2 size={16} class="spinning" />
-          </div>
-        {:else}
-          <Sparkles size={16} class="ai-icon" />
-        {/if}
-        <textarea
-          class="ai-prompt-input"
-          placeholder="Describe what you want the node to do..."
-          bind:value={aiPrompt}
-          on:keydown={(e) => {
-            e.stopPropagation();
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              handleAIGenerate();
-            }
-          }}
-          disabled={isGenerating}
-          rows="3"
-        ></textarea>
-      </div>
-      {#if aiError}
-        <div class="ai-error">
-          <XCircle size={14} />
-          {aiError}
-        </div>
-      {/if}
-      <div class="ai-controls">
-        <span class="ai-hint">⌘/Ctrl+Enter to generate</span>
-        <select class="model-select" bind:value={aiModel} disabled={isGenerating}>
-          <option value="claude">Claude</option>
-          <option value="openai">OpenAI</option>
-          <option value="gemini">Gemini</option>
-        </select>
-        <button
-          class="ai-generate-button"
-          on:click={handleAIGenerate}
-          disabled={!aiPrompt.trim() || isGenerating}
-        >
-          {#if isGenerating}
-            <Loader2 size={14} class="spinning" />
-            Generating...
-          {:else}
-            ⚡ Generate
-          {/if}
-        </button>
-      </div>
-    </div>
-  {/if}
 
   <!-- Footer -->
   <div class="footer">
@@ -900,131 +763,6 @@ node.onReady = () => {
     background: rgba(255, 255, 255, 0.1);
     color: #fff;
     border-color: #555;
-  }
-
-  /* AI Panel */
-  .ai-panel {
-    padding: 12px;
-    background: #1a1a2e;
-    border-top: 1px solid #333;
-  }
-
-  .ai-input-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-
-  .ai-input-row :global(.ai-icon) {
-    color: #9c27b0;
-    flex-shrink: 0;
-    margin-top: 10px;
-  }
-
-  .ai-spinner {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #9c27b0;
-    flex-shrink: 0;
-    margin-top: 10px;
-  }
-
-  .ai-spinner :global(.spinning),
-  .ai-generate-button :global(.spinning) {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-
-  .ai-error {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    background: rgba(255, 68, 68, 0.1);
-    border: 1px solid rgba(255, 68, 68, 0.3);
-    border-radius: 4px;
-    color: #ff6666;
-    font-size: 12px;
-    margin-bottom: 8px;
-  }
-
-  .ai-prompt-input {
-    flex: 1;
-    padding: 8px 12px;
-    background: #252536;
-    border: 1px solid #444;
-    border-radius: 4px;
-    color: #fff;
-    font-size: 13px;
-    font-family: inherit;
-    resize: vertical;
-    min-height: 60px;
-    max-height: 150px;
-    line-height: 1.4;
-  }
-
-  .ai-prompt-input:focus {
-    outline: none;
-    border-color: #9c27b0;
-  }
-
-  .ai-prompt-input::placeholder {
-    color: #666;
-  }
-
-  .ai-prompt-input:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .ai-controls {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    justify-content: flex-end;
-  }
-
-  .ai-hint {
-    color: #666;
-    font-size: 11px;
-    margin-right: auto;
-  }
-
-  .model-select {
-    padding: 6px 12px;
-    background: #252536;
-    border: 1px solid #444;
-    border-radius: 4px;
-    color: #fff;
-    font-size: 12px;
-    cursor: pointer;
-  }
-
-  .ai-generate-button {
-    padding: 6px 16px;
-    background: linear-gradient(135deg, #9c27b0, #673ab7);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    transition: opacity 0.15s ease;
-  }
-
-  .ai-generate-button:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .ai-generate-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   /* Footer */

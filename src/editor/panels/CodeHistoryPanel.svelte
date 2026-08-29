@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-  import * as monaco from 'monaco-editor';
+  import { monaco } from '../monaco';
   import type { CodeVersion } from '@/types/node.types';
   import { CodeHistory as CodeHistoryManager } from '../CodeHistory';
   import Icon from '../Icon.svelte';

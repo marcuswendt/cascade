@@ -1,7 +1,7 @@
 import type {
   IContentRenderer,
   GroupPanelPartInitParameters
-} from 'dockview-core';
+} from 'dockview';
 import { mount, unmount, type Component } from 'svelte';
 import { writable, get, type Writable } from 'svelte/store';
 import type { CascadePanelParams, PanelContext } from './types';
@@ -107,12 +107,27 @@ export function getPanelComponent(type: string): PanelComponentEntry | undefined
   return componentRegistry.get(type);
 }
 
+export function resolvePanelParams(
+  initialParams: CascadePanelParams,
+  parameters: GroupPanelPartInitParameters,
+): CascadePanelParams {
+  const savedParams = parameters.params as Partial<CascadePanelParams> | undefined;
+  return {
+    ...initialParams,
+    ...savedParams,
+    id: parameters.api.id,
+    type: (savedParams?.type ?? initialParams.type) as CascadePanelParams['type'],
+    title: savedParams?.title ?? parameters.api.title ?? initialParams.title,
+  };
+}
+
 /**
  * Creates a Dockview-compatible renderer that mounts Svelte 5 components
  */
 export function createSvelteRenderer(
-  params: CascadePanelParams
+  initialParams: CascadePanelParams
 ): IContentRenderer {
+  let params = initialParams;
   let instance: Record<string, any> | null = null;
   let container: HTMLElement | null = null;
   // Round 32: guards the lazy-load path — a panel can be closed (dispose())
@@ -146,6 +161,7 @@ export function createSvelteRenderer(
     element: document.createElement('div'),
 
     init(parameters: GroupPanelPartInitParameters): void {
+      params = resolvePanelParams(params, parameters);
       container = this.element;
       container.style.height = '100%';
       container.style.width = '100%';

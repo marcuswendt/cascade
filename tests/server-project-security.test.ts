@@ -91,6 +91,9 @@ describe('project API security boundary', () => {
     expect(preflight.status).toBe(204);
     expect(preflight.headers.get('access-control-allow-origin')).toBe(base);
     expect(preflight.headers.get('access-control-allow-origin')).not.toBe('*');
+
+    const removedAiRoute = await fetch(`${base}/api/ai/claude-cli/status`);
+    expect(removedAiRoute.status).toBe(404);
   });
 
   it('allows explicitly trusted hostnames and keeps sensitive capabilities available', async () => {

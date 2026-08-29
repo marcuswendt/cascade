@@ -1363,6 +1363,8 @@ export class Graph {
       if (NodeClass) {
         // Class-based node - instantiate directly
         node = new NodeClass(nodeId, graph);
+      } else if (nodeType.startsWith('cascade.')) {
+        throw new Error(`Unknown Cascade node type: ${nodeType}`);
       } else {
         // Fallback: create base Node for custom/function-based nodes
         node = new Node(nodeId, shortType, graph);
@@ -1513,7 +1515,7 @@ export class Graph {
       }
 
       // Call node's deserialize() method if it exists (polymorphic deserialization)
-      // This restores node-specific state like AI responses, cached data, etc.
+      // This restores node-specific state such as cached data.
       if (nodeData.state && typeof (node as any).deserialize === 'function') {
         try {
           (node as any).deserialize(nodeData.state);

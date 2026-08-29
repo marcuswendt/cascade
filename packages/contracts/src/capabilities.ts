@@ -79,12 +79,6 @@ export interface WebGLCapability {
     options: { signal: CascadeAbortSignal },
   ): Promise<ResourceLease<TextureHandle>>;
 }
-export interface AICapability {
-  invoke(
-    request: JsonValue,
-    options: { signal: CascadeAbortSignal; progress: ProgressReporter },
-  ): Promise<JsonValue | AssetRef | ImageRef>;
-}
 export interface ShellRunResult {
   readonly stdout: string;
   readonly stderr: string;
@@ -135,7 +129,6 @@ export interface CapabilityMap {
   readonly media: MediaCapability;
   readonly python: PythonCapability;
   readonly webgl: WebGLCapability;
-  readonly ai: AICapability;
   readonly shell: ShellCapability;
 }
 export type NodeCapabilityName = keyof CapabilityMap;

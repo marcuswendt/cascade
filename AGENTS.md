@@ -32,21 +32,21 @@ my-project/
 └── tsconfig.json
 ```
 
-Use `cascade new <name>` to create a project. Run `cascade ./` from its root to open Studio, `cascade validate <graph.cascade>` for validation, `cascade check <graph.cascade>` for static definition/type checks, `cascade inspect <graph.cascade>` for a JSON summary, and `cascade run <graph.cascade>` for headless execution.
+Use `cascade new <name>` to create a project. Run `cascade .` from its root to open Studio, `cascade validate <graph.cascade>` for validation, `cascade check <graph.cascade>` for static definition/type checks, `cascade inspect <graph.cascade>` for a JSON summary, and `cascade run <graph.cascade>` for headless execution.
 
 ## Launch Studio
 
 For a browser on the same machine, use the secure loopback default:
 
 ```bash
-cascade ./ --port 3030
+cascade . --port 3030
 ```
 
 For a workstation reached by hostname over a trusted VPN or LAN, bind the
 network interfaces and allow the exact hostname in the browser URL:
 
 ```bash
-cascade ./ --host KURO --port 3030
+cascade . --host KURO --port 3030
 ```
 
 Open `http://KURO:3030`. Before launching,
@@ -99,6 +99,9 @@ Definition rules:
 - Keep the definition JSON-like. Parentheses, arrays, `as const`, and `satisfies` are valid; calls, spreads, computed properties, and imported constants are not.
 - Declare `runsOn`: `portable`, `browser`, or `server`.
 - Declare every capability used. File, Python, and shell access are server-only; WebGL is browser-only.
+- Keep model/provider integrations in the project. Cascade core has no Google,
+  Anthropic, OpenAI, or generic `ai` capability. Use normal typed outputs such
+  as `image` or `asset`, and choose the actual execution path explicitly.
 - Use exact Cascade core types or a namespaced project type such as `project.palette`.
 - Never execute a module to discover its ports or metadata.
 
@@ -121,6 +124,9 @@ Definition rules:
 
 ## Change workflow
 
+Use Node.js 22.13 or newer. Cascade compiles with TypeScript 6; do not move to
+the TypeScript 7 preview until it is stable and the repository gates pass.
+
 1. Add or update a focused regression test.
 2. Make the smallest change at the owning layer.
 3. Prefer deletion or an existing utility over another wrapper.
@@ -132,7 +138,7 @@ Do not add dependencies without a concrete need. Do not create extra packages un
 ## Versioning
 
 Cascade `0.2.0` is the 2026 architecture rework. The current release is
-`0.2.2`. Increment the root package and CLI patch version for every committed
-feature or release change (`0.2.2`, `0.2.3`, …), keeping `package.json`, the
+`0.2.3`. Increment the root package and CLI patch version for every committed
+feature or release change (`0.2.3`, `0.2.4`, …), keeping `package.json`, the
 lockfile, and CLI output aligned. Internal private workspaces do not receive
 independent versions unless they become separately published packages.

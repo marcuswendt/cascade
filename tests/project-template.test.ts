@@ -24,7 +24,12 @@ describe('project templates', () => {
       '.gitignore', 'AGENTS.md', 'assets', 'cascade.json', 'index.cascade', 'nodes', 'package.json', 'tsconfig.json',
     ]);
     expect(JSON.parse(fs.readFileSync(path.join(directory, 'cascade.json'), 'utf8'))).toEqual({ name: 'my-artwork' });
-    expect(JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8')).devDependencies).toHaveProperty('cascade');
+    const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8'));
+    expect(manifest.devDependencies).toMatchObject({ cascade: expect.any(String), typescript: '^6.0.0' });
+    expect(JSON.parse(fs.readFileSync(path.join(directory, 'tsconfig.json'), 'utf8')).compilerOptions).toMatchObject({
+      module: 'ESNext',
+      moduleResolution: 'Bundler',
+    });
     const agentGuide = fs.readFileSync(path.join(directory, 'AGENTS.md'), 'utf8');
     expect(agentGuide).toContain('--host KURO --port 3030');
     expect(agentGuide).toContain('Do not start another Cascade process on an occupied port');

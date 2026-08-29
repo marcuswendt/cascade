@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.3] - 2026-08-29
+
+- Raised the supported runtime to Node.js 22.13 or newer and upgraded the
+  repository to TypeScript 6. TypeScript 7 remains deferred until stable.
+- Upgraded Studio to Vite 8, the Svelte Vite plugin 7, and Dockview 8 through
+  its public package API.
+- Removed the Monaco Vite plugin. Code panels now load Monaco on demand and use
+  Monaco's native editor and TypeScript workers.
+- Centralized Markdown rendering behind Marked and DOMPurify for every
+  component that renders authored Markdown.
+- Removed built-in model-provider SDKs, AI nodes, provider settings, and the
+  embedded code-generation bridge. AI and other external services are now
+  project-owned integrations built on deterministic nodes, Python, shell, or
+  Studio's authorized network path.
+- Kept named-workstation launch concise: `cascade . --host KURO --port 3030`
+  infers `KURO` as the trusted browser hostname.
+
 ## [0.2.2] - 2026-08-29
 
 - Restored origin-less same-host browser capability discovery while retaining

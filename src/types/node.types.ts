@@ -61,7 +61,7 @@ export interface CodeVersion {
   code: string;
   timestamp: string;
   author: 'user' | 'ai';
-  prompt?: string;  // AI prompt if author is 'ai'
+  prompt?: string;  // Preserved prompt metadata for legacy/agent-authored entries
 }
 
 /**

@@ -24,8 +24,8 @@ The runtime is environment-neutral. It works in Node and browsers without import
 
 Hosts adapt the neutral runtime to an environment:
 
-- Node: files, assets, media, Python, AI, and shell.
-- Browser: assets, media, WebGL, and AI.
+- Node: files, assets, media, Python, and shell.
+- Browser: assets, media, and WebGL.
 - Mixed application: an explicit bridge for serializable server stages.
 
 Capabilities are injected. A node’s literal `runsOn` and `capabilities` fields are checked before its `execute` module is loaded.
@@ -35,6 +35,11 @@ Capabilities are injected. A node’s literal `runsOn` and `capabilities` fields
 ## Applications and controllers
 
 Studio’s Svelte components under `src/editor` own rendering, selection, panels, and interaction state. Its compatibility graph now has one graph-owned cook scheduler, while `StudioGraphController` centralizes an increasing set of structural mutations and publishes view snapshots. Collapse/extract and the remaining built-ins still need migration before Studio can consume `packages/runtime` directly.
+
+Studio uses Dockview through the public `dockview` API. Code panels lazy-load
+Monaco and its native editor/TypeScript workers rather than adding Monaco to the
+initial application path. Markdown rendering has one Marked/DOMPurify boundary;
+components do not configure parsers or inject unsanitized Markdown themselves.
 
 Custom server applications and browser frontends use `cascade/runtime` directly and load no Studio code.
 
@@ -48,6 +53,15 @@ Studio-only project extensions use the type-only `cascade/studio/panel` contract
 
 The packed root tarball contains compiled contracts, runtime, declarations, and a self-contained CLI. It must install and type-resolve from an empty project without workspace links or development dependencies. Additional packages require a concrete independent publication/versioning need.
 
+The repository requires Node.js 22.13 or newer and builds with TypeScript 6,
+Vite 8, and the Svelte Vite plugin 7. TypeScript 7 remains deferred while it is
+a preview rather than a stable compiler target.
+
+Model providers are deliberately outside Cascade. Projects own provider SDKs,
+credentials, model selection, retries, and result normalization, using the same
+project-node and host boundaries as any other external service. Cascade keeps
+provider-neutral media and asset types, cancellation, progress, and diagnostics.
+
 ## Deterministic nodes
 
 `nodes/<Name>/index.ts` maps to `project.<Name>`. New modules export one literal `definition` with `apiVersion: 1` and one typed `execute(context)` function.
@@ -60,7 +74,7 @@ The extractor reads TypeScript syntax and never evaluates the module. Literal pr
 
 Authored nodes and annotations remain in flat arrays. Optional `parent` IDs describe subnet membership; IDs are globally unique, and child positions are parent-relative. Connections retain their node/port endpoint format across subnet boundaries.
 
-Load order is:
+Neutral-runtime load order is:
 
 1. Parse and validate authored DTOs.
 2. Resolve hierarchy, falling back invalid links to root with diagnostics.
@@ -69,7 +83,11 @@ Load order is:
 5. Resolve connections and topology.
 6. Commit the complete candidate once.
 
-That sequence describes `packages/runtime`. The compatibility Studio loader preserves older dynamic graphs and is not yet a fully transactional adapter; subnet collapse/extract remain the main structural transaction gap.
+The compatibility Studio loader also constructs and validates a complete
+candidate before replacing the live graph. Unknown identifiers in Cascade's
+reserved `cascade.*` namespace fail explicitly; they never become inert base
+nodes or embedded/project modules. Subnet collapse/extract remain the main
+structural transaction gap.
 
 Callbacks and destruction hooks run after a valid structural commit. They are not rollback state.
 

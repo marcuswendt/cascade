@@ -1,6 +1,6 @@
 # Cascade
 
-Cascade is a TypeScript node-graph runtime and optional visual workspace for generative design. It is built for projects that move between interactive web work, WebGL, print, motion, sound, and Python or AI stages without rebuilding the surrounding application infrastructure each time.
+Cascade is a TypeScript node-graph runtime and optional visual workspace for generative design. It is built for projects that move between interactive web work, WebGL, print, motion, sound, Python, and external services without rebuilding the surrounding application infrastructure each time.
 
 Created by Marcus Wendt at [FIELD.IO](https://www.field.io).
 
@@ -11,12 +11,15 @@ Created by Marcus Wendt at [FIELD.IO](https://www.field.io).
 - The same runtime in Studio, a Node service, or a UI-free browser application.
 - Project-native `.cascade` files, assets, presets, and Git-backed version history.
 - Nested subnets with persistent hierarchy.
-- Explicit browser and server capabilities for WebGL, files, media, Python, AI, and allowlisted shell commands.
+- Explicit browser and server capabilities for WebGL, files, media, Python, and allowlisted shell commands.
 - A Svelte Studio with an infinite canvas, Inspector, Viewer, and project workbench.
 
 Cascade separates the generative algorithm from the platform. Custom nodes describe stages of a pipeline; the runtime schedules and validates them; hosts supply environment-specific capabilities; Studio is only one possible frontend.
 
 ## Develop Cascade
+
+Cascade development requires Node.js 22.13 or newer. The repository uses
+TypeScript 6 and intentionally does not target the TypeScript 7 preview.
 
 ```bash
 npm install
@@ -40,14 +43,14 @@ npm run build:cli
 ```bash
 cascade new my-artwork
 cd ~/Documents/Cascade/my-artwork
-cascade ./
+cascade .
 ```
 
 Studio binds to loopback by default. To use a Cascade workstation over a
 trusted VPN or LAN, opt into the bind address and exact browser hostname:
 
 ```bash
-cascade ./ --host KURO --port 3030
+cascade . --host KURO --port 3030
 ```
 
 Then open `http://KURO:3030`. Cascade uses a specific non-loopback `--host` as
@@ -117,6 +120,12 @@ Capabilities are declared in the definition and injected by the host. User node 
 
 Existing dynamic nodes continue through Cascade's current Studio/CLI compatibility engine while projects migrate. The headless runtime accepts deterministic definitions only; malformed definitions never fall back to dynamic execution.
 
+Provider integrations are project code, not Cascade infrastructure. A project
+can call a remote service from a Studio/browser node, invoke Python or an
+allowlisted executable on the server, or provide a capability from an embedding
+host. Results cross the graph as ordinary typed values such as `ImageRef` and
+`AssetRef`. See [Project authoring](doc/PROJECT_AUTHORING.md#integrate-external-services-and-ai).
+
 ## Headless runtime
 
 Applications can use the graph engine without loading Svelte or Studio:
@@ -157,6 +166,11 @@ doc/                 authoring guides and implementation plans
 ```
 
 The root `cascade` package is the distribution and CLI owner. The two internal workspaces define architectural boundaries; they are not independently published until independent versioning or external consumption requires it.
+
+Studio builds with Vite 8 and the Svelte plugin 7. It uses Dockview 8 through
+the public `dockview` package. Monaco and its native editor/TypeScript workers
+load only when a code panel opens. All rendered Markdown passes through one
+Marked and DOMPurify boundary before entering the DOM.
 
 ## Subnets and `.cascade` files
 
