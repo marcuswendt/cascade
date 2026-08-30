@@ -257,7 +257,6 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-left: 13px;
   }
 
   .slider-row input[type='range'] {
@@ -267,9 +266,9 @@
     height: 14px;
   }
 
-  .slider-number {
+  .slider-row .slider-number {
     width: 52px;
-    flex: none;
+    flex: 0 0 52px;
   }
 
   .core-value { min-width: 0; }

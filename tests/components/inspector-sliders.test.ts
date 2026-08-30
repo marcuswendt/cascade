@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { render } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import Inspector from '@/editor/Inspector.svelte';
 import { Graph } from '@/nodes/Graph';
@@ -29,6 +30,8 @@ describe('Inspector parameter sliders', () => {
     const view = render(Inspector, { props: { node } });
     expect(view.getByRole('slider').getAttribute('min')).toBe('0');
     expect(view.getByRole('slider').getAttribute('max')).toBe('1');
+    const coreValueSource = readFileSync('src/editor/components/CoreValue.svelte', 'utf8');
+    expect(coreValueSource).toMatch(/\.slider-row \.slider-number\s*\{[^}]*flex:\s*0 0 52px/s);
     expect(view.getByText('contribution').getAttribute('title')).toBe('contribution · float');
     expect(view.queryByText('float')).toBeNull();
   });
