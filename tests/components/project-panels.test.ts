@@ -7,10 +7,25 @@ import ProjectValueRendererHost from '@/editor/components/ProjectValueRendererHo
 import { createProjectPanelApi, discoverProjectPanels } from '@/editor/projectPanels';
 import { Graph } from '@/nodes/Graph';
 import { Node } from '@/nodes/Node';
+import PanelIcon from '@/editor/components/PanelIcon.svelte';
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('project panels', () => {
+  it('renders named Lucide panel icons without exposing the metadata name', () => {
+    const view = render(PanelIcon, { props: { icon: 'Aperture' } });
+
+    expect(view.container.querySelector('svg')).not.toBeNull();
+    expect(view.queryByText('Aperture')).toBeNull();
+  });
+
+  it('preserves literal built-in panel icons', () => {
+    const view = render(PanelIcon, { props: { icon: '⬡' } });
+
+    expect(view.getByText('⬡')).toBeTruthy();
+    expect(view.container.querySelector('svg')).toBeNull();
+  });
+
   it('discovers project panel metadata and preserves an empty project', async () => {
     const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ panels: [] }) });
     await expect(discoverProjectPanels(fetcher as any)).resolves.toEqual([]);

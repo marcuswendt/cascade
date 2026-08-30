@@ -5,6 +5,9 @@
 
 import { Node } from '../../Node.js';
 import type { Graph } from '../../Graph.js';
+import { CORE_TYPES } from '@/types/coreTypes';
+
+const TYPE_CHOICES = CORE_TYPES.map(type => ({ value: type, label: type }));
 
 export const nodeMetadata = {
   type: 'Output',
@@ -31,12 +34,31 @@ export class OutputNode extends Node {
       displayName: 'Output Index'
     });
 
+    this.addParm('outputName', {
+      value: '',
+      type: 'text',
+      displayName: 'Output Name'
+    });
+
+    this.addParm('dataType', {
+      value: 'any',
+      type: 'select',
+      params: { options: TYPE_CHOICES },
+      displayName: 'Data Type'
+    });
+
     // Watch for index changes to trigger parent port sync
-    this.watchProp('outputIndex', () => {
+    const syncParent = () => {
       if (this.parent && (this.parent as any).syncPorts) {
         (this.parent as any).syncPorts();
       }
       this.update();
+    };
+    this.watchProp('outputIndex', syncParent);
+    this.watchProp('outputName', syncParent);
+    this.watchProp('dataType', () => {
+      if (this.inputs[0]) this.inputs[0].dataType = this.dataType;
+      syncParent();
     });
 
     this.onUpdate = () => this.update();
@@ -48,6 +70,14 @@ export class OutputNode extends Node {
    */
   get outputIndex(): number {
     return this.props.outputIndex?.value ?? 0;
+  }
+
+  get outputName(): string {
+    return this.props.outputName?.value ?? '';
+  }
+
+  get dataType(): string {
+    return this.props.dataType?.value ?? 'any';
   }
 
   private update(): void {

@@ -192,19 +192,19 @@ export class ProjectRoot {
    * Both kinds are peers: they exchange images as project-relative paths, which
    * the browser reads back through /api/media.
    */
-  async moduleRunsOn(moduleName: string): Promise<'server' | 'browser'> {
+  async moduleRunsOn(moduleName: string): Promise<'portable' | 'server' | 'browser'> {
     let source: string;
     try {
       source = await this.readNodeModuleFile(moduleName);
     } catch {
       return 'browser';
     }
-    const declared = source.match(/export\s+const\s+runsOn\s*[:=][^'"`]*['"`](server|browser)['"`]/);
+    const declared = source.match(/export\s+const\s+runsOn\s*[:=][^'"`]*['"`](portable|server|browser)['"`]/);
     const importsShell = /(?:from\s+|import\s*(?:\(\s*)?|require\s*\(\s*)['"`]cascade\/shell['"`]/.test(source);
-    if (importsShell && declared?.[1] === 'browser') {
-      throw new Error(`Node module "${moduleName}" imports cascade/shell but declares runsOn = 'browser'; shell nodes must run on the server`);
+    if (importsShell && declared && declared[1] !== 'server') {
+      throw new Error(`Node module "${moduleName}" imports cascade/shell but declares runsOn = '${declared?.[1]}'; shell nodes must run on the server`);
     }
-    if (declared) return declared[1] as 'server' | 'browser';
+    if (declared) return declared[1] as 'portable' | 'server' | 'browser';
     return /\/api\/exec|runStage\s*\(/.test(source) || importsShell ? 'server' : 'browser';
   }
 

@@ -1,6 +1,7 @@
 import {
   validateNodeDefinition,
   type CascadeAbortSignal,
+  type CascadeType,
   type Diagnostic,
   type JsonValue,
   type NodeCapabilityName,
@@ -11,6 +12,7 @@ import {
   type TriggerEvent,
 } from "@cascade/contracts";
 import { CascadeRuntimeError } from "./error.js";
+import { coreNodeRegistrations } from "./builtins/core/index.js";
 import type {
   CascadeDocument,
   CascadeDocumentConnection,
@@ -34,6 +36,8 @@ import type {
 
 interface RuntimeConnection extends ConnectionInspection {
   readonly kind: "data" | "trigger";
+  readonly order: number;
+  readonly variadicIndex?: number;
 }
 interface RuntimeNode {
   readonly id: string;
@@ -100,7 +104,7 @@ class MutableAbortSignal implements CascadeAbortSignal {
 }
 
 export function createRuntime(options: CreateRuntimeOptions): CascadeRuntime {
-  return new Runtime(options.host, options.nodes ?? []);
+  return new Runtime(options.host, [...coreNodeRegistrations, ...(options.nodes ?? [])]);
 }
 
 class Runtime implements CascadeRuntime {
@@ -158,12 +162,17 @@ class Runtime implements CascadeRuntime {
           "runtime/module-identity",
           `Resolver returned ${resolved.moduleId} for ${moduleId}`,
         );
-      const registration = snapshotRegistration(resolved);
-      if (registration.kind === "legacy-dynamic")
+      const snapshot = snapshotRegistration(resolved);
+      if (snapshot.kind === "legacy-dynamic")
         misuse(
           "runtime/legacy-adapter-required",
           `Legacy module ${moduleId} requires the explicit legacy adapter`,
         );
+      const registration = specializeCoreRegistration(
+        snapshot,
+        authored,
+        document.nodes,
+      );
       const diagnostics = validateNodeDefinition(registration.definition);
       if (diagnostics.length)
         throw new CascadeRuntimeError(
@@ -209,6 +218,8 @@ class Graph implements LoadedCascadeGraph {
   private readonly authoredAnnotations: readonly Readonly<
     Record<string, unknown>
   >[];
+  private readonly graphInputs: ReadonlyMap<string, RuntimeNode>;
+  private readonly graphOutputs: ReadonlyMap<string, RuntimeNode>;
   constructor(
     private readonly host: RuntimeHost,
     private readonly nodes: readonly RuntimeNode[],
@@ -217,6 +228,8 @@ class Graph implements LoadedCascadeGraph {
     annotations: CascadeDocument["annotations"] = [],
   ) {
     this.byId = new Map(nodes.map((node) => [node.id, node]));
+    this.graphInputs = graphBoundaries(nodes, "cascade.core.Input", "inputName");
+    this.graphOutputs = graphBoundaries(nodes, "cascade.core.Output", "outputName");
     this.authoredAnnotations = Object.freeze(
       annotations.map((annotation) => snapshot(annotation)),
     );
@@ -279,6 +292,10 @@ class Graph implements LoadedCascadeGraph {
     }));
     return Object.freeze({
       state: this.graphState,
+      interface: Object.freeze({
+        inputs: boundaryInspection(this.graphInputs, "output"),
+        outputs: boundaryInspection(this.graphOutputs, "output"),
+      }),
       nodes: Object.freeze(nodes),
       connections: Object.freeze(
         this.connections.map((connection) =>
@@ -311,6 +328,12 @@ class Graph implements LoadedCascadeGraph {
       `${nodeId}.${inputName}`,
     );
   }
+  setGraphInput(name: string, value: unknown): Promise<void> {
+    const node = this.graphInputs.get(name);
+    if (!node)
+      return Promise.reject(runtimeError("runtime/graph-input-not-found", `Unknown graph input ${name}`));
+    return this.setInput(node.id, "value", value);
+  }
   async setProp(
     nodeId: string,
     propName: string,
@@ -318,6 +341,11 @@ class Graph implements LoadedCascadeGraph {
   ): Promise<void> {
     this.requireReady();
     const node = this.requireNode(nodeId);
+    if (isStructuralProp(node, propName))
+      misuse(
+        "runtime/structural-prop",
+        `${nodeId}.${propName} is structural and requires a graph reload`,
+      );
     if (!node.definition.props?.[propName])
       misuse("runtime/invalid-prop", `${nodeId}.${propName} is not a prop`);
     node.props[propName] = runtimeValue(
@@ -357,6 +385,11 @@ class Graph implements LoadedCascadeGraph {
         const definition = node.definition.props?.[name];
         if (!definition)
           misuse("runtime/invalid-prop", `${nodeId}.${name} is not a prop`);
+        if (isStructuralProp(node, name))
+          misuse(
+            "runtime/structural-prop",
+            `${nodeId}.${name} is structural and cannot be changed by a preset`,
+          );
         propDrafts.push([
           node,
           name,
@@ -408,6 +441,12 @@ class Graph implements LoadedCascadeGraph {
   }
   getOutput(nodeId: string, outputName: string): unknown {
     return snapshot(this.requireNode(nodeId).outputs.get(outputName));
+  }
+  getGraphOutput(name: string): unknown {
+    const node = this.graphOutputs.get(name);
+    if (!node)
+      misuse("runtime/graph-output-not-found", `Unknown graph output ${name}`);
+    return this.getOutput(node.id, "output");
   }
   getOutputs(nodeId: string): ReadonlyMap<string, unknown> {
     return immutableMap(
@@ -584,11 +623,23 @@ class Graph implements LoadedCascadeGraph {
     const inputs = Object.fromEntries(
       Object.entries(node.definition.inputs ?? {}).map(([name, definition]) => {
         if (definition.kind === "trigger") return [name, triggers[name]];
+        if (
+          node.moduleId === "cascade.core.Input" &&
+          name === "value" &&
+          node.parent
+        ) {
+          const parent = this.requireNode(node.parent);
+          const index = integerProp(node.props.inputIndex);
+          return [name, this.dataInputValue(parent, `input_${index}`)];
+        }
         const connections = this.connections.filter(
           (item) =>
             item.kind === "data" &&
             item.target.nodeId === node.id &&
             item.target.inputName === name,
+        ).sort((first, second) =>
+          (first.variadicIndex ?? first.order) -
+          (second.variadicIndex ?? second.order),
         );
         if (definition.variadic) {
           const values = connections.map((connection) =>
@@ -731,6 +782,17 @@ class Graph implements LoadedCascadeGraph {
       progress,
     } as never);
     if (signal.aborted) return;
+    if (node.moduleId === "cascade.core.Subnet") {
+      for (const child of this.nodes) {
+        if (
+          child.parent !== node.id ||
+          child.moduleId !== "cascade.core.Output"
+        ) continue;
+        const name = `output_${integerProp(child.props.outputIndex)}`;
+        if (node.definition.outputs?.[name]?.kind === "data")
+          pendingData.set(name, child.outputs.get("output"));
+      }
+    }
     for (const name of Object.keys(node.definition.outputs ?? {}))
       if (pendingData.has(name)) {
         const value = pendingData.get(name);
@@ -807,7 +869,9 @@ class Graph implements LoadedCascadeGraph {
     );
   }
   private async loadExecute(node: RuntimeNode): Promise<void> {
-    node.execute ??= (await node.registration.loadExecute()) as NodeExecute;
+    node.execute ??= (await node.registration.loadExecute(
+      this.host.environment,
+    )) as NodeExecute;
   }
   private runSelection(target: RunTarget): {
     readonly reachable: RuntimeNode[];
@@ -858,16 +922,16 @@ class Graph implements LoadedCascadeGraph {
   }
   private dataClosure(nodeId: string): RuntimeNode[] {
     const ids = new Set([nodeId]);
+    const dependencies = dataDependencies(this.nodes, this.connections);
     let changed = true;
     while (changed) {
       changed = false;
-      for (const connection of this.connections)
+      for (const dependency of dependencies)
         if (
-          connection.kind === "data" &&
-          ids.has(connection.target.nodeId) &&
-          !ids.has(connection.source.nodeId)
+          ids.has(dependency.targetId) &&
+          !ids.has(dependency.sourceId)
         ) {
-          ids.add(connection.source.nodeId);
+          ids.add(dependency.sourceId);
           changed = true;
         }
     }
@@ -889,6 +953,7 @@ class Graph implements LoadedCascadeGraph {
   }
   private triggerReachable(nodeId: string): RuntimeNode[] {
     const ids = new Set([this.requireNode(nodeId).id]);
+    const dependencies = dataDependencies(this.nodes, this.connections);
     let changed = true;
     while (changed) {
       changed = false;
@@ -901,15 +966,15 @@ class Graph implements LoadedCascadeGraph {
           ids.add(connection.target.nodeId);
           changed = true;
         }
+      }
+      for (const dependency of dependencies)
         if (
-          connection.kind === "data" &&
-          ids.has(connection.target.nodeId) &&
-          !ids.has(connection.source.nodeId)
+          ids.has(dependency.targetId) &&
+          !ids.has(dependency.sourceId)
         ) {
-          ids.add(connection.source.nodeId);
+          ids.add(dependency.sourceId);
           changed = true;
         }
-      }
     }
     return this.nodes.filter((node) => ids.has(node.id));
   }
@@ -960,6 +1025,19 @@ class Graph implements LoadedCascadeGraph {
     const node = this.byId.get(id);
     if (!node) misuse("runtime/node-not-found", `Unknown node ${id}`);
     return node;
+  }
+  private dataInputValue(node: RuntimeNode, inputName: string): unknown {
+    const connection = this.connections.find(
+      (item) =>
+        item.kind === "data" &&
+        item.target.nodeId === node.id &&
+        item.target.inputName === inputName,
+    );
+    return connection
+      ? this.requireNode(connection.source.nodeId).outputs.get(
+          connection.source.outputName,
+        )
+      : node.inputs[inputName];
   }
 }
 
@@ -1086,6 +1164,143 @@ function materialize(
   };
 }
 
+function specializeCoreRegistration(
+  registration: DefinitionNodeRegistration,
+  authored: CascadeDocumentNode,
+  nodes: readonly CascadeDocumentNode[],
+): DefinitionNodeRegistration {
+  if (
+    registration.moduleId === "cascade.core.Input" ||
+    registration.moduleId === "cascade.core.Output"
+  ) {
+    const type = savedDataType(authored.props?.dataType);
+    const inputName = registration.moduleId === "cascade.core.Input" ? "value" : "input";
+    return Object.freeze({
+      ...registration,
+      definition: Object.freeze({
+        ...registration.definition,
+        inputs: Object.freeze({
+          [inputName]: dataInputDefinition(type),
+        }),
+        outputs: Object.freeze({
+          output: { kind: "data", type },
+        }),
+      }) as NodeDefinition,
+    });
+  }
+  if (registration.moduleId !== "cascade.core.Subnet") return registration;
+  const children = nodes.filter((candidate) => candidate.parent === authored.id);
+  const inputs = indexedBoundaryPorts(children, "cascade.core.Input", "inputIndex", "input");
+  const outputs = indexedBoundaryPorts(children, "cascade.core.Output", "outputIndex", "output");
+  return Object.freeze({
+    ...registration,
+    definition: Object.freeze({
+      ...registration.definition,
+      ...(Object.keys(inputs).length ? { inputs: Object.freeze(inputs) } : {}),
+      ...(Object.keys(outputs).length ? { outputs: Object.freeze(outputs) } : {}),
+    }) as NodeDefinition,
+  });
+}
+
+function indexedBoundaryPorts(
+  nodes: readonly CascadeDocumentNode[],
+  moduleId: string,
+  propName: string,
+  prefix: string,
+): Record<string, { readonly kind: "data"; readonly type: CascadeType; readonly default?: null }> {
+  const boundaries = nodes
+    .filter((node) => (node.module ?? node.type) === moduleId)
+    .map((node) => ({
+      index: savedIntegerProp(node.props?.[propName]),
+      type: savedDataType(node.props?.dataType),
+    }))
+    .filter((boundary) => boundary.index >= 0);
+  const max = boundaries.length ? Math.max(...boundaries.map(({ index }) => index)) : -1;
+  const types = new Map(boundaries.map(({ index, type }) => [index, type]));
+  return Object.fromEntries(
+    Array.from({ length: max + 1 }, (_, index) => [
+      `${prefix}_${index}`,
+      prefix === "input"
+        ? dataInputDefinition(types.get(index) ?? "any")
+        : { kind: "data", type: types.get(index) ?? "any" },
+    ]),
+  );
+}
+
+function dataInputDefinition(
+  type: CascadeType,
+): { readonly kind: "data"; readonly type: CascadeType; readonly default?: null } {
+  return type === "any"
+    ? { kind: "data", type, default: null }
+    : { kind: "data", type };
+}
+
+function savedDataType(value: unknown): CascadeType {
+  const type = savedStringProp(value);
+  return (type || "any") as CascadeType;
+}
+
+function savedStringProp(value: unknown): string {
+  const unwrapped = value && typeof value === "object" && "value" in value
+    ? (value as { value: unknown }).value
+    : value;
+  return typeof unwrapped === "string" ? unwrapped : "";
+}
+
+function savedIntegerProp(value: unknown): number {
+  const unwrapped = value && typeof value === "object" && "value" in value
+    ? (value as { value: unknown }).value
+    : value;
+  return typeof unwrapped === "number" && Number.isInteger(unwrapped)
+    ? unwrapped
+    : 0;
+}
+
+function integerProp(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value) ? value : 0;
+}
+
+function graphBoundaries(
+  nodes: readonly RuntimeNode[],
+  moduleId: "cascade.core.Input" | "cascade.core.Output",
+  nameProp: "inputName" | "outputName",
+): ReadonlyMap<string, RuntimeNode> {
+  const boundaries = new Map<string, RuntimeNode>();
+  for (const node of nodes) {
+    if (node.parent || node.moduleId !== moduleId) continue;
+    const name = savedStringProp(node.props[nameProp]).trim() || node.id;
+    if (boundaries.has(name))
+      misuse("runtime/duplicate-graph-boundary", `Duplicate graph boundary name ${name}`);
+    boundaries.set(name, node);
+  }
+  return boundaries;
+}
+
+function boundaryInspection(
+  boundaries: ReadonlyMap<string, RuntimeNode>,
+  portName: string,
+): Readonly<Record<string, Readonly<{ nodeId: string; type: string }>>> {
+  return Object.freeze(Object.fromEntries(
+    [...boundaries].map(([name, node]) => [
+      name,
+      Object.freeze({
+        nodeId: node.id,
+        type: node.definition.outputs?.[portName]?.kind === "data"
+          ? node.definition.outputs[portName].type
+          : "any",
+      }),
+    ]),
+  ));
+}
+
+function isStructuralProp(node: RuntimeNode, name: string): boolean {
+  if (node.moduleId === "cascade.core.Input")
+    return name === "inputIndex" || name === "inputName" || name === "dataType";
+  if (node.moduleId === "cascade.core.Output")
+    return name === "outputIndex" || name === "outputName" || name === "dataType";
+  return false;
+}
+
 function materializeConnection(
   connection: CascadeDocumentConnection,
   index: number,
@@ -1109,10 +1324,16 @@ function materializeConnection(
             inputName(nodes.get(connection[1][0]), connection[1][1]),
         },
       }
-    : (connection as {
-        source: { nodeId: string; outputName: string };
-        target: { nodeId: string; inputName: string };
-      });
+    : {
+        source: {
+          nodeId: (connection as Exclude<CascadeDocumentConnection, readonly unknown[]>).source.nodeId,
+          outputName: (connection as Exclude<CascadeDocumentConnection, readonly unknown[]>).source.outputName,
+        },
+        target: {
+          nodeId: (connection as Exclude<CascadeDocumentConnection, readonly unknown[]>).target.nodeId,
+          inputName: (connection as Exclude<CascadeDocumentConnection, readonly unknown[]>).target.inputName,
+        },
+      };
   const source = nodes.get(endpoints.source.nodeId);
   const target = nodes.get(endpoints.target.nodeId);
   if (!source || !target)
@@ -1121,7 +1342,18 @@ function materializeConnection(
       `Connection ${index} references an unknown node`,
     );
   const output = source.definition.outputs?.[endpoints.source.outputName];
-  const input = target.definition.inputs?.[endpoints.target.inputName];
+  let input = target.definition.inputs?.[endpoints.target.inputName];
+  let variadicIndex: number | undefined;
+  if (
+    !input &&
+    (target.moduleId === "cascade.core.Switch" ||
+      target.moduleId === "cascade.core.Merge") &&
+    /^input_\d+$/.test(endpoints.target.inputName)
+  ) {
+    variadicIndex = Number(endpoints.target.inputName.slice("input_".length));
+    endpoints.target.inputName = "inputs";
+    input = target.definition.inputs?.inputs;
+  }
   if (!output || !input)
     misuse(
       "runtime/invalid-connection",
@@ -1145,6 +1377,8 @@ function materializeConnection(
     source: Object.freeze(endpoints.source),
     target: Object.freeze(endpoints.target),
     kind: output.kind,
+    order: index,
+    ...(variadicIndex === undefined ? {} : { variadicIndex }),
   });
 }
 
@@ -1241,11 +1475,11 @@ function topological(
 ): RuntimeNode[] {
   const indegree = new Map(nodes.map((node) => [node.id, 0]));
   const outgoing = new Map(nodes.map((node) => [node.id, [] as string[]]));
-  for (const connection of connections) {
-    outgoing.get(connection.source.nodeId)!.push(connection.target.nodeId);
+  for (const dependency of graphDependencies(nodes, connections)) {
+    outgoing.get(dependency.sourceId)!.push(dependency.targetId);
     indegree.set(
-      connection.target.nodeId,
-      indegree.get(connection.target.nodeId)! + 1,
+      dependency.targetId,
+      indegree.get(dependency.targetId)! + 1,
     );
   }
   const queue = nodes.filter((node) => indegree.get(node.id) === 0);
@@ -1262,6 +1496,66 @@ function topological(
   if (result.length !== nodes.length)
     misuse("runtime/cycle", "Graph contains a data or trigger cycle");
   return result;
+}
+
+interface NodeDependency {
+  readonly sourceId: string;
+  readonly targetId: string;
+}
+
+function graphDependencies(
+  nodes: readonly RuntimeNode[],
+  connections: readonly RuntimeConnection[],
+): readonly NodeDependency[] {
+  const dependencies = new Map<string, NodeDependency>();
+  for (const connection of connections) {
+    const dependency = {
+      sourceId: connection.source.nodeId,
+      targetId: connection.target.nodeId,
+    };
+    dependencies.set(`${dependency.sourceId}\0${dependency.targetId}`, dependency);
+  }
+  for (const dependency of dataDependencies(nodes, connections))
+    dependencies.set(`${dependency.sourceId}\0${dependency.targetId}`, dependency);
+  return [...dependencies.values()];
+}
+
+function dataDependencies(
+  nodes: readonly RuntimeNode[],
+  connections: readonly RuntimeConnection[],
+): readonly NodeDependency[] {
+  const dependencies = new Map<string, NodeDependency>();
+  for (const connection of connections) {
+    if (connection.kind !== "data") continue;
+    const dependency = {
+      sourceId: connection.source.nodeId,
+      targetId: connection.target.nodeId,
+    };
+    dependencies.set(`${dependency.sourceId}\0${dependency.targetId}`, dependency);
+  }
+  for (const node of nodes) {
+    if (!node.parent) continue;
+    if (node.moduleId === "cascade.core.Input") {
+      const inputName = `input_${integerProp(node.props.inputIndex)}`;
+      const source = connections.find(
+        (connection) =>
+          connection.kind === "data" &&
+          connection.target.nodeId === node.parent &&
+          connection.target.inputName === inputName,
+      );
+      if (source) {
+        const dependency = {
+          sourceId: source.source.nodeId,
+          targetId: node.id,
+        };
+        dependencies.set(`${dependency.sourceId}\0${dependency.targetId}`, dependency);
+      }
+    } else if (node.moduleId === "cascade.core.Output") {
+      const dependency = { sourceId: node.id, targetId: node.parent };
+      dependencies.set(`${dependency.sourceId}\0${dependency.targetId}`, dependency);
+    }
+  }
+  return [...dependencies.values()];
 }
 function runtimeError(code: string, message: string): CascadeRuntimeError {
   return new CascadeRuntimeError(code, [{ phase: "runtime", code, message }]);

@@ -15,8 +15,8 @@
   const dispatch = createEventDispatcher();
 
   // Where this node's work happens. Server-side nodes hand their work to the
-  // Python bridge; browser-side nodes do it in the page. Worth seeing at a
-  // glance — it's the difference between a subprocess and a frame.
+  // Python bridge; browser-side nodes do it in the page; portable nodes have
+  // equivalent host-selected implementations.
   $: runsOn = ((): RunsOn | null => {
     const name = moduleName((node as any).modulePath);
     return name ? ($runsOnByModule[name] ?? null) : null;
@@ -416,10 +416,16 @@
           </span>
 
           {#if runsOn}
+            {@const locusLabel = runsOn === 'server' ? 'S' : runsOn === 'browser' ? 'B' : 'P'}
+            {@const locusTitle = runsOn === 'server'
+              ? 'Runs on the server'
+              : runsOn === 'browser'
+                ? 'Runs in the browser'
+                : 'Portable: browser or server implementation'}
             <span
               class="locus-badge locus-{runsOn}"
-              title={runsOn === 'server' ? 'Runs on the server (Python bridge)' : 'Runs in the browser'}
-            >{runsOn === 'server' ? 'S' : 'B'}</span>
+              title={locusTitle}
+            >{locusLabel}</span>
           {/if}
 
           <!-- Cook button (right side) -->
@@ -533,6 +539,11 @@
   .locus-browser {
     background: rgba(156, 220, 254, 0.20);
     color: #9cdcfe;
+  }
+
+  .locus-portable {
+    background: rgba(114, 216, 150, 0.20);
+    color: #72d896;
   }
 
   .node {

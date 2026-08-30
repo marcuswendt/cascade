@@ -142,4 +142,12 @@ describe('ShellService', () => {
     await expect(p.moduleRunsOn('invalid-browser-shell')).rejects.toThrow(/cascade\/shell.*runsOn.*browser/i);
     await expect(compileProjectModule(p, 'invalid-browser-shell')).resolves.toMatchObject({ ok: false });
   });
+
+  it('preserves an explicit portable execution classification', async () => {
+    const p = project({});
+    const dir = path.join(p.root, 'nodes', 'portable-crop');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.ts'), `export const runsOn = 'portable';\nexport function execute() {}`);
+    await expect(p.moduleRunsOn('portable-crop')).resolves.toBe('portable');
+  });
 });

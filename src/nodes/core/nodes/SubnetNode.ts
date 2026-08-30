@@ -89,7 +89,10 @@ export class SubnetNode extends Node {
 
     // Add missing input ports
     for (let i = currentInputs; i < requiredInputs; i++) {
-      const port = this.in(`input_${i}`, null);
+      const boundary = inputNodes.find(n => (n as any).inputIndex === i) as any;
+      const port = this.in(boundary?.inputName || `input_${i}`, null, {
+        type: boundary?.dataType || 'any'
+      });
       // When input value changes, update any Input nodes referencing this index
       port.onChange = (value: any) => {
         this._children
@@ -107,6 +110,9 @@ export class SubnetNode extends Node {
     // Unhide needed ports
     for (let i = 0; i < requiredInputs; i++) {
       if (this.inputs[i]) {
+        const boundary = inputNodes.find(n => (n as any).inputIndex === i) as any;
+        this.inputs[i].name = boundary?.inputName || `input_${i}`;
+        this.inputs[i].dataType = boundary?.dataType || 'any';
         this.inputs[i].options = { ...this.inputs[i].options, hidden: false };
       }
     }
@@ -117,7 +123,10 @@ export class SubnetNode extends Node {
 
     // Add missing output ports
     for (let i = currentOutputs; i < requiredOutputs; i++) {
-      this.out(`output_${i}`);
+      const boundary = outputNodes.find(n => (n as any).outputIndex === i) as any;
+      this.out(boundary?.outputName || `output_${i}`, 'param', {
+        type: boundary?.dataType || 'any'
+      });
     }
 
     // Hide excess output ports
@@ -129,6 +138,9 @@ export class SubnetNode extends Node {
     // Unhide needed ports
     for (let i = 0; i < requiredOutputs; i++) {
       if (this.outputs[i]) {
+        const boundary = outputNodes.find(n => (n as any).outputIndex === i) as any;
+        this.outputs[i].name = boundary?.outputName || `output_${i}`;
+        this.outputs[i].dataType = boundary?.dataType || 'any';
         this.outputs[i].options = { ...this.outputs[i].options, hidden: false };
       }
     }

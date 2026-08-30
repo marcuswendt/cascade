@@ -85,6 +85,39 @@ test("load is side-effect-free and run lazily executes a data graph", async () =
   await runtime.dispose();
 });
 
+test("portable registrations may select a host-specific executor", async () => {
+  const environments = [];
+  const portable = {
+    kind: "definition-v1",
+    moduleId: "project.HostValue",
+    definition: {
+      apiVersion: 1,
+      runsOn: "portable",
+      outputs: { value: { kind: "data", type: "string" } },
+    },
+    loadExecute: async (environment) => {
+      environments.push(environment);
+      return ({ outputs }) => outputs.value.set(environment);
+    },
+  };
+  const graphDocument = document([
+    { id: "host", module: "project.HostValue" },
+  ]);
+
+  for (const [host, expected] of [
+    [createBrowserRuntimeHost({ modules: { resolve: async () => portable } }), "browser"],
+    [createNodeRuntimeHost({ modules: { resolve: async () => portable } }), "server"],
+  ]) {
+    const runtime = createRuntime({ host });
+    const graph = await runtime.load(graphDocument);
+    await graph.run();
+    assert.equal(graph.getOutput("host", "value"), expected);
+    await runtime.dispose();
+  }
+
+  assert.deepEqual(environments, ["browser", "server"]);
+});
+
 test("preflight rejects missing capabilities before loading execute", async () => {
   const loaded = [];
   const node = registration(

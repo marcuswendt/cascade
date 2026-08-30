@@ -11,6 +11,10 @@ import { MergeNode } from '@/nodes/core/nodes/MergeNode';
 import { InputNode } from '@/nodes/core/nodes/InputNode';
 import { OutputNode } from '@/nodes/core/nodes/OutputNode';
 import { SubnetNode } from '@/nodes/core/nodes/SubnetNode';
+import { RandomNode } from '@/nodes/core/nodes/RandomNode';
+import { RemapNode } from '@/nodes/core/nodes/RemapNode';
+import { randomRegistration } from '../packages/runtime/src/builtins/core/random';
+import { remapRegistration } from '../packages/runtime/src/builtins/core/remap';
 
 describe('SwitchNode', () => {
   let graph: Graph;
@@ -126,6 +130,12 @@ describe('InputNode', () => {
     expect(inputNode.props.inputName.value).toBe('');
   });
 
+  it('should persist a typed public input contract', () => {
+    expect(inputNode.props.dataType.value).toBe('any');
+    inputNode.parm('dataType')?.set('image');
+    expect(inputNode.outputs[0].dataType).toBe('image');
+  });
+
   it('should have output port', () => {
     expect(inputNode.outputs).toHaveLength(1);
     expect(inputNode.outputs[0].name).toBe('output');
@@ -161,6 +171,15 @@ describe('OutputNode', () => {
   it('should have outputIndex prop defaulting to 0', () => {
     expect(outputNode.props.outputIndex).toBeDefined();
     expect(outputNode.props.outputIndex.value).toBe(0);
+  });
+
+  it('should persist a named typed public output contract', () => {
+    expect(outputNode.props.outputName.value).toBe('');
+    expect(outputNode.props.dataType.value).toBe('any');
+    outputNode.parm('outputName')?.set('preview');
+    outputNode.parm('dataType')?.set('image');
+    expect(outputNode.outputName).toBe('preview');
+    expect(outputNode.inputs[0].dataType).toBe('image');
   });
 
   it('should have input port', () => {
@@ -287,5 +306,52 @@ describe('Core nodes in headless environments', () => {
     expect(input.error).toBeNull();
     expect(switchNode.error).toBeNull();
     expect(output.error).toBeNull();
+  });
+});
+
+describe('Deterministic value nodes', () => {
+  it('keeps Studio adapters aligned with runtime-owned interfaces', () => {
+    const graph = new Graph();
+    const random = new RandomNode('random', graph);
+    const remap = new RemapNode('remap', graph);
+
+    expect(random.inputs.map(({ name }) => name)).toEqual(Object.keys(randomRegistration.definition.inputs));
+    expect(random.outputs.map(({ name }) => name)).toEqual(Object.keys(randomRegistration.definition.outputs));
+    expect(remap.inputs.map(({ name }) => name)).toEqual(Object.keys(remapRegistration.definition.inputs));
+    expect(remap.outputs.map(({ name }) => name)).toEqual(Object.keys(remapRegistration.definition.outputs));
+    expect(remap.props.clamp.value).toBe(remapRegistration.definition.props.clamp.default);
+  });
+
+  it('returns the same random value for the same explicit seed', async () => {
+    const graph = new Graph();
+    const random = new RandomNode('random', graph);
+    graph.addElement(random);
+    random.inputs[0].value = 42;
+
+    await random.execute();
+    const first = random.outputs[0].value;
+    await random.execute();
+
+    expect(random.outputs[0].value).toBe(first);
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(first).toBeLessThan(1);
+  });
+
+  it('remaps and optionally clamps values', async () => {
+    const graph = new Graph();
+    const remap = new RemapNode('remap', graph);
+    graph.addElement(remap);
+    const [value, inMin, inMax, outMin, outMax] = remap.inputs;
+    value.value = 15;
+    inMin.value = 0;
+    inMax.value = 10;
+    outMin.value = 100;
+    outMax.value = 200;
+
+    await remap.execute();
+    expect(remap.outputs[0].value).toBe(250);
+    remap.parm('clamp')?.set(true);
+    await remap.execute();
+    expect(remap.outputs[0].value).toBe(200);
   });
 });

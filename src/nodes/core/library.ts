@@ -21,7 +21,8 @@ export const coreLibrary: Library = {
       id: 'utility',
       label: 'Utility',
       nodes: [
-        { name: 'Random', icon: 'Dice5', description: 'Generate random seeds or pick from options', type: 'Random' },
+        { name: 'Random', icon: 'Dice5', description: 'Generate a deterministic value from a seed', type: 'Random' },
+        { name: 'Remap', icon: 'ArrowRightLeft', description: 'Map a number from one range into another', type: 'Remap' },
         { name: 'Select', icon: 'ListFilter', description: 'Pick an item from an array by index', type: 'Select' },
         { name: 'Freeze', icon: 'Snowflake', description: 'Capture and lock a value', type: 'Freeze' }
       ]

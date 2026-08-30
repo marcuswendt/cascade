@@ -13,7 +13,9 @@ import type { CascadePanelParams, PanelType } from './types';
 import { createSvelteRenderer, togglePanelLock, panelLockStore, sharedContextStore } from './renderer';
 import { get } from 'svelte/store';
 import { writable } from 'svelte/store';
+import { mount, unmount } from 'svelte';
 import type { ProjectPanelMeta } from '../projectPanels';
+import PanelIcon from '../components/PanelIcon.svelte';
 
 const STORAGE_KEY = 'cascade-dockview-layout';
 type ResizeAxis = 'width' | 'height';
@@ -54,6 +56,13 @@ export function setProjectPanelTypes(panels: ProjectPanelMeta[]): void {
     ...BUILT_IN_PANEL_TYPES,
     ...panels.map(panel => ({ type: `project:${panel.name}` as PanelType, label: panel.title, icon: panel.icon ?? '▣' })),
   ]);
+}
+
+export function mountPanelTypeIcon(target: HTMLElement, type: PanelType): (() => void) | undefined {
+  const icon = get(panelTypes).find(panel => panel.type === type)?.icon;
+  if (!icon) return;
+  const instance = mount(PanelIcon, { target, props: { icon, size: 14 } });
+  return () => { void unmount(instance); };
 }
 
 class DockviewStore {
@@ -130,6 +139,10 @@ class DockviewStore {
 
         const titleSpan = document.createElement('span');
         titleSpan.className = 'cascade-tab-title';
+
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'cascade-tab-icon';
+        element.appendChild(iconSpan);
         element.appendChild(titleSpan);
 
         // Close button
@@ -144,6 +157,7 @@ class DockviewStore {
         let panelType: string = '';
         let unsubscribeLock: (() => void) | null = null;
         let unsubscribeContext: (() => void) | null = null;
+        let disposeIcon: (() => void) | undefined;
 
         const updateLockButton = () => {
           const locks = get(panelLockStore);
@@ -173,6 +187,8 @@ class DockviewStore {
             // Get panel type from params
             const panelParams = params.params as CascadePanelParams;
             panelType = panelParams?.type || '';
+            disposeIcon = mountPanelTypeIcon(iconSpan, panelType as PanelType);
+            if (!disposeIcon) iconSpan.remove();
 
             // Show lock button for viewer and inspector panels
             if (panelType === 'viewer' || panelType === 'inspector') {
@@ -224,6 +240,7 @@ class DockviewStore {
             panelApi = null;
             if (unsubscribeLock) unsubscribeLock();
             if (unsubscribeContext) unsubscribeContext();
+            disposeIcon?.();
           }
         };
       },

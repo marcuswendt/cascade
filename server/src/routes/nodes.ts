@@ -32,7 +32,7 @@ export function createNodesRouter(project: ProjectRoot): Router {
   router.get('/', async (_req, res) => {
     try {
       const modules = await project.listNodeModules();
-      const runsOn: Record<string, 'server' | 'browser'> = {};
+      const runsOn: Record<string, 'portable' | 'server' | 'browser'> = {};
       const icons: Record<string, string> = {};
       await Promise.all(modules.map(async (name) => {
         runsOn[name] = await project.moduleRunsOn(name);

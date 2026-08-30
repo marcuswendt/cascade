@@ -48,6 +48,7 @@
     step: port?.options?.step ?? (effectiveType === 'int' ? 1 : 'any'),
   };
   $: bounded = Number.isFinite(bounds.min) && Number.isFinite(bounds.max) && bounds.max > bounds.min;
+  $: choices = Array.isArray(port?.options?.choices) ? port.options.choices : [];
 
   function clampNumber(next: number): number {
     if (!Number.isFinite(next)) return bounds.min;
@@ -86,6 +87,11 @@
     const next = normalizeColorTuple(hex);
     next[3] = color[3];
     commit(next);
+  }
+
+  function selectChoice(raw: string) {
+    const choice = choices.find((candidate: any) => String(candidate.value) === raw);
+    if (choice) commit(choice.value);
   }
 
 </script>
@@ -162,6 +168,18 @@
         </label>
       {/each}
     </div>
+  {:else if choices.length > 0}
+    <select
+      aria-label={port?.name ?? 'choice'}
+      class="single"
+      disabled={readOnly}
+      value={String(value ?? '')}
+      on:change={(event) => selectChoice(event.currentTarget.value)}
+    >
+      {#each choices as choice}
+        <option value={String(choice.value)}>{choice.label}</option>
+      {/each}
+    </select>
   {:else if effectiveType === 'bool'}
     <label class="boolean"><input type="checkbox" disabled={readOnly} checked={Boolean(value)} on:change={(event) => commit(event.currentTarget.checked)} /> {Boolean(value) ? 'true' : 'false'}</label>
   {:else if (effectiveType === 'float' || effectiveType === 'int') && bounded}
@@ -260,7 +278,7 @@
   .component { display: flex; align-items: center; gap: 3px; flex: 1; min-width: 0; }
   .component span { width: 9px; flex: none; color: #777; font-size: 9px; }
   .matrix { display: grid; gap: 4px; }
-  input[type='number'], input[type='text'] { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #3a3a3a; border-radius: 3px; background: #1e1e1e; color: #ddd; padding: 3px 5px; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  input[type='number'], input[type='text'], select { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #3a3a3a; border-radius: 3px; background: #1e1e1e; color: #ddd; padding: 3px 5px; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
   input:disabled { background: #232323; color: #999; }
   input:focus { outline: none; border-color: #0e639c; }
   .reset { margin-top: 4px; border: 1px solid #3a3a3a; border-radius: 3px; background: none; color: #999; font-size: 9px; cursor: pointer; }

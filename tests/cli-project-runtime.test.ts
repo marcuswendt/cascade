@@ -47,6 +47,33 @@ describe('deterministic CLI runtime', () => {
     await expect(runDeterministicProjectGraph(fixture.file, fixture.document)).resolves.toBe(true);
   });
 
+  it('recognizes reserved core nodes without project modules', async () => {
+    const fixture = project(validSource);
+    fixture.document = {
+      version: '0.2',
+      nodes: [
+        { id: 'input', module: 'cascade.core.Input', inputs: { value: 0.25 } },
+        { id: 'remap', module: 'cascade.core.Remap', inputs: { inMin: 0, inMax: 1, outMin: 0, outMax: 100 } },
+        { id: 'output', module: 'cascade.core.Output' },
+      ],
+      connections: [
+        [['input', 0, 'output'], ['remap', 0, 'value']],
+        [['remap', 0, 'result'], ['output', 0, 'input']],
+      ],
+    } as any;
+
+    await expect(checkProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
+    await expect(runDeterministicProjectGraph(fixture.file, fixture.document)).resolves.toBe(true);
+    await expect(inspectProjectGraph(fixture.file, fixture.document)).resolves.toMatchObject({
+      deterministic: true,
+      nodes: [
+        { classification: 'definition-v1' },
+        { classification: 'definition-v1' },
+        { classification: 'definition-v1' },
+      ],
+    });
+  });
+
   it('never falls back when a declared deterministic definition is malformed', async () => {
     const fixture = project(`
       export const definition = makeDefinition();

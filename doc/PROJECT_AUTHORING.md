@@ -199,6 +199,40 @@ export const definition = {
 
 The runtime refuses unsupported host/capability combinations before executing the graph.
 
+Some portable operations have genuinely useful browser and server
+implementations. Keep one literal definition and one module ID; let the host's
+registration load the implementation for its environment. Do not add an
+`engine: browser | server` graph parameter or duplicate the node type. The two
+executors are an implementation detail and must produce the same declared
+types, coordinate conventions, metadata, and edge-case behavior. Lock that
+contract with shared golden tests. Use a graph parameter only when the choice
+changes the artistic result, cost, or model—not merely where equivalent work
+runs.
+
+## Use runtime-native core nodes
+
+Core modules are reserved runtime registrations; do not create files for them
+under `nodes/`:
+
+| Module | Purpose |
+| --- | --- |
+| `cascade.core.Input` | Public root or subnet input |
+| `cascade.core.Output` | Public root or subnet output |
+| `cascade.core.Subnet` | Nested graph container |
+| `cascade.core.Switch` | Select one variadic input by index |
+| `cascade.core.Merge` | Collect variadic inputs into an array |
+| `cascade.core.Select` | Select an array item, with optional wrapping |
+| `cascade.core.Random` | Stable float in `[0, 1)` from explicit `seed` and `sample` integers |
+| `cascade.core.Remap` | Scalar range mapping with optional `clamp` prop |
+
+Use root Input and Output nodes as the graph's named, typed public API for headless hosts.
+Keep implementation nodes behind that boundary so a server or custom frontend
+does not depend on internal IDs. A child Input/Output node's index defines the
+matching `input_N`/`output_N` port on its parent Subnet.
+
+Portable nodes must not read ambient time or randomness. Pass frame/time through
+root inputs and use seeded Random when a procedural stage needs variation.
+
 ## Integrate external services and AI
 
 Cascade does not embed model providers or a generic `ai` capability. Provider

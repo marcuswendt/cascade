@@ -1,9 +1,20 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { activePanelId, groupResizeAxis } from '@/editor/dockview/dockview-store.svelte';
+import { activePanelId, groupResizeAxis, mountPanelTypeIcon, setProjectPanelTypes } from '@/editor/dockview/dockview-store.svelte';
 import { createSvelteRenderer, resolvePanelParams } from '@/editor/dockview/renderer';
 
 describe('Dockview v8 integration', () => {
+  it('mounts a project panel icon into its custom tab', () => {
+    setProjectPanelTypes([{ name: 'moments', title: 'Moments', icon: 'Aperture' }]);
+    const target = document.createElement('span');
+
+    const dispose = mountPanelTypeIcon(target, 'project:moments');
+
+    expect(target.querySelector('svg')).not.toBeNull();
+    expect(target.textContent).not.toContain('Aperture');
+    dispose?.();
+  });
+
   it('reads the active panel from the v7+ event payload', () => {
     expect(activePanelId({ panel: { id: 'viewer-main' }, origin: 'user' } as never)).toBe('viewer-main');
     expect(activePanelId({ panel: undefined, origin: 'api' } as never)).toBeNull();

@@ -20,6 +20,7 @@
   import ProjectPanelHost from '../panels/ProjectPanelHost.svelte';
   import { discoverProjectPanels } from '../projectPanels';
   import { registerProjectTypeRenderer } from '../components/typeRenderers';
+  import PanelIcon from '../components/PanelIcon.svelte';
 
   // Import Dockview styles
   import 'dockview/dist/styles/dockview.css';
@@ -209,7 +210,7 @@
         class="add-panel-option"
         on:click={() => handleAddPanelSelect(panelType.type)}
       >
-        <span class="panel-icon">{panelType.icon}</span>
+        <PanelIcon icon={panelType.icon} size={14} class="panel-icon" />
         <span class="panel-label">{panelType.label}</span>
       </button>
     {/each}
@@ -346,6 +347,13 @@
     transition: color 0.15s;
   }
 
+  .dockview-container :global(.cascade-tab-icon) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #aaa;
+  }
+
   .dockview-container :global(.cascade-tab-title:hover) {
     color: #fff;
   }
@@ -443,7 +451,7 @@
     color: #fff;
   }
 
-  .panel-icon {
+  :global(.panel-icon) {
     font-size: 14px;
     width: 20px;
     text-align: center;

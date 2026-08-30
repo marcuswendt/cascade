@@ -5,6 +5,7 @@ import ts from 'typescript';
 import { build } from 'esbuild';
 import type { NodeDefinition } from '../../packages/contracts/src/index.js';
 import { createRuntime } from '../../packages/runtime/src/index.js';
+import { coreNodeRegistration, coreNodeRegistrations } from '../../packages/runtime/src/builtins/core/index.js';
 import { createNodeRuntimeHost } from '../../packages/runtime/src/node.js';
 import { extractNodeDefinition } from '../../packages/runtime/src/definition/extract.js';
 import type { DefinitionNodeRegistration } from '../../packages/runtime/src/types.js';
@@ -92,7 +93,9 @@ export async function runDeterministicProjectGraph(
 
 export async function inspectProjectGraph(file: string, document: any) {
   const prepared = await prepare(file, document, false);
-  const registrations = new Map(prepared.registrations.map((item) => [item.moduleId, item]));
+  const registrations = new Map(
+    [...coreNodeRegistrations, ...prepared.registrations].map((item) => [item.moduleId, item]),
+  );
   const nodes = (document.nodes as ProjectNode[]).map((node) => {
     const id = moduleId(node);
     return {
@@ -124,6 +127,10 @@ async function prepare(file: string, document: any, compileExecutors: boolean): 
     const id = moduleId(node);
     if (!id || seen.has(id)) continue;
     seen.add(id);
+    if (coreNodeRegistration(id)) {
+      deterministic.add(id);
+      continue;
+    }
     const moduleFile = await projectModuleFile(projectRoot, node, id);
     if (!moduleFile) {
       registrations.push(savedRegistration(id, node));

@@ -22,6 +22,30 @@ describe('CoreValue', () => {
     expect(getByLabelText('float value')).toBeTruthy();
   });
 
+  it('renders declared parameter choices as a select', async () => {
+    const onChange = vi.fn();
+    const { getByRole } = render(CoreValue, {
+      props: {
+        type: 'string',
+        value: 'off',
+        port: {
+          name: 'engine',
+          options: {
+            choices: [
+              { value: 'off', label: 'Off' },
+              { value: 'magnific', label: 'Magnific API' },
+              { value: 'local', label: 'Local diffusion' },
+            ],
+          },
+        },
+        onChange,
+      },
+    });
+
+    await fireEvent.change(getByRole('combobox'), { target: { value: 'magnific' } });
+    expect(onChange).toHaveBeenCalledWith('magnific');
+  });
+
   it('edits vector components through the shared editor', async () => {
     const onChange = vi.fn();
     const { getByLabelText } = render(CoreValue, {

@@ -12,7 +12,7 @@
     // readable at a glance rather than twenty identical cogs.
     CloudSun, Telescope, Rainbow, Mountain, Crop, Contrast, Scan, Spline,
     Dot, Grid2x2, Tag, Aperture, Gauge, Wind, Combine, Group, FileOutput,
-    Sparkles, Binary, Radar
+    Sparkles, Binary, Radar, ArrowRightLeft
   } from '@lucide/svelte';
 
   export let name: string;
@@ -37,7 +37,7 @@
     Layers, GitMerge, Dice5, ListFilter, Snowflake, LogIn, LogOut, ArrowUp,
     CloudSun, Telescope, Rainbow, Mountain, Crop, Contrast, Scan, Spline,
     Dot, Grid2x2, Tag, Aperture, Gauge, Wind, Combine, Group, FileOutput,
-    Sparkles, Binary, Radar, Cloud, Blend, Lightbulb, Grid3x3, Terminal,
+    Sparkles, Binary, Radar, ArrowRightLeft, Cloud, Blend, Lightbulb, Grid3x3, Terminal,
     // Aliases
     View: Eye,
     GitGraph: GitBranch,

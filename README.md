@@ -118,6 +118,12 @@ Every node declares where it runs:
 
 Capabilities are declared in the definition and injected by the host. User node modules are trusted project code, not a security sandbox.
 
+A portable node may have equivalent browser and server executors behind the
+same static definition. The runtime asks the registration for the concrete
+host's executor, so the graph stays portable and contains no backend selector.
+This is the intended pattern for media transforms such as crop or resize; use
+shared parity tests to keep their outputs and metadata aligned.
+
 Existing dynamic nodes continue through Cascade's current Studio/CLI compatibility engine while projects migrate. The headless runtime accepts deterministic definitions only; malformed definitions never fall back to dynamic execution.
 
 Provider integrations are project code, not Cascade infrastructure. A project
@@ -138,17 +144,28 @@ const host = createNodeRuntimeHost({ modules, assets });
 const runtime = createRuntime({ host });
 const graph = await runtime.load(document);
 
-await graph.setInput('multiply1', 'value', 21);
+await graph.setGraphInput('value', 21);
 await graph.run({
-  target: { kind: 'output', nodeId: 'multiply1', outputName: 'result' }
+  target: { kind: 'output', nodeId: 'graph-output', outputName: 'output' }
 });
 
-console.log(graph.getOutput('multiply1', 'result')); // 42
+console.log(graph.getGraphOutput('result')); // 42
 await graph.dispose();
 await runtime.dispose();
 ```
 
-The runtime supports inspection, inputs and props, presets, triggers, targeted or full runs, cancellation, event subscriptions, output retrieval, and disposal. Hosts decide which capabilities exist; Cascade never silently moves a stage between browser and server.
+Here `graph-input` and `graph-output` are typed `cascade.core.Input` and
+`cascade.core.Output` nodes named `value` and `result`. They give an
+embedded application a stable public boundary instead of requiring it to know
+internal node IDs.
+
+The runtime natively provides `Subnet`, `Input`, `Output`, `Switch`, `Merge`,
+`Select`, seeded `Random`, and scalar `Remap`. These reserved core modules need
+no project registration and run identically in Node and browser hosts. The
+runtime also supports inspection, presets, triggers, targeted or full runs,
+cancellation, event subscriptions, output retrieval, and disposal. Hosts
+decide which capabilities exist; Cascade never silently moves a stage between
+browser and server.
 
 ## Repository map
 

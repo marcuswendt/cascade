@@ -12,7 +12,7 @@
  */
 import { writable } from 'svelte/store';
 
-export type RunsOn = 'server' | 'browser';
+export type RunsOn = 'portable' | 'server' | 'browser';
 
 export const runsOnByModule = writable<Record<string, RunsOn>>({});
 

@@ -36,7 +36,10 @@ export interface DefinitionNodeRegistration<
   readonly kind: "definition-v1";
   readonly moduleId: string;
   readonly definition: D;
-  readonly loadExecute: () => Promise<NodeExecute<D>>;
+  /** Selects the implementation for the concrete host running the graph. */
+  readonly loadExecute: (
+    environment: "browser" | "server",
+  ) => Promise<NodeExecute<D>>;
 }
 export interface LegacyNodeRegistration {
   readonly kind: "legacy-dynamic";
@@ -168,9 +171,17 @@ export interface ConnectionInspection {
 }
 export interface GraphInspection {
   readonly state: GraphState;
+  readonly interface: Readonly<{
+    inputs: Readonly<Record<string, GraphBoundaryInspection>>;
+    outputs: Readonly<Record<string, GraphBoundaryInspection>>;
+  }>;
   readonly nodes: readonly NodeInspection[];
   readonly connections: readonly ConnectionInspection[];
   readonly diagnostics: readonly Diagnostic[];
+}
+export interface GraphBoundaryInspection {
+  readonly nodeId: string;
+  readonly type: string;
 }
 export type RuntimeEvent =
   | {
@@ -241,6 +252,7 @@ export interface LoadedCascadeGraph {
   readonly state: GraphState;
   inspect(): GraphInspection;
   setInput(nodeId: string, inputName: string, value: unknown): Promise<void>;
+  setGraphInput(name: string, value: unknown): Promise<void>;
   setProp(nodeId: string, propName: string, value: unknown): Promise<void>;
   applyPreset(preset: CascadePreset): Promise<void>;
   trigger(
@@ -253,6 +265,7 @@ export interface LoadedCascadeGraph {
   cancel(reason?: string): void;
   subscribe(listener: (event: RuntimeEvent) => void): () => void;
   getOutput(nodeId: string, outputName: string): unknown;
+  getGraphOutput(name: string): unknown;
   getOutputs(nodeId: string): ReadonlyMap<string, unknown>;
   dispose(): Promise<void>;
 }

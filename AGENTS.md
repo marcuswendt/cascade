@@ -98,12 +98,26 @@ Definition rules:
 - Export `definition` as a literal and `execute` as computation only.
 - Keep the definition JSON-like. Parentheses, arrays, `as const`, and `satisfies` are valid; calls, spreads, computed properties, and imported constants are not.
 - Declare `runsOn`: `portable`, `browser`, or `server`.
+- For equivalent browser/server implementations, keep one portable definition
+  and have the host registration select the executor. Never expose execution
+  location as an artist parameter; parity-test the shared contract.
 - Declare every capability used. File, Python, and shell access are server-only; WebGL is browser-only.
 - Keep model/provider integrations in the project. Cascade core has no Google,
   Anthropic, OpenAI, or generic `ai` capability. Use normal typed outputs such
   as `image` or `asset`, and choose the actual execution path explicitly.
 - Use exact Cascade core types or a namespaced project type such as `project.palette`.
 - Never execute a module to discover its ports or metadata.
+
+Use the runtime-native core vocabulary before creating a project wrapper:
+
+- `cascade.core.Input` / `cascade.core.Output` define the public graph or subnet boundary.
+- `cascade.core.Subnet` contains nested nodes.
+- `cascade.core.Switch`, `Merge`, and `Select` provide deterministic routing.
+- `cascade.core.Random` maps explicit integer `seed` and `sample` inputs to a stable float in `[0, 1)`.
+- `cascade.core.Remap` maps scalar ranges and optionally clamps via its `clamp` prop.
+
+These modules are reserved and need no file under `nodes/`. Do not override a
+`cascade.core.*` module or use ambient random/time state in a portable node.
 
 ## Navigate and edit graphs
 
@@ -138,7 +152,7 @@ Do not add dependencies without a concrete need. Do not create extra packages un
 ## Versioning
 
 Cascade `0.2.0` is the 2026 architecture rework. The current release is
-`0.2.3`. Increment the root package and CLI patch version for every committed
-feature or release change (`0.2.3`, `0.2.4`, …), keeping `package.json`, the
+`0.2.6`. Increment the root package and CLI patch version for every committed
+feature or release change (`0.2.6`, `0.2.7`, …), keeping `package.json`, the
 lockfile, and CLI output aligned. Internal private workspaces do not receive
 independent versions unless they become separately published packages.

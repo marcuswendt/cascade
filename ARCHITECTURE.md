@@ -20,6 +20,12 @@ Contracts contain no DOM, Svelte, Express, filesystem, process, or implementatio
 
 The runtime is environment-neutral. It works in Node and browsers without importing either platform’s APIs, and it never imports Studio. Registration is sealed after the first graph load. Each graph permits one active run and has explicit lifecycle states.
 
+The reserved `cascade.core.*` registry is owned here. `Subnet`, `Input`,
+`Output`, `Switch`, `Merge`, `Select`, seeded `Random`, and `Remap` resolve
+without a project module loader. Named, typed root Input/Output nodes form an
+explicit headless graph interface; typed child Input/Output nodes form a subnet interface.
+Randomness is a pure function of an authored seed, never ambient process state.
+
 ## Hosts
 
 Hosts adapt the neutral runtime to an environment:
@@ -30,11 +36,19 @@ Hosts adapt the neutral runtime to an environment:
 
 Capabilities are injected. A node’s literal `runsOn` and `capabilities` fields are checked before its `execute` module is loaded.
 
+`portable` describes one graph contract, not necessarily one implementation.
+A registration may load an equivalent browser or server executor for that
+contract. The host selects the executor; graphs and artist-facing parameters do
+not contain backend switches. This is appropriate for operations such as crop,
+resize, composite, and encode when both Canvas/WebGL and native implementations
+exist. Both executors must obey the same definition and should share golden
+parity tests for geometry, metadata, and edge cases.
+
 `server/` is the project-scoped Node application host. It owns project paths, compilation, HTTP transport, media serving, Python workers, shell policy, and credentials. It is separately manifested and is not a third contracts/runtime workspace.
 
 ## Applications and controllers
 
-Studio’s Svelte components under `src/editor` own rendering, selection, panels, and interaction state. Its compatibility graph now has one graph-owned cook scheduler, while `StudioGraphController` centralizes an increasing set of structural mutations and publishes view snapshots. Collapse/extract and the remaining built-ins still need migration before Studio can consume `packages/runtime` directly.
+Studio’s Svelte components under `src/editor` own rendering, selection, panels, and interaction state. Its compatibility graph now has one graph-owned cook scheduler, while `StudioGraphController` centralizes an increasing set of structural mutations and publishes view snapshots. Compatibility adapters still present runtime-owned built-ins in Studio; collapse/extract and the remaining legacy nodes must migrate before Studio can consume `packages/runtime` directly.
 
 Studio uses Dockview through the public `dockview` API. Code panels lazy-load
 Monaco and its native editor/TypeScript workers rather than adding Monaco to the
@@ -116,6 +130,6 @@ bootstrap.
 
 ## Compatibility and migration
 
-`src/nodes` and `src/engine` remain the compatibility source while built-ins and Studio migrate onto the neutral runtime. Keep compatibility code thin and named. New features belong at the owning contracts/runtime/host/controller layer; do not add a second implementation to the legacy path.
+`src/nodes` and `src/engine` remain the Studio compatibility surface while Studio migrates onto the neutral runtime. Runtime-owned algorithms stay in `packages/runtime`; compatibility nodes may adapt them but must not fork their semantics. New features belong at the owning contracts/runtime/host/controller layer.
 
 Prefer deletion and direct imports over wrappers. Preserve behavior with focused tests before moving code, then remove the replaced path in the same change when safe.
