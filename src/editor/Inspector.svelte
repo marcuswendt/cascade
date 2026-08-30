@@ -1484,15 +1484,16 @@
   }
 
   .parameter {
-    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 6px;
+    align-items: start;
   }
 
   /* Deliberately quiet: promotion is occasional, and a button shouting on every
      row would drown the values themselves. */
   .promote {
-    position: absolute;
-    top: 5px;
-    right: 0;
+    margin-top: 7px;
     background: none;
     border: 1px solid #333;
     border-radius: 3px;

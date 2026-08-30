@@ -35,12 +35,16 @@ async function execCapability(): Promise<string> {
 }
 
 async function runStage<T = unknown>(stage: string, args: Record<string, unknown>): Promise<T> {
-  const capability = await execCapability();
-  const response = await fetch('/api/exec', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Cascade-Exec-Capability': capability },
-    body: JSON.stringify({ stage, args }),
-  });
+  const request = (capability: string) => fetch('/api/exec', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Cascade-Exec-Capability': capability },
+      body: JSON.stringify({ stage, args }),
+    });
+  let response = await request(await execCapability());
+  if (response.status === 403) {
+    execCapabilityPromise = undefined;
+    response = await request(await execCapability());
+  }
   const body = await response.json();
   if (!response.ok || !body.ok) {
     throw new Error(`Stage "${stage}" failed: ${body.stderr || body.error || 'unknown error'}`);

@@ -68,6 +68,21 @@ describe('project panels', () => {
     }));
   });
 
+  it('refreshes a stale execution capability after the server restarts', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: false, error: 'Exec capability required' }), { status: 403 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ capability: 'fresh-token' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, stdout: '{"ok":true}', stderr: '' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetcher);
+    const api = createProjectPanelApi({ context: () => null, close: vi.fn() });
+
+    await expect(api.runStage('assets.list', {})).resolves.toEqual({ ok: true });
+    expect(fetcher).toHaveBeenNthCalledWith(2, '/api/exec/capability', { cache: 'no-store' });
+    expect(fetcher).toHaveBeenNthCalledWith(3, '/api/exec', expect.objectContaining({
+      headers: { 'Content-Type': 'application/json', 'X-Cascade-Exec-Capability': 'fresh-token' },
+    }));
+  });
+
   it('renders action parameters as buttons', async () => {
     const graph = new Graph();
     const node = new Node('source', 'project.Source', graph);

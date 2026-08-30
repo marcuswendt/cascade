@@ -29,5 +29,7 @@ describe('Inspector parameter sliders', () => {
     const view = render(Inspector, { props: { node } });
     expect(view.getByRole('slider').getAttribute('min')).toBe('0');
     expect(view.getByRole('slider').getAttribute('max')).toBe('1');
+    expect(view.getByText('contribution').getAttribute('title')).toBe('contribution · float');
+    expect(view.queryByText('float')).toBeNull();
   });
 });

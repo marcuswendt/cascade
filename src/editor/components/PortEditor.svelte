@@ -19,8 +19,7 @@
 <div class="port-editor" class:read-only={readOnly}>
   <div class="row">
     <span class="dot" style="background:{typeColor(port?.dataType)}"></span>
-    <span class="name">{port?.name}</span>
-    <span class="type">{effectiveType}</span>
+    <span class="name" title={`${port?.name} · ${effectiveType}`}>{port?.name}</span>
   </div>
 
   {#if connected && direction === 'input'}
@@ -45,7 +44,6 @@
   .row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
   .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
   .name { flex: 1; overflow: hidden; color: #ddd; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-  .type { color: #777; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
   .source { margin: -1px 0 5px 13px; color: #777; font-size: 9px; }
   .value { margin-left: 13px; min-width: 0; }
   .read-only .value { opacity: 0.92; }

@@ -73,6 +73,19 @@ describe('layoutTopDown', () => {
     expect(positions.get('late')!.y).toEqual(positions.get('b')!.y);
   });
 
+  it('keeps a direct vertical chain on one column inside a branching graph', () => {
+    const positions = layoutTopDown(
+      ['source', 'branch', 'left-detail', 'right-detail', 'detached'],
+      [
+        { from: 'source', to: 'branch' },
+        { from: 'branch', to: 'left-detail' },
+        { from: 'branch', to: 'right-detail' },
+      ]
+    );
+
+    expect(positions.get('branch')!.x).toBe(positions.get('source')!.x);
+  });
+
   it('does not hang on a cycle', () => {
     const positions = layoutTopDown(
       ['x', 'y'],

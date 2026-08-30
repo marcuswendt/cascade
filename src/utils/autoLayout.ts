@@ -327,6 +327,32 @@ export function layoutTopDown(
     }
   }
 
+  // Finish parent-facing. The alternating sweeps above end by moving parents
+  // toward their consumers, which can leave a direct child a few pixels off
+  // the parent's column. One constrained top-down pass restores vertical
+  // chains without changing row order or allowing neighbours to overlap.
+  for (const layer of layers) {
+    for (let i = 0; i < layer.length; i++) {
+      const id = layer[i];
+      const linked = (up.get(id) ?? [])
+        .map(other => centres.get(other))
+        .filter((centre): centre is number => centre !== undefined);
+      if (!linked.length) continue;
+
+      const wanted = linked.reduce((sum, centre) => sum + centre, 0) / linked.length;
+      const half = boxWidth(id) / 2;
+      const leftId = layer[i - 1];
+      const rightId = layer[i + 1];
+      const low = leftId !== undefined
+        ? centres.get(leftId)! + boxWidth(leftId) / 2 + spacing(id) + half
+        : -Infinity;
+      const high = rightId !== undefined
+        ? centres.get(rightId)! - boxWidth(rightId) / 2 - spacing(id) - half
+        : Infinity;
+      centres.set(id, Math.min(Math.max(wanted, low), high));
+    }
+  }
+
   // The placeholders did their work in the ordering and the packing; only real
   // nodes come back.
   const positions = new Map<string, { x: number; y: number }>();
