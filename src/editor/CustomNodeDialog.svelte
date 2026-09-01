@@ -129,7 +129,7 @@
             bind:value={nodeName}
             bind:this={nameInput}
             on:input={handleNameInput}
-            placeholder="e.g., ZigZagPattern"
+            placeholder="e.g., ParticleField"
             autocomplete="off"
           />
           <span class="hint">The display name for your node</span>
@@ -142,7 +142,7 @@
             type="text"
             bind:value={modulePath}
             on:input={handleModulePathInput}
-            placeholder="e.g., local.zigzagpattern"
+            placeholder="e.g., project.particle-field"
             autocomplete="off"
           />
           <span class="hint">

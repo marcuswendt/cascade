@@ -13,6 +13,7 @@
   import { loadEmbeddedModule } from '@/engine/nodeModuleLoader';
   import { getPortColor, getConnectionColor, DATA_TYPE_COLORS } from '@/utils/portColors';
   import { recordSnapshotImmediate } from './stores/historyStore';
+  import { readCascadeClipboard, writeCascadeClipboard } from './clipboard';
   
   const dispatch = createEventDispatcher();
   
@@ -597,7 +598,6 @@
   // Connection hover state for scissors icon
   let hoveredConnection: { connectionId: string; position: { x: number; y: number } } | null = null;
   let ctrlPressed = false;
-  let ctrlClickConnection: string | null = null;
   
   // Node dragging state
   let draggingNode: { nodeId: string; offset: { x: number; y: number } } | null = null;
@@ -954,8 +954,9 @@ node.onReady = () => {
       if (hovered) {
         e.preventDefault();
         e.stopPropagation();
-        // Store the connection to disconnect on mouseup
-        ctrlClickConnection = hovered.id;
+        recordHistory();
+        studioGraph.disconnect(hovered.id);
+        hoveredConnection = null;
         return;
       }
     }
@@ -1671,9 +1672,6 @@ node.onReady = () => {
     draggingMultiple = null;
     resizingAnnotation = null;
     
-    // Don't clear ctrlClickConnection here - let the click handler process it
-    // It will be cleared in handleCanvasClick after disconnection
-    
     // Finish line drawing
     if (drawingLine) {
       drawingLine = null;
@@ -2195,18 +2193,7 @@ node.onReady = () => {
   }
   
   function handleCanvasClick(e: MouseEvent) {
-    // Handle Ctrl+Click on connections to disconnect
-    if (ctrlClickConnection) {
-      e.preventDefault();
-      e.stopPropagation();
-      recordHistory();
-      studioGraph.disconnect(ctrlClickConnection);
-      hoveredConnection = null;
-      ctrlClickConnection = null;
-      return;
-    }
-
-    // Fallback: Handle Ctrl+Click on connections to disconnect (if not caught in mousedown)
+    // Keyboard-initiated clicks may not produce the normal pointer sequence.
     if ((e.ctrlKey || e.metaKey) && e.target && !(e.target as HTMLElement).closest('.node, .annotation')) {
       const rect = canvas.getBoundingClientRect();
       const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
@@ -2609,8 +2596,7 @@ node.onReady = () => {
     };
     
     try {
-      // Store in clipboard
-      await navigator.clipboard.writeText(JSON.stringify(clipboardData));
+      await writeCascadeClipboard(JSON.stringify(clipboardData));
       
       // Remove nodes from graph
       nodesToCut.forEach(node => {
@@ -2696,7 +2682,7 @@ node.onReady = () => {
     };
 
     try {
-      await navigator.clipboard.writeText(JSON.stringify(clipboardData));
+      await writeCascadeClipboard(JSON.stringify(clipboardData));
     } catch (err) {
       console.error('Failed to copy to clipboard:', err);
     }
@@ -2710,7 +2696,7 @@ node.onReady = () => {
     }
 
     try {
-      const text = await navigator.clipboard.readText();
+      const text = await readCascadeClipboard();
       const clipboardData = JSON.parse(text);
 
       // Check if it's our data format
@@ -4494,7 +4480,7 @@ node.onReady = () => {
         on:portClick={(e) => handlePortClick(e.detail.nodeId, e.detail.portId, e.detail.portType, e.detail.event)}
         on:portMouseDown={(e) => handlePortMouseDown(e.detail.nodeId, e.detail.portId, e.detail.portType, e.detail.event)}
         on:nodeMouseDown={(e) => handleNodeMouseDown(e.detail.nodeId, e.detail.event)}
-        on:click={(e) => handleNodeClick(node.id, e.detail)}
+        on:nodeClick={(e) => handleNodeClick(node.id, e.detail)}
         on:edit={handleNodeEdit}
         on:diveInto={(e) => diveIntoSubnet(e.detail.node)}
         on:bypassToggle={(e) => handleBypassToggle(e.detail.nodeId, e.detail.event)}

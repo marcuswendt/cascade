@@ -1379,9 +1379,22 @@
               {#each parameters as parameter (parameter.name)}
                 <div class="parameter">
                   {#if parameter.options?.action}
-                    <button class="parameter-action" on:click={() => handleParameterAction(parameter)}>
-                      {parameter.options?.label ?? parameter.name}
-                    </button>
+                    <div class="parameter-action-value">
+                      <button class="parameter-action" on:click={() => handleParameterAction(parameter)}>
+                        {parameter.options?.label ?? parameter.name}
+                      </button>
+                      <PortEditor
+                        port={{
+                          name: 'Selected',
+                          dataType: parameter.dataType,
+                          value: parameter.value,
+                          connections: [],
+                          options: {},
+                        }}
+                        {node}
+                        direction="output"
+                      />
+                    </div>
                   {:else}
                     <PortEditor
                       port={{
@@ -1488,6 +1501,10 @@
     grid-template-columns: minmax(0, 1fr) auto;
     column-gap: 6px;
     align-items: start;
+  }
+
+  .parameter-action-value {
+    min-width: 0;
   }
 
   /* Deliberately quiet: promotion is occasional, and a button shouting on every

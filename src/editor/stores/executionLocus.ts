@@ -19,6 +19,7 @@ export const runsOnByModule = writable<Record<string, RunsOn>>({});
 /** Icon name per node module, declared by the module itself. Empty when a
  *  module doesn't name one, which leaves Cascade's own default in place. */
 export const iconByModule = writable<Record<string, string>>({});
+export const projectNodeModules = writable<string[]>([]);
 
 let inFlight: Promise<void> | null = null;
 
@@ -32,6 +33,7 @@ export function loadExecutionLocus(force = false): Promise<void> {
       const response = await fetch('/api/nodes');
       if (!response.ok) return;
       const data = await response.json();
+      if (Array.isArray(data?.modules)) projectNodeModules.set(data.modules);
       if (data?.runsOn) runsOnByModule.set(data.runsOn);
       if (data?.icons) iconByModule.set(data.icons);
     } catch {

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { render } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import CookStatusStrip from '@/editor/CookStatusStrip.svelte';
 import NodeUI from '@/editor/NodeUI.svelte';
@@ -14,6 +15,12 @@ function nodeWithState(state: Node['cookState']): Node {
 }
 
 describe('cook feedback', () => {
+  it('uses a dedicated event that cannot collide with bubbled native clicks', () => {
+    const source = readFileSync('src/editor/NodeUI.svelte', 'utf8');
+    expect(source).toContain("dispatch('nodeClick', { event: e })");
+    expect(source).not.toContain("dispatch('click', { event: e })");
+  });
+
   it('draws stale, cooking, and persistent error states from Node.cookState', () => {
     const stale = render(NodeUI, { props: { node: nodeWithState('stale') } });
     expect(stale.container.querySelector('.node.stale')?.getAttribute('data-cook-state')).toBe('stale');

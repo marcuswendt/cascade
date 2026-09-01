@@ -324,7 +324,7 @@
   data-node-id={node.id}
   on:click={(e) => {
     e.stopPropagation();
-    dispatch('click', { event: e });
+    dispatch('nodeClick', { event: e });
   }}
   on:mousedown={handleMouseDown}
   on:mouseup={handleMouseUp}

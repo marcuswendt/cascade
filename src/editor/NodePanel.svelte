@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { nodeLibraries, getAllNodes, getNodesByLibraryAndCategory, getNodePathShort, customNodeTemplate, codeTemplates, type NodeTemplate, type Category } from './nodeTemplates';
+  import { nodeLibraries, projectNodeLibrary, getNodePathShort, customNodeTemplate, codeTemplates, type NodeTemplate, type Category } from './nodeTemplates';
+  import { iconByModule, projectNodeModules } from './stores/executionLocus';
   import Icon from './Icon.svelte';
   import { typeToPackagePath } from '@/utils/nodeTypeUtils';
   import { nodeHistoryStore } from './stores/nodeHistoryStore';
@@ -38,6 +39,11 @@
   let hoveredCategoryId: string | null = null; // null = no category hovered
   let hoveredLibraryY: number = 0; // Y position of hovered library item
   let hoveredCategoryY: number = 0; // Y position of hovered category item
+
+  $: effectiveLibraries = [
+    ...nodeLibraries,
+    ...($projectNodeModules.length ? [projectNodeLibrary($projectNodeModules, $iconByModule)] : []),
+  ];
   
   // Calculate position relative to Graph window, centered on cursor, clamped to screen
   function calculatePosition() {
@@ -164,14 +170,14 @@
   });
   
   // Get current library and category
-  $: currentLibrary = libraryId && libraryId !== 'all' ? nodeLibraries.find(lib => lib.id === libraryId) : null;
+  $: currentLibrary = libraryId && libraryId !== 'all' ? effectiveLibraries.find(lib => lib.id === libraryId) : null;
   $: currentCategory = currentLibrary && categoryId 
     ? currentLibrary.categories.find(cat => cat.id === categoryId) 
     : null;
   
   // Get all nodes from a library (flattened from all categories)
   function getNodesFromLibrary(libId: string): NodeTemplate[] {
-    const library = nodeLibraries.find(lib => lib.id === libId);
+    const library = effectiveLibraries.find(lib => lib.id === libId);
     if (!library) return [];
     const all: NodeTemplate[] = [];
     library.categories.forEach(category => {
@@ -182,7 +188,7 @@
   
   // Get the hovered library object
   $: hoveredLibrary = hoveredLibraryId && hoveredLibraryId !== 'all'
-    ? nodeLibraries.find(lib => lib.id === hoveredLibraryId)
+    ? effectiveLibraries.find(lib => lib.id === hoveredLibraryId)
     : null;
 
   // Check if library has only one category - if so, flatten it
@@ -215,7 +221,7 @@
 
   // For "All" option - show all nodes flattened
   $: hoveredNodes = hoveredLibraryId === null
-    ? getAllNodes().sort((a, b) => a.name.localeCompare(b.name))
+    ? effectiveLibraries.flatMap(library => library.categories.flatMap(category => category.nodes)).sort((a, b) => a.name.localeCompare(b.name))
     : [];
 
   // Update main column width when submenu is about to show
@@ -235,22 +241,23 @@
 
   // Get nodes based on context
   $: nodes = searchQuery
-    ? getAllNodes()
+    ? effectiveLibraries.flatMap(library => library.categories.flatMap(category => category.nodes))
         .filter(n => 
           n.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           n.description.toLowerCase().includes(searchQuery.toLowerCase())
         )
         .sort((a, b) => a.name.localeCompare(b.name))
     : libraryId === 'all' || (libraryId === null && !categoryId)
-      ? getAllNodes().sort((a, b) => a.name.localeCompare(b.name))
+      ? effectiveLibraries.flatMap(library => library.categories.flatMap(category => category.nodes)).sort((a, b) => a.name.localeCompare(b.name))
       : libraryId && !categoryId
         ? getNodesFromLibrary(libraryId).sort((a, b) => a.name.localeCompare(b.name))
         : categoryId && libraryId
-          ? getNodesByLibraryAndCategory(libraryId, categoryId).sort((a, b) => a.name.localeCompare(b.name))
+          ? (effectiveLibraries.find(library => library.id === libraryId)?.categories
+              .find(category => category.id === categoryId)?.nodes ?? []).sort((a, b) => a.name.localeCompare(b.name))
           : [];
   
   // Get available libraries and categories for navigation (sorted alphabetically, excluding custom)
-  $: availableLibraries = nodeLibraries
+  $: availableLibraries = effectiveLibraries
     .filter(lib => lib.categories.some(cat => cat.nodes.length > 0))
     .sort((a, b) => a.label.localeCompare(b.label));
   // Filter categories: show only categories with multiple nodes, single-entry categories are flattened
@@ -605,6 +612,16 @@
       }
     }
   }
+
+  function handleSearchKeyDown(e: KeyboardEvent) {
+    // Canvas owns single-key tools, so search keystrokes must not escape to
+    // its window listener. Keep arrows for caret movement; only the result
+    // navigation keys enter the panel handler.
+    e.stopPropagation();
+    if (['ArrowUp', 'ArrowDown', 'Enter', 'Escape'].includes(e.key)) {
+      handleKeyDown(e);
+    }
+  }
   
   // Auto-focus search input when panel opens
   $: if ((libraryId || categoryId) && searchInput) {
@@ -653,6 +670,7 @@
         bind:value={searchQuery}
         bind:this={searchInput}
         class="search-input"
+        on:keydown={handleSearchKeyDown}
       />
     </div>
     

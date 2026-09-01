@@ -35,6 +35,25 @@ export const nodeLibraries: Library[] = [
   quillLibrary
 ];
 
+export function projectNodeLibrary(modules: string[], icons: Record<string, string> = {}): Library {
+  return {
+    id: 'project',
+    label: 'Project',
+    icon: 'Package',
+    categories: [{
+      id: 'nodes',
+      label: 'Nodes',
+      nodes: modules.map(module => ({
+        name: module.split(/[-_]/).filter(Boolean)
+          .map(part => part[0]?.toUpperCase() + part.slice(1)).join(' '),
+        icon: icons[module] ?? 'Settings',
+        description: `Project node · ${module}`,
+        type: `project.${module}`,
+      })),
+    }],
+  };
+}
+
 // Custom node template - shown as standalone button in menu, not in library hierarchy
 export const customNodeTemplate: NodeTemplate = {
   name: 'Custom',
@@ -215,6 +234,7 @@ export function getNodePath(nodeType: string, libraryId?: string, categoryId?: s
     const annotationType = nodeType.split(':')[1];
     return `cascade.annotations.${annotationType}`;
   }
+  if (nodeType.startsWith('project.')) return nodeType;
 
   // Search through libraries to find the node
   for (const library of nodeLibraries) {
@@ -248,4 +268,3 @@ export function getNodePathShort(nodeType: string): string {
   const fullPath = getNodePath(nodeType);
   return fullPath.startsWith('cascade.') ? fullPath.substring(8) : fullPath;
 }
-
