@@ -13,6 +13,7 @@ import { OutputNode } from '@/nodes/core/nodes/OutputNode';
 import { SubnetNode } from '@/nodes/core/nodes/SubnetNode';
 import { RandomNode } from '@/nodes/core/nodes/RandomNode';
 import { RemapNode } from '@/nodes/core/nodes/RemapNode';
+import { NullNode } from '@/nodes/core/nodes/NullNode';
 import { randomRegistration } from '../packages/runtime/src/builtins/core/random';
 import { remapRegistration } from '../packages/runtime/src/builtins/core/remap';
 
@@ -353,5 +354,17 @@ describe('Deterministic value nodes', () => {
     remap.parm('clamp')?.set(true);
     await remap.execute();
     expect(remap.outputs[0].value).toBe(200);
+  });
+});
+describe('NullNode', () => {
+  it('passes its input through unchanged', () => {
+    const graph = new Graph();
+    const node = new NullNode('null', graph);
+    graph.addElement(node);
+    const value = { nested: ['data'] };
+    node.inputs[0].onChange?.(value);
+    node.inputs[0].value = value;
+    node.onUpdate?.();
+    expect(node.outputs[0].value).toBe(value);
   });
 });

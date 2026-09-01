@@ -14,7 +14,8 @@ export const coreLibrary: Library = {
       label: 'Routing',
       nodes: [
         { name: 'Switch', icon: 'GitBranch', description: 'Switch between multiple inputs by index', type: 'Switch' },
-        { name: 'Merge', icon: 'GitMerge', description: 'Combine multiple inputs into an array', type: 'Merge' }
+        { name: 'Merge', icon: 'GitMerge', description: 'Combine multiple inputs into an array', type: 'Merge' },
+        { name: 'Null', icon: 'Circle', description: 'Pass an input through unchanged', type: 'Null' }
       ]
     },
     {

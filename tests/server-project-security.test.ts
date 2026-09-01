@@ -3,12 +3,27 @@ import fs from 'node:fs';
 import http, { type Server } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import sharp from 'sharp';
 import { ProjectRoot } from '../server/src/project.js';
 import { startServer } from '../server/src/index.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
-let nextPort = 43_000 + (process.pid % 5_000);
+// Ask the OS for a free port and then bind it explicitly. The server bakes its
+// configured port into the allowed Host authorities, so binding port 0 and
+// reading the real port back makes every request fail the Host check. A
+// computed base port is not an option either: two test files sharing a worker
+// process both counted from it and the run died with EADDRINUSE, while a
+// re-run of the file alone passed.
+async function freePort(): Promise<number> {
+  const probe = http.createServer();
+  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const address = probe.address();
+  if (!address || typeof address === 'string') throw new Error('missing probe address');
+  const port = address.port;
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return port;
+}
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
@@ -19,7 +34,7 @@ async function fixture(): Promise<{ base: string; root: string; host: string }> 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-project-security-'));
   roots.push(root);
   fs.writeFileSync(path.join(root, 'index.cascade'), '{}');
-  const server = startServer(new ProjectRoot(root), { port: nextPort++ });
+  const server = startServer(new ProjectRoot(root), { port: await freePort() });
   servers.push(server);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
@@ -31,7 +46,7 @@ async function trustedHostFixture(): Promise<{ base: string; host: string }> {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-trusted-host-'));
   roots.push(root);
   fs.writeFileSync(path.join(root, 'index.cascade'), '{}');
-  const port = nextPort++;
+  const port = await freePort();
   const server = startServer(new ProjectRoot(root), {
     port,
     host: '0.0.0.0',
@@ -143,5 +158,17 @@ describe('project API security boundary', () => {
     const response = await fetch(`${base}/api/media/shared/cache/preview.txt?raw=1`);
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('shared media');
+  });
+
+  it('applies EXIF orientation before resizing raster previews', async () => {
+    const { base, root } = await fixture();
+    await sharp({
+      create: { width: 40, height: 20, channels: 3, background: '#ff0000' },
+    }).withMetadata({ orientation: 6 }).jpeg().toFile(path.join(root, 'rotated.jpg'));
+
+    const response = await fetch(`${base}/api/media/rotated.jpg?w=20&fmt=png`);
+    expect(response.status).toBe(200);
+    const metadata = await sharp(Buffer.from(await response.arrayBuffer())).metadata();
+    expect([metadata.width, metadata.height]).toEqual([20, 40]);
   });
 });

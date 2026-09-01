@@ -102,6 +102,9 @@ Definition rules:
   and have the host registration select the executor. Never expose execution
   location as an artist parameter; parity-test the shared contract.
 - Declare every capability used. File, Python, and shell access are server-only; WebGL is browser-only.
+- Treat graph wires as the primary data boundary. A node may observe only its connected inputs, its props, and declared host capabilities; it must not inspect sibling nodes or the graph to discover data.
+- Deterministic node modules may not retain module-level mutable values, access ambient state such as `globalThis`, browser storage, or `process`, run top-level effects, or import sibling node implementations. `cascade check` reports these as `architecture/*` diagnostics.
+- A cache may memoize computation from wired inputs, but it must never supply unwired data. Make cache use an explicitly labelled prop and keep cache keys derived from the complete wired input and relevant props.
 - Keep model/provider integrations in the project. Cascade core has no Google,
   Anthropic, OpenAI, or generic `ai` capability. Use normal typed outputs such
   as `image` or `asset`, and choose the actual execution path explicitly.
@@ -113,6 +116,7 @@ Use the runtime-native core vocabulary before creating a project wrapper:
 - `cascade.core.Input` / `cascade.core.Output` define the public graph or subnet boundary.
 - `cascade.core.Subnet` contains nested nodes.
 - `cascade.core.Switch`, `Merge`, and `Select` provide deterministic routing.
+- `cascade.core.Null` passes any value through unchanged so downstream wiring can remain stable while upstream branches are reorganized.
 - `cascade.core.Random` maps explicit integer `seed` and `sample` inputs to a stable float in `[0, 1)`.
 - `cascade.core.Remap` maps scalar ranges and optionally clamps via its `clamp` prop.
 
@@ -152,7 +156,7 @@ Do not add dependencies without a concrete need. Do not create extra packages un
 ## Versioning
 
 Cascade `0.2.0` is the 2026 architecture rework. The current release is
-`0.2.9`. Increment the root package and CLI patch version for every committed
-feature or release change (`0.2.9`, `0.2.10`, …), keeping `package.json`, the
+`0.2.10`. Increment the root package and CLI patch version for every committed
+feature or release change (`0.2.10`, `0.2.11`, …), keeping `package.json`, the
 lockfile, and CLI output aligned. Internal private workspaces do not receive
 independent versions unless they become separately published packages.

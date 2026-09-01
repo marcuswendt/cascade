@@ -1,12 +1,13 @@
 import type { DefinitionNodeRegistration } from "../../types.js";
 import { randomRegistration } from "./random.js";
 import { remapRegistration } from "./remap.js";
-import { mergeRegistration, selectRegistration, switchRegistration } from "./routing.js";
+import { mergeRegistration, nullRegistration, selectRegistration, switchRegistration } from "./routing.js";
 import { inputRegistration, outputRegistration, subnetRegistration } from "./structural.js";
 
 export {
   inputRegistration,
   mergeRegistration,
+  nullRegistration,
   outputRegistration,
   randomRegistration,
   remapRegistration,
@@ -21,6 +22,7 @@ export const coreNodeRegistrations: readonly DefinitionNodeRegistration[] = Obje
   outputRegistration,
   switchRegistration,
   mergeRegistration,
+  nullRegistration,
   selectRegistration,
   randomRegistration,
   remapRegistration,

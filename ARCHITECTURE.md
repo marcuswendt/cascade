@@ -84,6 +84,8 @@ The extractor reads TypeScript syntax and never evaluates the module. Literal pr
 
 `execute` performs computation only. Ports, props, types, execution locus, and capabilities are fixed by `definition`. Existing dynamic modules stay in the Studio/CLI compatibility engine during migration; the headless runtime never interprets them, and a malformed deterministic definition never falls back to dynamic execution.
 
+Deterministic node modules are also statically checked for hidden coupling. They cannot declare module-level runtime values, run top-level effects, access ambient process/browser storage, dynamically import code, or import another node implementation. Nodes exchange project data through typed graph wires; declared props and host capabilities are their only other inputs. This is an enforceable architecture contract for trusted code, not process isolation.
+
 ## Graph documents and hierarchy
 
 Authored nodes and annotations remain in flat arrays. Optional `parent` IDs describe subnet membership; IDs are globally unique, and child positions are parent-relative. Connections retain their node/port endpoint format across subnet boundaries.

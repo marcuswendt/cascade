@@ -18,6 +18,7 @@ import { OutputNode, nodeMetadata as outputMetadata } from './nodes/OutputNode.j
 import { RandomNode, nodeMetadata as randomMetadata } from './nodes/RandomNode.js';
 import { RemapNode, nodeMetadata as remapMetadata } from './nodes/RemapNode.js';
 import { SelectNode, nodeMetadata as selectMetadata } from './nodes/SelectNode.js';
+import { NullNode, nodeMetadata as nullMetadata } from './nodes/NullNode.js';
 import { FreezeNode, nodeMetadata as freezeMetadata } from './nodes/FreezeNode.js';
 
 // Import source code for nodes (using Vite's ?raw imports)
@@ -29,6 +30,7 @@ import OutputNodeSource from './nodes/OutputNode.ts?raw';
 import RandomNodeSource from './nodes/RandomNode.ts?raw';
 import RemapNodeSource from './nodes/RemapNode.ts?raw';
 import SelectNodeSource from './nodes/SelectNode.ts?raw';
+import NullNodeSource from './nodes/NullNode.ts?raw';
 import FreezeNodeSource from './nodes/FreezeNode.ts?raw';
 
 // Collect all node metadata
@@ -41,6 +43,7 @@ export const nodeMetadataList = [
   randomMetadata,
   remapMetadata,
   selectMetadata,
+  nullMetadata,
   freezeMetadata
 ];
 
@@ -54,6 +57,7 @@ export const coreNodeClasses: Record<string, NodeClass> = {
   'Random': RandomNode,
   'Remap': RemapNode,
   'Select': SelectNode,
+  'Null': NullNode,
   'Freeze': FreezeNode,
 };
 
@@ -69,6 +73,7 @@ registerNodeSource('Output', OutputNodeSource);
 registerNodeSource('Random', RandomNodeSource);
 registerNodeSource('Remap', RemapNodeSource);
 registerNodeSource('Select', SelectNodeSource);
+registerNodeSource('Null', NullNodeSource);
 registerNodeSource('Freeze', FreezeNodeSource);
 
 // Re-export library metadata
@@ -94,4 +99,5 @@ export { OutputNode } from './nodes/OutputNode.js';
 export { RandomNode } from './nodes/RandomNode.js';
 export { RemapNode } from './nodes/RemapNode.js';
 export { SelectNode } from './nodes/SelectNode.js';
+export { NullNode } from './nodes/NullNode.js';
 export { FreezeNode } from './nodes/FreezeNode.js';

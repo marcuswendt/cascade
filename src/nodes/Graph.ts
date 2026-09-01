@@ -11,6 +11,7 @@ import { ModuleResolver, createModuleResolver } from '../engine/ModuleResolver.j
 import { GraphValidator, type ValidationResult } from '../engine/GraphValidator.js';
 import type {
   Connection,
+  InputPort,
   OutputPort,
   ProjectPackage,
   EmbeddedModule,
@@ -602,9 +603,17 @@ export class Graph {
     }
 
     if (targetNode) {
-      const targetPort = targetNode.getPort(conn.to.portId);
+      const targetPort = targetNode.getPort(conn.to.portId) as InputPort | undefined;
       if (targetPort) {
         targetPort.connections = targetPort.connections.filter(c => c.id !== connectionId);
+        if (targetPort.connections.length === 0) {
+          targetPort.value = targetPort.defaultValue;
+          try {
+            targetPort.onChange?.(targetPort.defaultValue);
+          } catch (err) {
+            console.error(`Error in onChange callback for port ${targetPort.name}:`, err);
+          }
+        }
       }
     }
 

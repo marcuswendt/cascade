@@ -220,6 +220,7 @@ under `nodes/`:
 | `cascade.core.Output` | Public root or subnet output |
 | `cascade.core.Subnet` | Nested graph container |
 | `cascade.core.Switch` | Select one variadic input by index |
+| `cascade.core.Null` | Pass any value through unchanged while retaining downstream wiring |
 | `cascade.core.Merge` | Collect variadic inputs into an array |
 | `cascade.core.Select` | Select an array item, with optional wrapping |
 | `cascade.core.Random` | Stable float in `[0, 1)` from explicit `seed` and `sample` integers |

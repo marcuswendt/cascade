@@ -53,6 +53,20 @@ const selectDefinition = {
   },
 } as const;
 
+const nullDefinition = {
+  apiVersion: 1,
+  runsOn: "portable",
+  label: "Null",
+  description: "Passes its input through unchanged",
+  icon: "Circle",
+  inputs: {
+    input: { kind: "data", type: "any", default: null },
+  },
+  outputs: {
+    output: { kind: "data", type: "any" },
+  },
+} as const;
+
 export const switchRegistration: DefinitionNodeRegistration<typeof switchDefinition> = {
   kind: "definition-v1",
   moduleId: "cascade.core.Switch",
@@ -97,5 +111,14 @@ export const selectRegistration: DefinitionNodeRegistration<typeof selectDefinit
       ? ((props.index % count) + count) % count
       : Math.max(0, Math.min(props.index, count - 1));
     outputs.item.set(inputs.array[index]);
+  },
+};
+
+export const nullRegistration: DefinitionNodeRegistration<typeof nullDefinition> = {
+  kind: "definition-v1",
+  moduleId: "cascade.core.Null",
+  definition: nullDefinition,
+  loadExecute: async () => ({ inputs, outputs }) => {
+    outputs.output.set(inputs.input);
   },
 };

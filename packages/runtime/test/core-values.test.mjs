@@ -123,6 +123,29 @@ test("core routing nodes execute natively with legacy variadic port names", asyn
   await runtime.dispose();
 });
 
+test("Null passes any value through without project module resolution", async () => {
+  const runtime = createRuntime({
+    host: createNodeRuntimeHost({ modules: { resolve: async () => null } }),
+  });
+  const value = { palette: ["#112233", "#abcdef"], scale: 3 };
+  const graph = await runtime.load({
+    version: "0.2",
+    nodes: [
+      { id: "source", module: "cascade.core.Input", inputs: { value } },
+      { id: "null", module: "cascade.core.Null" },
+    ],
+    connections: [[
+      ["source", 0, "output"],
+      ["null", 0, "input"],
+    ]],
+  });
+
+  const result = await graph.run({ target: { kind: "output", nodeId: "null", outputName: "output" } });
+  assert.equal(result.status, "completed");
+  assert.deepEqual(graph.getOutput("null", "output"), value);
+  await runtime.dispose();
+});
+
 test("legacy variadic ports keep numeric order without mutating frozen documents", async () => {
   const runtime = createRuntime({
     host: createNodeRuntimeHost({ modules: { resolve: async () => null } }),

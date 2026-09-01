@@ -293,7 +293,7 @@ export function createMediaRouter(project: ProjectRoot): Router {
     try {
       // failOn: 'none' so a slightly malformed render still previews rather
       // than showing nothing at all.
-      let pipeline = sharp(full, { failOn: 'none' });
+      let pipeline = sharp(full, { failOn: 'none' }).rotate();
       if (width) {
         // withoutEnlargement: asking for a width above the original returns the
         // original size instead of an upscaled blur.

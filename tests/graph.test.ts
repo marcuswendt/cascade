@@ -116,10 +116,14 @@ describe('Graph', () => {
       const conn = graph.connect(nodeA.outputs[0], nodeB.inputs[0]);
       expect(graph.connections).toHaveLength(1);
 
+      nodeA.outputs[0].value = 42;
+      nodeB.inputs[0].value = 42;
+
       graph.disconnect(conn.id);
       expect(graph.connections).toHaveLength(0);
       expect(nodeA.outputs[0].connections).toHaveLength(0);
       expect(nodeB.inputs[0].connections).toHaveLength(0);
+      expect(nodeB.inputs[0].value).toBe(nodeB.inputs[0].defaultValue);
     });
 
     it('should remove connections when node is removed', () => {

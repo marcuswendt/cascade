@@ -110,6 +110,8 @@ export function execute(context: NodeExecutionContext<typeof definition>) {
 
 Cascade extracts `definition` from the TypeScript syntax tree. It does not import the module or run setup code to discover ports. This makes node interfaces deterministic for the compiler, Studio, CI, and code agents.
 
+`cascade check` also enforces the deterministic node boundary: no module-level runtime state, ambient globals or storage, top-level effects, dynamic imports, or imports from sibling node implementations. Project data belongs on typed wires. Props configure behavior, and declared capabilities provide the small set of host services a node is allowed to use. Caches may accelerate a wired computation, but cannot act as an unwired input.
+
 Every node declares where it runs:
 
 - `portable` — usable by Node and browser hosts.

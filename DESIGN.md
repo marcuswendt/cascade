@@ -58,6 +58,7 @@
 
 - A custom node lives at `nodes/<Name>/index.ts`; its folder identity resolves to `project.<Name>`.
 - The module exports a literal `definition` and a typed `execute`. Static inspection accepts JSON-like literals, arrays, parentheses, `as const`, and `satisfies`; identifiers, calls, spreads, computed properties, and other evaluation-dependent syntax are rejected.
+- Deterministic modules have no module-level values or top-level effects, do not access ambient globals or browser storage, and do not import sibling node implementations. Data dependencies are graph wires; props configure the node; hosts inject declared capabilities. Static architecture diagnostics reject violations before execution.
 - `definition.runsOn` is required (`portable`, `browser`, or `server`), and declared capabilities must be valid for that locus.
 - Trigger events are explicit, queued FIFO, and fan out in authored connection order. Data dependencies cook before a gated trigger target. Trigger cycles are rejected.
 - `.cascade` documents retain a flat authored element list. Optional `parent` identifiers describe nested subnets for nodes and annotations; child positions are relative to their parent network.
@@ -74,7 +75,7 @@
 
 ## Security boundaries
 
-- User node modules are trusted project code, not a sandbox. Deterministic definitions improve inspection, tooling, and portability; they do not create an isolation boundary.
+- User node modules are trusted project code, not a sandbox. Deterministic definitions and architecture checks prevent common hidden-state designs and improve inspection, tooling, and portability; hard isolation would additionally require a separate realm or worker per node instance.
 - Shell is a server-only capability backed by one project-scoped service. Projects invoke configured aliases as a fixed executable plus argument array with `shell: false`; arbitrary executables, interpolation, unsafe working directories, dangerous request-time environment overrides, and unbounded output are rejected. The subprocess inherits the server environment before project and allowlisted request overrides are applied.
 - Browser shell transport is loopback-only, uses exact Host and Origin checks plus a process-lifetime random capability token, has route-local request limits, and never logs tokens, paths, arguments, environment, stdin, stdout, or stderr.
 - Timeout, cancellation, and output limits terminate the full process tree and wait for closure before reporting completion.

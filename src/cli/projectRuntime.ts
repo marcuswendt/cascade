@@ -8,6 +8,7 @@ import { createRuntime } from '../../packages/runtime/src/index.js';
 import { coreNodeRegistration, coreNodeRegistrations } from '../../packages/runtime/src/builtins/core/index.js';
 import { createNodeRuntimeHost } from '../../packages/runtime/src/node.js';
 import { extractNodeDefinition } from '../../packages/runtime/src/definition/extract.js';
+import { validateNodeModuleArchitecture } from '../../packages/runtime/src/definition/architecture.js';
 import type { DefinitionNodeRegistration } from '../../packages/runtime/src/types.js';
 import { ProjectRoot } from '../../server/src/project.js';
 
@@ -146,6 +147,10 @@ async function prepare(file: string, document: any, compileExecutors: boolean): 
         continue;
       }
       throw new Error(extracted.diagnostics.map(formatDiagnostic).join('\n'));
+    }
+    const architectureDiagnostics = validateNodeModuleArchitecture(source, moduleFile, ts);
+    if (architectureDiagnostics.length) {
+      throw new Error(architectureDiagnostics.map(formatDiagnostic).join('\n'));
     }
 
     deterministic.add(id);

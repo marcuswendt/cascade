@@ -7,7 +7,6 @@ import { checkProjectGraph, inspectProjectGraph, runDeterministicProjectGraph, v
 const roots: string[] = [];
 
 afterEach(() => {
-  delete (globalThis as any).__cascadeModuleEvaluated;
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -23,7 +22,6 @@ function project(source: string) {
 }
 
 const validSource = `
-globalThis.__cascadeModuleEvaluated = true;
 export const definition = {
   apiVersion: 1,
   runsOn: 'portable',
@@ -39,7 +37,20 @@ describe('deterministic CLI runtime', () => {
   it('validates definitions and graph structure without evaluating modules', async () => {
     const fixture = project(validSource);
     await validateProjectGraph(fixture.file, fixture.document);
-    expect((globalThis as any).__cascadeModuleEvaluated).toBeUndefined();
+  });
+
+  it('rejects hidden module state and ambient globals', async () => {
+    const moduleState = project(validSource.replace(
+      'export const definition',
+      'const cache = new Map();\nexport const definition',
+    ));
+    await expect(checkProjectGraph(moduleState.file, moduleState.document)).rejects.toThrow('architecture/module-state');
+
+    const ambientState = project(validSource.replace(
+      'context.outputs.result.set',
+      'localStorage.setItem("result", "1");\n  context.outputs.result.set',
+    ));
+    await expect(checkProjectGraph(ambientState.file, ambientState.document)).rejects.toThrow('architecture/ambient-state');
   });
 
   it('runs a fully deterministic graph through the headless runtime', async () => {
@@ -117,6 +128,5 @@ describe('deterministic CLI runtime', () => {
     const inspection = await inspectProjectGraph(fixture.file, fixture.document);
     expect(inspection).toMatchObject({ deterministic: true, connections: 0 });
     expect(inspection.nodes[0]).toMatchObject({ id: 'multiply', module: 'project.Multiply', classification: 'definition-v1' });
-    expect((globalThis as any).__cascadeModuleEvaluated).toBeUndefined();
   });
 });
