@@ -8,6 +8,7 @@
   import { loadExecutionLocus } from './editor/stores/executionLocus';
   import ColorPalette from './editor/components/ColorPalette.svelte';
   import { bumpGraphStructure } from './editor/stores/graphStructure';
+  import { watchNodeSources } from './engine/nodeSourceWatch';
   import { layoutTopDown, edgesFromConnections } from '@/utils/autoLayout';
   import CookStatusStrip from './editor/CookStatusStrip.svelte';
   import type { CookStatus } from '@/nodes/CookScheduler';
@@ -817,6 +818,11 @@
     // each node. Fire and forget: no badge is a fine outcome if it fails.
     loadExecutionLocus();
 
+    // Node sources changing on disk restale the nodes using them, so an edit
+    // in an external editor shows up on the next cook instead of needing the
+    // whole app reloaded.
+    const unsubNodeSources = watchNodeSources({ getTarget: () => graph ?? null });
+
     // Subscribe to settings dialog requests from nodes/components
     const unsubSettingsRequest = settingsDialogRequest.subscribe(requested => {
       if (requested) {
@@ -1243,6 +1249,7 @@
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('mousemove', handleMouseMove);
       unsubSettingsRequest();
+      unsubNodeSources();
     };
   });
 </script>

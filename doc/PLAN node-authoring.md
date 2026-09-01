@@ -66,7 +66,7 @@ So editing `nodes/<Name>/index.ts` on disk does nothing until the app is reloade
 
 The fix, smallest first:
 
-1. The server watches `nodes/` and the canonical target of `shared/` and pushes a change event on the WebSocket the Studio session already holds. Server-side `fs.watch` beats the browser-side polling FileWatcher was written for, and makes that file redundant — delete it rather than wire it.
+1. The server watches `nodes/` and the canonical target of `shared/` and pushes a change event to Studio. There is no live channel today — the repository contains no WebSocket, and the `--port + 1` socket the README once described is gone — so this adds one, as Server-Sent Events: the traffic is one-way, it needs no dependency, and it sits behind the same Host and Origin boundary as every other project route. Server-side `fs.watch` beats the browser-side polling FileWatcher was written for, and makes that file redundant — delete it rather than wire it.
 2. The client calls `invalidateProjectModule(folder)` on the event and marks the nodes using that module dirty, so the next cook recompiles instead of reusing the stale bundle.
 
 That is the whole of "change code without reloading the app", and it also makes every later item work, because everything below writes a file and then wants the graph to notice.
@@ -93,3 +93,15 @@ The one real design question is where the conversation lives. A node that was ge
 ### Where this sits against the order above
 
 The watcher is step 0 — it is small, it is what makes the app feel alive, and steps 1 to 5 all assume it. The agent command should come after the promote-to-shared work, because a generated node that cannot be promoted out of the project it was born in just moves the copying problem somewhere new.
+
+## The agent window
+
+Marcus, later the same day: an agent panel inside Cascade that talks to a background Claude Code, the way this conversation happens over Telegram. Decided in the same exchange: **one session per project**, and **dragging a node into the chat inserts its path**, so the agent knows which nodes are being referred to.
+
+One session per project is the right unit because the interesting prompts are about how nodes fit together, and a per-node session would have to be told the graph every time.
+
+It does change the shape of the agent integration described above. A one-shot `claude -p` per node is a command and fits the existing shell capability, which is built for bounded runs. A window you talk to is a session: one long-lived child process, streamed both ways, conversation retained across turns, process tree killed when the panel closes. That is a second mechanism beside the shell capability rather than a variation on it, and it should be named as such rather than smuggled in as a long-running alias.
+
+Dragging a node in is the same idea as Houdini's Copy Parameter and Paste Relative References, and it should produce the same kind of token: a stable path the agent can act on, not a display name. Cascade element IDs are globally unique, so the dropped text is the node's path and the panel keeps the mapping.
+
+Two things follow from the drop gesture. A dropped node is a *reference*, so the agent needs a way to resolve one — the file behind the module, the node's current parameters, its wired inputs — which is a small read API rather than dumping the graph into the prompt. And the same gesture should work for a port, since "why is this input empty" is a question about a port rather than a node.

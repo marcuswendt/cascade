@@ -11,6 +11,7 @@ import type { ProjectRoot } from '../project.js';
 import { PathSafetyError } from '../pathSafety.js';
 import { autoCommit } from '../git.js';
 import { compileProjectModule, compileEmbedded } from '../compile.js';
+import { createNodeWatcher, type NodeWatcher } from '../nodeWatch.js';
 
 function handleError(res: import('express').Response, err: unknown) {
   if (err instanceof PathSafetyError) {
@@ -28,6 +29,44 @@ function handleError(res: import('express').Response, err: unknown) {
 
 export function createNodesRouter(project: ProjectRoot): Router {
   const router = Router();
+  let watcher: NodeWatcher | null = null;
+
+  /**
+   * Tells Studio which module changed on disk, so it can drop that module's
+   * cached bundle instead of running last night's code until the app is
+   * reloaded.
+   *
+   * Server-Sent Events rather than a socket: the traffic is one-way and
+   * tiny, it needs no dependency, and it inherits the Host and Origin
+   * boundary that already guards every project route. The watcher starts on
+   * the first listener so a headless `cascade run` never opens one.
+   */
+  router.get('/events', (req, res) => {
+    res.set({
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      // Without this a proxy can hold the stream in a buffer and deliver
+      // every event at once when the request finally ends.
+      'X-Accel-Buffering': 'no',
+    });
+    res.flushHeaders?.();
+    res.write('retry: 2000\n\n');
+
+    watcher ??= createNodeWatcher(project);
+    const unsubscribe = watcher.subscribe((moduleName) => {
+      res.write(`event: module-changed\ndata: ${JSON.stringify({ module: moduleName })}\n\n`);
+    });
+
+    // A comment line keeps the connection from being reaped by an idle
+    // timeout, and costs one line every half minute.
+    const keepAlive = setInterval(() => res.write(': keep-alive\n\n'), 30_000);
+
+    req.on('close', () => {
+      clearInterval(keepAlive);
+      unsubscribe();
+    });
+  });
 
   router.get('/', async (_req, res) => {
     try {
