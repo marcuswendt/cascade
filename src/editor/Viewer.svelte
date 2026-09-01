@@ -436,6 +436,39 @@
       remember();
     }
 
+    const ZOOM_STEP = 1.25;
+
+    /** Keyboard zoom works from the centre of the panel, since there is no
+     *  cursor position to zoom about. */
+    function zoomBy(factor: number) {
+      const f = frame();
+      zoomTo(scale * factor, f.width / 2, f.height / 2);
+    }
+
+    /** 100%: one image pixel per screen pixel. Deliberately allowed below the
+     *  fit floor that zoomTo enforces — on an image smaller than the panel fit
+     *  sits above 100%, and refusing the key there is worse than honouring it. */
+    function zoomToActual() {
+      if (!natural.width || scale === 1) return;
+      const f = frame();
+      const px = f.width / 2;
+      const py = f.height / 2;
+      offset.x = px - (px - offset.x) / scale;
+      offset.y = py - (py - offset.y) / scale;
+      scale = 1;
+      userAdjusted = true;
+      apply();
+      remember();
+    }
+
+    function panBy(dx: number, dy: number) {
+      userAdjusted = true;
+      offset.x += dx;
+      offset.y += dy;
+      apply();
+      remember();
+    }
+
     wrapper.addEventListener('wheel', (e) => {
       e.preventDefault();
       const rect = wrapper.getBoundingClientRect();
@@ -480,11 +513,50 @@
 
     wrapper.addEventListener('dblclick', () => fit());
 
-    button('Fit', () => fit());
-    button('1:1', () => {
-      const f = frame();
-      zoomTo(1, f.width / 2, f.height / 2);
+    /**
+     * The same zoom keys the graph canvas uses: h fits, + and - step, 0 is 100%,
+     * arrows pan.
+     *
+     * Bound to the wrapper rather than to window on purpose. The viewer rebuilds
+     * on every re-cook — measured at 231 rebuilds in eight seconds — so a window
+     * listener per build is a leak, while an element listener dies with the
+     * element, the same reasoning as the ResizeObserver below.
+     */
+    wrapper.tabIndex = 0;
+    wrapper.style.outline = 'none';
+
+    // Pointer follows key, which is what the wheel already does. Focus is only
+    // taken when nothing is being typed into, so passing over the viewer never
+    // interrupts a field in the Inspector.
+    wrapper.addEventListener('pointerenter', () => {
+      const active = document.activeElement as HTMLElement | null;
+      const typing = !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' ||
+        active.isContentEditable);
+      if (!typing) wrapper.focus({ preventScroll: true });
     });
+
+    wrapper.addEventListener('keydown', (e) => {
+      if (e.altKey) return;
+      const step = e.shiftKey ? 200 : 40;
+      let handled = true;
+      if (e.key === 'h' || e.key === 'H') fit();
+      else if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') zoomBy(ZOOM_STEP);
+      else if (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract') zoomBy(1 / ZOOM_STEP);
+      else if (e.key === '0' || e.code === 'Numpad0') zoomToActual();
+      else if (e.key === 'ArrowLeft') panBy(step, 0);
+      else if (e.key === 'ArrowRight') panBy(-step, 0);
+      else if (e.key === 'ArrowUp') panBy(0, step);
+      else if (e.key === 'ArrowDown') panBy(0, -step);
+      else handled = false;
+      if (!handled) return;
+      e.preventDefault();
+      // The graph binds the same keys on window. Without this both fire and the
+      // node view jumps while you are only looking at a render.
+      e.stopPropagation();
+    });
+
+    button('Fit', () => fit()).title = 'Fit to panel (H)';
+    button('1:1', () => zoomToActual()).title = 'Actual pixels, 100% (0)';
 
     const original = document.createElement('a');
     original.textContent = 'Original';

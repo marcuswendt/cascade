@@ -3984,8 +3984,9 @@ node.onReady = () => {
     }
     
     // Canvas keyboard shortcuts
-    // ⌘+ / ⌘- - Zoom in/out
-    if ((e.metaKey || e.ctrlKey) && (e.key === '+' || e.key === '=')) {
+    // + / - - Zoom in/out. Bare keys, with the ⌘ forms kept as aliases, so the
+    // graph and the Viewer panel answer to the same shortcuts.
+    if (!isTyping && (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd')) {
       e.preventDefault();
       const oldZoom = internalTransform.zoom;
       const newZoom = Math.min(2, oldZoom + 0.1);
@@ -4000,7 +4001,7 @@ node.onReady = () => {
       internalTransform.zoom = newZoom;
       internalTransform = { ...internalTransform };
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === '-') {
+    if (!isTyping && (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract')) {
       e.preventDefault();
       const oldZoom = internalTransform.zoom;
       const newZoom = Math.max(0.1, oldZoom - 0.1);
@@ -4020,6 +4021,21 @@ node.onReady = () => {
     if ((e.metaKey || e.ctrlKey) && e.key === '0') {
       e.preventDefault();
       centerOnNodes();
+    }
+
+    // 0 - Back to 100%, holding the centre of the nodes still
+    if (!isTyping && !e.metaKey && !e.ctrlKey && (e.key === '0' || e.code === 'Numpad0')) {
+      e.preventDefault();
+      const oldZoom = internalTransform.zoom;
+      if (oldZoom !== 1) {
+        const center = getCachedNodesCenter();
+        if (center) {
+          internalTransform.x = internalTransform.x + center.x * (oldZoom - 1);
+          internalTransform.y = internalTransform.y + center.y * (oldZoom - 1);
+        }
+        internalTransform.zoom = 1;
+        internalTransform = { ...internalTransform };
+      }
     }
 
     // H - Home/center on visible nodes (same as ⌘0)
