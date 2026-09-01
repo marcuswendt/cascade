@@ -96,6 +96,17 @@ export function createNodesRouter(project: ProjectRoot): Router {
 
   // Registered before the generic {*file} route below so a module literally
   // named "compiled" can never shadow this — Express matches route order.
+  // The absolute path of a module's source, so Studio can hand it to an
+  // external editor. Declared before the catch-all file route below, which
+  // would otherwise claim it.
+  router.get('/:moduleName/path', (req, res) => {
+    try {
+      res.json({ path: project.resolve(`nodes/${req.params.moduleName}/index.ts`) });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
   router.get('/:moduleName/compiled', async (req, res) => {
     try {
       const result = await compileProjectModule(project, req.params.moduleName);

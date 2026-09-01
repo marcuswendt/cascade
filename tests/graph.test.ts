@@ -66,6 +66,44 @@ describe('Graph', () => {
     });
   });
 
+  describe('Retargeting a node onto another module', () => {
+    it('moves the node to the new module and restales it', () => {
+      const node = new Node('node1', 'Test', graph);
+      (node as any).modulePath = 'cascade.core.Blur';
+      (node as any).sourceType = 'stdlib';
+      graph.addElement(node);
+
+      expect(graph.retargetModule('node1', 'local.Blur', 'embedded', 'export function execute() {}')).toBe(true);
+
+      expect((node as any).modulePath).toBe('local.Blur');
+      expect((node as any).sourceType).toBe('embedded');
+      expect(node.code).toBe('export function execute() {}');
+      // setFunction resets this, which is how the new code gets to run its
+      // initialisation rather than being treated as already executed.
+      expect(node.hasExecuted).toBe(false);
+    });
+
+    it('keeps the embedded code out of the way when promoting to a file', () => {
+      const node = new Node('node1', 'Test', graph);
+      (node as any).modulePath = 'local.Blur';
+      (node as any).sourceType = 'embedded';
+      node.code = 'export function execute() { /* embedded */ }';
+      graph.addElement(node);
+
+      expect(graph.retargetModule('node1', 'project.Blur', 'project')).toBe(true);
+
+      expect((node as any).modulePath).toBe('project.Blur');
+      expect((node as any).sourceType).toBe('project');
+      // The file is the source of truth now, and loadProjectModule always
+      // fetches it, so the stale snapshot is simply not consulted.
+      expect(node.code).toBe('export function execute() { /* embedded */ }');
+    });
+
+    it('reports a miss rather than throwing when the node is gone', () => {
+      expect(graph.retargetModule('missing', 'local.Blur', 'embedded', '')).toBe(false);
+    });
+  });
+
   describe('Connection management', () => {
     let nodeA: Node;
     let nodeB: Node;

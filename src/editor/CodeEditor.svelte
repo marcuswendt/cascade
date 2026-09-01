@@ -163,8 +163,6 @@ declare const graph: any;
   export let onClose: () => void;
   export let showCloseButton: boolean = true;
   export let onRecordHistory: (() => void) | undefined = undefined;
-  export let onDuplicate: ((modulePath: string) => void) | undefined = undefined;
-  export let onExtract: ((modulePath: string) => void) | undefined = undefined;
   export let onShowHistory: (() => void) | undefined = undefined;
 
   // State
@@ -181,6 +179,10 @@ declare const graph: any;
   let displayPath = '';
   let fileStatus: FileStatus = 'synced';
   let historyCount = 0;
+
+  // WindowManager mounts this without a graph prop, and every action below
+  // needs one, so fall back to the node's own graph reference.
+  $: activeGraph = (graph ?? (node as any)?.graph ?? null) as Graph | null;
 
   // Computed
   $: isReadOnly = sourceType === 'stdlib';
@@ -487,12 +489,84 @@ node.onReady = () => {
     editor.focus();
   }
 
-  function handleDuplicate() {
-    onDuplicate?.(modulePath);
+  /** A built-in is read-only, so editing one starts by taking a copy. The copy
+   *  is embedded in the document; promoting it to a file is the next button. */
+  async function handleDuplicate() {
+    const resolver = activeGraph?.moduleResolver;
+    if (!resolver) { reportActionError('no module resolver on this graph'); return; }
+
+    const created = resolver.duplicateToEmbedded(modulePath);
+    if (!created) { reportActionError('could not read the built-in source'); return; }
+
+    if (!activeGraph!.retargetModule(node.id, created.modulePath, 'embedded', created.module.code)) {
+      reportActionError('could not point the node at the copy');
+      return;
+    }
+    updateSourceInfo();
+    showCode(created.module.code);
   }
 
-  function handleExtract() {
-    onExtract?.(modulePath);
+  /** Embedded code lives inside the .cascade document, which makes it
+   *  invisible to git, to an external editor and to the other graphs in the
+   *  project. Extracting writes it to nodes/<Name>/index.ts and repoints the
+   *  node, after which the file watcher keeps the two in step. */
+  async function handleExtract() {
+    const name = modulePath.replace(/^local\./, '').replace(/[^A-Za-z0-9_-]/g, '');
+    if (!name) { reportActionError('cannot derive a folder name from ' + modulePath); return; }
+
+    const code = editor?.getValue() ?? node.code ?? '';
+    try {
+      const scaffold = await fetch('/api/nodes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!scaffold.ok) throw new Error(await scaffold.text());
+
+      const write = await fetch(`/api/nodes/${encodeURIComponent(name)}/index.ts`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: code }),
+      });
+      if (!write.ok) throw new Error(await write.text());
+    } catch (error) {
+      reportActionError('could not write the file: ' + (error instanceof Error ? error.message : String(error)));
+      return;
+    }
+
+    if (!activeGraph?.retargetModule(node.id, `project.${name}`, 'project')) {
+      reportActionError('file written, but the node still points at the embedded copy');
+      return;
+    }
+    updateSourceInfo();
+    showCode(code);
+  }
+
+  /** Hands the path to the OS rather than opening anything itself: the file is
+   *  on the server's disk, and the browser cannot reach it. */
+  async function handleOpenExternally() {
+    const name = modulePath.replace(/^project\./, '');
+    try {
+      const response = await fetch(`/api/nodes/${encodeURIComponent(name)}/path`);
+      if (!response.ok) throw new Error(await response.text());
+      const { path } = await response.json();
+      window.open(`vscode://file${path}:1`, '_blank');
+    } catch (error) {
+      reportActionError('could not resolve the file path: ' + (error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  /** The buffer is now a different module's, so the editor has to be told;
+   *  updateSourceInfo only refreshes the badge and the path. */
+  function showCode(code: string): void {
+    if (editor && editor.getValue() !== code) editor.setValue(code);
+    status = 'idle';
+    errorMessage = '';
+  }
+
+  function reportActionError(detail: string): void {
+    status = 'error';
+    errorMessage = detail;
   }
 
   function handleShowHistory() {
@@ -590,7 +664,7 @@ node.onReady = () => {
       </button>
     {/if}
     {#if sourceType === 'project'}
-      <button class="action-button" title="Open in external editor">
+      <button class="action-button" on:click={handleOpenExternally} title="Open in external editor">
         <FolderOpen size={14} />
         Open in VSCode
       </button>

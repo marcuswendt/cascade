@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ProjectRoot } from '../server/src/project.js';
+import { PathSafetyError } from '../server/src/pathSafety.js';
 import { createNodeWatcher, ALL_MODULES } from '../server/src/nodeWatch.js';
 
 const roots: string[] = [];
@@ -117,5 +118,17 @@ describe('node source watcher', () => {
 
     await pause(600);
     expect(reported).toEqual([]);
+  });
+});
+
+describe('node source paths', () => {
+  it('resolves a module to an absolute path an editor can open', () => {
+    const root = project();
+    expect(root.resolve('nodes/Blur/index.ts')).toBe(path.join(root.root, 'nodes', 'Blur', 'index.ts'));
+  });
+
+  it('refuses a module name that climbs out of the project', () => {
+    const root = project();
+    expect(() => root.resolve('nodes/../../secrets/index.ts')).toThrow(PathSafetyError);
   });
 });

@@ -396,6 +396,41 @@ export class Graph {
     return node;
   }
   
+  /**
+   * Point an existing node instance at a different module.
+   *
+   * Duplicating a built-in into an editable copy, and promoting an embedded
+   * node to a file, both keep the node where it is on the canvas with its
+   * connections and parameter values intact and only change which module
+   * supplies `execute`. The compiled module is captured once when a node is
+   * loaded, so swapping the path alone would leave the old code running.
+   *
+   * Ports are untouched on purpose: both callers move identical code, so the
+   * ports the next cook declares are the ones already there.
+   */
+  retargetModule(
+    nodeId: string,
+    modulePath: string,
+    source: 'embedded' | 'project',
+    code?: string,
+  ): boolean {
+    const node = this.getNode(nodeId);
+    if (!node) return false;
+
+    (node as any).modulePath = modulePath;
+    (node as any).sourceType = source;
+    if (source === 'embedded' && code !== undefined) node.code = code;
+
+    const modulePromise = source === 'project'
+      ? loadProjectModule(modulePath)
+      : loadEmbeddedModule(code ?? node.code);
+    node.setFunction((n: unknown, g: unknown) => modulePromise.then((m) => m.execute(n, g)));
+    modulePromise.catch((error) => console.warn('Failed to compile ' + modulePath + ':', error));
+
+    node.markDirty();
+    return true;
+  }
+
   removeNode(nodeId: string) {
     this.removeElement(nodeId);
   }
