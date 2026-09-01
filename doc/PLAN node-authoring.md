@@ -51,3 +51,45 @@ If that is agreed, (d) and (e) are ordinary work. If it is not, they cannot be b
 5. **Copy parameter / paste relative reference**, the two-click gesture. Cheap once (4) exists, and it is what makes expressions get used.
 
 Item 4 is the one with a deadline attached to it by other work: the definition-v1 port of `cloud-plots` is queued, and doing it before expressions exist on the new runtime would strand them.
+
+## Prompting a node into life, and editing code without reloading
+
+Added later the same day, from Marcus: he wants to bring a new node into being from a prompt without leaving Cascade, and to change node code without reloading the whole app — with the generation done by a background Claude Code or Codex process rather than by reimplementing an agent against completion APIs.
+
+The good news is that almost none of this is AI work. It is one dead wire and one process spawn.
+
+### Hot reload is two connectors and no cable
+
+`src/engine/nodeModuleLoader.ts` caches each project module's compiled bundle and exports `invalidateProjectModule(folderName)` to drop one. Its own comment says it is "called when the file-watcher reports a project module's file changed". **It has zero callers.** `src/editor/FileWatcher.ts` implements exactly the watcher that comment describes, with polling, debounce and a change-event type — and it is never instantiated anywhere in the application.
+
+So editing `nodes/<Name>/index.ts` on disk does nothing until the app is reloaded, which is the complaint. Both ends of the wire exist; nothing joins them.
+
+The fix, smallest first:
+
+1. The server watches `nodes/` and the canonical target of `shared/` and pushes a change event on the WebSocket the Studio session already holds. Server-side `fs.watch` beats the browser-side polling FileWatcher was written for, and makes that file redundant — delete it rather than wire it.
+2. The client calls `invalidateProjectModule(folder)` on the event and marks the nodes using that module dirty, so the next cook recompiles instead of reusing the stale bundle.
+
+That is the whole of "change code without reloading the app", and it also makes every later item work, because everything below writes a file and then wants the graph to notice.
+
+### The agent is a configured command, not a feature
+
+Cascade already has the pieces for running an agent, and they were built for something else:
+
+- `POST /api/nodes` scaffolds `nodes/<name>/index.ts` and auto-commits it.
+- The shell capability runs `spawn(executable, args, { shell: false })` against **aliases configured in `cascade.json`**, with bounded input, output and time, dangerous-environment-key rejection, process-tree cancellation, redacted audits, and capability-token routes.
+- The project is a git repository, and scaffolding already commits.
+
+So "prompt a node into life" is: scaffold the directory, then run the configured `agent` alias in it with the prompt, then let the watcher above reload the module when the agent writes the file. Claude Code in headless mode (`claude -p`) and Codex both fit that shape, because both are ordinary executables that edit files in a working directory.
+
+What this buys, and the reason it is worth preferring over an SDK integration:
+
+- **No API keys inside Cascade.** The agent already has its own credentials; Cascade never sees them, and the credential system does not have to grow a model provider.
+- **No agent to maintain.** Tool use, file editing, retries and context are the agent's problem. Cascade contributes the scaffold and the reload.
+- **It is auditable and cancellable already**, through the same policy that governs every other shell alias, rather than through a new code path with its own rules.
+- **The output is a file in git**, so a generated node is reviewable and revertable like any other, instead of being a blob in the graph document.
+
+The one real design question is where the conversation lives. A node that was generated once and then edited by hand has diverged from its prompt, and a second prompt against it is a revision, not a regeneration. Houdini has no equivalent to borrow from. The cheapest honest answer is to keep the prompt and the agent's summary as a comment header in the generated file, so the history lives with the code and in git, and to treat every later prompt as an edit to an existing file rather than a new generation.
+
+### Where this sits against the order above
+
+The watcher is step 0 — it is small, it is what makes the app feel alive, and steps 1 to 5 all assume it. The agent command should come after the promote-to-shared work, because a generated node that cannot be promoted out of the project it was born in just moves the copying problem somewhere new.
