@@ -423,7 +423,19 @@ One more thing earns its place in the slice on the evidence, and it is not a nod
 
 ## Questions Marcus needs to rule on
 
-**1. Curve primitives, or resample everything?** v1 as proposed has no Bezier or arc primitive, so `Circle` emits a 64-segment polygon and the SVG says so. That is a real fidelity loss for print and for plotter output, and it is the one place where the 2D-first design pays a visible cost. The alternative is a `curve` primitive kind from the start, which means every curve node handles two cases. I lean polyline-only, with the format reserving room, but this is his call because it shows up in the output.
+**1. Curves — decided 2026-09-04 by Marcus: both.** *"No, we want curves + polylines; very similar but different interpolations."*
+
+And that framing is the implementation. Not a second type, not two representations carried side by side in every node: **the primitive `kinds` field already in the CSR topology selects the interpolation over the same point list.** A poly primitive interpolates linearly between its points; a bezier primitive treats them as control points. Same attribute table, same topology, same ops, one field saying how to read a run of vertices — which is Houdini's own model, where a primitive is a polygon or a Bézier or a NURBS curve rather than living in a different container.
+
+What follows from it:
+
+`Circle` emits a curve by default, four control points rather than a 64-segment polygon, with a `segments` parameter to get a poly when a poly is what is wanted. That removes the one visible cost the 2D-first design was going to pay.
+
+`SvgExport` writes `C` for curve kinds and `L` for poly. A curve that exports as a polyline has gained nothing, and both the plotter and the print pipeline want the curve.
+
+`Resample` becomes the explicit *make this a polyline* operation rather than something that happens by accident, and it must flatten a curve correctly or refuse — treating control points as vertices produces a subtly wrong shape rather than an error, which is worse.
+
+And the test that the design is right: **anything that only reads positions keeps working untouched.** A node that does not care about interpolation never learns there is a second kind.
 
 **2. `cascade.geo.*` — decided 2026-09-04 by Marcus: reserved.** *"`.geo` is clear, all good."* So the geometry set is a runtime built-in namespace beside `cascade.core.*`, and the reserved surface grows from eight structural nodes to eight plus the geometry library.
 
