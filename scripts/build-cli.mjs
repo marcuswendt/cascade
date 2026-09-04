@@ -43,7 +43,10 @@ await build({
   sourcemap: true
 });
 
-for (const name of ['io', 'shell']) {
+// Every runtime module the server build copies. `net` was missing here, so a
+// node importing `cascade/net` failed under the CLI with the same "runtime not
+// found" error that a missing `io` produced, while working under the dev server.
+for (const name of ['io', 'shell', 'net']) {
   cpSync(resolve('server', 'src', 'runtime', `${name}.ts`), resolve(outputDirectory, 'runtime', `${name}.ts`));
 }
 
