@@ -490,6 +490,24 @@ The consequence is a flip, and the point of deciding it once is that there is ex
 
 **Units are still open**, and separable: whether a 2D geometry lives in abstract units or in a declared document space with millimetres for plate and plotter work. Print wants the second, and the detail level is where the declaration goes. It does not block the slice, since a `Transform` and an export size cover the same ground until it is answered.
 
+### Style attributes, and where the boundary of "style" is
+
+Marcus, extending the colour ruling: *"We could have separate style attributes for these modes if needed? Line dash styles, line cap styles, fill modes, blend modes."*
+
+Yes, and cheaply, because that is what the attribute table is for: **adding a style attribute costs nothing and changes no node**, which is the payoff of the one-type decision. The rule is the same one `svgio.py` already runs — a per-primitive attribute where present, the render node's prop as the fallback — extended to a vocabulary rather than three fixed names.
+
+**Modes are string attributes, and that is consistent with colour being a vec4 rather than a contradiction of it.** A colour has a canonical numeric representation and a hex string is a rendering of it, which is why `Cd` is a vec4 and hex lives in a conversion. A line cap does not: `butt`, `round` and `square` *are* names, with no numeric meaning to convert to. String attributes already store an index into a table, so a hundred thousand primitives sharing four cap values cost a table of four strings and an `Int32Array` — the same mechanism that makes `cloud-plots`' repeated `FORM_04` tags cheap.
+
+So the set, all optional, all primitive-level, all with a prop fallback on the render node:
+
+`Cd` vec4 · `opacity` float · `width` float · `dash` string · `cap` string · `join` string · `fillMode` string · `fill` vec4 · `fillRule` string
+
+Each maps to one SVG attribute, which is a good sign the vocabulary is borrowed rather than invented. `dash` carrying an SVG-style pattern (`"4,3"`) rather than an enum is deliberate: a dash pattern is data, and inventing an enum over it would immediately need an escape hatch.
+
+**Blend mode is the one on his list that does not belong here.** Blending is what happens when two rasters are composited; it is not a property of a curve. A geometry has no notion of what is behind it, and the moment it does, geometry has absorbed a compositing concept and the image library has to negotiate with it. Blend mode belongs to `cascade.image.*`, on the composite operation, where it already has a home. This is the same boundary the plan draws around scenes and transforms: the test for whether something belongs in geometry is whether it means anything without a canvas.
+
+**Two rules to keep the set honest.** A renderer declares a prop fallback for every style attribute it understands, so a value always has a defined source. And a renderer **ignores attributes it does not understand** rather than failing, so a geometry carrying a `pen` attribute for a plotter still exports as SVG. That is what makes the vocabulary open without every addition being a breaking change.
+
 **5. Where does stroke style live?** *Answered by `svgio.py`, and struck.* The rule is already invented and running: a per-primitive attribute when present, the render node's prop as the fallback. `color = r.get("color", mark_color)` and `opacity = float(r.get("opacity", 1.0))`, with the file's own comment saying it *"falls back to the single global `mark_color` when absent."* That is Houdini's convention arrived at independently, so `SvgExport` reads `width`, `Cd` and `opacity` from primitive attributes and takes a default for each as a prop. It does not need a decision, it needs writing down, which the node set now does.
 
 **6. f64 or f32 for `P`?** *Answered by the cache, and struck.* The stipple `.npy` is `float64` and the JSON carries full-precision doubles, while the signal fields are explicitly cast to `float32`. The convention is already f32 for rasters and f64 for geometry. At 170,000 vertices f64 costs 2.7 MB against f32's 1.4 MB, so narrowing would save 1.4 MB and add a lossy step at a boundary that is currently lossless. f64 for `P`, and the plan no longer rests on my guess about the workload.
