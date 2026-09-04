@@ -209,7 +209,11 @@ function savedRegistration(moduleId: string, node: ProjectNode): DefinitionNodeR
 function savedDefinition(node: ProjectNode): NodeDefinition {
   const inputs = portDefinitions(node.inputs, 'input');
   const outputs = portDefinitions(node.outputs, 'output');
-  const used = new Set([...Object.keys(inputs), ...Object.keys(outputs)]);
+  // Only the input names, because outputs have their own namespace now: a prop
+  // and an output may share a name and dropping the prop for that would be
+  // silent data loss. Inputs and props still share one, so a prop colliding
+  // there is the one that has to go.
+  const used = new Set(Object.keys(inputs));
   const props = Object.fromEntries(Object.entries(node.props ?? {}).filter(([name]) => !used.has(name)).map(([name, value]) => [name, {
     type: 'any',
     default: jsonValue(value && typeof value === 'object' && 'value' in value ? (value as any).value : value),

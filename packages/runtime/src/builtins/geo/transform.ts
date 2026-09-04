@@ -24,12 +24,13 @@ export const transformDefinition = {
   runsOn: "portable",
   inputs: {
     /**
-     * Named `input` rather than `geometry`, because the runtime rejects a
-     * definition that uses one name in both `inputs` and `outputs`. Every node
-     * in the set emits `geometry`, so the pass-through-shaped node takes
-     * `cascade.core.Null`'s name for its input instead.
+     * `geometry` in and `geometry` out, which is what a SOP is. This was named
+     * `input` while the definition validator kept one namespace across `inputs`
+     * and `outputs`; outputs now have their own, so the port has the name it
+     * should always have had and every node in the set speaks `geometry` in both
+     * directions.
      */
-    input: { kind: "data", type: "geometry" },
+    geometry: { kind: "data", type: "geometry" },
     translate: { kind: "data", type: "vec2", default: [0, 0] },
     rotate: {
       kind: "data",
@@ -48,7 +49,7 @@ export const transformDefinition = {
 export function executeTransform(
   context: NodeExecutionContext<typeof transformDefinition>,
 ): void {
-  const geometry = context.inputs.input ?? emptyGeometry(2);
+  const geometry = context.inputs.geometry ?? emptyGeometry(2);
   context.outputs.geometry.set(
     transformGeometry(
       geometry,

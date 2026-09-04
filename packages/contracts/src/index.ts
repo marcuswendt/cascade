@@ -1,4 +1,5 @@
 export * from "./capabilities.js";
+export * from "./color.js";
 export * from "./definition.js";
 export * from "./document.js";
 export * from "./geometry.js";

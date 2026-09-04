@@ -17,6 +17,13 @@ import { geoModuleId } from "./namespace.js";
  * The props are the fallbacks for `Cd`, `width` and `opacity`. A per-primitive
  * attribute wins where it exists; see `geometryToSvg`, which also owns the one
  * +Y-up-to-+Y-down flip in the system.
+ *
+ * `stroke` and `fill` are both `color`, which is a four-component vector with a
+ * swatch control rather than a second colour representation. `fill` used to be
+ * an SVG paint string so that `"none"` was expressible; Marcus ruled colour to
+ * be a `vec4` everywhere, so the absence of a fill is now the separate
+ * `fillMode` prop and the writer converts to text through `Color.toHex`. The
+ * reason "no fill" is a mode rather than a zero alpha is in `SvgExportOptions`.
  */
 export const svgExportDefinition = {
   apiVersion: 1,
@@ -64,11 +71,20 @@ export const svgExportDefinition = {
       label: "Opacity",
       description: "Fallback for a primitive with no opacity attribute.",
     },
-    fill: {
+    fillMode: {
       type: "string",
       default: "none",
+      label: "Fill Mode",
+      control: "select",
+      options: ["none", "solid"],
+      description:
+        "none leaves primitives unfilled, which is what plotter work wants.",
+    },
+    fill: {
+      type: "color",
+      default: [1, 1, 1, 1],
       label: "Fill",
-      description: "An SVG paint string; none is what plotter work wants.",
+      description: "Fill colour, used only when Fill Mode is solid.",
     },
     pointRadius: {
       type: "float",
@@ -96,10 +112,11 @@ export async function executeSvgExport(
     width: props.width,
     height: props.height,
     margin: props.margin,
-    stroke: hex(props.stroke),
+    stroke: props.stroke,
     strokeWidth: props.strokeWidth,
     opacity: props.opacity,
     fill: props.fill,
+    fillMode: props.fillMode === "solid" ? "solid" : "none",
     pointRadius: props.pointRadius,
     precision: props.precision,
   });
@@ -110,15 +127,6 @@ export async function executeSvgExport(
     { signal: context.signal },
   );
   context.outputs.asset.set(asset);
-}
-
-/** A `color` prop is four unit components; SVG wants a paint string. */
-function hex(color: readonly [number, number, number, number]): string {
-  const channel = (value: number) =>
-    Math.round(Math.min(1, Math.max(0, value)) * 255)
-      .toString(16)
-      .padStart(2, "0");
-  return `#${channel(color[0])}${channel(color[1])}${channel(color[2])}`;
 }
 
 export const svgExportRegistration = {

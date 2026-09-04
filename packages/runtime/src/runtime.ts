@@ -1344,15 +1344,13 @@ function materializeConnection(
   const output = source.definition.outputs?.[endpoints.source.outputName];
   let input = target.definition.inputs?.[endpoints.target.inputName];
   let variadicIndex: number | undefined;
-  if (
-    !input &&
-    (target.moduleId === "cascade.core.Switch" ||
-      target.moduleId === "cascade.core.Merge") &&
-    /^input_\d+$/.test(endpoints.target.inputName)
-  ) {
-    variadicIndex = Number(endpoints.target.inputName.slice("input_".length));
-    endpoints.target.inputName = "inputs";
-    input = target.definition.inputs?.inputs;
+  if (!input && /^input_\d+$/.test(endpoints.target.inputName)) {
+    const variadic = variadicInputName(target);
+    if (variadic !== undefined) {
+      variadicIndex = Number(endpoints.target.inputName.slice("input_".length));
+      endpoints.target.inputName = variadic;
+      input = target.definition.inputs?.[variadic];
+    }
   }
   if (!output || !input)
     misuse(
@@ -1456,6 +1454,30 @@ function outputName(node: RuntimeNode | undefined, index: number): string {
   if (!name)
     misuse("runtime/invalid-connection", `Unknown output index ${index}`);
   return name;
+}
+/**
+ * The declared name of a node's variadic input, if it has exactly one.
+ *
+ * `input_0`, `input_1`, ... is the wire spelling for the Nth connection into a
+ * variadic input: it is what Studio's port list produces and what saved graphs
+ * carry, and it is not the port's declared name. Translating it used to be
+ * conditional on the target being `cascade.core.Switch` or `cascade.core.Merge`,
+ * which made variadic wiring a property of two module ids rather than of a
+ * definition, so `cascade.geo.Merge` and any project node declaring
+ * `variadic: true` could not be wired at all. Marcus called that a bug and asked
+ * for the general fix, 2026-09-04.
+ *
+ * Derived from the definition, so a node whose input is declared variadic
+ * accepts `input_N` whoever wrote it. Two variadic inputs on one definition make
+ * `input_N` genuinely ambiguous, so nothing is guessed and the connection is
+ * refused as an unknown port; no definition declares two today, and the honest
+ * failure is better than picking the first one.
+ */
+function variadicInputName(node: RuntimeNode): string | undefined {
+  const names = Object.entries(node.definition.inputs ?? {})
+    .filter(([, input]) => input.kind === "data" && input.variadic === true)
+    .map(([name]) => name);
+  return names.length === 1 ? names[0] : undefined;
 }
 function inputName(node: RuntimeNode | undefined, index: number): string {
   const name = Object.keys(node?.definition.inputs ?? {})[index];

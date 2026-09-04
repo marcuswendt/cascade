@@ -1,3 +1,4 @@
+import type { Color } from "./color.js";
 import type {
   Geometry,
   GeometryFileRef,
@@ -76,7 +77,6 @@ export type Mat4 = readonly [
   number,
   number,
 ];
-export type Color = Vec4;
 
 export interface ImageRef {
   readonly path: string;

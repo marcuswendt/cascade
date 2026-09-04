@@ -1,11 +1,16 @@
 import {
+  Color,
   isStringAttribute,
   type AnyAttribute,
   type Attribute,
   type Geometry,
 } from "@cascade/contracts";
 
-import { positionAttribute, readComponent, readString } from "./attributes.js";
+import {
+  geometryError,
+  positionAttribute,
+  readComponent,
+} from "./attributes.js";
 import { groupNames } from "./groups.js";
 import {
   bezierSegments,
@@ -41,6 +46,21 @@ import {
  * independently. So the defaults go on the root group and a per-primitive value
  * is emitted only where it exists, which also keeps the file small.
  *
+ * ## Colour is a `vec4`, and this file is where it becomes text
+ *
+ * `Cd` is a four-component colour and nothing else. A string `Cd` used to be
+ * accepted here so that `cloud-plots`' `"#3a7f5c"` could be stored verbatim;
+ * Marcus overruled that 2026-09-04, so a hex string is now converted at the
+ * boundary by `Color.fromHex` and the attribute holds the vector. An emitted
+ * paint goes through `Color.toHex`, and `Cd`'s alpha becomes a separate
+ * `stroke-opacity` rather than an eight-digit hex, because plotter and
+ * vector-editor software does not read CSS Color 4.
+ *
+ * A `Cd` that is a string, or numeric with any size but 4, is refused rather
+ * than ignored. Silently dropping a colour attribute is the exact bug the plan
+ * records twice in `cloud-plots`, and an export that quietly turns black is
+ * worse than one that says why.
+ *
  * ## One group element per primitive group
  *
  * Not a refinement either: `cloud-plots` carries a whole `layer-group` node and
@@ -55,14 +75,27 @@ export interface SvgExportOptions {
   readonly height?: number;
   /** Added around the derived bounds, in geometry units. */
   readonly margin?: number;
-  /** Fallback stroke paint for a primitive with no `Cd`. */
-  readonly stroke?: string;
+  /** Fallback stroke colour for a primitive with no `Cd`. */
+  readonly stroke?: Color;
   /** Fallback stroke width for a primitive with no `width`. */
   readonly strokeWidth?: number;
   /** Fallback opacity for a primitive with no `opacity`. */
   readonly opacity?: number;
-  /** Fill paint for every primitive; "none" is what plotter work wants. */
-  readonly fill?: string;
+  /**
+   * Fill colour for every primitive, applied only when `fillMode` is "solid".
+   *
+   * Fill is two settings rather than one because a zero-alpha fill and SVG's
+   * `fill="none"` are not the same thing: `none` says the region is not filled,
+   * while a transparent fill says it is filled with nothing, and a plotter
+   * driver reading the second still generates a fill toolpath. Inferring the
+   * intent from alpha also throws the colour away, so a fill cannot be switched
+   * back on without picking it again. Declaring the mode keeps the two
+   * independent. Stroke has no matching mode because nothing exports geometry
+   * with no stroke, and inventing one for symmetry would add a way to produce an
+   * empty file.
+   */
+  readonly fill?: Color;
+  readonly fillMode?: "none" | "solid";
   /** Radius for a loose point with no `pscale`. */
   readonly pointRadius?: number;
   /** Decimal places on emitted coordinates. */
@@ -70,6 +103,7 @@ export interface SvgExportOptions {
 }
 
 const UNGROUPED = "ungrouped";
+const BLACK: Color = [0, 0, 0, 1];
 
 export function geometryToSvg(
   geometry: Geometry,
@@ -88,9 +122,10 @@ export function geometryToSvg(
   const precision = Math.max(0, Math.floor(options.precision ?? 3));
   const number = (value: number) => format(value, precision);
 
-  const stroke = options.stroke ?? "#000000";
+  const stroke = options.stroke ?? BLACK;
   const strokeWidth = options.strokeWidth ?? 1;
-  const fill = options.fill ?? "none";
+  const fill = options.fill ?? BLACK;
+  const filled = (options.fillMode ?? "none") === "solid";
 
   const colour = geometry.primitive.Cd;
   const strokeWidths = numeric(geometry.primitive.width);
@@ -109,8 +144,12 @@ export function geometryToSvg(
 
   const path = (primitive: number): string => {
     const attributes: string[] = [`d="${pathData(geometry, primitive, number)}"`];
-    const paint = paintOf(colour, primitive);
-    if (paint !== undefined) attributes.push(`stroke="${escapeXml(paint)}"`);
+    const paint = paintOf(colour, primitive, "primitive");
+    if (paint !== undefined) {
+      attributes.push(`stroke="${Color.toHex(paint)}"`);
+      if (Color.alpha(paint) < 1)
+        attributes.push(`stroke-opacity="${number(Color.alpha(paint))}"`);
+    }
     if (strokeWidths !== undefined)
       attributes.push(
         `stroke-width="${number(readComponent(strokeWidths, primitive))}"`,
@@ -164,12 +203,15 @@ export function geometryToSvg(
       pointScale === undefined
         ? (options.pointRadius ?? 0.5)
         : readComponent(pointScale, point);
-    const paint = paintOf(pointColour, point) ?? stroke;
+    const paint = paintOf(pointColour, point, "point") ?? stroke;
+    const transparent = Color.alpha(paint) < 1;
     body.push(
       indent(
         `<circle cx="${number(readComponent(position, point, 0))}" cy="${number(
           readComponent(position, point, 1),
-        )}" r="${number(radius)}" fill="${escapeXml(paint)}" stroke="none" />`,
+        )}" r="${number(radius)}" fill="${Color.toHex(paint)}"${
+          transparent ? ` fill-opacity="${number(Color.alpha(paint))}"` : ""
+        } stroke="none" />`,
         2,
       ),
     );
@@ -179,7 +221,17 @@ export function geometryToSvg(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${number(width)}" height="${number(height)}" viewBox="${number(minX)} ${number(-maxY)} ${number(spanX)} ${number(spanY)}">`,
     indent("<!-- Geometry is +Y up; SVG is +Y down. This is the one flip. -->", 1),
     indent(
-      `<g transform="scale(1,-1)" fill="${escapeXml(fill)}" stroke="${escapeXml(stroke)}" stroke-width="${number(strokeWidth)}"${
+      `<g transform="scale(1,-1)" fill="${
+        filled ? Color.toHex(fill) : "none"
+      }"${
+        filled && Color.alpha(fill) < 1
+          ? ` fill-opacity="${number(Color.alpha(fill))}"`
+          : ""
+      } stroke="${Color.toHex(stroke)}"${
+        Color.alpha(stroke) < 1
+          ? ` stroke-opacity="${number(Color.alpha(stroke))}"`
+          : ""
+      } stroke-width="${number(strokeWidth)}"${
         options.opacity !== undefined && options.opacity !== 1
           ? ` opacity="${number(options.opacity)}"`
           : ""
@@ -223,26 +275,28 @@ function pathData(
 }
 
 /**
- * A paint string from a `Cd` attribute. A string attribute is taken verbatim,
- * because that is how `cloud-plots` already stores colour (`"#3a7f5c"`); a
- * numeric one is three unit components, which is Houdini's `Cd`.
+ * The colour of one element from a `Cd` attribute. `Cd` is a `vec4` and this
+ * refuses anything else, loudly: a string attribute is the representation the
+ * ruling removed, and a numeric attribute of any other size is a colour whose
+ * components do not mean what the reader assumes.
  */
 function paintOf(
   attribute: AnyAttribute | undefined,
   index: number,
-): string | undefined {
+  level: string,
+): Color | undefined {
   if (attribute === undefined) return undefined;
-  if (isStringAttribute(attribute)) {
-    const value = readString(attribute, index);
-    return value === "" ? undefined : value;
-  }
-  if (attribute.size < 3) return undefined;
-  const channel = (component: number) => {
-    const value = readComponent(attribute, index, component);
-    const byte = Math.round(Math.min(1, Math.max(0, value)) * 255);
-    return byte.toString(16).padStart(2, "0");
-  };
-  return `#${channel(0)}${channel(1)}${channel(2)}`;
+  if (isStringAttribute(attribute))
+    geometryError(
+      "colour-storage",
+      `${level}.Cd is a string attribute; colour is a vec4. Convert with Color.fromHex at the boundary.`,
+    );
+  if (attribute.size !== 4)
+    geometryError(
+      "colour-size",
+      `${level}.Cd has size ${attribute.size}; colour is a vec4`,
+    );
+  return Color.fromComponents(attribute.data, index * 4, 4);
 }
 
 function numeric(attribute: AnyAttribute | undefined): Attribute | undefined {

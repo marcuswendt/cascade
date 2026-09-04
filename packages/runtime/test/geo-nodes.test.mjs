@@ -15,7 +15,7 @@ import {
   resampleGeometry,
   setGroup,
 } from "../dist/index.js";
-import { createGeometry } from "../../contracts/dist/index.js";
+import { Color, createGeometry } from "../../contracts/dist/index.js";
 import { createRuntime } from "../dist/index.js";
 import { createNodeRuntimeHost } from "../dist/node.js";
 import {
@@ -183,7 +183,7 @@ test("Merge takes the union of disjoint attribute sets and zero-fills", async ()
   withWidth.setStringAttribute("primitive", "tag", ["FORM_04"]);
   const withColour = new GeometryBuilder();
   withColour.addPolygon([2, 0, 3, 0], {});
-  withColour.setNumericAttribute("primitive", "Cd", [1, 0, 0], 3);
+  withColour.setNumericAttribute("primitive", "Cd", [1, 0, 0, 1], 4);
 
   const { geometry } = await run(mergeRegistration, {
     inputs: { inputs: [withWidth.build(), withColour.build()] },
@@ -198,7 +198,10 @@ test("Merge takes the union of disjoint attribute sets and zero-fills", async ()
     "width",
   ]);
   assert.deepEqual(Array.from(geometry.primitive.width.data), [0.4, 0]);
-  assert.deepEqual(Array.from(geometry.primitive.Cd.data), [0, 0, 0, 1, 0, 0]);
+  // Cd is a vec4 everywhere, so the zero-fill is four wide as well.
+  assert.deepEqual(Array.from(geometry.primitive.Cd.data), [
+    0, 0, 0, 0, 1, 0, 0, 1,
+  ]);
   assert.equal(readAttribute(geometry.primitive.tag, 0), "FORM_04");
   assert.equal(readAttribute(geometry.primitive.tag, 1), "");
 });
@@ -296,9 +299,12 @@ test("SvgExport emits one group per group, the Y flip, and per-primitive Cd", as
   builder.addPolygon([0, 4, 4, 4]);
   builder.addPolygon([0, 6, 4, 6]);
   builder.addPoint(2, 8);
-  builder.setNumericAttribute("primitive", "Cd", [
-    1, 0.5, 0, 0, 0, 0, 0, 0, 0,
-  ], 3);
+  builder.setNumericAttribute(
+    "primitive",
+    "Cd",
+    [1, 0.5, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0.4],
+    4,
+  );
   builder.setNumericAttribute("primitive", "width", [3, 1, 1]);
   builder.addToPrimitiveGroup("pen1", 0);
   builder.addToPrimitiveGroup("pen2", 1);
@@ -325,6 +331,9 @@ test("SvgExport emits one group per group, the Y flip, and per-primitive Cd", as
   // The prop is the fallback and the attribute wins where it exists.
   assert.match(svg, /stroke="#000000" stroke-width="0.5"/);
   assert.match(svg, /stroke="#ff8000" stroke-width="3"/);
+  // Cd's alpha comes out as a separate stroke-opacity rather than an
+  // eight-digit hex, because plotter software does not read CSS Color 4.
+  assert.match(svg, /stroke="#000000" stroke-opacity="0.4" stroke-width="1"/);
   // A loose point is a dot, drawn at the prop's radius.
   assert.match(svg, /<circle cx="2" cy="8" r="0.5"/);
   assert.deepEqual(asset, {
@@ -434,7 +443,7 @@ test("four of the six compose into one SVG through the runtime", async () => {
       [["plate", 0, "geometry"], ["copies", 0, "target"]],
       [["plate", 0, "geometry"], ["all", 0, "inputs"]],
       [["copies", 0, "geometry"], ["all", 0, "inputs"]],
-      [["all", 0, "geometry"], ["moved", 0, "input"]],
+      [["all", 0, "geometry"], ["moved", 0, "geometry"]],
       [["moved", 0, "geometry"], ["out", 0, "geometry"]],
     ],
   });
@@ -469,7 +478,7 @@ test("four of the six compose into one SVG through the runtime", async () => {
 test("Transform rotates counter-clockwise about its pivot", async () => {
   const { geometry } = await run(transformRegistration, {
     inputs: {
-      input: rectangleGeometry({ size: [2, 4], center: [1, 2] }),
+      geometry: rectangleGeometry({ size: [2, 4], center: [1, 2] }),
       rotate: 90,
       pivot: [1, 2],
     },
@@ -480,4 +489,160 @@ test("Transform rotates counter-clockwise about its pivot", async () => {
   // The bottom-left corner turns a quarter turn to the bottom-right.
   assert.deepEqual(rounded.slice(0, 2), [3, 1]);
   assert.deepEqual(rounded.slice(2, 4), [3, 3]);
+});
+
+test("a non-core variadic node accepts input_0 and input_1", async () => {
+  // The whole point of the change: `input_N` used to be translated only when
+  // the target was `cascade.core.Switch` or `cascade.core.Merge`, so
+  // `cascade.geo.Merge` could not be wired with the names Studio and saved
+  // graphs actually emit. It is now derived from the definition's own
+  // `variadic: true`, whatever the module id.
+  const runtime = createRuntime({
+    host: createNodeRuntimeHost({ modules: { resolve: async () => null } }),
+  });
+  const graph = await runtime.load({
+    version: "0.2",
+    nodes: [
+      { id: "a", module: "cascade.geo.Rectangle", inputs: { size: [2, 2] } },
+      { id: "b", module: "cascade.geo.Rectangle", inputs: { size: [4, 4] } },
+      { id: "all", module: "cascade.geo.Merge" },
+    ],
+    connections: [
+      [["a", 0, "geometry"], ["all", 0, "input_0"]],
+      [["b", 0, "geometry"], ["all", 0, "input_1"]],
+    ],
+  });
+  const result = await graph.run({
+    target: { kind: "output", nodeId: "all", outputName: "geometry" },
+  });
+  assert.equal(result.status, "completed");
+  const merged = graph.getOutput("all", "geometry");
+  assert.equal(merged.primitiveCount, 2);
+  assert.equal(merged.pointCount, 8);
+  // Ordered by the index in the name, not by the order the document lists them.
+  assert.deepEqual(Array.from(merged.point.P.data.slice(0, 2)), [-1, -1]);
+  assert.deepEqual(Array.from(merged.point.P.data.slice(8, 10)), [-2, -2]);
+  await runtime.dispose();
+});
+
+test("a project variadic node is wired by input_N too", async () => {
+  // Not a core module and not a geometry one: the rule is the definition's.
+  const runtime = createRuntime({
+    host: createNodeRuntimeHost({
+      modules: {
+        resolve: async () => ({
+          kind: "definition-v1",
+          moduleId: "project.Sum",
+          definition: {
+            apiVersion: 1,
+            runsOn: "portable",
+            inputs: {
+              terms: { kind: "data", type: "float", variadic: true },
+            },
+            outputs: { total: { kind: "data", type: "float" } },
+          },
+          loadExecute: async () => ({ inputs, outputs }) => {
+            outputs.total.set(inputs.terms.reduce((sum, term) => sum + term, 0));
+          },
+        }),
+      },
+    }),
+  });
+  const graph = await runtime.load({
+    version: "0.2",
+    nodes: [
+      { id: "one", module: "cascade.core.Null", inputs: { input: 3 } },
+      { id: "two", module: "cascade.core.Null", inputs: { input: 4 } },
+      { id: "sum", module: "project.Sum" },
+    ],
+    connections: [
+      [["one", 0, "output"], ["sum", 0, "input_0"]],
+      [["two", 0, "output"], ["sum", 0, "input_1"]],
+    ],
+  });
+  const result = await graph.run({
+    target: { kind: "output", nodeId: "sum", outputName: "total" },
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(graph.getOutput("sum", "total"), 7);
+  await runtime.dispose();
+});
+
+test("input_N is still refused by a node with no variadic input", async () => {
+  const runtime = createRuntime({
+    host: createNodeRuntimeHost({ modules: { resolve: async () => null } }),
+  });
+  await assert.rejects(
+    () =>
+      runtime.load({
+        version: "0.2",
+        nodes: [
+          { id: "a", module: "cascade.geo.Rectangle" },
+          { id: "moved", module: "cascade.geo.Transform" },
+        ],
+        connections: [[["a", 0, "geometry"], ["moved", 0, "input_0"]]],
+      }),
+    (error) => /runtime\/invalid-connection/.test(error.code ?? error.message),
+  );
+  await runtime.dispose();
+});
+
+test("SvgExport fills only when its mode says to, and never by alpha", async () => {
+  const builder = new GeometryBuilder();
+  builder.addPolygon([0, 0, 4, 0, 4, 2, 0, 2], { closed: true });
+  const geometry = builder.build();
+
+  const unfilled = await run(svgExportRegistration, {
+    inputs: { geometry },
+    capabilities: assetCapability(),
+  });
+  assert.match(unfilled.svg, /fill="none" stroke="#000000"/);
+
+  // "No fill" is a declared mode rather than an inferred zero alpha, because a
+  // transparent fill and an absent one are not the same instruction to a
+  // plotter, and inferring it from alpha throws the colour away.
+  const transparent = await run(svgExportRegistration, {
+    inputs: { geometry },
+    props: { fill: [0.2, 0.4, 0.6, 0] },
+    capabilities: assetCapability(),
+  });
+  assert.match(transparent.svg, /fill="none" stroke="#000000"/);
+
+  const filled = await run(svgExportRegistration, {
+    inputs: { geometry },
+    props: { fillMode: "solid", fill: [0.2, 0.4, 0.6, 0.5] },
+    capabilities: assetCapability(),
+  });
+  assert.match(filled.svg, /fill="#336699" fill-opacity="0.5" stroke="#000000"/);
+});
+
+test("a Cd that is not a vec4 is refused rather than dropped", () => {
+  const wide = new GeometryBuilder();
+  wide.addPolygon([0, 0, 1, 0], {});
+  wide.setNumericAttribute("primitive", "Cd", [1, 0, 0], 3);
+  assert.throws(
+    () => geometryToSvg(wide.build(), {}),
+    (error) => /geometry\/colour-size/.test(error.message),
+  );
+
+  // The string form is the representation the ruling removed. It is refused
+  // loudly, because an export that quietly turns black is the worse failure.
+  const strings = new GeometryBuilder();
+  strings.addPolygon([0, 0, 1, 0], {});
+  strings.setStringAttribute("primitive", "Cd", ["#3a7f5c"]);
+  assert.throws(
+    () => geometryToSvg(strings.build(), {}),
+    (error) => /geometry\/colour-storage/.test(error.message),
+  );
+
+  // What the cloud-plots migration will do instead, at the boundary.
+  const converted = new GeometryBuilder();
+  converted.addPolygon([0, 0, 1, 0], {});
+  converted.setNumericAttribute(
+    "primitive",
+    "Cd",
+    [...Color.fromHex("#3a7f5c")],
+    4,
+  );
+  assert.match(geometryToSvg(converted.build(), {}), /stroke="#3a7f5c"/);
 });

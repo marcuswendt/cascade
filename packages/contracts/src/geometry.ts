@@ -88,7 +88,7 @@ export type AttributeArray =
  */
 export interface Attribute {
   readonly storage: AttributeStorage;
-  /** Components per element. `P` is 2 or 3, `Cd` is 3, `width` is 1. */
+  /** Components per element. `P` is 2 or 3, `Cd` is 4, `width` is 1. */
   readonly size: number;
   readonly data: AttributeArray;
 }

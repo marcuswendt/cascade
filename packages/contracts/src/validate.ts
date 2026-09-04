@@ -139,7 +139,22 @@ export function validateNodeDefinition(value: unknown): readonly Diagnostic[] {
     seen.add(capability);
   }
 
-  const names = new Map<string, string>();
+  // Two namespaces, not one. An output is addressed in the other direction from
+  // an input, so `geometry` in and `geometry` out is not ambiguous anywhere: the
+  // document format names the two endpoints of a connection separately, the
+  // runtime keys them as `source.outputName` and `target.inputName`, and
+  // `NodeExecutionContext` hands a node `context.inputs` and `context.outputs`
+  // as separate records. One shared namespace made "geometry in, geometry out"
+  // inexpressible and forced every geometry operator to call its input `input`,
+  // which Marcus overruled 2026-09-04: *"sounds weird, we need to allow this
+  // case."*
+  //
+  // Inputs and props still share one namespace. Both feed a value *into* the
+  // node from the same side, an unconnected input with a default is the same
+  // control as a prop to whoever is looking at the node, and there is no
+  // direction to tell them apart by. That one stays a collision.
+  const inward = new Map<string, string>();
+  const outward = new Map<string, string>();
   for (const section of ["inputs", "outputs", "props"] as const) {
     const entries = value[section];
     if (entries === undefined) continue;
@@ -152,6 +167,7 @@ export function validateNodeDefinition(value: unknown): readonly Diagnostic[] {
       if (!IDENTIFIER.test(name))
         add("invalid-name", `${name} is not a valid identifier`, path);
       if (RESERVED.has(name)) add("reserved-name", `${name} is reserved`, path);
+      const names = section === "outputs" ? outward : inward;
       const previous = names.get(name);
       if (previous)
         add(
