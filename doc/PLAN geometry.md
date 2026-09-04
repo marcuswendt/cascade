@@ -20,6 +20,22 @@ Two consequences that should outlive this plan:
 
 **Cascade's current type list is the failure this principle predicts.** It is long and thin: forty-odd core types, and the only per-element user data anywhere in the geometry set is `Rect.tag?: string` and `Polyline.weight?: number`. One reserved slot per type, non-extensible, and five geometry types that no node understands at all. The rest of this plan is one domain being fixed; the same reading applies later to raster composition and to material or shader description, and each will be tempting to solve with three new types instead of one good one.
 
+## Where this is going, and what that constrains today
+
+Marcus, the same evening: *"In the future I want to extend this with volumes, 3D geometry, cameras, lights, scenes, to be able to describe a 3D scene with transforms — very much aligned with Houdini's OBJ and SOP geo volume models and contexts."*
+
+That is not a wish list to defer; it settles four things that are being decided this week, and it is cheaper to honour them now than to discover them.
+
+**+Y up stops being a preference and becomes structural.** An OBJ-style scene of cameras and lights wants a right-handed Y-up world, which is what was already chosen, so the flip stays where it is: at the raster and SVG boundary, and nowhere else.
+
+**`P` as a declared 2-or-3 component attribute is the mechanism, not a compromise.** A 3D `SOP` context is the same attribute table with `P.size: 3`, so the geometry type does not fork. The reason the size is declared per attribute rather than fixed is exactly this.
+
+**Volumes are a primitive kind, not a new type.** Houdini keeps a volume as a primitive inside the same geometry, alongside polygons, which is the strongest possible argument for the one-type decision — and it means the `kinds` vocabulary must be open-ended from the start rather than a closed pair of `poly` and `bezier`. A volume primitive references its voxel data the way a geometry-file reference already works; `observatory-weather-volume` in `~/Documents/Dev` is the real workload when that arrives, and it should be read before the design is written.
+
+**Scenes are the third namespace, and it now has its case.** The line drawn under question 2 said a third reserved namespace should have to argue for itself. This is the argument: cameras, lights and object transforms are not geometry and do not belong in `cascade.geo.*`. Houdini's own split is the model — OBJ nodes are a hierarchy of transforms, cameras and lights, and SOP nodes are the geometry inside an object. So a later `cascade.obj.*` carries a scene or object type holding a transform and a hierarchy, and a geometry becomes something an object *contains* rather than something a scene *is*.
+
+The one thing to avoid in the meantime is putting a transform hierarchy into the geometry type because 3D has not arrived yet. A detail-level transform on a geometry is a tempting shortcut and it is the wrong place: it would make every geometry carry a scene concept, and then the scene type would have to negotiate with it.
+
 ## What Cascade actually has
 
 `packages/contracts/src/values.ts` declares `points`, `lines`, `polyline`, `mesh` and `rects` in `CORE_TYPES`, with an interface for each:
