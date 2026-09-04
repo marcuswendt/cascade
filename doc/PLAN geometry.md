@@ -425,7 +425,9 @@ One more thing earns its place in the slice on the evidence, and it is not a nod
 
 **1. Curve primitives, or resample everything?** v1 as proposed has no Bezier or arc primitive, so `Circle` emits a 64-segment polygon and the SVG says so. That is a real fidelity loss for print and for plotter output, and it is the one place where the 2D-first design pays a visible cost. The alternative is a `curve` primitive kind from the start, which means every curve node handles two cases. I lean polyline-only, with the format reserving room, but this is his call because it shows up in the output.
 
-**2. Is `cascade.geo.*` reserved?** Making the geometry set a runtime built-in namespace beside `cascade.core.*` is the right technical answer and it permanently expands the reserved surface, which has so far been eight structural nodes.
+**2. `cascade.geo.*` — decided 2026-09-04 by Marcus: reserved.** *"`.geo` is clear, all good."* So the geometry set is a runtime built-in namespace beside `cascade.core.*`, and the reserved surface grows from eight structural nodes to eight plus the geometry library.
+
+That is a deliberate widening rather than a slip, and it draws a line worth stating: `cascade.core.*` is the structure of a graph — subnets, nulls, routing — while `cascade.geo.*` is a *medium*. A third namespace should have to argue for itself the way this one did, because the reserved surface is a promise about names that projects can never take back.
 
 **3. Fold the legacy names — decided 2026-09-04 by Marcus: a hard cutover.** *"The project is still in its infancy — cut over hard into the new types and update all sketches in Cascade."*
 
