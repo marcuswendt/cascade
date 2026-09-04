@@ -13,15 +13,21 @@
  */
 const CHECK_INTERVAL_MS = 120_000;
 
-async function fetchBuildId(): Promise<string | null> {
+type BuildAnswer = { kind: 'id'; id: string } | { kind: 'unknown' } | { kind: 'unsupported' };
+
+async function fetchBuildId(): Promise<BuildAnswer> {
   try {
     const response = await fetch('/api/build', { cache: 'no-store' });
-    if (!response.ok) return null;
+    // A server older than this route answers 404, which is exactly the case while a
+    // long-running server predates a rebuild. Asking again on every interval
+    // and every tab focus would log a console error each time, so stop.
+    if (response.status === 404) return { kind: 'unsupported' };
+    if (!response.ok) return { kind: 'unknown' };
     const { id } = await response.json();
-    return typeof id === 'string' ? id : null;
+    return typeof id === 'string' ? { kind: 'id', id } : { kind: 'unknown' };
   } catch {
     // Offline, or the server is restarting. Not stale — unknown.
-    return null;
+    return { kind: 'unknown' };
   }
 }
 
@@ -32,8 +38,11 @@ export function watchBuild(onStale: () => void): () => void {
 
   async function check(): Promise<void> {
     if (stopped) return;
-    const current = await fetchBuildId();
-    if (stopped || !current) return;
+    const answer = await fetchBuildId();
+    if (stopped) return;
+    if (answer.kind === 'unsupported') { stopped = true; return; }
+    if (answer.kind === 'unknown') return;
+    const current = answer.id;
     if (loaded === null) {
       // First answer establishes what this page is running. It is the served
       // build at the moment the page asked, which is the closest thing to the
