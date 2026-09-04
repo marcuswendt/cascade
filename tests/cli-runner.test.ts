@@ -49,7 +49,7 @@ describe('CLI Runner', () => {
         nodes: [
           {
             id: 'node1',
-            module: 'cascade.lens.Color',
+            module: 'cascade.image.Color',
             position: [0, 0],
             source: 'stdlib'
           }
@@ -115,13 +115,13 @@ describe('CLI Runner', () => {
         nodes: [
           {
             id: 'node1',
-            module: 'cascade.lens.Color',
+            module: 'cascade.image.Color',
             position: [0, 0],
             source: 'stdlib'
           },
           {
             id: 'node2',
-            module: 'cascade.lens.Color',
+            module: 'cascade.image.Color',
             position: [100, 0],
             source: 'stdlib'
           }

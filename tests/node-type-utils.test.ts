@@ -18,7 +18,7 @@ import {
 
 describe('packagePathToType', () => {
   it('should extract type name from full package path', () => {
-    expect(packagePathToType('cascade.lens.Color')).toBe('Color');
+    expect(packagePathToType('cascade.image.Color')).toBe('Color');
   });
 
   it('should extract type from cascade.core path', () => {
@@ -30,7 +30,7 @@ describe('packagePathToType', () => {
   });
 
   it('should handle deeply nested paths', () => {
-    expect(packagePathToType('cascade.lens.filters.Blur')).toBe('Blur');
+    expect(packagePathToType('cascade.image.filters.Blur')).toBe('Blur');
   });
 
   it('should handle single segment', () => {
@@ -40,7 +40,7 @@ describe('packagePathToType', () => {
 
 describe('typeToPackagePath', () => {
   it('should return already-dotted paths unchanged', () => {
-    expect(typeToPackagePath('cascade.lens.Color')).toBe('cascade.lens.Color');
+    expect(typeToPackagePath('cascade.image.Color')).toBe('cascade.image.Color');
   });
 
   it('should return custom node type unchanged when not in registry', () => {
@@ -54,9 +54,9 @@ describe('typeToPackagePath', () => {
 });
 
 describe('isStandardLibraryNode', () => {
-  it('should return true for cascade.lens nodes', () => {
-    expect(isStandardLibraryNode('cascade.lens.Color')).toBe(true);
-    expect(isStandardLibraryNode('cascade.lens.Blur')).toBe(true);
+  it('should return true for cascade.image nodes', () => {
+    expect(isStandardLibraryNode('cascade.image.Color')).toBe(true);
+    expect(isStandardLibraryNode('cascade.image.Blur')).toBe(true);
   });
 
   it('should return true for cascade.core nodes', () => {
@@ -78,8 +78,8 @@ describe('isStandardLibraryNode', () => {
 });
 
 describe('getLibraryIdFromType', () => {
-  it('should extract lens from cascade.lens.Color', () => {
-    expect(getLibraryIdFromType('cascade.lens.Color')).toBe('lens');
+  it('should extract image from cascade.image.Color', () => {
+    expect(getLibraryIdFromType('cascade.image.Color')).toBe('image');
   });
 
   it('should extract core from cascade.core.Timer', () => {
@@ -156,7 +156,7 @@ describe('node source registry', () => {
   beforeEach(() => {
     // Register test source code
     registerNodeSource('TestType', 'const x = 1;');
-    registerNodeSource('cascade.lens.Color', 'const color = "red";');
+    registerNodeSource('cascade.image.Color', 'const color = "red";');
   });
 
   describe('registerNodeSource', () => {
@@ -172,7 +172,7 @@ describe('node source registry', () => {
     });
 
     it('should return registered source by package path', () => {
-      expect(getNodeSource('cascade.lens.Color')).toBe('const color = "red";');
+      expect(getNodeSource('cascade.image.Color')).toBe('const color = "red";');
     });
 
     it('should return null for unregistered types', () => {
@@ -183,7 +183,7 @@ describe('node source registry', () => {
       // Register with short type
       registerNodeSource('ShortColor', 'const shortColor = true;');
       // Looking up by full path should find it via packagePathToType fallback
-      expect(getNodeSource('cascade.lens.ShortColor')).toBe('const shortColor = true;');
+      expect(getNodeSource('cascade.image.ShortColor')).toBe('const shortColor = true;');
     });
   });
 });

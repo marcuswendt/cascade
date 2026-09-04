@@ -1,16 +1,16 @@
 /**
- * LensNode Resolution Control Tests
+ * ImageNodeBase Resolution Control Tests
  * Tests for resolution utilities: resolveOutputSize, resizeToFit, prepareInputs
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Graph } from '@/nodes/Graph';
-import { LensNode, ImageBuffer, type ResolutionMode, type FitMode, type ImageInput } from '@/nodes/lens/LensNode';
+import { ImageNodeBase, ImageBuffer, type ResolutionMode, type FitMode, type ImageInput } from '@/nodes/image/ImageNodeBase';
 
-// Concrete test implementation of LensNode to access protected methods
-class TestLensNode extends LensNode {
+// Concrete test implementation of ImageNodeBase to access protected methods
+class TestImageNodeBase extends ImageNodeBase {
   constructor(id: string, graph: Graph) {
-    super(id, 'TestLens', graph);
+    super(id, 'TestImage', graph);
   }
 
   protected setup(): void {
@@ -49,13 +49,13 @@ class TestLensNode extends LensNode {
   }
 }
 
-describe('LensNode Resolution Utilities', () => {
+describe('ImageNodeBase Resolution Utilities', () => {
   let graph: Graph;
-  let node: TestLensNode;
+  let node: TestImageNodeBase;
 
   beforeEach(() => {
     graph = new Graph();
-    node = new TestLensNode('testNode', graph);
+    node = new TestImageNodeBase('testNode', graph);
     graph.addElement(node);
   });
 

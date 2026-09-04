@@ -2,11 +2,11 @@
  * ResizeNode - scales or resizes an ImageBuffer with bilinear interpolation
  */
 
-import { LensNode, ImageBuffer, type ImageInput } from '../LensNode';
+import { ImageNodeBase, ImageBuffer, type ImageInput } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { InputPort, OutputPort } from '@/types/node.types';
 
-export class ResizeNode extends LensNode {
+export class ResizeNode extends ImageNodeBase {
   private image!: InputPort<ImageInput>;
   private output!: OutputPort<ImageBuffer>;
 

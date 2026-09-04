@@ -2,11 +2,11 @@
  * NormalMapNode - computes normal map from height map (red/grayscale channel)
  */
 
-import { LensNode, ImageBuffer, type ImageInput } from '../LensNode';
+import { ImageNodeBase, ImageBuffer, type ImageInput } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { InputPort, OutputPort } from '@/types/node.types';
 
-export class NormalMapNode extends LensNode {
+export class NormalMapNode extends ImageNodeBase {
   private image!: InputPort<ImageInput>;
   private output!: OutputPort<ImageBuffer>;
 

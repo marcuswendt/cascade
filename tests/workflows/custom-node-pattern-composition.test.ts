@@ -2,7 +2,7 @@
  * Custom Pattern Composition Workflow Test
  *
  * Tests the complete workflow of:
- * 1. Creating a custom LensNode for pattern generation
+ * 1. Creating a custom ImageNodeBase for pattern generation
  * 2. Compiling project-owned ZigZag pattern code
  * 3. Compositing the result with another pattern (Checkers)
  *
@@ -311,9 +311,9 @@ describe('Custom Pattern Composition Workflow', () => {
     graph = new Graph();
   });
 
-  describe('Step 1: Create a custom ZigZag LensNode', () => {
+  describe('Step 1: Create a custom ZigZag ImageNodeBase', () => {
     it('should compile project-owned ZigZag pattern code', async () => {
-      // User creates a new custom LensNode
+      // User creates a new custom ImageNodeBase
       const zigzagNode = new Node('local.zigzagpattern', 'local.zigzagpattern', graph);
       graph.addElement(zigzagNode);
 
@@ -474,7 +474,7 @@ describe('Custom Pattern Composition Workflow', () => {
   describe('Full workflow simulation', () => {
     it('should complete the entire pattern composition workflow', async () => {
       // === STEP 1: User creates custom ZigZag node ===
-      // User: "Create a new custom LensNode called ZigZagPattern"
+      // User: "Create a new custom ImageNodeBase called ZigZagPattern"
       const zigzagNode = new Node('local.zigzagpattern', 'local.zigzagpattern', graph);
       graph.addElement(zigzagNode);
 

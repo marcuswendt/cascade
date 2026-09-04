@@ -1,8 +1,8 @@
 /**
- * LensNode - Base class for all image processing nodes
+ * ImageNodeBase - Base class for all image processing nodes
  *
  * Provides utilities for working with ImageBuffer - the high-performance
- * planar Float32Array image format used throughout the Lens library.
+ * planar Float32Array image format used throughout the image library.
  */
 
 import { Node } from '@/nodes/Node';
@@ -18,7 +18,7 @@ export type ResolutionMode = 'input' | 'input1' | 'input2' | 'largest' | 'smalle
 // Fit modes for resizing inputs to match output
 export type FitMode = 'fill' | 'fit' | 'stretch' | 'native';
 
-export abstract class LensNode extends Node {
+export abstract class ImageNodeBase extends Node {
   // Preview update throttling
   private _previewPending = false;
   private _previewBuffer: ImageBuffer | null = null;
@@ -426,7 +426,7 @@ export abstract class LensNode extends Node {
 
   /**
    * Set output value and preview from an ImageBuffer
-   * This is the standard way to output from a Lens node
+   * This is the standard way to output from an image node
    * Preview updates are throttled to ~30fps to avoid excessive canvas conversions
    */
   public setOutput(
@@ -445,7 +445,7 @@ export abstract class LensNode extends Node {
     const now = performance.now();
     const elapsed = now - this._lastPreviewTime;
 
-    if (elapsed >= LensNode.PREVIEW_INTERVAL) {
+    if (elapsed >= ImageNodeBase.PREVIEW_INTERVAL) {
       // Enough time has passed, update immediately
       this._lastPreviewTime = now;
       if (this._previewBuffer) {
@@ -455,7 +455,7 @@ export abstract class LensNode extends Node {
     } else if (!this._previewPending) {
       // Schedule an update
       this._previewPending = true;
-      const remaining = LensNode.PREVIEW_INTERVAL - elapsed;
+      const remaining = ImageNodeBase.PREVIEW_INTERVAL - elapsed;
       setTimeout(() => {
         this._previewPending = false;
         this._lastPreviewTime = performance.now();

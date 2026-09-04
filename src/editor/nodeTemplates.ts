@@ -1,6 +1,6 @@
 // Node structure: Library > Category > Nodes
 // Import only library metadata, not the full node implementations
-import { lensLibrary } from '@/nodes/lens/library';
+import { imageLibrary } from '@/nodes/image/library';
 import { coreLibrary } from '@/nodes/core/library';
 import { quillLibrary } from '@/nodes/quill/library';
 import type { Library, NodeTemplate } from '@/types/library.types';
@@ -31,7 +31,7 @@ export const annotationsLibrary: Library = {
 export const nodeLibraries: Library[] = [
   annotationsLibrary,
   coreLibrary,
-  lensLibrary,
+  imageLibrary,
   quillLibrary
 ];
 
@@ -99,10 +99,10 @@ node.watchProp('value', () => process());
 node.onReady = () => process();
 `,
 
-  lens: (name: string) => `// ${name} - Image Processing Node
-// Extends LensNode for canvas/image utilities
+  image: (name: string) => `// ${name} - Image Processing Node
+// Extends ImageNodeBase for canvas/image utilities
 //
-// Available helpers from LensNode:
+// Available helpers from ImageNodeBase:
 //   this.createCanvas(width, height) - Create a canvas
 //   this.getImageSize(img) - Get {width, height} from image/canvas
 //   this.getImageData(img, w?, h?) - Get ImageData from image
@@ -227,7 +227,7 @@ export function getNodeIcon(nodeType: string): string {
   return 'Settings'; // Default icon if not found
 }
 
-// Generate full node path (e.g., "cascade.lens.color.Levels")
+// Generate full node path (e.g., "cascade.image.color.Levels")
 export function getNodePath(nodeType: string, libraryId?: string, categoryId?: string): string {
   // Handle annotation types
   if (nodeType.startsWith('annotation:')) {

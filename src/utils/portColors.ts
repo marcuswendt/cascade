@@ -1,5 +1,5 @@
 import type { InputPort, OutputPort, DataType } from '@/types/node.types';
-import { ImageBuffer } from '@/nodes/lens/ImageBuffer';
+import { ImageBuffer } from '@/nodes/image/ImageBuffer';
 import { TYPE_COLORS, typeColor, isImageRef } from '@/types/coreTypes';
 
 /**

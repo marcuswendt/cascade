@@ -103,7 +103,7 @@ export function registerNodeClasses(libraryId: string, classes: Record<string, N
 
 /**
  * Convert a short type name to a full package path
- * e.g., "Color" -> "cascade.lens.Color", "Timer" -> "cascade.core.Timer"
+ * e.g., "Color" -> "cascade.image.Color", "Timer" -> "cascade.core.Timer"
  */
 export function typeToPackagePath(type: string): string {
   // Check if it's already a package path
@@ -125,7 +125,7 @@ export function typeToPackagePath(type: string): string {
 
 /**
  * Convert a full package path to a short type name
- * e.g., "cascade.lens.Color" -> "Color", "cascade.core.Timer" -> "Timer"
+ * e.g., "cascade.image.Color" -> "Color", "cascade.core.Timer" -> "Timer"
  */
 export function packagePathToType(packagePath: string): string {
   // If it doesn't contain dots, it's already a short type
@@ -147,7 +147,7 @@ export function isStandardLibraryNode(type: string): boolean {
 
 /**
  * Get the library ID from a package path
- * e.g., "cascade.lens.Color" -> "lens"
+ * e.g., "cascade.image.Color" -> "image"
  */
 export function getLibraryIdFromType(type: string): string | null {
   if (!type.includes('.')) {

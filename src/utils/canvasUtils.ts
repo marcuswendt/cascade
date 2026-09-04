@@ -1,5 +1,5 @@
 /**
- * Canvas and Image utility functions for Lens library nodes
+ * Canvas and Image utility functions for image library nodes
  */
 
 /**

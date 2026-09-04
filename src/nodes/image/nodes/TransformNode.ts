@@ -2,11 +2,11 @@
  * TransformNode - 2D transformation (rotation, translation, scaling) for images
  */
 
-import { LensNode, ImageBuffer } from '../LensNode';
+import { ImageNodeBase, ImageBuffer } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { InputPort, OutputPort } from '@/types/node.types';
 
-export class TransformNode extends LensNode {
+export class TransformNode extends ImageNodeBase {
   private imageInput!: InputPort<ImageBuffer | null>;
   private output!: OutputPort<ImageBuffer>;
 

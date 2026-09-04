@@ -6,7 +6,7 @@
  * - Graph: Container for nodes and connections
  * - Annotations: Canvas overlays (text, image, group, line)
  *
- * Node packages (core/, lens/, etc.) define specific node types.
+ * Node packages (core/, image/, etc.) define specific node types.
  * For runtime/engine features, see src/engine/.
  * For UI components, see src/editor/.
  */

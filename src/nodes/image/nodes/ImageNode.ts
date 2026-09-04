@@ -3,13 +3,13 @@
  * Converts to ImageBuffer for the processing pipeline
  */
 
-import { LensNode, ImageBuffer, type ImageInput } from '../LensNode';
+import { ImageNodeBase, ImageBuffer, type ImageInput } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { InputPort, OutputPort } from '@/types/node.types';
 
 type ImageInputValue = HTMLCanvasElement | HTMLImageElement | ImageBuffer | string | null;
 
-export class ImageNode extends LensNode {
+export class ImageNode extends ImageNodeBase {
   private imageInput!: InputPort<ImageInputValue>;
   private output!: OutputPort<ImageBuffer>;
 

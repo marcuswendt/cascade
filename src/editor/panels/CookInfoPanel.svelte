@@ -4,7 +4,7 @@
   import type { Node } from '@/nodes/Node';
   import { sharedContextStore, panelLockStore } from '../dockview/renderer';
   import { typeToPackagePath } from '@/utils/nodeTypeUtils';
-  import { LensNode, ImageBuffer } from '@/nodes/lens/LensNode';
+  import { ImageNodeBase, ImageBuffer } from '@/nodes/image/ImageNodeBase';
 
   export let panelId: string;
   export let panelParams: CascadePanelParams;
@@ -108,14 +108,14 @@
     }
   }
 
-  // Check if node is a LensNode
-  function isLensNode(node: Node): node is LensNode {
-    return node instanceof LensNode;
+  // Check if node is a ImageNodeBase
+  function isImageNodeBase(node: Node): node is ImageNodeBase {
+    return node instanceof ImageNodeBase;
   }
 
-  // Get buffer info for lens nodes
+  // Get buffer info for image nodes
   function getBufferInfo(node: Node) {
-    if (isLensNode(node)) {
+    if (isImageNodeBase(node)) {
       return node.getBufferInfo();
     }
     return null;
@@ -225,7 +225,7 @@
         </div>
       </section>
 
-      <!-- ImageBuffer Info (for LensNodes) -->
+      <!-- ImageBuffer Info (for ImageNodeBases) -->
       {#if bufferInfo}
         <section class="info-section buffer-section">
           <h3>Output Buffer</h3>

@@ -23,10 +23,10 @@
       template: 'node'
     },
     {
-      id: 'cascade.lens.LensNode',
-      label: 'LensNode',
+      id: 'cascade.image.ImageNodeBase',
+      label: 'ImageNodeBase',
       description: 'Image processing base class with canvas/image utilities',
-      template: 'lens'
+      template: 'image'
     },
     {
       id: 'custom',

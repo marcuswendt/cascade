@@ -2,13 +2,13 @@
  * NoiseNode - generates procedural noise patterns as ImageBuffer
  */
 
-import { LensNode, ImageBuffer } from '../LensNode';
+import { ImageNodeBase, ImageBuffer } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
 
 type Noise2DFunction = (x: number, y: number) => number;
 
-export class NoiseNode extends LensNode {
+export class NoiseNode extends ImageNodeBase {
   private output!: OutputPort<ImageBuffer>;
   private noise2D: Noise2DFunction | null = null;
   private currentSeed: number | null = null;

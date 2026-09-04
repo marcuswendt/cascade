@@ -1171,7 +1171,7 @@ export class Graph {
     // Use stored modulePath if available (set by addNode or fromJSON)
     // Otherwise fall back to deriving from node.type
     const nodeAny = node as any;
-    const fullType = nodeAny.modulePath || (node.type.includes('.') ? node.type : `cascade.lens.${node.type}`);
+    const fullType = nodeAny.modulePath || (node.type.includes('.') ? node.type : `cascade.image.${node.type}`);
 
     // Use stored sourceType if available, otherwise derive it
     let sourceType = nodeAny.sourceType;
@@ -1373,7 +1373,7 @@ export class Graph {
       // Support both v0.1 'type' and v0.2 'module' fields
       const nodeType = nodeData.module || nodeData.type;
       if (!nodeType || !nodeType.includes('.')) {
-        console.warn(`Invalid node type format: ${nodeType}. Expected package path (e.g., "cascade.lens.Color"). Skipping node.`);
+        console.warn(`Invalid node type format: ${nodeType}. Expected package path (e.g., "cascade.image.Color"). Skipping node.`);
         return;
       }
 

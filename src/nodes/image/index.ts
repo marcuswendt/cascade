@@ -1,5 +1,5 @@
 /**
- * Lens Library - Image processing and generation nodes
+ * Image Library - image generation, compositing, transformation and filtering
  *
  * This package provides nodes for:
  * - Image generation (Color, Checkers, Noise, Ramp, Text)
@@ -38,7 +38,7 @@ import TextNodeSource from './nodes/TextNode.ts?raw';
 import TransformNodeSource from './nodes/TransformNode.ts?raw';
 
 // Node class registry: type -> class constructor
-export const lensNodeClasses: Record<string, NodeClass> = {
+export const imageNodeClasses: Record<string, NodeClass> = {
   'Color': ColorNode,
   'Image': ImageNode,
   'Composite': CompositeNode,
@@ -53,7 +53,7 @@ export const lensNodeClasses: Record<string, NodeClass> = {
 };
 
 // Register nodes with the central registry
-registerNodeClasses('lens', lensNodeClasses);
+registerNodeClasses('image', imageNodeClasses);
 
 // Register source code for each node type
 registerNodeSource('Color', ColorNodeSource);
@@ -69,11 +69,11 @@ registerNodeSource('Text', TextNodeSource);
 registerNodeSource('Transform', TransformNodeSource);
 
 // Re-export library metadata
-export { lensLibrary } from './library';
+export { imageLibrary } from './library';
 export * from '@/utils/canvasUtils';
 
 // Re-export base class and node classes
-export { LensNode, type ImageInput } from './LensNode';
+export { ImageNodeBase, type ImageInput } from './ImageNodeBase';
 export { ColorNode } from './nodes/ColorNode';
 export { ImageNode } from './nodes/ImageNode';
 export { CompositeNode } from './nodes/CompositeNode';

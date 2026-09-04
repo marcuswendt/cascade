@@ -5,11 +5,11 @@
  * text rendering including font, size, alignment, color, and transforms.
  */
 
-import { LensNode, ImageBuffer } from '../LensNode';
+import { ImageNodeBase, ImageBuffer } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
 
-export class TextNode extends LensNode {
+export class TextNode extends ImageNodeBase {
   private output!: OutputPort<ImageBuffer>;
 
   constructor(id: string, graph: Graph) {

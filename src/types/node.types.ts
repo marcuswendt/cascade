@@ -69,7 +69,7 @@ export interface CodeVersion {
  */
 export interface StdlibSource {
   type: 'stdlib';
-  module: string;  // e.g., 'cascade.lens.Color'
+  module: string;  // e.g., 'cascade.image.Color'
 }
 
 /**

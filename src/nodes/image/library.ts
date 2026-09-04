@@ -1,12 +1,12 @@
 import type { Library } from '@/types/library.types';
 
 /**
- * Lens library definition
+ * Image library definition
  * A collection of nodes for image processing and generation
  */
-export const lensLibrary: Library = {
-  id: 'lens',
-  label: 'Lens',
+export const imageLibrary: Library = {
+  id: 'image',
+  label: 'Image',
   icon: 'Palette',
   categories: [
     {

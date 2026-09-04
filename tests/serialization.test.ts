@@ -157,13 +157,13 @@ describe('Serialization', () => {
     });
 
     it.each([
-      'cascade.lens.Generate',
-      'cascade.lens.Edit',
+      'cascade.image.Generate',
+      'cascade.image.Edit',
       'cascade.quill.Describe',
       'cascade.quill.Enhance',
       'cascade.quill.Chat',
       'cascade.quill.System',
-      'cascade.lens.DoesNotExist',
+      'cascade.image.DoesNotExist',
     ])('rejects unknown standard-library module %s regardless of serialized source', (moduleId) => {
       for (const source of [undefined, 'stdlib', 'embedded', 'project'] as const) {
         const node = {

@@ -49,15 +49,15 @@ describe('Custom Node Creation Workflow', () => {
       expect(node.props.value.value).toBe(1.0);
     });
 
-    it('should create lens node with image processing template', async () => {
+    it('should create an image node from the image processing template', async () => {
       const config = {
         name: 'BlurEffect',
         modulePath: 'local.blureffect',
-        baseClass: 'cascade.lens.LensNode',
+        baseClass: 'cascade.image.ImageNodeBase',
       };
 
-      // Get lens template
-      const templateCode = codeTemplates.lens(config.name);
+      // Get the image template
+      const templateCode = codeTemplates.image(config.name);
       expect(templateCode).toContain('// BlurEffect - Image Processing Node');
       expect(templateCode).toContain("node.in('image'");
       expect(templateCode).toContain("node.addParm('intensity'");
@@ -66,7 +66,7 @@ describe('Custom Node Creation Workflow', () => {
       const node = new Node(config.modulePath, config.modulePath, graph);
       graph.addElement(node);
 
-      // For lens nodes, compilation will fail in node environment due to document.createElement
+      // For image nodes, compilation will fail in node environment due to document.createElement
       // But compilation step should succeed
       const compiled = compileNodeCode(templateCode);
       expect(compiled.error).toBeNull();

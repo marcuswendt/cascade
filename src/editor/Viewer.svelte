@@ -3,7 +3,7 @@
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
   import type { Annotation } from '@/nodes/annotations/Annotation';
-  import { ImageBuffer } from '@/nodes/lens/ImageBuffer';
+  import { ImageBuffer } from '@/nodes/image/ImageBuffer';
   import { coerceImageRef, normalizeType, typeColor } from '@/types/coreTypes';
   import CoreValue from './components/CoreValue.svelte';
   import { inferCascadeType, mediaUrl } from './components/typePresentation';

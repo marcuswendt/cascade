@@ -3,11 +3,11 @@
  * Supports resolution control similar to TouchDesigner TOPs
  */
 
-import { LensNode, ImageBuffer, type ImageInput, type ResolutionMode, type FitMode } from '../LensNode';
+import { ImageNodeBase, ImageBuffer, type ImageInput, type ResolutionMode, type FitMode } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { InputPort, OutputPort } from '@/types/node.types';
 
-export class CompositeNode extends LensNode {
+export class CompositeNode extends ImageNodeBase {
   private image1!: InputPort<ImageInput>;
   private image2!: InputPort<ImageInput>;
   private output!: OutputPort<ImageBuffer>;

@@ -2,7 +2,7 @@
  * RampNode - generates color ramps as ImageBuffer
  */
 
-import { LensNode, ImageBuffer } from '../LensNode';
+import { ImageNodeBase, ImageBuffer } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
 
@@ -19,7 +19,7 @@ interface RampPoint {
   interpolation?: 'linear' | 'smooth' | 'constant';
 }
 
-export class RampNode extends LensNode {
+export class RampNode extends ImageNodeBase {
   private output!: OutputPort<ImageBuffer>;
 
   constructor(id: string, graph: Graph) {

@@ -2,11 +2,11 @@
  * CheckersNode - generates a checkerboard pattern as ImageBuffer
  */
 
-import { LensNode, ImageBuffer } from '../LensNode';
+import { ImageNodeBase, ImageBuffer } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
 
-export class CheckersNode extends LensNode {
+export class CheckersNode extends ImageNodeBase {
   private output!: OutputPort<ImageBuffer>;
 
   constructor(id: string, graph: Graph) {

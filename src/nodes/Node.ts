@@ -51,7 +51,7 @@ export class Node {
 
   // Variadic inputs
   /** The node's own values — see param(). Distinct from `props`, which is the
-   *  older lens-node control system. */
+   *  older image-node control system. */
   parameters: NodeParameter[] = [];
   protected parametersUsedDuringSetup: Set<string> = new Set();
 

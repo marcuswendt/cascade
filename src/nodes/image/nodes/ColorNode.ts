@@ -2,11 +2,11 @@
  * ColorNode - creates a solid color ImageBuffer
  */
 
-import { LensNode, ImageBuffer } from '../LensNode';
+import { ImageNodeBase, ImageBuffer } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
 
-export class ColorNode extends LensNode {
+export class ColorNode extends ImageNodeBase {
   private output!: OutputPort<ImageBuffer>;
 
   constructor(id: string, graph: Graph) {

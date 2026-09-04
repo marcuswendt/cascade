@@ -19,7 +19,7 @@ export async function initializeNodeLibraries(): Promise<void> {
   // Dynamically import all libraries - this triggers their registration
   await Promise.all([
     import('./core/index'),
-    import('./lens/index'),
+    import('./image/index'),
     import('./quill/index')
   ]);
 
