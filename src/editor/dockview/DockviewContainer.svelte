@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
+  import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
   import { dockviewStore, panelTypes, setProjectPanelTypes } from './dockview-store.svelte';
   import { registerPanelComponent, registerLazyPanelComponent, setSharedContext } from './renderer';
   import type { PanelContext, PanelType } from './types';
@@ -19,6 +19,7 @@
   import CookInfoPanel from '../panels/CookInfoPanel.svelte';
   import ProjectPanelHost from '../panels/ProjectPanelHost.svelte';
   import { discoverProjectPanels } from '../projectPanels';
+  import { clampToViewport } from '../menuPlacement';
   import { registerProjectTypeRenderer } from '../components/typeRenderers';
   import PanelIcon from '../components/PanelIcon.svelte';
 
@@ -30,6 +31,8 @@
   // Add panel menu state
   let showAddPanelMenu = false;
   let addPanelMenuPosition = { x: 0, y: 0 };
+  let addPanelMenuEl: HTMLDivElement | undefined;
+  let addPanelMenuStyle = '';
   let addPanelTargetGroup = '';
 
   // Props from parent
@@ -134,10 +137,34 @@
     dockviewStore.focusPanel(panelId);
   }
 
-  function handleAddPanelClick(groupId: string, position: { x: number; y: number }) {
+  async function handleAddPanelClick(groupId: string, position: { x: number; y: number }) {
     addPanelTargetGroup = groupId;
     addPanelMenuPosition = position;
     showAddPanelMenu = true;
+    await placeAddPanelMenu();
+  }
+
+  /**
+   * Keep the menu inside the window.
+   *
+   * It is positioned fixed at the + button's own left edge, and that button
+   * sits at the right edge of its group — so for the right-most group the menu
+   * opened off-screen and adding a panel there looked broken. Measured rather
+   * than assumed, because its width depends on how many panel types a project
+   * contributes. Hidden for the one frame it takes to measure, so the reader
+   * never sees it jump.
+   */
+  async function placeAddPanelMenu() {
+    addPanelMenuStyle = `left: ${addPanelMenuPosition.x}px; top: ${addPanelMenuPosition.y}px; visibility: hidden`;
+    await tick();
+    if (!addPanelMenuEl) return;
+    const { width, height } = addPanelMenuEl.getBoundingClientRect();
+    const placed = clampToViewport(
+      addPanelMenuPosition,
+      { width, height },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    addPanelMenuStyle = `left: ${placed.x}px; top: ${placed.y}px`;
   }
 
   function handleAddPanelSelect(type: PanelType) {
@@ -202,7 +229,8 @@
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
     class="add-panel-menu"
-    style="left: {addPanelMenuPosition.x}px; top: {addPanelMenuPosition.y}px"
+    bind:this={addPanelMenuEl}
+    style={addPanelMenuStyle}
     on:click|stopPropagation
   >
     {#each $panelTypes as panelType}

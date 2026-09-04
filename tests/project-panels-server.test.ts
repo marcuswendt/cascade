@@ -95,7 +95,10 @@ describe('project panel server extension', () => {
     await expect(response.json()).resolves.toEqual({
       panels: [{ name: 'moments', title: 'Linked Moments', icon: null }],
     });
-  });
+    // This one compiles a panel with esbuild from a cold start, and the default
+    // 5s is not enough when the whole suite is running in parallel — it timed
+    // out intermittently while passing every time on its own.
+  }, 20_000);
 
   it('prefers a project-local panel for metadata and compilation', async () => {
     const project = fixture();
