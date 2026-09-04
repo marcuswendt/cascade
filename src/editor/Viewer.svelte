@@ -426,8 +426,13 @@
     function zoomTo(next: number, px: number, py: number) {
       userAdjusted = true;
       const before = scale;
-      // 20x is well past useful inspection; fit is the floor.
-      const after = Math.max(fitScale, Math.min(fitScale * 20, next));
+      // 20x is well past useful inspection. The floor used to be fit itself,
+      // which meant the wheel simply stopped: you could never pull back far
+      // enough to see the whole frame with room around it, or to see where a
+      // panned image sits. An eighth of fit is far enough out to be useless
+      // and close enough in that the image cannot be lost, and h still snaps
+      // back to fit exactly.
+      const after = Math.max(fitScale / 8, Math.min(fitScale * 20, next));
       if (after === before) return;
       offset.x = px - ((px - offset.x) * after) / before;
       offset.y = py - ((py - offset.y) * after) / before;
@@ -445,9 +450,8 @@
       zoomTo(scale * factor, f.width / 2, f.height / 2);
     }
 
-    /** 100%: one image pixel per screen pixel. Deliberately allowed below the
-     *  fit floor that zoomTo enforces — on an image smaller than the panel fit
-     *  sits above 100%, and refusing the key there is worse than honouring it. */
+    /** 100%: one image pixel per screen pixel. Set directly rather than through
+     *  zoomTo so it lands exactly, whichever side of fit it falls on. */
     function zoomToActual() {
       if (!natural.width || scale === 1) return;
       const f = frame();
