@@ -1,3 +1,10 @@
+import type {
+  Geometry,
+  GeometryFileRef,
+  GeometryJson,
+  GeometrySerialized,
+} from "./geometry.js";
+
 export const CORE_TYPES = [
   "float",
   "int",
@@ -14,6 +21,7 @@ export const CORE_TYPES = [
   "mat4",
   "image",
   "texture",
+  "geometry",
   "points",
   "lines",
   "polyline",
@@ -31,9 +39,7 @@ export type NamespacedType = `${string}.${string}`;
 export type CascadeType = CoreType | NamespacedType;
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue =
-  | JsonPrimitive
-  | { readonly [key: string]: JsonValue }
-  | readonly JsonValue[];
+  JsonPrimitive | { readonly [key: string]: JsonValue } | readonly JsonValue[];
 export type Vec2 = readonly [number, number];
 export type Vec3 = readonly [number, number, number];
 export type Vec4 = readonly [number, number, number, number];
@@ -85,8 +91,7 @@ export interface TextureHandle {
   readonly [textureHandleBrand]: true;
 }
 export type Point =
-  | readonly [number, number]
-  | readonly [number, number, number];
+  readonly [number, number] | readonly [number, number, number];
 export interface PointSet {
   readonly points: readonly Point[];
 }
@@ -119,7 +124,8 @@ export interface AssetRef {
   readonly path: string;
   readonly mediaType?: string;
 }
-export type SerializableValue = JsonValue | AssetRef | ImageRef;
+export type SerializableValue =
+  JsonValue | AssetRef | ImageRef | GeometryJson | GeometryFileRef;
 
 export type ValueForType<T extends CascadeType> = T extends "float" | "int"
   ? number
@@ -151,33 +157,37 @@ export type ValueForType<T extends CascadeType> = T extends "float" | "int"
                             ? ImageRef
                             : T extends "texture"
                               ? TextureHandle
-                              : T extends "points"
-                                ? PointSet
-                                : T extends "lines"
-                                  ? LineSegments
-                                  : T extends "polyline"
-                                    ? Polyline
-                                    : T extends "mesh"
-                                      ? Mesh
-                                      : T extends "rects"
-                                        ? Rects
-                                        : T extends "asset"
-                                          ? AssetRef
-                                          : T extends "array"
-                                            ? readonly unknown[]
-                                            : T extends "object"
-                                              ? Readonly<
-                                                  Record<string, unknown>
-                                                >
-                                              : unknown;
+                              : T extends "geometry"
+                                ? Geometry
+                                : T extends "points"
+                                  ? PointSet
+                                  : T extends "lines"
+                                    ? LineSegments
+                                    : T extends "polyline"
+                                      ? Polyline
+                                      : T extends "mesh"
+                                        ? Mesh
+                                        : T extends "rects"
+                                          ? Rects
+                                          : T extends "asset"
+                                            ? AssetRef
+                                            : T extends "array"
+                                              ? readonly unknown[]
+                                              : T extends "object"
+                                                ? Readonly<
+                                                    Record<string, unknown>
+                                                  >
+                                                : unknown;
 
 export type SerializableValueForType<T extends CascadeType> =
   T extends "texture"
     ? never
-    : T extends "array"
-      ? readonly JsonValue[]
-      : T extends "object"
-        ? Readonly<Record<string, JsonValue>>
-        : T extends "any" | NamespacedType
-          ? JsonValue
-          : ValueForType<T>;
+    : T extends "geometry"
+      ? GeometrySerialized
+      : T extends "array"
+        ? readonly JsonValue[]
+        : T extends "object"
+          ? Readonly<Record<string, JsonValue>>
+          : T extends "any" | NamespacedType
+            ? JsonValue
+            : ValueForType<T>;

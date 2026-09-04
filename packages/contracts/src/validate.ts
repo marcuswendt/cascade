@@ -1,3 +1,4 @@
+import { isGeometrySerialized } from "./geometry.js";
 import { CORE_TYPES, type JsonValue } from "./values.js";
 import type { NodeCapabilityName } from "./capabilities.js";
 import type { NodeDefinition, RuntimeEnvironment } from "./definition.js";
@@ -66,6 +67,10 @@ function unknownFields(
 }
 function defaultMatches(type: string, value: unknown): boolean {
   if (!finiteJson(value)) return false;
+  // Without this case a geometry default falls through the length table below
+  // and any JSON value at all passes, which is the hole the four scalar cases
+  // exist to close. A default that cannot be validated is not a default.
+  if (type === "geometry") return isGeometrySerialized(value);
   if (type === "float") return typeof value === "number";
   if (type === "int") return typeof value === "number";
   if (type === "bool") return typeof value === "boolean";
