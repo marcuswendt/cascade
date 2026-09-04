@@ -28,7 +28,10 @@ export function transformMatrix(parameters: TransformParameters): Mat3 {
   const [tx, ty] = parameters.translate ?? [0, 0];
   const [sx, sy] = parameters.scale ?? [1, 1];
   const [px, py] = parameters.pivot ?? [0, 0];
-  const radians = ((parameters.rotate ?? 0) * Math.PI) / 180;
+  const rotate = parameters.rotate ?? 0;
+  if (![tx, ty, sx, sy, px, py, rotate].every(Number.isFinite))
+    throw new TypeError("geometry/transform: transform parameters must be finite");
+  const radians = (rotate * Math.PI) / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   const a00 = cos * sx;

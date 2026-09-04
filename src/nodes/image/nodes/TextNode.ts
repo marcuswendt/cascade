@@ -8,6 +8,7 @@
 import { ImageNodeBase, ImageBuffer } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
+import { colorToCss, normalizeColor } from '@/utils/colorUtils';
 
 export class TextNode extends ImageNodeBase {
   private output!: OutputPort<ImageBuffer>;
@@ -183,8 +184,8 @@ export class TextNode extends ImageNodeBase {
     const fontStyle = this.props.fontStyle.value as string;
     const alignH = this.props.alignH.value as string;
     const alignV = this.props.alignV.value as string;
-    const color = this.normalizeColor(this.props.color.value);
-    const bgColor = this.normalizeColor(this.props.backgroundColor.value);
+    const color = normalizeColor(this.props.color.value);
+    const bgColor = normalizeColor(this.props.backgroundColor.value);
     const [offsetX, offsetY] = this.props.offset.value;
     const rotation = this.props.rotation.value as number;
     const letterSpacing = this.props.letterSpacing.value as number;
@@ -203,7 +204,7 @@ export class TextNode extends ImageNodeBase {
 
     // Fill background
     if (bgColor.a > 0) {
-      ctx.fillStyle = this.colorToCss(bgColor);
+      ctx.fillStyle = colorToCss(bgColor);
       ctx.fillRect(0, 0, width, height);
     } else {
       // Transparent background
@@ -219,7 +220,7 @@ export class TextNode extends ImageNodeBase {
     // Build font string
     const fontString = `${fontStyle} ${fontWeight} ${fontSize}px ${font}`;
     ctx.font = fontString;
-    ctx.fillStyle = this.colorToCss(color);
+    ctx.fillStyle = colorToCss(color);
 
     // Calculate text metrics for multiline
     const lines = text.split('\n');

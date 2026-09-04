@@ -59,7 +59,7 @@ export class CookScheduler {
     const visit = (candidate: Node): void => {
       if (visited.has(candidate.id)) return;
       visited.add(candidate.id);
-      candidate.invalidateCook();
+      if (candidate.cookState !== 'stale') candidate.invalidateCook();
       for (const output of candidate.outputs) {
         for (const connection of output.connections) {
           const downstream = this.graph.getNode(connection.to.nodeId);

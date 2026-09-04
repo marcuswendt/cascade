@@ -5,6 +5,7 @@ import path from 'node:path';
 import http, { type Server } from 'node:http';
 import { ProjectRoot } from '../server/src/project.js';
 import { startServer } from '../server/src/index.js';
+import { runProjectStage } from '../server/src/stageRunner.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
@@ -25,20 +26,23 @@ async function fixture() {
     "parser.add_argument('--stage', required=True)",
     "parser.add_argument('--args', required=True)",
     'args = parser.parse_args()',
-    "print(json.dumps({'stage': args.stage, 'args': json.loads(args.args)}))",
+    "payload = json.load(__import__('sys').stdin) if args.args == '-' else json.loads(args.args)",
+    "if args.stage == 'fail': print(json.dumps({'error': 'visible failure'})); raise SystemExit(1)",
+    "print(json.dumps({'stage': args.stage, 'args': payload, 'transport': 'stdin' if args.args == '-' else 'argv'}))",
   ].join('\n'));
   fs.writeFileSync(path.join(root, 'cascade.json'), JSON.stringify({
     exec: { stages: { entrypoint: 'bridge/stages.py' } },
   }));
   const port = nextPort++;
-  const server = startServer(new ProjectRoot(root), { port });
+  const project = new ProjectRoot(root);
+  const server = startServer(project, { port });
   servers.push(server);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('missing address');
   const base = `http://127.0.0.1:${address.port}`;
   const headers = { Origin: base, Host: `127.0.0.1:${address.port}` };
-  return { base, headers };
+  return { base, headers, project };
 }
 
 async function capability(base: string, headers: Record<string, string>) {
@@ -81,7 +85,32 @@ describe('/api/exec security and project boundary', () => {
     expect(response.status).toBe(200);
     const payload = await response.json() as { ok: boolean; stdout: string };
     expect(payload.ok).toBe(true);
-    expect(JSON.parse(payload.stdout)).toEqual({ stage: 'moments.list', args: { limit: 3 } });
+    expect(JSON.parse(payload.stdout)).toEqual({ stage: 'moments.list', args: { limit: 3 }, transport: 'stdin' });
+  });
+
+  it('passes large stage payloads over stdin in browser and headless hosts', async () => {
+    const { base, headers, project } = await fixture();
+    const payload = 'x'.repeat(512 * 1024);
+    await expect(runProjectStage(project, 'large', { payload })).resolves.toEqual({
+      stage: 'large',
+      args: { payload },
+      transport: 'stdin',
+    });
+
+    const token = await capability(base, headers);
+    const response = await fetch(`${base}/api/exec`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json', 'X-Cascade-Exec-Capability': token },
+      body: JSON.stringify({ stage: 'large', args: { payload } }),
+    });
+    expect(response.status).toBe(200);
+    const result = await response.json() as { stdout: string };
+    expect(JSON.parse(result.stdout)).toEqual({ stage: 'large', args: { payload }, transport: 'stdin' });
+  });
+
+  it('surfaces dispatcher errors written to stdout', async () => {
+    const { project } = await fixture();
+    await expect(runProjectStage(project, 'fail', {})).rejects.toThrow('visible failure');
   });
 
   it('rejects malformed requests and project paths outside the root', async () => {

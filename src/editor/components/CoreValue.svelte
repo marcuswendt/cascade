@@ -22,7 +22,7 @@
   export let node: any = null;
   export let onChange: ((value: any) => void) | null = null;
 
-  const GEOMETRY_TYPES = new Set(['points', 'lines', 'polyline', 'mesh', 'rects']);
+  const GEOMETRY_TYPES = new Set(['geometry', 'points', 'lines', 'polyline', 'mesh', 'rects']);
 
   $: normalizedType = normalizeType(type);
   $: effectiveType = normalizedType === 'any' ? inferCascadeType(value) : normalizedType;

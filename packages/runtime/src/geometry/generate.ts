@@ -18,6 +18,11 @@ export interface RectangleOptions {
   readonly center?: readonly [number, number];
 }
 
+function finitePair(value: readonly [number, number], code: string): void {
+  if (!Number.isFinite(value[0]) || !Number.isFinite(value[1]))
+    geometryError(code, "both components must be finite");
+}
+
 /**
  * A closed four-point polygon, counter-clockwise from the bottom-left corner.
  * Houdini has no Rectangle: its Grid with two rows and two columns does the
@@ -26,8 +31,8 @@ export interface RectangleOptions {
 export function rectangleGeometry(options: RectangleOptions = {}): Geometry {
   const [width, height] = options.size ?? [1, 1];
   const [cx, cy] = options.center ?? [0, 0];
-  if (!Number.isFinite(width) || !Number.isFinite(height))
-    geometryError("rectangle-size", "rectangle size must be finite");
+  finitePair([width, height], "rectangle-size");
+  finitePair([cx, cy], "rectangle-center");
   if (width < 0 || height < 0)
     geometryError("rectangle-size", "rectangle size must not be negative");
   const x0 = cx - width / 2;
@@ -64,13 +69,18 @@ export interface CircleOptions {
 export function circleGeometry(options: CircleOptions = {}): Geometry {
   const [cx, cy] = options.center ?? [0, 0];
   const [rx, ry] = options.radius ?? [1, 1];
-  if (!Number.isFinite(rx) || !Number.isFinite(ry))
-    geometryError("circle-radius", "circle radius must be finite");
+  finitePair([cx, cy], "circle-center");
+  finitePair([rx, ry], "circle-radius");
+  if (rx < 0 || ry < 0)
+    geometryError("circle-radius", "circle radius must not be negative");
   const builder = new GeometryBuilder();
   if ((options.type ?? "bezier") === "poly") {
-    const divisions = Math.floor(options.divisions ?? 32);
-    if (divisions < 3)
-      geometryError("circle-divisions", "a polygonal circle needs 3 divisions");
+    const divisions = options.divisions ?? 32;
+    if (!Number.isSafeInteger(divisions) || divisions < 3)
+      geometryError(
+        "circle-divisions",
+        "a polygonal circle needs an integer division count of at least 3",
+      );
     const flat: number[] = [];
     for (let index = 0; index < divisions; index += 1) {
       const angle = (2 * Math.PI * index) / divisions;

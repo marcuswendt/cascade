@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import { execFile } from 'node:child_process';
 import { Router, json, type NextFunction, type Request, type Response } from 'express';
 import type { ProjectRoot } from '../project.js';
@@ -6,16 +5,11 @@ import { PythonWorker } from '../pythonWorker.js';
 import { allowsSensitiveCapabilities, createBrowserCapabilityBoundary, type ServerSecurityOptions } from '../security.js';
 import { CredentialStore } from '../credentials.js';
 import { readProjectManifest } from '../projectConfig.js';
+import { readStageConfig, runProjectStage } from '../stageRunner.js';
 
 const EXEC_TIMEOUT_MS = 120_000;
 const MAX_BUFFER = 64 * 1024 * 1024;
 const BODY_LIMIT = '64mb';
-
-interface StageConfig {
-  readonly entrypoint: string;
-  readonly worker?: string;
-  readonly python: 'python' | 'python3';
-}
 
 interface WorkerSlot {
   readonly key: string;
@@ -54,10 +48,19 @@ export function createExecRouter(project: ProjectRoot, security: ServerSecurityO
           }
           return;
         }
-        await runPython(res, project, config.python, config.entrypoint, [
-          '--stage', request.stage,
-          '--args', JSON.stringify(request.args),
-        ], credentialEnv);
+        const controller = new AbortController();
+        res.once('close', () => { if (!res.writableEnded) controller.abort(); });
+        try {
+          const result = await runProjectStage(project, request.stage, request.args, {
+            env: { ...process.env, ...credentialEnv },
+            timeout: EXEC_TIMEOUT_MS,
+            signal: controller.signal,
+          });
+          res.json({ ok: true, stdout: JSON.stringify(result), stderr: '' });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          res.status(500).json({ ok: false, error: message, stdout: '', stderr: message });
+        }
         return;
       }
 
@@ -92,33 +95,6 @@ function parseRequest(body: unknown):
   if (value.args !== undefined && !Array.isArray(value.args)) throw new Error('entrypoint args must be an array');
   const python = value.python === 'python' ? 'python' : 'python3';
   return { kind: 'entrypoint', entrypoint: value.entrypoint, args: (value.args ?? []).map(String), python };
-}
-
-function readStageConfig(project: ProjectRoot): StageConfig {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(fs.readFileSync(project.resolve('cascade.json'), 'utf8'));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error('Project stages are not configured; add exec.stages to cascade.json');
-    }
-    throw new Error(`Cannot read cascade.json: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  const stages = (raw as { exec?: { stages?: unknown } })?.exec?.stages;
-  if (!stages || typeof stages !== 'object' || Array.isArray(stages)) {
-    throw new Error('Project stages are not configured; add exec.stages to cascade.json');
-  }
-  const value = stages as Record<string, unknown>;
-  if (typeof value.entrypoint !== 'string' || !value.entrypoint) {
-    throw new Error('cascade.json exec.stages.entrypoint must be a project-relative path');
-  }
-  if (value.worker !== undefined && (typeof value.worker !== 'string' || !value.worker)) {
-    throw new Error('cascade.json exec.stages.worker must be a project-relative path');
-  }
-  const python = value.python === 'python' ? 'python' : 'python3';
-  project.resolve(value.entrypoint);
-  if (typeof value.worker === 'string') project.resolve(value.worker);
-  return { entrypoint: value.entrypoint, ...(typeof value.worker === 'string' ? { worker: value.worker } : {}), python };
 }
 
 function runPython(

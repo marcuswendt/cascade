@@ -11,6 +11,7 @@ import {
   createStringAttribute,
   geometryError,
   getPosition,
+  numericAttribute,
   positionSize,
   readComponent,
   readElement,
@@ -78,8 +79,12 @@ export function copyToPoints(
     return emptyGeometry(width);
 
   const orient = options.useTargetOrientations ?? true;
-  const pscale = orient ? numeric(target, "pscale") : undefined;
-  const normal = orient ? numeric(target, "N") : undefined;
+  const pscale = orient
+    ? numericAttribute(target.point.pscale, "point.pscale", [1])
+    : undefined;
+  const normal = orient
+    ? numericAttribute(target.point.N, "point.N", [2, 3])
+    : undefined;
   const copyNumber = options.copyNumberAttribute ?? "copynum";
   const transfer =
     (options.transferTargetAttributes ?? true)
@@ -133,12 +138,6 @@ function range(count: number): number[] {
   const indices = new Array<number>(count);
   for (let index = 0; index < count; index += 1) indices[index] = index;
   return indices;
-}
-
-function numeric(geometry: Geometry, name: string) {
-  const attribute = geometry.point[name];
-  if (attribute === undefined || isStringAttribute(attribute)) return undefined;
-  return attribute;
 }
 
 /** One element of a target attribute, repeated across a copy's points. */

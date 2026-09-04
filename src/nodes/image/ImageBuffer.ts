@@ -11,15 +11,21 @@
 export type ColorSpace = 'linear' | 'srgb';
 export type ChannelLayout = 'gray' | 'rgb' | 'rgba';
 
-// Global buffer tracking for memory statistics
-let globalBufferCount = 0;
-let globalBufferMemory = 0;
+function pixelCount(width: number, height: number): number {
+  const count = width * height;
+  if (
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    width < 1 ||
+    height < 1 ||
+    !Number.isSafeInteger(count)
+  ) {
+    throw new RangeError(`Image dimensions must be positive safe integers; received ${width}×${height}`);
+  }
+  return count;
+}
 
 export class ImageBuffer {
-  // Static methods for global tracking
-  static get totalBufferCount(): number { return globalBufferCount; }
-  static get totalMemoryBytes(): number { return globalBufferMemory; }
-  static get totalMemoryMB(): number { return globalBufferMemory / (1024 * 1024); }
   readonly width: number;
   readonly height: number;
   readonly channels: Float32Array[];
@@ -29,8 +35,6 @@ export class ImageBuffer {
   private _canvas: HTMLCanvasElement | null = null;
   private _imageData: ImageData | null = null;
   private _dirty: boolean = true;
-  private _disposed: boolean = false;
-
   // Instance memory tracking
   private readonly _memoryBytes: number;
 
@@ -40,6 +44,7 @@ export class ImageBuffer {
     channels: Float32Array[],
     colorSpace: ColorSpace = 'srgb'
   ) {
+    pixelCount(width, height);
     this.width = width;
     this.height = height;
     this.channels = channels;
@@ -47,8 +52,6 @@ export class ImageBuffer {
 
     // Calculate and track memory usage (Float32 = 4 bytes per element)
     this._memoryBytes = channels.reduce((sum, ch) => sum + ch.byteLength, 0);
-    globalBufferCount++;
-    globalBufferMemory += this._memoryBytes;
   }
 
   /**
@@ -68,30 +71,13 @@ export class ImageBuffer {
     return `${(bytes / (1024 * 1024)).toFixed(2)}MB`;
   }
 
-  /**
-   * Dispose of this buffer and free memory tracking
-   * Note: The actual memory is freed by GC, this just updates tracking
-   */
-  dispose(): void {
-    if (this._disposed) return;
-    this._disposed = true;
-    globalBufferCount--;
-    globalBufferMemory -= this._memoryBytes;
-    this._canvas = null;
-    this._imageData = null;
-  }
-
-  get isDisposed(): boolean {
-    return this._disposed;
-  }
-
   // ============ Factory Methods ============
 
   /**
    * Create a grayscale (single channel) buffer
    */
   static grayscale(width: number, height: number): ImageBuffer {
-    const size = width * height;
+    const size = pixelCount(width, height);
     return new ImageBuffer(width, height, [new Float32Array(size)]);
   }
 
@@ -99,7 +85,7 @@ export class ImageBuffer {
    * Create an RGB (3 channel) buffer
    */
   static rgb(width: number, height: number): ImageBuffer {
-    const size = width * height;
+    const size = pixelCount(width, height);
     return new ImageBuffer(width, height, [
       new Float32Array(size),
       new Float32Array(size),
@@ -111,7 +97,7 @@ export class ImageBuffer {
    * Create an RGBA (4 channel) buffer
    */
   static rgba(width: number, height: number): ImageBuffer {
-    const size = width * height;
+    const size = pixelCount(width, height);
     return new ImageBuffer(width, height, [
       new Float32Array(size),
       new Float32Array(size),

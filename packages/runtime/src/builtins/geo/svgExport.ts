@@ -97,6 +97,7 @@ export const svgExportDefinition = {
       type: "int",
       default: 3,
       min: 0,
+      max: 15,
       step: 1,
       label: "Precision",
       description: "Decimal places on emitted coordinates.",

@@ -59,50 +59,13 @@ export function getPortColor(port: InputPort | OutputPort): string {
     return TYPE_COLORS.image;
   }
 
-  // Check dataType
-  switch (port.dataType) {
-    case 'number':
-      return DATA_TYPE_COLORS.number;
-    case 'string':
-      return DATA_TYPE_COLORS.string;
-    case 'boolean':
-      return DATA_TYPE_COLORS.boolean;
-    case 'color':
-      return DATA_TYPE_COLORS.color;
-    case 'array':
-      return DATA_TYPE_COLORS.array;
-    case 'object':
-      return DATA_TYPE_COLORS.object;
-    case 'asset':
-      return DATA_TYPE_COLORS.asset;
-    case 'any':
-    default:
-      // For 'any' type, try to infer from value
-      if (port.value !== null && port.value !== undefined) {
-        if (typeof port.value === 'number') {
-          return DATA_TYPE_COLORS.number;
-        }
-        if (typeof port.value === 'string') {
-          return DATA_TYPE_COLORS.string;
-        }
-        if (typeof port.value === 'boolean') {
-          return DATA_TYPE_COLORS.boolean;
-        }
-        if (Array.isArray(port.value)) {
-          return DATA_TYPE_COLORS.array;
-        }
-        if (port.value instanceof ImageBuffer ||
-            port.value instanceof HTMLCanvasElement ||
-            port.value instanceof HTMLImageElement ||
-            port.value instanceof OffscreenCanvas) {
-          return DATA_TYPE_COLORS.image;
-        }
-        if (typeof port.value === 'object') {
-          return DATA_TYPE_COLORS.object;
-        }
-      }
-      return DATA_TYPE_COLORS.any;
-  }
+  // Only `any` reaches here. Infer enough to keep old untyped nodes readable.
+  if (typeof port.value === 'number') return DATA_TYPE_COLORS.number;
+  if (typeof port.value === 'string') return DATA_TYPE_COLORS.string;
+  if (typeof port.value === 'boolean') return DATA_TYPE_COLORS.boolean;
+  if (Array.isArray(port.value)) return DATA_TYPE_COLORS.array;
+  if (port.value !== null && typeof port.value === 'object') return DATA_TYPE_COLORS.object;
+  return DATA_TYPE_COLORS.any;
 }
 
 /**

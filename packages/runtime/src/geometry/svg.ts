@@ -8,6 +8,7 @@ import {
 
 import {
   geometryError,
+  numericAttribute,
   positionAttribute,
   readComponent,
 } from "./attributes.js";
@@ -109,6 +110,7 @@ export function geometryToSvg(
   geometry: Geometry,
   options: SvgExportOptions = {},
 ): string {
+  validateOptions(options);
   const margin = options.margin ?? 0;
   const bounds = geometryBounds(geometry);
   const minX = bounds === undefined ? 0 : bounds.min[0] - margin;
@@ -119,7 +121,7 @@ export function geometryToSvg(
   const spanY = Math.max(maxY - minY, Number.EPSILON);
   const width = options.width && options.width > 0 ? options.width : spanX;
   const height = options.height && options.height > 0 ? options.height : spanY;
-  const precision = Math.max(0, Math.floor(options.precision ?? 3));
+  const precision = options.precision ?? 3;
   const number = (value: number) => format(value, precision);
 
   const stroke = options.stroke ?? BLACK;
@@ -128,10 +130,13 @@ export function geometryToSvg(
   const filled = (options.fillMode ?? "none") === "solid";
 
   const colour = geometry.primitive.Cd;
-  const strokeWidths = numeric(geometry.primitive.width);
-  const opacities = numeric(geometry.primitive.opacity);
-  const pointScale = numeric(geometry.point.pscale);
+  const strokeWidths = numericAttribute(geometry.primitive.width, "primitive.width", [1]);
+  const opacities = numericAttribute(geometry.primitive.opacity, "primitive.opacity", [1]);
+  const pointScale = numericAttribute(geometry.point.pscale, "point.pscale", [1]);
   const pointColour = geometry.point.Cd;
+  validateRange(strokeWidths, "primitive.width", (value) => value >= 0, "non-negative");
+  validateRange(opacities, "primitive.opacity", (value) => value >= 0 && value <= 1, "between 0 and 1");
+  validateRange(pointScale, "point.pscale", (value) => value >= 0, "non-negative");
 
   const names = groupNames(geometry, "primitive");
   const assigned = new Int32Array(geometry.primitiveCount).fill(-1);
@@ -299,15 +304,46 @@ function paintOf(
   return Color.fromComponents(attribute.data, index * 4, 4);
 }
 
-function numeric(attribute: AnyAttribute | undefined): Attribute | undefined {
-  if (attribute === undefined || isStringAttribute(attribute)) return undefined;
-  return attribute;
-}
-
 function format(value: number, precision: number): string {
-  if (!Number.isFinite(value)) return "0";
+  if (!Number.isFinite(value))
+    geometryError("svg-number", `cannot format non-finite value ${String(value)}`);
   const rounded = Number.parseFloat(value.toFixed(precision));
   return Object.is(rounded, -0) ? "0" : String(rounded);
+}
+
+function validateOptions(options: SvgExportOptions): void {
+  for (const [name, value] of [
+    ["width", options.width],
+    ["height", options.height],
+    ["margin", options.margin],
+    ["strokeWidth", options.strokeWidth],
+    ["opacity", options.opacity],
+    ["pointRadius", options.pointRadius],
+  ] as const) {
+    if (value !== undefined && !Number.isFinite(value))
+      geometryError("svg-option", `${name} must be finite`);
+  }
+  if ((options.width ?? 0) < 0 || (options.height ?? 0) < 0)
+    geometryError("svg-option", "width and height must not be negative");
+  if ((options.strokeWidth ?? 0) < 0 || (options.pointRadius ?? 0) < 0)
+    geometryError("svg-option", "strokeWidth and pointRadius must not be negative");
+  if (options.opacity !== undefined && (options.opacity < 0 || options.opacity > 1))
+    geometryError("svg-option", "opacity must be between 0 and 1");
+  const precision = options.precision ?? 3;
+  if (!Number.isSafeInteger(precision) || precision < 0 || precision > 15)
+    geometryError("svg-precision", "precision must be an integer from 0 to 15");
+}
+
+function validateRange(
+  attribute: Attribute | undefined,
+  path: string,
+  accepts: (value: number) => boolean,
+  expectation: string,
+): void {
+  if (attribute === undefined) return;
+  for (const value of attribute.data)
+    if (!accepts(value))
+      geometryError("attribute-value", `${path} values must be ${expectation}`);
 }
 
 function indent(line: string, depth: number): string {

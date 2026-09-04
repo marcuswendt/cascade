@@ -182,8 +182,6 @@ export class GeometryBuilder {
   }
 
   build(): Geometry {
-    if (this.pointCount === 0 && this.primitiveCount === 0)
-      return emptyGeometry(this.size === 3 ? 3 : 2);
     const pointCount = this.pointCount;
     const pointGroups: Record<string, Uint8Array> = {};
     for (const [name, members] of this.pointGroups)

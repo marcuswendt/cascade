@@ -76,6 +76,26 @@ describe('CookScheduler', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it('invalidates an already-stale branch only once', async () => {
+    const source = new Node('source', 'Test', graph);
+    const target = new Node('target', 'Test', graph);
+    graph.addElement(source);
+    graph.addElement(target);
+    connect(graph, source, target);
+    source.setFunction(() => {});
+    target.setFunction(() => {});
+    await graph.execute();
+
+    const sourceInvalidation = vi.spyOn(source, 'invalidateCook');
+    const targetInvalidation = vi.spyOn(target, 'invalidateCook');
+    source.markDirty();
+    source.markDirty();
+    source.markDownstreamDirty();
+
+    expect(sourceInvalidation).toHaveBeenCalledTimes(1);
+    expect(targetInvalidation).toHaveBeenCalledTimes(1);
+  });
+
   it('drops outputs from a superseded generation and cooks the latest one', async () => {
     const node = new Node('node', 'Test', graph);
     graph.addElement(node);

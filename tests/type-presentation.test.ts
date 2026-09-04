@@ -7,6 +7,7 @@ import {
   normalizeColorTuple,
   summarizeValue,
 } from '@/editor/components/typePresentation';
+import { coreGeometryView } from '@/utils/geometryView';
 
 describe('core type presentation', () => {
   it('infers portable core values without inventing project types', () => {
@@ -44,5 +45,77 @@ describe('core type presentation', () => {
     expect(presentation.countLabel).toBe('3 vertices · 1 triangle');
     expect(presentation.bounds).toEqual({ min: [0, 0], max: [10, 20] });
     expect(presentation.paths[0]).toEqual([[0, 0], [10, 0], [10, 20], [0, 0]]);
+  });
+
+  it('presents the core geometry contract without legacy shape guesses', () => {
+    const geometry = {
+      kind: 'geometry',
+      pointCount: 5,
+      vertexCount: 4,
+      primitiveCount: 1,
+      point: {
+        P: { storage: 'f64', size: 2, data: Float64Array.of(0, 0, 4, 0, 4, 2, 0, 2, 9, 9) },
+      },
+      vertex: {},
+      primitive: {},
+      detail: {},
+      topology: {
+        vertexPoints: Int32Array.of(0, 1, 2, 3),
+        offsets: Int32Array.of(0, 4),
+        kinds: Uint8Array.of(0),
+        closed: Uint8Array.of(1),
+      },
+      pointGroups: {},
+      primitiveGroups: {},
+    };
+
+    expect(inferCascadeType(geometry)).toBe('geometry');
+    expect(summarizeValue(geometry, 'geometry')).toBe('5 points · 1 primitive');
+    expect(geometryPresentation(geometry, 'geometry')).toMatchObject({
+      points: [[9, 9]],
+      paths: [[[0, 0], [4, 0], [4, 2], [0, 2], [0, 0]]],
+      bounds: { min: [0, 0], max: [9, 9] },
+    });
+  });
+
+  it('bounds large geometry previews', () => {
+    const pointCount = 10_000;
+    const data = new Float64Array(pointCount * 2);
+    for (let index = 0; index < pointCount; index += 1) {
+      data[index * 2] = index;
+      data[index * 2 + 1] = index % 17;
+    }
+
+    const presentation = geometryPresentation({
+      kind: 'geometry',
+      pointCount,
+      primitiveCount: 0,
+      point: { P: { storage: 'f64', size: 2, data } },
+      topology: {
+        vertexPoints: new Int32Array(0),
+        offsets: Int32Array.of(0),
+        kinds: new Uint8Array(0),
+        closed: new Uint8Array(0),
+      },
+    }, 'geometry');
+
+    expect(presentation.points).toHaveLength(1200);
+    expect(presentation.bounds).toEqual({ min: [0, 0], max: [9999, 16] });
+  });
+
+  it('rejects unsafe geometry preview limits', () => {
+    const geometry = {
+      kind: 'geometry',
+      pointCount: 0,
+      primitiveCount: 0,
+      point: { P: { storage: 'f64', size: 2, data: new Float64Array(0) } },
+      topology: {
+        vertexPoints: new Int32Array(0),
+        offsets: Int32Array.of(0),
+        kinds: new Uint8Array(0),
+        closed: new Uint8Array(0),
+      },
+    };
+    expect(coreGeometryView(geometry, Number.MAX_SAFE_INTEGER)).toBeNull();
   });
 });

@@ -292,6 +292,30 @@ Choose the path that matches the host:
 Return `ImageRef`, `AssetRef`, or another ordinary Cascade type. Downstream
 nodes should not need to know which service produced the value.
 
+### Project Python stages
+
+Dynamic compatibility nodes call project-owned Python through `cascade/stage`.
+Declare the dispatcher once in `cascade.json`:
+
+```json
+{
+  "exec": {
+    "stages": {
+      "entrypoint": "runtime/node_cli.py",
+      "python": "python3"
+    }
+  }
+}
+```
+
+Cascade starts the dispatcher as `node_cli.py --stage <name> --args -` and sends
+the JSON argument object on stdin. Reading stdin avoids operating-system command
+line limits for geometry and other large structured values. The dispatcher must
+write its JSON result as its final stdout line; diagnostics belong on stderr.
+It may also accept inline JSON after `--args` for manual compatibility. Projects
+with expensive imports may additionally declare a newline-delimited JSON
+`worker`; Cascade keeps that process warm and correlates requests by `id`.
+
 ## Work with `.cascade` files
 
 A graph document stores authored elements separately from runtime state. Nodes and annotations remain flat even inside subnets:

@@ -1,3 +1,15 @@
+import {
+  canConnectTypes,
+  CORE_TYPES as CONTRACT_CORE_TYPES,
+  IMPLICIT_TYPE_CONVERSIONS,
+  normalizeCascadeType,
+  type CascadeType,
+  type CoreType,
+  type ImageRef,
+} from '@cascade/contracts';
+
+export type { CascadeType, CoreType, ImageRef, Mesh, Polyline } from '@cascade/contracts';
+
 /**
  * Cascade's core data types — the vocabulary every node in a geometry and image
  * pipeline can rely on, so that inspecting a node's parameters and outputs is
@@ -45,28 +57,17 @@ export const IMAGE_TYPES = ['image', 'texture'] as const;
  * `mesh`     — vertices plus indices, with optional normals and uvs.
  * `rects`    — axis-aligned rectangles, optionally tagged.
  */
-export const GEOMETRY_TYPES = ['points', 'lines', 'polyline', 'mesh', 'rects'] as const;
+export const GEOMETRY_TYPES = ['geometry', 'points', 'lines', 'polyline', 'mesh', 'rects'] as const;
 
 /** Colour is kept apart from vec4: it means something different, it wants a
  *  swatch rather than four number fields, and it carries a colour space. */
 export const OTHER_TYPES = ['color', 'asset', 'array', 'object', 'any'] as const;
 
-export const CORE_TYPES = [
-  ...SCALAR_TYPES,
-  ...VECTOR_TYPES,
-  ...MATRIX_TYPES,
-  ...IMAGE_TYPES,
-  ...GEOMETRY_TYPES,
-  ...OTHER_TYPES,
-] as const;
-
-export type CoreType = (typeof CORE_TYPES)[number];
-/** A core type, or a namespaced project type like `archive.item`. */
-export type CascadeType = CoreType | (string & {});
+export const CORE_TYPES = CONTRACT_CORE_TYPES;
 
 const CORE_SET = new Set<string>(CORE_TYPES);
 
-export function isCoreType(type: string): boolean {
+export function isCoreType(type: string): type is CoreType {
   return CORE_SET.has(type);
 }
 
@@ -109,38 +110,13 @@ export function isIntegerType(type: string): boolean {
  * implicitly become `image` — that is a GPU readback, which is expensive enough
  * that it should appear in the graph rather than happen invisibly.
  */
-export const IMPLICIT_CONVERSIONS: Record<string, readonly string[]> = {
-  int: ['float', 'string'],
-  float: ['string'],
-  bool: ['int', 'float', 'string'],
-  vec2i: ['vec2'],
-  vec3i: ['vec3'],
-  vec4i: ['vec4'],
-  vec4: ['color'],
-  color: ['vec4'],
-};
+export const IMPLICIT_CONVERSIONS = IMPLICIT_TYPE_CONVERSIONS;
 
-/**
- * Fold the pre-core spellings onto their core names. `number` and `boolean` are
- * all over the existing nodes and every saved graph; renaming them on disk would
- * break files for no gain, so they are normalised on the way into a comparison
- * instead.
- */
-export function normalizeType(type: string | undefined): string {
-  if (!type) return 'any';
-  if (type === 'number') return 'float';
-  if (type === 'boolean') return 'bool';
-  // `curves` was the name before `polyline`; the data is identical, so it folds
-  // rather than becoming a near-duplicate type.
-  if (type === 'curves') return 'polyline';
-  return type;
-}
+/** Compatibility name retained for the Studio code while contracts owns the rule. */
+export const normalizeType = normalizeCascadeType;
 
 export function canConnect(fromType: string, toType: string): boolean {
-  if (!fromType || !toType) return true;
-  if (fromType === 'any' || toType === 'any') return true;
-  if (fromType === toType) return true;
-  return IMPLICIT_CONVERSIONS[fromType]?.includes(toType) ?? false;
+  return canConnectTypes(fromType, toType);
 }
 
 // ------------------------------------------------------------------- colours
@@ -188,9 +164,9 @@ export function typeColor(type: string | undefined): string {
 
 // -------------------------------------------------------------------- images
 
-export type ImageChannels = 'r' | 'a' | 'rg' | 'rgb' | 'rgba';
-export type ImageDepth = 'u8' | 'u16' | 'f16' | 'f32';
-export type ColorSpace = 'srgb' | 'linear';
+export type ImageChannels = ImageRef['channels'];
+export type ImageDepth = ImageRef['depth'];
+export type ColorSpace = ImageRef['space'];
 
 /**
  * The value on an `image` port. Pixels stay in a file; this is the reference
@@ -200,41 +176,9 @@ export type ColorSpace = 'srgb' | 'linear';
  * or a height field. There is no separate field type, which is what stops the
  * mask/field/plane/image family from splitting into four near-identical things.
  */
-export interface ImageRef {
-  /** Project-relative. PNG for integer depths, .npy for float. */
-  path: string;
-  /** [width, height] — a vec2i. */
-  size: [number, number];
-  channels: ImageChannels;
-  depth: ImageDepth;
-  space: ColorSpace;
-}
-
 export const CHANNEL_COUNT: Record<ImageChannels, number> = {
   r: 1, a: 1, rg: 2, rgb: 3, rgba: 4,
 };
-
-// ------------------------------------------------------------------ geometry
-
-/** Connected chains. `closed` distinguishes a loop from an open stroke. */
-export interface Polyline {
-  points: number[][];
-  closed?: boolean;
-  /** Optional per-chain weight, which the plotter uses for stroke duplication. */
-  weight?: number;
-}
-
-/** Vertices plus indices. Flat arrays on purpose: this is what goes into a
- *  vertex buffer, and unpacking it into objects only to repack it would be the
- *  cost this type exists to avoid. */
-export interface Mesh {
-  /** Flat xyz triples. */
-  positions: number[];
-  /** Triangle indices. */
-  indices: number[];
-  normals?: number[];
-  uvs?: number[];
-}
 
 export function isImageRef(value: unknown): value is ImageRef {
   return Boolean(

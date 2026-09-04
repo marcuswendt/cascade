@@ -55,9 +55,6 @@ export class RampNode extends ImageNodeBase {
 
     this.output = this.out('image');
 
-    this.watchProp('type', () => this.requestCook());
-    this.watchProp('points', () => this.requestCook());
-
     this.onReady = () => this.requestCook();
   }
 
@@ -169,7 +166,7 @@ export class RampNode extends ImageNodeBase {
       return;
     }
 
-    const buffer = this.createRGBA(width, height);
+    const buffer = ImageBuffer.rgba(width, height);
     const r = buffer.r();
     const g = buffer.g();
     const b = buffer.b();

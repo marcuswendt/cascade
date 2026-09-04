@@ -267,7 +267,7 @@
    * server resizes and re-encodes per request, which is what makes that
    * affordable — and never above the file's own resolution.
    */
-  const GEOMETRY_KINDS = new Set(['points', 'lines', 'polyline', 'rects']);
+  const GEOMETRY_KINDS = new Set(['geometry', 'points', 'lines', 'polyline', 'rects']);
 
   /**
    * Geometry drawn to an image, so it can use the same viewport as everything

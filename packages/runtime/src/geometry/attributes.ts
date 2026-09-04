@@ -74,6 +74,23 @@ export function requireAttribute(
   return attribute;
 }
 
+/** A numeric attribute when present, with consumer-specific arity validation. */
+export function numericAttribute(
+  attribute: AnyAttribute | undefined,
+  path: string,
+  sizes?: readonly number[],
+): Attribute | undefined {
+  if (attribute === undefined) return undefined;
+  if (isStringAttribute(attribute))
+    geometryError("attribute-storage", `${path} must be numeric`);
+  if (sizes !== undefined && !sizes.includes(attribute.size))
+    geometryError(
+      "attribute-size",
+      `${path} has size ${attribute.size}; expected ${sizes.join(" or ")}`,
+    );
+  return attribute;
+}
+
 /** One component of one element. */
 export function readComponent(
   attribute: Attribute,

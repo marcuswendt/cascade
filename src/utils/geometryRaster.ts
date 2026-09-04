@@ -16,12 +16,14 @@
  * handled here so a node author can use whichever suits.
  */
 import { readNpy } from './npy';
+import { coreGeometryView } from './geometryView';
 
-export type GeometryKind = 'points' | 'lines' | 'polyline' | 'rects';
+export type GeometryKind = 'geometry' | 'points' | 'lines' | 'polyline' | 'rects';
 
 /** Longest edge of the rendered image. Enough to see structure in a dense
  *  stipple; the viewer scales it from there. */
 const MAX_EDGE = 1400;
+const MAX_GEOMETRY_ITEMS = 100_000;
 
 interface Bounds {
   minX: number;
@@ -43,6 +45,11 @@ function emptyBounds(): Bounds {
 
 /** Coordinate pairs from either shape a node might emit. */
 async function toPoints(value: unknown): Promise<number[][]> {
+  if (value && typeof value === 'object' && (value as any).kind === 'geometry-file') {
+    const ref = value as any;
+    if (ref.format !== 'npy' || ref.attribute?.level !== 'point' || ref.attribute?.name !== 'P') return [];
+    value = ref.path;
+  }
   if (typeof value === 'string') {
     if (!value.endsWith('.npy')) return [];
     const clean = value.replace(/^\.?\//, '');
@@ -55,8 +62,9 @@ async function toPoints(value: unknown): Promise<number[][]> {
     for (let i = 0; i + 1 < array.data.length; i += stride) out.push([array.data[i], array.data[i + 1]]);
     return out;
   }
-  if (!Array.isArray(value)) return [];
-  return value
+  const values = Array.isArray(value) ? value : (value as any)?.points;
+  if (!Array.isArray(values)) return [];
+  return values
     .map((entry: any) => (Array.isArray(entry) ? entry : entry?.point ?? entry?.position))
     .filter((pair: any) => Array.isArray(pair) && pair.length >= 2)
     .map((pair: any) => [Number(pair[0]), Number(pair[1])]);
@@ -64,8 +72,9 @@ async function toPoints(value: unknown): Promise<number[][]> {
 
 /** Chains from a polyline value, which may be bare arrays or objects. */
 function toChains(value: unknown): number[][][] {
-  if (!Array.isArray(value)) return [];
-  return value
+  const values = Array.isArray(value) ? value : (value as any)?.polylines ?? (value as any)?.paths;
+  if (!Array.isArray(values)) return [];
+  return values
     .map((entry: any) => {
       const chain = Array.isArray(entry) ? entry : entry?.points ?? entry?.path;
       if (!Array.isArray(chain)) return null;
@@ -82,9 +91,10 @@ function toChains(value: unknown): number[][][] {
  * chains reported zero.
  */
 function toSegments(value: unknown): number[][][] {
-  if (!Array.isArray(value)) return [];
+  const values = Array.isArray(value) ? value : (value as any)?.segments ?? (value as any)?.lines;
+  if (!Array.isArray(values)) return [];
   const out: number[][][] = [];
-  for (const entry of value as any[]) {
+  for (const entry of values as any[]) {
     if (!Array.isArray(entry)) continue;
     if (entry.length >= 4 && typeof entry[0] === 'number') {
       out.push([[Number(entry[0]), Number(entry[1])], [Number(entry[2]), Number(entry[3])]]);
@@ -105,12 +115,14 @@ export interface GeometryRaster {
 
 export async function rasterizeGeometry(value: unknown, kind: GeometryKind): Promise<GeometryRaster | null> {
   const bounds = emptyBounds();
+  const core = kind === 'geometry' ? coreGeometryView(value, MAX_GEOMETRY_ITEMS) : null;
 
-  const points = kind === 'points' ? await toPoints(value) : [];
-  const chains = kind === 'polyline' ? toChains(value) : [];
+  const points = kind === 'geometry' ? (core?.points ?? []) : kind === 'points' ? await toPoints(value) : [];
+  const chains = kind === 'geometry' ? (core?.paths ?? []) : kind === 'polyline' ? toChains(value) : [];
   const segments = kind === 'lines' ? toSegments(value) : [];
-  const rects = kind === 'rects' && Array.isArray(value)
-    ? (value as any[]).map(r => (Array.isArray(r) ? r : r?.rect)).filter(r => Array.isArray(r) && r.length >= 4)
+  const rectValues = kind === 'rects' ? (Array.isArray(value) ? value : (value as any)?.rects) : [];
+  const rects = Array.isArray(rectValues)
+    ? rectValues.map(r => Array.isArray(r) ? r : r?.rect ?? [r?.x, r?.y, r?.width, r?.height]).filter(r => Array.isArray(r) && r.length >= 4 && r.every(Number.isFinite))
     : [];
 
   points.forEach(([x, y]) => growBounds(bounds, x, y));
@@ -137,7 +149,7 @@ export async function rasterizeGeometry(value: unknown, kind: GeometryKind): Pro
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, width, height);
   const px = (x: number) => (x - bounds.minX) * scale;
-  const py = (y: number) => (y - bounds.minY) * scale;
+  const py = (y: number) => (kind === 'geometry' ? bounds.maxY - y : y - bounds.minY) * scale;
 
   context.fillStyle = '#111111';
   context.strokeStyle = '#111111';
@@ -169,7 +181,9 @@ export async function rasterizeGeometry(value: unknown, kind: GeometryKind): Pro
     context.strokeRect(px(x), py(y), w * scale, h * scale);
   }
 
-  const summary = kind === 'points'
+  const summary = kind === 'geometry'
+    ? core?.summary ?? 'No geometry'
+    : kind === 'points'
     ? `${points.length.toLocaleString()} points`
     : kind === 'polyline'
       ? `${chains.length.toLocaleString()} chains · ${chains.reduce((t, c) => t + c.length, 0).toLocaleString()} vertices`

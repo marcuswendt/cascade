@@ -270,15 +270,33 @@ export type GeometrySerialized = GeometryJson | GeometryFileRef;
 const STORAGES = new Set<string>(["f32", "f64", "i32", "u8"]);
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const RESERVED_NAMES = new Set(["__proto__", "prototype", "constructor"]);
-const EMPTY_TOPOLOGY: Topology = Object.freeze({
-  vertexPoints: new Int32Array(0),
-  offsets: Int32Array.of(0),
-  kinds: new Uint8Array(0),
-  closed: new Uint8Array(0),
-});
-
 function fail(code: string, message: string): never {
   throw new TypeError(`geometry/${code}: ${message}`);
+}
+
+function emptyTopology(): Topology {
+  return {
+    vertexPoints: new Int32Array(0),
+    offsets: Int32Array.of(0),
+    kinds: new Uint8Array(0),
+    closed: new Uint8Array(0),
+  };
+}
+
+function arrayType(storage: AttributeStorage) {
+  if (storage === "f64") return Float64Array;
+  if (storage === "f32") return Float32Array;
+  if (storage === "i32") return Int32Array;
+  return Uint8Array;
+}
+
+function validStoredNumber(storage: AttributeStorage, value: number): boolean {
+  if (!Number.isFinite(value)) return false;
+  if (storage === "f64" || storage === "f32") return true;
+  if (!Number.isInteger(value)) return false;
+  return storage === "u8"
+    ? value >= 0 && value <= 255
+    : value >= -2147483648 && value <= 2147483647;
 }
 
 /** Allocate a zeroed array for a storage kind. */
@@ -286,6 +304,8 @@ export function attributeArray(
   storage: AttributeStorage,
   length: number,
 ): AttributeArray {
+  if (!Number.isSafeInteger(length) || length < 0)
+    fail("attribute-length", "attribute array length must be a non-negative safe integer");
   if (storage === "f64") return new Float64Array(length);
   if (storage === "f32") return new Float32Array(length);
   if (storage === "i32") return new Int32Array(length);
@@ -298,8 +318,17 @@ export function attributeArrayFrom(
   values: ArrayLike<number>,
 ): AttributeArray {
   const array = attributeArray(storage, values.length);
-  for (let index = 0; index < values.length; index += 1)
-    array[index] = values[index]!;
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index]!;
+    if (!validStoredNumber(storage, value))
+      fail(
+        "attribute-value",
+        `${String(value)} cannot be represented as ${storage}`,
+      );
+    array[index] = value;
+    if (!Number.isFinite(array[index]))
+      fail("attribute-value", `${String(value)} overflows ${storage}`);
+  }
   return array;
 }
 
@@ -345,6 +374,8 @@ function checkAttributeSet(
   for (const [name, attribute] of Object.entries(set)) {
     checkName(name, level);
     if (isStringAttribute(attribute)) {
+      if (!(attribute.data instanceof Int32Array))
+        fail("attribute-storage", `${level}.${name} string indices must be Int32Array`);
       if (attribute.size !== 1)
         fail("string-size", `${level}.${name} string attributes have size 1`);
       if (attribute.data.length !== count)
@@ -358,6 +389,8 @@ function checkAttributeSet(
             "string-index",
             `${level}.${name} references table entry ${index}`,
           );
+      if (!Array.isArray(attribute.table) || attribute.table.some((item) => typeof item !== "string"))
+        fail("string-table", `${level}.${name} needs a string table`);
       continue;
     }
     if (!Number.isInteger(attribute.size) || attribute.size < 1)
@@ -367,11 +400,19 @@ function checkAttributeSet(
         "attribute-storage",
         `${level}.${name} has an unknown storage ${String(attribute.storage)}`,
       );
+    if (!(attribute.data instanceof arrayType(attribute.storage)))
+      fail(
+        "attribute-storage",
+        `${level}.${name} declares ${attribute.storage} but uses ${attribute.data?.constructor?.name ?? "unknown storage"}`,
+      );
     if (attribute.data.length !== attribute.size * count)
       fail(
         "attribute-length",
         `${level}.${name} has ${attribute.data.length} values for ${count} elements of size ${attribute.size}`,
       );
+    for (const value of attribute.data)
+      if (!Number.isFinite(value))
+        fail("non-finite", `${level}.${name} contains ${String(value)}`);
   }
 }
 
@@ -383,6 +424,9 @@ function checkGroups(groups: Groups, count: number, level: string): void {
         "group-length",
         `${level}.${name} covers ${mask.length} of ${count} elements`,
       );
+    for (const member of mask)
+      if (member !== 0 && member !== 1)
+        fail("group-mask", `${level}.${name} contains ${member}; masks contain only 0 or 1`);
   }
 }
 
@@ -408,9 +452,16 @@ export interface GeometryParts {
  */
 export function createGeometry(parts: GeometryParts): Geometry {
   const pointCount = parts.pointCount;
-  if (!Number.isInteger(pointCount) || pointCount < 0)
-    fail("point-count", "pointCount must be a non-negative integer");
-  const topology = parts.topology ?? EMPTY_TOPOLOGY;
+  if (!Number.isSafeInteger(pointCount) || pointCount < 0)
+    fail("point-count", "pointCount must be a non-negative safe integer");
+  const topology = parts.topology ?? emptyTopology();
+  if (
+    !(topology.vertexPoints instanceof Int32Array) ||
+    !(topology.offsets instanceof Int32Array) ||
+    !(topology.kinds instanceof Uint8Array) ||
+    !(topology.closed instanceof Uint8Array)
+  )
+    fail("topology-storage", "topology uses Int32Array indices and Uint8Array flags");
   const primitiveCount = topology.offsets.length - 1;
   if (primitiveCount < 0)
     fail("offsets", "topology.offsets needs primitiveCount + 1 entries");
@@ -439,6 +490,9 @@ export function createGeometry(parts: GeometryParts): Geometry {
   for (const kind of topology.kinds)
     if (kind >= PRIMITIVE_KINDS.length)
       fail("primitive-kind", `unknown primitive kind ${kind}`);
+  for (const closed of topology.closed)
+    if (closed !== 0 && closed !== 1)
+      fail("closed-mask", `topology.closed contains ${closed}; flags contain only 0 or 1`);
   // A Bézier chain's vertex count is not free: the handles are vertices too, so
   // an arity mistake here is a malformed curve that every later operation would
   // read as a valid one.
@@ -474,7 +528,16 @@ export function createGeometry(parts: GeometryParts): Geometry {
   const primitiveGroups = parts.primitiveGroups ?? {};
   checkGroups(primitiveGroups, primitiveCount, "primitiveGroups");
   const detail = parts.detail ?? {};
-  for (const name of Object.keys(detail)) checkName(name, "detail");
+  for (const [name, value] of Object.entries(detail)) {
+    checkName(name, "detail");
+    if (typeof value === "number") {
+      if (!Number.isFinite(value))
+        fail("non-finite", `detail.${name} contains ${String(value)}`);
+    } else if (typeof value !== "string") {
+      if (!Array.isArray(value) || value.some((item) => !Number.isFinite(item)))
+        fail("detail-value", `detail.${name} must be a finite number, string, or finite number array`);
+    }
+  }
 
   return freezeGeometry({
     kind: "geometry",
@@ -499,10 +562,15 @@ export function createGeometry(parts: GeometryParts): Geometry {
 export function freezeGeometry(geometry: Geometry): Geometry {
   for (const level of ["point", "vertex", "primitive"] as const) {
     const set = geometry[level];
-    for (const attribute of Object.values(set)) Object.freeze(attribute);
+    for (const attribute of Object.values(set)) {
+      if (isStringAttribute(attribute)) Object.freeze(attribute.table);
+      Object.freeze(attribute);
+    }
     Object.freeze(set);
   }
   Object.freeze(geometry.topology);
+  for (const value of Object.values(geometry.detail))
+    if (Array.isArray(value)) Object.freeze(value);
   Object.freeze(geometry.detail);
   Object.freeze(geometry.pointGroups);
   Object.freeze(geometry.primitiveGroups);
@@ -637,8 +705,8 @@ function fromJsonAttributeSet(
         table.some((item) => typeof item !== "string")
       )
         fail("string-table", `${level}.${name} needs a string table`);
-      if (!finiteNumbers(attribute.data))
-        fail("attribute-data", `${level}.${name} needs numeric indices`);
+      if (!int32Numbers(attribute.data))
+        fail("attribute-data", `${level}.${name} needs 32-bit integer indices`);
       result[name] = {
         storage: "string",
         size: 1,
@@ -698,16 +766,16 @@ export function geometryFromJson(value: GeometryJson): Geometry {
   if (!isRecord(value) || value.kind !== "geometry")
     fail("not-geometry", "a geometry literal needs kind: 'geometry'");
   const pointCount = value.pointCount;
-  if (!Number.isInteger(pointCount) || pointCount < 0)
-    fail("point-count", "pointCount must be a non-negative integer");
+  if (!Number.isSafeInteger(pointCount) || pointCount < 0)
+    fail("point-count", "pointCount must be a non-negative safe integer");
   const rawTopology = value.topology;
-  let topology = EMPTY_TOPOLOGY;
+  let topology = emptyTopology();
   if (rawTopology !== undefined) {
     if (!isRecord(rawTopology))
       fail("topology-shape", "topology must be an object");
     if (
-      !finiteNumbers(rawTopology.vertexPoints) ||
-      !finiteNumbers(rawTopology.offsets)
+      !int32Numbers(rawTopology.vertexPoints) ||
+      !int32Numbers(rawTopology.offsets)
     )
       fail("topology-shape", "topology needs vertexPoints and offsets");
     const primitiveCount = rawTopology.offsets.length - 1;
@@ -715,9 +783,9 @@ export function geometryFromJson(value: GeometryJson): Geometry {
       fail("offsets", "topology.offsets needs primitiveCount + 1 entries");
     const kinds = rawTopology.kinds;
     const closed = rawTopology.closed;
-    if (kinds !== undefined && !finiteNumbers(kinds))
+    if (kinds !== undefined && !byteNumbers(kinds))
       fail("topology-shape", "topology.kinds must be numeric");
-    if (closed !== undefined && !finiteNumbers(closed))
+    if (closed !== undefined && (!byteNumbers(closed) || closed.some((item) => item !== 0 && item !== 1)))
       fail("topology-shape", "topology.closed must be numeric");
     topology = {
       vertexPoints: Int32Array.from(rawTopology.vertexPoints),
@@ -759,88 +827,25 @@ export function geometryFromJson(value: GeometryJson): Geometry {
   });
 }
 
-function attributeSetJsonLooksValid(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  return Object.entries(value).every(([name, attribute]) => {
-    if (!NAME.test(name) || RESERVED_NAMES.has(name)) return false;
-    if (!isRecord(attribute)) return false;
-    if (attribute.storage === "string")
-      return (
-        Array.isArray(attribute.table) &&
-        attribute.table.every((item) => typeof item === "string") &&
-        finiteNumbers(attribute.data)
-      );
-    return (
-      typeof attribute.storage === "string" &&
-      STORAGES.has(attribute.storage) &&
-      typeof attribute.size === "number" &&
-      Number.isInteger(attribute.size) &&
-      attribute.size >= 1 &&
-      finiteNumbers(attribute.data) &&
-      attribute.data.length % attribute.size === 0
-    );
-  });
-}
-
 /**
- * A structural check for a `geometry` interchange value. Deliberately
- * independent of `geometryFromJson`, because a validator that runs the decoder
- * reports "it threw" rather than "it is not a geometry".
+ * Validate an interchange value against the same constructor used to decode it.
+ * Keeping a second structural validator here previously accepted bad attribute
+ * lengths, fractional topology indices and out-of-range groups.
  */
 export function isGeometryJson(value: unknown): value is GeometryJson {
-  if (!isRecord(value) || value.kind !== "geometry") return false;
-  if (
-    typeof value.pointCount !== "number" ||
-    !Number.isInteger(value.pointCount) ||
-    value.pointCount < 0
-  )
+  try {
+    geometryFromJson(value as GeometryJson);
+    return true;
+  } catch {
     return false;
-  for (const level of ["point", "vertex", "primitive"] as const)
-    if (value[level] !== undefined && !attributeSetJsonLooksValid(value[level]))
-      return false;
-  const point = isRecord(value.point)
-    ? value.point[POSITION_ATTRIBUTE]
-    : undefined;
-  if (!isRecord(point)) return false;
-  if (point.size !== 2 && point.size !== 3) return false;
-  if (value.topology !== undefined) {
-    const topology = value.topology;
-    if (!isRecord(topology)) return false;
-    if (
-      !finiteNumbers(topology.vertexPoints) ||
-      !finiteNumbers(topology.offsets)
-    )
-      return false;
-    if (topology.offsets.length < 1) return false;
-    if (topology.kinds !== undefined && !finiteNumbers(topology.kinds))
-      return false;
-    if (topology.closed !== undefined && !finiteNumbers(topology.closed))
-      return false;
   }
-  if (value.detail !== undefined) {
-    if (!isRecord(value.detail)) return false;
-    for (const item of Object.values(value.detail))
-      if (
-        typeof item !== "number" &&
-        typeof item !== "string" &&
-        !finiteNumbers(item)
-      )
-        return false;
-  }
-  for (const level of ["pointGroups", "primitiveGroups"] as const) {
-    const groups = value[level];
-    if (groups === undefined) continue;
-    if (!isRecord(groups)) return false;
-    for (const indices of Object.values(groups))
-      if (!finiteNumbers(indices)) return false;
-  }
-  return true;
 }
 
 export function isGeometryFileRef(value: unknown): value is GeometryFileRef {
   if (!isRecord(value) || value.kind !== "geometry-file") return false;
   if (typeof value.path !== "string" || value.path.length === 0) return false;
   if (value.format !== "npy" && value.format !== "json") return false;
+  if (value.format === "npy" && value.attribute === undefined) return false;
   if (value.attribute !== undefined) {
     const attribute = value.attribute;
     if (!isRecord(attribute)) return false;
@@ -850,7 +855,11 @@ export function isGeometryFileRef(value: unknown): value is GeometryFileRef {
       attribute.level !== "primitive"
     )
       return false;
-    if (typeof attribute.name !== "string" || !NAME.test(attribute.name))
+    if (
+      typeof attribute.name !== "string" ||
+      !NAME.test(attribute.name) ||
+      RESERVED_NAMES.has(attribute.name)
+    )
       return false;
     if (
       typeof attribute.size !== "number" ||
@@ -861,6 +870,14 @@ export function isGeometryFileRef(value: unknown): value is GeometryFileRef {
     if (
       typeof attribute.storage !== "string" ||
       !STORAGES.has(attribute.storage)
+    )
+      return false;
+  }
+  for (const key of ["pointCount", "primitiveCount"] as const) {
+    const count = value[key];
+    if (
+      count !== undefined &&
+      (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
     )
       return false;
   }
@@ -884,10 +901,26 @@ export function geometryFileRefFromPath(
   path: string,
   options: Omit<GeometryFileRef, "kind" | "path" | "format"> = {},
 ): GeometryFileRef {
-  const format = path.endsWith(".npy")
+  const lower = path.toLowerCase();
+  const format = lower.endsWith(".npy")
     ? "npy"
-    : path.endsWith(".json")
+    : lower.endsWith(".json")
       ? "json"
       : fail("unknown-format", `cannot tell a geometry format from ${path}`);
-  return { kind: "geometry-file", path, format, ...options };
+  const ref = { kind: "geometry-file", path, format, ...options } as GeometryFileRef;
+  if (!isGeometryFileRef(ref))
+    fail("file-reference", `${format} geometry reference is missing or has invalid metadata`);
+  return ref;
+}
+
+function integerNumbers(value: unknown): value is readonly number[] {
+  return finiteNumbers(value) && value.every(Number.isSafeInteger);
+}
+
+function int32Numbers(value: unknown): value is readonly number[] {
+  return integerNumbers(value) && value.every((item) => item >= -2147483648 && item <= 2147483647);
+}
+
+function byteNumbers(value: unknown): value is readonly number[] {
+  return integerNumbers(value) && value.every((item) => item >= 0 && item <= 255);
 }

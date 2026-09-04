@@ -1,4 +1,5 @@
 import {
+  canConnectTypes,
   validateNodeDefinition,
   type CascadeAbortSignal,
   type CascadeType,
@@ -1365,7 +1366,7 @@ function materializeConnection(
   if (
     output.kind === "data" &&
     input.kind === "data" &&
-    !canConnect(output.type, input.type)
+    !canConnectTypes(output.type, input.type)
   )
     misuse(
       "runtime/connection-type",
@@ -1689,24 +1690,4 @@ function runtimeValue(
       type !== "string");
   if (!valid) misuse("runtime/value-type", `${path} is not a valid ${type}`);
   return snapshot(value);
-}
-
-const IMPLICIT_TYPES: Readonly<Record<string, readonly string[]>> = {
-  int: ["float", "string"],
-  float: ["string"],
-  bool: ["int", "float", "string"],
-  vec2i: ["vec2"],
-  vec3i: ["vec3"],
-  vec4i: ["vec4"],
-  vec4: ["color"],
-  color: ["vec4"],
-};
-
-function canConnect(source: string, target: string): boolean {
-  return (
-    source === target ||
-    source === "any" ||
-    target === "any" ||
-    (IMPLICIT_TYPES[source]?.includes(target) ?? false)
-  );
 }

@@ -7,6 +7,18 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { Graph } from '@/nodes/Graph';
 import { ImageNodeBase, ImageBuffer, type ResolutionMode, type FitMode, type ImageInput } from '@/nodes/image/ImageNodeBase';
 
+describe('ImageBuffer dimensions', () => {
+  it.each([
+    [0, 1],
+    [-1, 1],
+    [1.5, 1],
+    [Number.NaN, 1],
+    [1, Number.POSITIVE_INFINITY],
+  ])('rejects invalid dimensions %s x %s', (width, height) => {
+    expect(() => ImageBuffer.rgba(width, height)).toThrow(/positive safe integers/);
+  });
+});
+
 // Concrete test implementation of ImageNodeBase to access protected methods
 class TestImageNodeBase extends ImageNodeBase {
   constructor(id: string, graph: Graph) {
@@ -337,4 +349,3 @@ describe('ImageNodeBase Resolution Utilities', () => {
     });
   });
 });
-

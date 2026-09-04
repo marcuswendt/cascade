@@ -14,6 +14,7 @@ import {
   readAttribute,
   resampleGeometry,
   setGroup,
+  transformGeometry,
 } from "../dist/index.js";
 import { Color, createGeometry } from "../../contracts/dist/index.js";
 import { createRuntime } from "../dist/index.js";
@@ -165,6 +166,21 @@ test("a polygonal Circle has the divisions its parameter claims", async () => {
   // Closed is topology, not a repeated vertex: six segments from six vertices.
   assert.equal(geometry.topology.closed[0], 1);
   assert.deepEqual(Array.from(geometry.point.P.data.slice(0, 2)), [2, 0]);
+});
+
+test("generators reject non-finite and invalid dimensions", () => {
+  assert.throws(
+    () => rectangleGeometry({ center: [Number.NaN, 0] }),
+    /geometry\/rectangle-center/,
+  );
+  assert.throws(
+    () => circleGeometry({ radius: [-1, 1] }),
+    /geometry\/circle-radius/,
+  );
+  assert.throws(
+    () => circleGeometry({ type: "poly", divisions: Number.POSITIVE_INFINITY }),
+    /geometry\/circle-divisions/,
+  );
 });
 
 test("a malformed Bezier chain is refused rather than stored", () => {
@@ -489,6 +505,28 @@ test("Transform rotates counter-clockwise about its pivot", async () => {
   // The bottom-left corner turns a quarter turn to the bottom-right.
   assert.deepEqual(rounded.slice(0, 2), [3, 1]);
   assert.deepEqual(rounded.slice(2, 4), [3, 3]);
+});
+
+test("transforms reject non-finite matrices instead of emitting poisoned geometry", () => {
+  assert.throws(
+    () => transformGeometry(rectangleGeometry(), [1, 0, 0, 0, 1, 0, Number.NaN, 0, 1]),
+    /geometry\/matrix/,
+  );
+});
+
+test("SVG export rejects invalid precision and malformed scalar style attributes", () => {
+  assert.throws(
+    () => geometryToSvg(rectangleGeometry(), { precision: 101 }),
+    /geometry\/svg-precision/,
+  );
+
+  const builder = new GeometryBuilder();
+  builder.addPolygon([0, 0, 1, 0, 1, 1], { closed: true });
+  builder.setNumericAttribute("primitive", "width", [1, 2], 2);
+  assert.throws(
+    () => geometryToSvg(builder.build()),
+    /geometry\/attribute-size/,
+  );
 });
 
 test("a non-core variadic node accepts input_0 and input_1", async () => {

@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Color, ShellProcessError, validateNodeDefinition } from "../dist/index.js";
+import {
+  canConnectTypes,
+  Color,
+  normalizeCascadeType,
+  ShellProcessError,
+  validateNodeDefinition,
+} from "../dist/index.js";
 import { nodeDefinitionSchema } from "../dist/schema.js";
 
 test("validates a portable deterministic definition", () => {
@@ -14,6 +20,16 @@ test("validates a portable deterministic definition", () => {
   };
 
   assert.deepEqual(validateNodeDefinition(definition), []);
+});
+
+test("normalizes and connects types identically in every host", () => {
+  assert.equal(normalizeCascadeType("number"), "float");
+  assert.equal(normalizeCascadeType("boolean"), "bool");
+  assert.equal(normalizeCascadeType("curves"), "polyline");
+  assert.equal(normalizeCascadeType(undefined), "any");
+  assert.equal(canConnectTypes("vec2i", "vec2"), true);
+  assert.equal(canConnectTypes("curves", "polyline"), true);
+  assert.equal(canConnectTypes("float", "int"), false);
 });
 
 test("rejects environment, name, collision, and numeric contract violations", () => {

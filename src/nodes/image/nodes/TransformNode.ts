@@ -113,16 +113,6 @@ export class TransformNode extends ImageNodeBase {
 
     this.output = this.out('image');
 
-    // Watch all props
-    this.watchProp('translate', () => this.requestCook());
-    this.watchProp('rotation', () => this.requestCook());
-    this.watchProp('scale', () => this.requestCook());
-    this.watchProp('uniformScale', () => this.requestCook());
-    this.watchProp('pivot', () => this.requestCook());
-    this.watchProp('customPivot', () => this.requestCook());
-    this.watchProp('filter', () => this.requestCook());
-    this.watchProp('wrap', () => this.requestCook());
-
     this.imageInput.onChange = () => this.requestCook();
 
     this.onReady = () => this.requestCook();
@@ -186,7 +176,7 @@ export class TransformNode extends ImageNodeBase {
     const invSx = 1 / sx;
     const invSy = 1 / sy;
 
-    const buffer = this.createRGBA(width, height);
+    const buffer = ImageBuffer.rgba(width, height);
     const channelCount = Math.min(input.channelCount, 4);
 
     for (let y = 0; y < height; y++) {

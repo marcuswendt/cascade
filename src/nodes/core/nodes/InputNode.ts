@@ -5,8 +5,8 @@
 
 import { Node } from '../../Node.js';
 import type { Graph } from '../../Graph.js';
-import type { OutputPort } from '@/types/node.types';
-import { CORE_TYPES } from '@/types/coreTypes';
+import type { DataType, OutputPort } from '@/types/node.types';
+import { CORE_TYPES, isCoreType } from '@/types/coreTypes';
 
 const TYPE_CHOICES = CORE_TYPES.map(type => ({ value: type, label: type }));
 
@@ -83,8 +83,9 @@ export class InputNode extends Node {
     return this.props.inputName?.value ?? '';
   }
 
-  get dataType(): string {
-    return this.props.dataType?.value ?? 'any';
+  get dataType(): DataType {
+    const value = this.props.dataType?.value;
+    return typeof value === 'string' && isCoreType(value) ? value : 'any';
   }
 
   private update(): void {

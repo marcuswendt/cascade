@@ -171,6 +171,64 @@ test("createGeometry enforces the invariants the operations rely on", () => {
       }),
     /geometry\/group-length/,
   );
+  assert.throws(
+    () =>
+      createGeometry({
+        pointCount: 1,
+        point: {
+          P: { storage: "f64", size: 2, data: Float64Array.of(0, Number.NaN) },
+        },
+      }),
+    /geometry\/non-finite/,
+  );
+  assert.throws(
+    () =>
+      createGeometry({
+        pointCount: 1,
+        point: {
+          P: { storage: "f64", size: 2, data: Float32Array.of(0, 0) },
+        },
+      }),
+    /geometry\/attribute-storage/,
+  );
+  assert.throws(
+    () =>
+      createGeometry({
+        pointCount: 1,
+        point: { P: { storage: "f64", size: 2, data: Float64Array.of(0, 0) } },
+        pointGroups: { bad: Uint8Array.of(2) },
+      }),
+    /geometry\/group-mask/,
+  );
+  assert.throws(
+    () =>
+      createGeometry({
+        pointCount: 1,
+        point: { P: { storage: "f64", size: 2, data: Float64Array.of(0, 0) } },
+        topology: {
+          vertexPoints: Int32Array.of(0),
+          offsets: Int32Array.of(0, 1),
+          kinds: Uint8Array.of(0),
+          closed: Uint8Array.of(2),
+        },
+      }),
+    /geometry\/closed-mask/,
+  );
+});
+
+test("createGeometry freezes ordinary nested metadata", () => {
+  const table = ["FORM_04"];
+  const page = [420, 594];
+  const geometry = createGeometry({
+    pointCount: 1,
+    point: { P: { storage: "f64", size: 2, data: Float64Array.of(0, 0) } },
+    primitive: {
+      tag: { storage: "string", size: 1, table, data: new Int32Array(0) },
+    },
+    detail: { page },
+  });
+  assert.ok(Object.isFrozen(geometry.primitive.tag.table));
+  assert.ok(Object.isFrozen(geometry.detail.page));
 });
 
 test("a geometry file reference is declared rather than guessed", () => {
@@ -185,6 +243,20 @@ test("a geometry file reference is declared rather than guessed", () => {
   assert.equal(isGeometryJson(ref), false);
   assert.equal(
     isGeometryFileRef({ kind: "geometry-file", path: "a.npy", format: "npz" }),
+    false,
+  );
+  assert.equal(
+    isGeometryFileRef({ kind: "geometry-file", path: "a.npy", format: "npy" }),
+    false,
+  );
+  assert.equal(
+    isGeometryFileRef({
+      kind: "geometry-file",
+      path: "a.npy",
+      format: "npy",
+      attribute: { level: "point", name: "P", size: 2, storage: "f64" },
+      pointCount: -1,
+    }),
     false,
   );
   assert.throws(
@@ -204,7 +276,7 @@ test("defaultMatches rejects a geometry default that is not geometry", () => {
 
   assert.deepEqual(withDefault(geometryToJson(emptyGeometry())), []);
   assert.deepEqual(
-    withDefault(geometryFileRefFromPath("/cache/points.npy")),
+    withDefault(geometryFileRefFromPath("/cache/points.json")),
     [],
   );
   for (const value of [
@@ -237,6 +309,47 @@ test("the interchange guard accepts only a well-formed geometry", () => {
     }),
     false,
   );
+  for (const malformed of [
+    {
+      kind: "geometry",
+      pointCount: 2,
+      point: { P: { storage: "f64", size: 2, data: [0, 0] } },
+    },
+    {
+      kind: "geometry",
+      pointCount: 1,
+      point: { P: { storage: "f64", size: 2, data: [0, 0] } },
+      topology: { vertexPoints: [0.5], offsets: [0, 1] },
+    },
+    {
+      kind: "geometry",
+      pointCount: 1,
+      point: { P: { storage: "f64", size: 2, data: [0, 0] } },
+      pointGroups: { bad: [2] },
+    },
+    {
+      kind: "geometry",
+      pointCount: 1,
+      point: {
+        P: { storage: "f64", size: 2, data: [0, 0] },
+        index: { storage: "i32", size: 1, data: [0.5] },
+      },
+    },
+    {
+      kind: "geometry",
+      pointCount: 1,
+      point: {
+        P: { storage: "f64", size: 2, data: [0, 0] },
+        tag: { storage: "string", table: ["a"], data: [0.5] },
+      },
+    },
+    {
+      kind: "geometry",
+      pointCount: 1,
+      point: { P: { storage: "f64", size: 2, data: [0, 0] } },
+      topology: { vertexPoints: [2147483648], offsets: [0, 1] },
+    },
+  ]) assert.equal(isGeometryJson(malformed), false, JSON.stringify(malformed));
   assert.throws(
     () => geometryFromJson({ kind: "points", pointCount: 0 }),
     /geometry\/not-geometry/,

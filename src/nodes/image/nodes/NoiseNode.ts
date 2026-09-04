@@ -27,7 +27,11 @@ export class NoiseNode extends ImageNodeBase {
         integer: true
       },
       displayName: 'Seed',
-      onChange: () => this.requestCook()
+      onChange: () => {
+        void this.initNoise().then(() => {
+          if (this.noise2D) this.requestCook();
+        });
+      }
     });
 
     this.addParm('scale', {
@@ -56,16 +60,6 @@ export class NoiseNode extends ImageNodeBase {
     this.addResolutionParm();
 
     this.output = this.out('image');
-
-    this.watchProp('seed', () => {
-      this.initNoise().then(() => {
-        if (this.noise2D) {
-          this.requestCook();
-        }
-      });
-    });
-    this.watchProp('scale', () => this.requestCook());
-    this.watchProp('iterations', () => this.requestCook());
 
     this.onReady = async () => {
       await this.initNoise();
@@ -120,7 +114,7 @@ export class NoiseNode extends ImageNodeBase {
     }
 
     // Create grayscale buffer (single channel for efficiency)
-    const buffer = this.createGrayscale(width, height);
+    const buffer = ImageBuffer.grayscale(width, height);
     const gray = buffer.r();
 
     // Generate fractal noise

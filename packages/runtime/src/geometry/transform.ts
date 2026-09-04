@@ -34,6 +34,8 @@ export function transformGeometry(
 ): Geometry {
   if (matrix.length !== 9 && matrix.length !== 16)
     geometryError("matrix", "transform needs a mat3 or a mat4");
+  if (!matrix.every(Number.isFinite))
+    geometryError("matrix", "transform matrix values must be finite");
   if (geometry.pointCount === 0) return geometry;
   const position = positionAttribute(geometry);
   const size = position.size;

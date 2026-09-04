@@ -5,6 +5,7 @@
 import { ImageNodeBase, ImageBuffer } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
+import { normalizeColor } from '@/utils/colorUtils';
 
 export class CheckersNode extends ImageNodeBase {
   private output!: OutputPort<ImageBuffer>;
@@ -76,22 +77,14 @@ export class CheckersNode extends ImageNodeBase {
 
     this.output = this.out('image');
 
-    // Watch all props to ensure updates trigger re-render
-    this.watchProp('color1', () => this.requestCook());
-    this.watchProp('color2', () => this.requestCook());
-    this.watchProp('mode', () => this.requestCook());
-    this.watchProp('size', () => this.requestCook());
-    this.watchProp('divisions', () => this.requestCook());
-    this.watchProp('centered', () => this.requestCook());
-
     this.onReady = () => this.requestCook();
   }
 
   protected render(): void {
     const [width, height] = this.getResolution();
     const mode = this.props.mode.value;
-    const color1 = this.normalizeColor(this.props.color1.value);
-    const color2 = this.normalizeColor(this.props.color2.value);
+    const color1 = normalizeColor(this.props.color1.value);
+    const color2 = normalizeColor(this.props.color2.value);
     const centered = this.props.centered.value;
 
     let checkerSize: number;
@@ -110,7 +103,7 @@ export class CheckersNode extends ImageNodeBase {
       offsetY = (height / 2) % checkerSize - checkerSize / 2;
     }
 
-    const buffer = this.createRGBA(width, height);
+    const buffer = ImageBuffer.rgba(width, height);
     const r = buffer.r();
     const g = buffer.g();
     const b = buffer.b();

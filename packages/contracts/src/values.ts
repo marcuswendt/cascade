@@ -38,6 +38,41 @@ export const CORE_TYPES = [
 export type CoreType = (typeof CORE_TYPES)[number];
 export type NamespacedType = `${string}.${string}`;
 export type CascadeType = CoreType | NamespacedType;
+
+const TYPE_ALIASES: Readonly<Record<string, CoreType>> = {
+  number: "float",
+  boolean: "bool",
+  curves: "polyline",
+};
+
+export const IMPLICIT_TYPE_CONVERSIONS: Readonly<Record<string, readonly string[]>> = {
+  int: ["float", "string"],
+  float: ["string"],
+  bool: ["int", "float", "string"],
+  vec2i: ["vec2"],
+  vec3i: ["vec3"],
+  vec4i: ["vec4"],
+  vec4: ["color"],
+  color: ["vec4"],
+};
+
+/** Canonicalize compatibility spellings before validation or connection checks. */
+export function normalizeCascadeType(type: string | undefined): string {
+  if (!type) return "any";
+  return TYPE_ALIASES[type] ?? type;
+}
+
+/** Shared widening rules for Studio, headless runtimes, and graph tooling. */
+export function canConnectTypes(source: string, target: string): boolean {
+  const from = normalizeCascadeType(source);
+  const to = normalizeCascadeType(target);
+  return (
+    from === to ||
+    from === "any" ||
+    to === "any" ||
+    (IMPLICIT_TYPE_CONVERSIONS[from]?.includes(to) ?? false)
+  );
+}
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue =
   JsonPrimitive | { readonly [key: string]: JsonValue } | readonly JsonValue[];

@@ -10,6 +10,10 @@ export interface ColorObject {
   a?: number; // alpha channel (0.0-1.0, defaults to 1.0)
 }
 
+export interface NormalizedColor extends ColorObject {
+  a: number;
+}
+
 /**
  * Color input can be in multiple formats:
  * - Object: { r, g, b, a? } (0.0-1.0 normalized or 0-255 integer)
@@ -21,7 +25,7 @@ export type ColorInput = ColorObject | number[] | string;
 /**
  * Normalize a color value to internal format (normalized float object)
  */
-export function normalizeColor(input: ColorInput): ColorObject {
+export function normalizeColor(input: ColorInput): NormalizedColor {
   // Already a color object - check if normalized
   if (typeof input === 'object' && !Array.isArray(input) && 'r' in input && 'g' in input && 'b' in input) {
     const obj = input as ColorObject;

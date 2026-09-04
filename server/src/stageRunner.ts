@@ -15,6 +15,13 @@ const MAX_BUFFER = 64 * 1024 * 1024;
 export interface StageConfig {
   python: 'python' | 'python3';
   entrypoint: string;
+  worker?: string;
+}
+
+export interface StageRunOptions {
+  readonly env?: NodeJS.ProcessEnv;
+  readonly timeout?: number;
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -45,7 +52,12 @@ export function readStageConfig(project: ProjectRoot): StageConfig {
   // Resolving it here keeps a stage path inside the project, the same check the
   // HTTP route makes.
   project.resolve(entrypoint);
-  return { python: value?.python === 'python' ? 'python' : 'python3', entrypoint };
+  const worker = typeof value?.worker === 'string' && value.worker ? value.worker : undefined;
+  if (value?.worker !== undefined && !worker) {
+    throw new Error('cascade.json exec.stages.worker must be a project-relative path');
+  }
+  if (worker) project.resolve(worker);
+  return { python: value?.python === 'python' ? 'python' : 'python3', entrypoint, ...(worker ? { worker } : {}) };
 }
 
 /**
@@ -60,19 +72,34 @@ export async function runProjectStage(
   project: ProjectRoot,
   stage: string,
   args: Record<string, unknown>,
+  options: StageRunOptions = {},
 ): Promise<unknown> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(stage)) {
+    throw new Error('stage contains unsupported characters');
+  }
   const { python, entrypoint } = readStageConfig(project);
   const script = project.resolve(entrypoint);
+  const payload = JSON.stringify(args);
   const stdout = await new Promise<string>((resolve, reject) => {
-    execFile(
+    const child = execFile(
       python,
-      [script, '--stage', stage, '--args', JSON.stringify(args)],
-      { cwd: project.root, timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER },
+      [script, '--stage', stage, '--args', '-'],
+      {
+        cwd: project.root,
+        timeout: options.timeout ?? TIMEOUT_MS,
+        maxBuffer: MAX_BUFFER,
+        env: options.env ?? process.env,
+        signal: options.signal,
+      },
       (error, out, err) => {
-        if (error) return reject(new Error(`stage "${stage}" failed: ${err?.trim() || error.message}`));
+        if (error) {
+          const output = err?.trim() || out.trim().split('\n').pop() || error.message;
+          return reject(new Error(`stage "${stage}" failed: ${output}`));
+        }
         resolve(out);
       },
     );
+    child.stdin?.end(payload);
   });
   const lastLine = stdout.trim().split('\n').pop() || '{}';
   let parsed: unknown;

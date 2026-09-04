@@ -5,6 +5,7 @@
 import { ImageNodeBase, ImageBuffer } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
+import { normalizeColor } from '@/utils/colorUtils';
 
 export class ColorNode extends ImageNodeBase {
   private output!: OutputPort<ImageBuffer>;
@@ -31,9 +32,9 @@ export class ColorNode extends ImageNodeBase {
 
   protected render(): void {
     const [width, height] = this.getResolution();
-    const color = this.normalizeColor(this.props.color.value);
+    const color = normalizeColor(this.props.color.value);
 
-    const buffer = this.createSolid(width, height, color);
+    const buffer = ImageBuffer.solid(width, height, color);
     this.setOutput(this.output, buffer);
   }
 }

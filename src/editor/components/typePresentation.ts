@@ -1,4 +1,5 @@
 import { coerceImageRef, isImageRef } from '@/types/coreTypes';
+import { coreGeometryView } from '@/utils/geometryView';
 
 export type PresentationMode = 'compact' | 'inspect' | 'view';
 export type Point2 = [number, number];
@@ -19,6 +20,7 @@ export function inferCascadeType(value: unknown): string {
   if (typeof value === 'boolean') return 'bool';
   if (typeof value === 'string') return IMAGE_PATH.test(value) ? 'image' : 'string';
   if (isImageRef(value)) return 'image';
+  if (value !== null && typeof value === 'object' && (value as { kind?: unknown }).kind === 'geometry') return 'geometry';
   if (Array.isArray(value)) {
     if (value.every(item => typeof item === 'number')) {
       if (value.length === 2) return 'vec2';
@@ -104,7 +106,7 @@ export function summarizeValue(value: unknown, type: string): string {
     const format = texture.format ?? (texture.float ? 'float' : 'GPU texture');
     return `${dimensions} · ${format} · browser session`;
   }
-  if (['points', 'lines', 'polyline', 'mesh', 'rects'].includes(type)) {
+  if (['geometry', 'points', 'lines', 'polyline', 'mesh', 'rects'].includes(type)) {
     return geometryPresentation(value, type).countLabel;
   }
   if (Array.isArray(value)) return `${value.length} ${value.length === 1 ? 'item' : 'items'}`;
@@ -136,7 +138,15 @@ export function geometryPresentation(value: unknown, type: string): GeometryPres
   const result: GeometryPresentation = { countLabel: 'No geometry', bounds: null, points: [], paths: [], rects: [] };
   const data = value as any;
 
-  if (type === 'points') {
+  if (type === 'geometry') {
+    const view = coreGeometryView(value, MAX_GEOMETRY_ITEMS);
+    if (!view) return result;
+    result.points = view.points;
+    result.paths = view.paths;
+    result.bounds = view.bounds;
+    result.countLabel = view.summary;
+    return result;
+  } else if (type === 'points') {
     result.points = pointList(Array.isArray(data) ? data : data?.points);
     result.countLabel = `${result.points.length} ${result.points.length === 1 ? 'point' : 'points'}`;
   } else if (type === 'lines') {

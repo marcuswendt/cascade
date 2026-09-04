@@ -4,7 +4,7 @@
   import type { Node } from '@/nodes/Node';
   import { sharedContextStore, panelLockStore } from '../dockview/renderer';
   import { typeToPackagePath } from '@/utils/nodeTypeUtils';
-  import { ImageNodeBase, ImageBuffer } from '@/nodes/image/ImageNodeBase';
+  import { ImageNodeBase } from '@/nodes/image/ImageNodeBase';
 
   export let panelId: string;
   export let panelParams: CascadePanelParams;
@@ -121,15 +121,6 @@
     return null;
   }
 
-  // Get global buffer stats
-  function getGlobalBufferStats() {
-    return {
-      totalBuffers: ImageBuffer.totalBufferCount,
-      totalMemoryBytes: ImageBuffer.totalMemoryBytes,
-      totalMemoryMB: ImageBuffer.totalMemoryMB
-    };
-  }
-
   // Format resolution
   function formatResolution(width: number, height: number): string {
     const megapixels = (width * height) / 1000000;
@@ -152,7 +143,6 @@
 
   // Reactive buffer info
   $: bufferInfo = displayNode ? getBufferInfo(displayNode) : null;
-  $: globalStats = getGlobalBufferStats();
 </script>
 
 <div class="cook-info-panel">
@@ -247,22 +237,6 @@
           </div>
         </section>
 
-        <!-- Global Buffer Stats -->
-        <section class="info-section">
-          <h3>Global Buffers</h3>
-          <div class="info-grid">
-            <div class="info-row">
-              <span class="label">Active Buffers</span>
-              <span class="value">{globalStats.totalBuffers}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Total Memory</span>
-              <span class="value" class:warning={globalStats.totalMemoryMB > 100}>
-                {globalStats.totalMemoryMB.toFixed(1)} MB
-              </span>
-            </div>
-          </div>
-        </section>
       {/if}
 
       <!-- State -->

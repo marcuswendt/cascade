@@ -46,10 +46,6 @@ export class NormalMapNode extends ImageNodeBase {
 
     this.image.onChange = () => this.requestCook();
 
-    this.watchProp('scale', () => this.requestCook());
-    this.watchProp('flipX', () => this.requestCook());
-    this.watchProp('flipY', () => this.requestCook());
-
     this.onReady = () => this.requestCook();
   }
 

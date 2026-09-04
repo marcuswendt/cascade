@@ -58,6 +58,15 @@ test("the builder produces points, topology and attributes in one pass", () => {
   assert.equal(geometryLength(geometry), 16);
 });
 
+test("the builder preserves detail metadata on empty geometry", () => {
+  const builder = new GeometryBuilder();
+  builder.setDetail("size", [1024, 1024]);
+  const geometry = builder.build();
+
+  assert.equal(geometry.pointCount, 0);
+  assert.deepEqual(geometry.detail.size, [1024, 1024]);
+});
+
 test("a 3-component P carries through the builder and the operations", () => {
   const builder = new GeometryBuilder({ positionSize: 3 });
   builder.addPolygon([0, 0, 1, 2, 0, 1, 2, 2, 1]);
