@@ -14,6 +14,7 @@ import { createNetRouter } from './routes/net.js';
 import { authority, createProjectRequestBoundary, isLoopbackHost, type ServerSecurityOptions } from './security.js';
 import { createMediaRouter } from './routes/media.js';
 import { ProjectRoot } from './project.js';
+import { buildId } from './build.js';
 
 export { createDirectShellCapability } from './shell/service.js';
 export type { ShellCapability, ShellRunOptions, ShellRunResult } from './shell/types.js';
@@ -90,14 +91,34 @@ export function startServer(project: ProjectRoot, opts: StartServerOptions = {})
     res.json({ status: 'ok', version: '2.0', projectRoot: project.root, isGitRepo: project.isGitRepo });
   });
 
+  // What Studio compares against the build it loaded. Deliberately outside the
+  // project boundary and unauthenticated: it is one hash of a file already
+  // served to anyone who can load the page, and a stale tab has to be able to
+  // ask even when nothing else about its session is still valid.
+  app.get('/api/build', (_req, res) => {
+    res.json({ id: buildId(CASCADE_DIST) });
+  });
+
   // Serves the built Cascade UI itself — "cascade ." is meant to be one
   // self-contained command, not "run the server, then separately go start
   // the frontend dev server too." Falls through to the API routes above
   // (registered first) for anything under /api or /health.
   if (fs.existsSync(CASCADE_DIST)) {
-    app.use(express.static(CASCADE_DIST));
+    // Asset filenames carry a content hash, so a given URL's bytes never
+    // change and it can be cached hard. index.html is the one file with a
+    // stable URL, and it is what names the current hashes — cache that and a
+    // reload can hand back the previous build's bundle. So: never store it.
+    app.use(express.static(CASCADE_DIST, {
+      setHeaders(res, filePath) {
+        res.setHeader(
+          'Cache-Control',
+          filePath.endsWith('index.html') ? 'no-store' : 'public, max-age=31536000, immutable',
+        );
+      },
+    }));
     app.get('/{*splat}', (req, res, next) => {
       if (req.path.startsWith('/api') || req.path === '/health') return next();
+      res.setHeader('Cache-Control', 'no-store');
       res.sendFile(path.join(CASCADE_DIST, 'index.html'));
     });
   } else {

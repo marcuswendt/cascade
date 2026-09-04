@@ -37,7 +37,10 @@ async function serve(project: ProjectRoot): Promise<string> {
   return `http://127.0.0.1:${address.port}`;
 }
 
-describe('project panel server extension', () => {
+// Several of these compile panels with esbuild from a cold start, which does
+// not fit the default 5s when the whole suite is running in parallel — they
+// timed out intermittently and passed every time on their own.
+describe('project panel server extension', { timeout: 20_000 }, () => {
   it('returns an empty list for projects without panels', async () => {
     const base = await serve(fixture());
     const response = await fetch(`${base}/api/panels`);
@@ -95,10 +98,7 @@ describe('project panel server extension', () => {
     await expect(response.json()).resolves.toEqual({
       panels: [{ name: 'moments', title: 'Linked Moments', icon: null }],
     });
-    // This one compiles a panel with esbuild from a cold start, and the default
-    // 5s is not enough when the whole suite is running in parallel — it timed
-    // out intermittently while passing every time on its own.
-  }, 20_000);
+  });
 
   it('prefers a project-local panel for metadata and compilation', async () => {
     const project = fixture();

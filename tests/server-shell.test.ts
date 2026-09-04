@@ -96,7 +96,12 @@ describe('ShellService', () => {
     const p = project({ commands: { node: process.execPath } });
     const pidFile = path.join(p.root, 'descendant.pid');
     const source = `const{spawn}=require('node:child_process'),fs=require('node:fs');const c=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'inherit'});fs.writeFileSync(${JSON.stringify(pidFile)},String(c.pid));setInterval(()=>{},1000)`;
-    await expect(p.shell.run('node', ['-e', source], { timeout: 100 })).rejects.toMatchObject({ kind: 'timeout' });
+    // 100ms was tight enough to race the child's own spawn: under a loaded
+    // parallel suite the grandchild was sometimes created around the moment the
+    // tree was killed, and outlived it, failing here rather than in the product.
+    // A longer timeout keeps the assertion — a timed-out run kills descendants —
+    // and removes the race, since the run is expected to time out either way.
+    await expect(p.shell.run('node', ['-e', source], { timeout: 1500 })).rejects.toMatchObject({ kind: 'timeout' });
     const pid = Number(fs.readFileSync(pidFile, 'utf8'));
     expect(() => process.kill(pid, 0)).toThrow();
   });

@@ -62,7 +62,7 @@ export function createGraphRouter(project: ProjectRoot): Router {
       await project.writeGraph(req.params.filename, compact);
       const { committed, sha } = await autoCommit(
         project.root,
-        `Update ${req.params.filename}`,
+        saveCommitMessage(req.params.filename),
         [req.params.filename]
       );
       res.json({ ok: true, committed, sha });
@@ -116,4 +116,17 @@ export function createGraphRouter(project: ProjectRoot): Router {
   });
 
   return router;
+}
+
+/**
+ * What a save says in Version History.
+ *
+ * Every save used to commit "Update <file>", so the history was a column of
+ * identical rows and the only way to tell one version from another was its
+ * position. The time makes each entry legible at a glance, which is what the
+ * list is for; the date is already in the commit itself.
+ */
+export function saveCommitMessage(filename: string, at = new Date()): string {
+  const time = at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `Saved ${filename} ${time}`;
 }

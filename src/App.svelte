@@ -9,6 +9,7 @@
   import ColorPalette from './editor/components/ColorPalette.svelte';
   import { bumpGraphStructure } from './editor/stores/graphStructure';
   import { watchNodeSources } from './engine/nodeSourceWatch';
+  import { watchBuild } from './editor/buildWatch';
   import { layoutTopDown, edgesFromConnections } from '@/utils/autoLayout';
   import CookStatusStrip from './editor/CookStatusStrip.svelte';
   import type { CookStatus } from '@/nodes/CookScheduler';
@@ -117,6 +118,7 @@
   // overwrite the project file.
   let projectGraphFile: string | null = null;
   let versionHistoryOpen = false;
+  let buildIsStale = false;
   let missingProjectCredentials: string[] = [];
   let projectManifestName = '';
   let colorPaletteOpen = false;
@@ -823,6 +825,10 @@
     // whole app reloaded.
     const unsubNodeSources = watchNodeSources({ getTarget: () => graph ?? null });
 
+    // Say so rather than reload: an unsaved graph must not be thrown away by
+    // the app deciding for itself.
+    const unsubBuild = watchBuild(() => { buildIsStale = true; });
+
     // Subscribe to settings dialog requests from nodes/components
     const unsubSettingsRequest = settingsDialogRequest.subscribe(requested => {
       if (requested) {
@@ -1250,11 +1256,18 @@
       window.removeEventListener('mousemove', handleMouseMove);
       unsubSettingsRequest();
       unsubNodeSources();
+      unsubBuild();
     };
   });
 </script>
 
 <div class="app" class:presentation-mode={presentationMode}>
+  {#if buildIsStale}
+    <div class="build-stale" role="status">
+      <span>Cascade updated. This tab is running the previous build.</span>
+      <button on:click={() => location.reload()}>Reload</button>
+    </div>
+  {/if}
   {#if !presentationMode}
     <MenuBar
       documentName={displayName}
@@ -1400,6 +1413,34 @@
     display: flex;
     flex-direction: column;
     position: relative;
+  }
+
+  /* In the layout flow rather than floating: it must not cover a tab bar or a
+     menu, and it should be impossible to miss. */
+  .build-stale {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 6px 12px;
+    background: #3a2f14;
+    border-bottom: 1px solid #6a5520;
+    color: #f0dfae;
+    font-size: 12px;
+  }
+
+  .build-stale button {
+    background: #6a5520;
+    border: 1px solid #8a7030;
+    border-radius: 4px;
+    color: #fff6dd;
+    font-size: 12px;
+    padding: 2px 10px;
+    cursor: pointer;
+  }
+
+  .build-stale button:hover {
+    background: #8a7030;
   }
 
   .credential-warning { background: #4a2a16; color: #ffd3b6; padding: 7px 12px; font-size: 12px; display: flex; gap: 8px; align-items: center; }
