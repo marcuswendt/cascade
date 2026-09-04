@@ -5,6 +5,11 @@ import { PackageManager } from '../engine/PackageManager.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { checkProjectGraph, inspectProjectGraph, runDeterministicProjectGraph, validateProjectGraph } from './projectRuntime.js';
+import { setEmbeddedCompiler, setProjectModuleCompiler } from '../engine/nodeModuleLoader.js';
+import { compileEmbedded, compileProjectModule } from '../../server/src/compile.js';
+import { ProjectRoot } from '../../server/src/project.js';
+import { runProjectStage } from '../../server/src/stageRunner.js';
+import { installStageBridge } from '../../server/src/runtime/stage.js';
 
 export interface RunOptions {
   file: string;
@@ -56,6 +61,25 @@ export async function runGraph(options: RunOptions): Promise<void> {
     return;
   }
 
+  // A dynamic graph reaches here, and until now it died trying to fetch its
+  // modules from `/api/nodes/...` — a relative URL, with no server behind it and
+  // no origin to resolve it against. Compiling them in-process with the same
+  // esbuild pass the server uses is what makes `cascade run` work on the graphs
+  // people actually have, rather than only on fully migrated ones.
+  // Best effort: a .cascade file can sit outside a project directory, and such
+  // a graph should still run whatever it carries inline rather than failing on
+  // a project that is not there.
+  try {
+    const project = new ProjectRoot(path.dirname(path.resolve(file)));
+    setProjectModuleCompiler(async (folderName) => (await compileProjectModule(project, folderName)).code);
+    setEmbeddedCompiler(async (code) => (await compileEmbedded(project, code)).code);
+    // A node importing `cascade/stage` posts to the server in the page and
+    // calls this in a headless run, so one Python-backed node renders either way.
+    installStageBridge((stage, args) => runProjectStage(project, stage, args));
+  } catch (error) {
+    if (verbose) console.warn(`No project context for ${file}: ${error instanceof Error ? error.message : error}`);
+  }
+
   // Create graph from JSON
   let graph: Graph;
   try {
@@ -74,7 +98,14 @@ export async function runGraph(options: RunOptions): Promise<void> {
     // Check if computation has ports (restored from metadata)
     // If not, we may need to execute to create them
     const hasPorts = node.inputs.length > 0 || node.outputs.length > 0;
-    if (!hasPorts && node.code) {
+    // Gate on the source as well as on node.code, for the same reason
+    // Graph.fromJSON does: a project module's code lives on disk, so node.code
+    // is empty for it. Checking only node.code meant no project node was ever
+    // initialised headlessly, so no ports existed, so no connections could be
+    // restored — and every graph "completed" while doing nothing at all.
+    const isProject = (node as any).sourceType === 'project'
+      || String((node as any).modulePath ?? '').startsWith('project.');
+    if (!hasPorts && (node.code || isProject)) {
       nodesNeedingExecution.push(node);
     }
   }

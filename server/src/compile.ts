@@ -35,7 +35,7 @@ function cascadeRuntimePlugin(project: ProjectRoot): esbuild.Plugin {
   return {
     name: 'cascade-runtime',
     setup(build) {
-      build.onResolve({ filter: /^cascade\/(?:io|shell|net|config)$/ }, (args) => ({
+      build.onResolve({ filter: /^cascade\/(?:io|shell|net|config|stage)$/ }, (args) => ({
         path: args.path,
         namespace: 'cascade-runtime',
       }));

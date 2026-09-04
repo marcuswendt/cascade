@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { chmodSync, cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const outputDirectory = resolve('dist', 'cli');
@@ -46,7 +46,12 @@ await build({
 // Every runtime module the server build copies. `net` was missing here, so a
 // node importing `cascade/net` failed under the CLI with the same "runtime not
 // found" error that a missing `io` produced, while working under the dev server.
-for (const name of ['io', 'shell', 'net']) {
+// Every runtime module the server ships, read from the directory rather than
+// listed here: a module missing from the CLI's copy fails as "cascade/<name>
+// runtime not found", which reads like a broken node rather than a short build.
+for (const name of readdirSync(resolve('server', 'src', 'runtime'))
+  .filter((file) => file.endsWith('.ts'))
+  .map((file) => file.replace(/\.ts$/, ''))) {
   cpSync(resolve('server', 'src', 'runtime', `${name}.ts`), resolve(outputDirectory, 'runtime', `${name}.ts`));
 }
 

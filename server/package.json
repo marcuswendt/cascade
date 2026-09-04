@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/cli.ts",
-    "build": "tsc && mkdir -p dist/runtime && cp src/runtime/io.ts src/runtime/shell.ts src/runtime/net.ts dist/runtime/",
+    "build": "tsc && mkdir -p dist/runtime && cp src/runtime/*.ts dist/runtime/",
     "start": "node dist/cli.js"
   },
   "dependencies": {

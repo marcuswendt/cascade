@@ -37,9 +37,12 @@ async function serve(project: ProjectRoot): Promise<string> {
   return `http://127.0.0.1:${address.port}`;
 }
 
-// Several of these compile panels with esbuild from a cold start, which does
-// not fit the default 5s when the whole suite is running in parallel — they
-// timed out intermittently and passed every time on their own.
+// These compile panels with esbuild, and under a full parallel suite one of
+// them intermittently HANGS rather than running slowly: it passed at 5s, timed
+// out at 20s, and timed out again at 60s, while passing every time the file is
+// run alone. So the timeout is not the fault and raising it further is not the
+// fix — it reads as contention in esbuild's shared service process. 20s is kept
+// as a bound on the hang, not as a deadline for the work.
 describe('project panel server extension', { timeout: 20_000 }, () => {
   it('returns an empty list for projects without panels', async () => {
     const base = await serve(fixture());
