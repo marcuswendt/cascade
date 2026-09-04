@@ -153,17 +153,17 @@
   
   .file-button {
     padding: 6px 12px;
-    background: rgba(74, 158, 255, 0.2);
-    border: 1px solid #4a9eff;
+    background: var(--accent-tint-medium);
+    border: 1px solid var(--accent);
     border-radius: 3px;
-    color: #4a9eff;
+    color: var(--accent);
     font-size: 11px;
     cursor: pointer;
     transition: all 0.15s ease;
   }
   
   .file-button:hover:not(:disabled) {
-    background: rgba(74, 158, 255, 0.3);
+    background: var(--accent-tint-strong);
   }
   
   .file-button:disabled {
@@ -173,10 +173,10 @@
   
   .clear-button {
     padding: 4px 8px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--tint-weak);
+    border: 1px solid var(--tint);
     border-radius: 3px;
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 16px;
     line-height: 1;
     cursor: pointer;
@@ -184,8 +184,8 @@
   }
   
   .clear-button:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
   
   .clear-button:disabled {
@@ -200,7 +200,7 @@
   
   .file-name {
     font-size: 11px;
-    color: #aaa;
+    color: var(--text-muted);
     font-family: 'Monaco', 'Menlo', monospace;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -210,10 +210,10 @@
   .preview-container {
     width: 100%;
     max-height: 120px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--tint);
     border-radius: 3px;
     overflow: hidden;
-    background: rgba(0, 0, 0, 0.3);
+    background: var(--shade-weak);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -233,7 +233,7 @@
   
   .drop-zone {
     min-height: 40px;
-    border: 1px dashed rgba(255, 255, 255, 0.1);
+    border: 1px dashed var(--tint);
     border-radius: 3px;
     display: flex;
     align-items: center;
@@ -247,13 +247,13 @@
   }
   
   .drop-zone:hover {
-    border-color: rgba(74, 158, 255, 0.5);
-    background: rgba(74, 158, 255, 0.05);
+    border-color: var(--accent-tint-half);
+    background: var(--accent-tint-weakest);
   }
   
   .drop-hint {
     font-size: 11px;
-    color: #666;
+    color: var(--text-faintest);
   }
 </style>
 

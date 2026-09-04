@@ -208,7 +208,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--shade-strong);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -222,10 +222,10 @@
   }
 
   .dialog {
-    background: #252526;
+    background: var(--surface-raised);
     border-radius: 8px;
-    border: 1px solid #404040;
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border-divider);
+    box-shadow: 0 16px 48px var(--shadow);
     width: 380px;
     max-width: 90vw;
     max-height: 90vh;
@@ -249,20 +249,20 @@
     align-items: center;
     justify-content: space-between;
     padding: 12px 16px;
-    border-bottom: 1px solid #404040;
+    border-bottom: 1px solid var(--border-divider);
   }
 
   .dialog-header h2 {
     margin: 0;
     font-size: 14px;
     font-weight: 600;
-    color: #fff;
+    color: var(--text-bright);
   }
 
   .close-button {
     background: none;
     border: none;
-    color: #888;
+    color: var(--text-subtle);
     cursor: pointer;
     padding: 4px;
     display: flex;
@@ -273,8 +273,8 @@
   }
 
   .close-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
 
   form {
@@ -293,15 +293,15 @@
   .form-group > label {
     font-size: 12px;
     font-weight: 500;
-    color: #aaa;
+    color: var(--text-muted);
   }
 
   .form-group input[type="text"] {
     padding: 8px 10px;
-    background: #1e1e1e;
-    border: 1px solid #404040;
+    background: var(--surface-panel-alt);
+    border: 1px solid var(--border-divider);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 13px;
     font-family: 'SF Mono', Monaco, monospace;
     transition: border-color 0.15s;
@@ -309,16 +309,16 @@
 
   .form-group input[type="text"]:focus {
     outline: none;
-    border-color: #0078d4;
+    border-color: var(--accent-alt);
   }
 
   .form-group input[type="text"]::placeholder {
-    color: #666;
+    color: var(--text-faintest);
   }
 
   .hint {
     font-size: 11px;
-    color: #888;
+    color: var(--text-subtle);
     display: flex;
     align-items: center;
     gap: 6px;
@@ -326,8 +326,8 @@
 
   .auto-badge {
     padding: 1px 6px;
-    background: rgba(0, 120, 212, 0.2);
-    color: #0078d4;
+    background: var(--accent-alt-tint);
+    color: var(--accent-alt);
     border-radius: 10px;
     font-size: 10px;
     text-transform: uppercase;
@@ -345,26 +345,26 @@
     align-items: center;
     gap: 8px;
     padding: 8px 10px;
-    background: #1e1e1e;
-    border: 1px solid #404040;
+    background: var(--surface-panel-alt);
+    border: 1px solid var(--border-divider);
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.15s;
   }
 
   .radio-option:hover {
-    border-color: #555;
-    background: #2a2a2a;
+    border-color: var(--border-strong);
+    background: var(--surface-control);
   }
 
   .radio-option.selected {
-    border-color: #0078d4;
-    background: rgba(0, 120, 212, 0.1);
+    border-color: var(--accent-alt);
+    background: var(--accent-alt-tint-weak);
   }
 
   .radio-option input[type="radio"] {
     margin: 0;
-    accent-color: #0078d4;
+    accent-color: var(--accent-alt);
     flex-shrink: 0;
   }
 
@@ -385,13 +385,13 @@
   .radio-label {
     font-size: 13px;
     font-weight: 500;
-    color: #fff;
+    color: var(--text-bright);
   }
 
   .radio-path {
     font-size: 10px;
     font-family: 'SF Mono', Monaco, monospace;
-    color: #666;
+    color: var(--text-faintest);
   }
 
   .radio-description {
@@ -401,10 +401,10 @@
   .custom-base-input {
     margin-top: 8px;
     padding: 8px 10px;
-    background: #2a2a2a;
-    border: 1px solid #555;
+    background: var(--surface-control);
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 13px;
     font-family: 'SF Mono', Monaco, monospace;
     width: 100%;
@@ -413,12 +413,12 @@
 
   .custom-base-input:focus {
     outline: none;
-    border-color: #0078d4;
-    background: #1e1e1e;
+    border-color: var(--accent-alt);
+    background: var(--surface-panel-alt);
   }
 
   .custom-base-input::placeholder {
-    color: #666;
+    color: var(--text-faintest);
   }
 
   .dialog-footer {
@@ -426,7 +426,7 @@
     justify-content: flex-end;
     gap: 12px;
     padding-top: 12px;
-    border-top: 1px solid #404040;
+    border-top: 1px solid var(--border-divider);
     margin-top: 8px;
   }
 
@@ -442,27 +442,27 @@
 
   .cancel-button {
     background: transparent;
-    border: 1px solid #404040;
-    color: #ccc;
+    border: 1px solid var(--border-divider);
+    color: var(--text-secondary);
   }
 
   .cancel-button:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: #555;
-    color: #fff;
+    background: var(--tint-weak);
+    border-color: var(--border-strong);
+    color: var(--text-bright);
   }
 
   .create-button {
     display: flex;
     align-items: center;
     gap: 6px;
-    background: #0078d4;
+    background: var(--accent-alt);
     border: none;
-    color: #fff;
+    color: var(--text-on-accent);
   }
 
   .create-button:hover:not(:disabled) {
-    background: #1084d8;
+    background: var(--accent-alt-hover);
   }
 
   .create-button:disabled {

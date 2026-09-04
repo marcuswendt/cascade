@@ -72,22 +72,22 @@
     align-items: center;
     gap: 8px;
     padding: 0 10px;
-    border: 1px solid rgba(91, 192, 235, 0.42);
+    border: 1px solid var(--accent-cyan-tint);
     border-radius: 5px;
-    background: rgba(20, 24, 28, 0.94);
-    color: #c8d0d8;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.38);
+    background: var(--surface-popover);
+    color: var(--text-secondary);
+    box-shadow: 0 3px 12px var(--shadow-soft);
     font-size: 11px;
     line-height: 1;
     pointer-events: none;
   }
 
   .cook-status.loading {
-    border-color: rgba(215, 186, 125, 0.5);
+    border-color: var(--syntax-regexp-border);
   }
 
   .cook-status strong {
-    color: #f2f5f7;
+    color: var(--text-bright);
     font-weight: 600;
   }
 
@@ -95,12 +95,12 @@
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: #5bc0eb;
+    background: var(--accent-cyan);
     animation: cascade-status-pulse 1.15s ease-in-out infinite;
   }
 
   .loading .status-mark {
-    background: #d7ba7d;
+    background: var(--syntax-regexp);
   }
 
   .current-node {
@@ -108,13 +108,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: #9cdcfe;
+    color: var(--syntax-variable);
   }
 
   time {
     min-width: 42px;
     text-align: right;
-    color: #8f9aa4;
+    color: var(--text-dim);
     font-variant-numeric: tabular-nums;
   }
 

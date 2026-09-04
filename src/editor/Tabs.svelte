@@ -131,7 +131,7 @@
   }
   
   .tabs::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--tint-strong);
     border-radius: 2px;
   }
   
@@ -140,12 +140,12 @@
     align-items: center;
     gap: 6px;
     padding: 8px 12px;
-    background: rgba(30, 30, 30, 0.6);
+    background: var(--surface-popover-soft);
     border: none;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
     border-bottom: 2px solid transparent;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--text-tint-strong);
     cursor: move;
     transition: all 0.15s ease;
     white-space: nowrap;
@@ -164,14 +164,14 @@
   }
   
   .tab:hover {
-    background: rgba(40, 40, 40, 0.8);
-    color: rgba(255, 255, 255, 0.9);
+    background: var(--surface-veil);
+    color: var(--text-tint-bright);
   }
   
   .tab.active {
-    background: rgba(20, 20, 20, 0.95);
-    border-bottom-color: #4a9eff;
-    color: #fff;
+    background: var(--surface-popover);
+    border-bottom-color: var(--accent);
+    color: var(--text-bright);
   }
   
   .tab-icon {
@@ -198,7 +198,7 @@
     background: transparent;
     border: none;
     border-radius: 3px;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--text-tint-half);
     cursor: pointer;
     transition: all 0.1s ease;
     font-size: 18px;
@@ -212,12 +212,12 @@
   }
   
   .tab-close:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.9);
+    background: var(--tint);
+    color: var(--text-tint-bright);
   }
   
   .tab.active .tab-close:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--tint-medium);
   }
 </style>
 

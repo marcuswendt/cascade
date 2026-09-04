@@ -4459,7 +4459,7 @@ node.onReady = () => {
         <!-- Debug fallback for unmapped annotation type -->
         <div
           class="annotation-debug"
-          style="position: absolute; left: {annotation.position.x}px; top: {annotation.position.y}px; background: #ff4444; color: white; padding: 8px; border-radius: 4px; font-size: 12px;"
+          style="position: absolute; left: {annotation.position.x}px; top: {annotation.position.y}px; background: var(--status-error-strong); color: var(--text-on-accent); padding: 8px; border-radius: 4px; font-size: 12px;"
         >
           Unknown type: {annotation.type}
         </div>
@@ -4499,7 +4499,7 @@ node.onReady = () => {
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: #0a0a0a;
+    background: var(--surface-void);
     cursor: default;
     touch-action: none;
     -webkit-user-select: none;
@@ -4544,9 +4544,9 @@ node.onReady = () => {
     align-items: center;
     gap: 4px;
     padding: 4px 8px;
-    background: rgba(30, 30, 30, 0.9);
+    background: var(--surface-veil);
     border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--tint);
     backdrop-filter: blur(8px);
     font-size: 12px;
   }
@@ -4554,7 +4554,7 @@ node.onReady = () => {
   .path-segment {
     background: none;
     border: none;
-    color: #888;
+    color: var(--text-subtle);
     padding: 2px 6px;
     border-radius: 3px;
     cursor: pointer;
@@ -4564,24 +4564,24 @@ node.onReady = () => {
   }
 
   .path-segment:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
 
   .path-segment.current {
-    color: #fff;
+    color: var(--text-bright);
     font-weight: 500;
   }
 
   .path-separator {
-    color: #555;
+    color: var(--text-disabled);
     font-size: 11px;
   }
 
   .path-input {
-    background: rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(100, 160, 255, 0.5);
-    color: #fff;
+    background: var(--shade);
+    border: 1px solid var(--accent-tint-half);
+    color: var(--text-bright);
     padding: 4px 8px;
     border-radius: 4px;
     font-family: 'Monaco', 'Menlo', monospace;
@@ -4591,14 +4591,14 @@ node.onReady = () => {
   }
 
   .path-input:focus {
-    border-color: rgba(100, 160, 255, 0.8);
-    box-shadow: 0 0 0 2px rgba(100, 160, 255, 0.2);
+    border-color: var(--accent-tint-heavy);
+    box-shadow: 0 0 0 2px var(--accent-tint-medium);
   }
 
   .path-edit-btn {
     background: none;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: #666;
+    border: 1px solid var(--tint-medium);
+    color: var(--text-faintest);
     padding: 2px 6px;
     border-radius: 3px;
     cursor: pointer;
@@ -4609,9 +4609,9 @@ node.onReady = () => {
   }
 
   .path-edit-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #aaa;
-    border-color: rgba(255, 255, 255, 0.25);
+    background: var(--tint);
+    color: var(--text-muted);
+    border-color: var(--tint-strong);
   }
 
   .grid {
@@ -4672,8 +4672,8 @@ node.onReady = () => {
   
   .selection-rectangle {
     position: absolute;
-    border: 1px dashed #4a9eff;
-    background: rgba(74, 158, 255, 0.1);
+    border: 1px dashed var(--accent);
+    background: var(--accent-tint-weak);
     pointer-events: none;
     z-index: 100;
     transform-origin: top left;

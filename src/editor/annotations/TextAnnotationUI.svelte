@@ -119,7 +119,7 @@
   }
 
   .annotation-text.selected {
-    outline: 2px solid var(--accent-color, #4a9eff);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
 
@@ -163,7 +163,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    border: 1px solid var(--tint-half);
   }
 
   .annotation-port {

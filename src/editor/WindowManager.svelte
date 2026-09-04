@@ -1276,7 +1276,7 @@
     height: 100vh;
     display: flex;
     overflow: hidden;
-    background: #0a0a0a;
+    background: var(--surface-void);
   }
   
   .layout-grid {
@@ -1344,10 +1344,10 @@
   
   :global(.clear-button) {
     padding: 4px 8px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--tint);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 11px;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -1355,16 +1355,16 @@
   }
   
   :global(.clear-button:hover) {
-    background: rgba(255, 255, 255, 0.15);
-    color: #fff;
+    background: var(--tint-medium);
+    color: var(--text-bright);
   }
   
   :global(.add-tab-button) {
     padding: 4px 8px;
-    background: rgba(74, 158, 255, 0.2);
-    border: 1px solid rgba(74, 158, 255, 0.3);
+    background: var(--accent-tint-medium);
+    border: 1px solid var(--accent-tint-strong);
     border-radius: 4px;
-    color: #4a9eff;
+    color: var(--accent);
     font-size: 14px;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -1377,13 +1377,13 @@
   }
   
   :global(.add-tab-button:hover) {
-    background: rgba(74, 158, 255, 0.3);
-    border-color: #4a9eff;
+    background: var(--accent-tint-strong);
+    border-color: var(--accent);
   }
 
   .loading-editor {
     padding: 16px;
-    color: #888;
+    color: var(--text-subtle);
     display: flex;
     align-items: center;
     justify-content: center;

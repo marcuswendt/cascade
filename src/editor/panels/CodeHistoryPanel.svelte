@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { monaco } from '../monaco';
+  import { monacoThemeFor } from '../theme';
+  import { resolvedTheme } from '../themeController';
   import type { CodeVersion } from '@/types/node.types';
   import { CodeHistory as CodeHistoryManager } from '../CodeHistory';
   import Icon from '../Icon.svelte';
@@ -117,7 +119,7 @@
     if (!diffContainer || isDestroyed) return;
 
     diffEditor = monaco.editor.createDiffEditor(diffContainer, {
-      theme: 'vs-dark',
+      theme: monacoThemeFor($resolvedTheme),
       readOnly: true,
       renderSideBySide: true,
       minimap: { enabled: false },
@@ -251,7 +253,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: var(--shade-stronger);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -259,9 +261,9 @@
   }
 
   .modal {
-    background: #1e1e1e;
+    background: var(--surface-panel-alt);
     border-radius: 8px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 20px 60px var(--shadow);
     width: 900px;
     max-width: 95vw;
     height: 600px;
@@ -275,7 +277,7 @@
     align-items: center;
     gap: 12px;
     padding: 16px 20px;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .modal-header h2 {
@@ -285,13 +287,13 @@
     margin: 0;
     font-size: 18px;
     font-weight: 600;
-    color: #fff;
+    color: var(--text-bright);
   }
 
   .module-path {
     flex: 1;
     font-size: 13px;
-    color: #888;
+    color: var(--text-subtle);
     font-family: 'SF Mono', Monaco, monospace;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -301,7 +303,7 @@
   .close-button {
     background: transparent;
     border: none;
-    color: #888;
+    color: var(--text-subtle);
     cursor: pointer;
     padding: 4px;
     border-radius: 4px;
@@ -311,8 +313,8 @@
   }
 
   .close-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
 
   .modal-body {
@@ -323,7 +325,7 @@
 
   .history-sidebar {
     width: 280px;
-    border-right: 1px solid #333;
+    border-right: 1px solid var(--border-subtle);
     display: flex;
     flex-direction: column;
     transition: width 0.2s ease;
@@ -350,22 +352,22 @@
     border-radius: 6px;
     cursor: pointer;
     text-align: left;
-    color: #ccc;
+    color: var(--text-secondary);
     transition: background 0.15s;
     margin-bottom: 4px;
   }
 
   .history-item:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--tint-weak);
   }
 
   .history-item.selected {
-    background: rgba(74, 158, 255, 0.15);
-    color: #fff;
+    background: var(--accent-tint);
+    color: var(--text-bright);
   }
 
   .history-item.current {
-    border-left: 3px solid #4caf50;
+    border-left: 3px solid var(--status-ok);
   }
 
   .item-icon {
@@ -374,19 +376,19 @@
     justify-content: center;
     width: 28px;
     height: 28px;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--tint);
     border-radius: 50%;
-    color: #888;
+    color: var(--text-subtle);
     flex-shrink: 0;
   }
 
   .history-item.selected .item-icon {
-    background: rgba(74, 158, 255, 0.3);
-    color: #4a9eff;
+    background: var(--accent-tint-strong);
+    color: var(--accent);
   }
 
   .history-item :global(.item-arrow) {
-    color: #4a9eff;
+    color: var(--accent);
     flex-shrink: 0;
   }
 
@@ -405,12 +407,12 @@
 
   .item-time {
     font-size: 11px;
-    color: #666;
+    color: var(--text-faintest);
     margin-top: 2px;
   }
 
   .history-item.selected .item-time {
-    color: #888;
+    color: var(--text-subtle);
   }
 
   .diff-panel {
@@ -425,8 +427,8 @@
     align-items: center;
     justify-content: space-between;
     padding: 10px 16px;
-    background: #252526;
-    border-bottom: 1px solid #333;
+    background: var(--surface-raised);
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .diff-labels {
@@ -443,11 +445,11 @@
   }
 
   .diff-label.old {
-    color: #ff6b6b;
+    color: var(--status-error);
   }
 
   .diff-label.new {
-    color: #4caf50;
+    color: var(--status-ok);
   }
 
   .restore-button {
@@ -455,9 +457,9 @@
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    background: rgba(76, 175, 80, 0.2);
-    color: #4caf50;
-    border: 1px solid rgba(76, 175, 80, 0.3);
+    background: var(--status-ok-tint);
+    color: var(--status-ok);
+    border: 1px solid var(--status-ok-tint-strong);
     border-radius: 4px;
     cursor: pointer;
     font-size: 12px;
@@ -466,8 +468,8 @@
   }
 
   .restore-button:hover {
-    background: rgba(76, 175, 80, 0.3);
-    border-color: #4caf50;
+    background: var(--status-ok-tint-strong);
+    border-color: var(--status-ok);
   }
 
   .diff-container {
@@ -482,7 +484,7 @@
     align-items: center;
     justify-content: center;
     gap: 16px;
-    color: #555;
+    color: var(--text-disabled);
   }
 
   .empty-diff p {
@@ -495,26 +497,26 @@
     align-items: center;
     justify-content: space-between;
     padding: 12px 20px;
-    border-top: 1px solid #333;
+    border-top: 1px solid var(--border-subtle);
   }
 
   .footer-info {
     font-size: 13px;
-    color: #888;
+    color: var(--text-subtle);
   }
 
   .close-footer-button {
     padding: 8px 16px;
-    background: rgba(255, 255, 255, 0.1);
-    color: #ccc;
-    border: 1px solid #444;
+    background: var(--tint);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
     border-radius: 4px;
     cursor: pointer;
     font-size: 14px;
   }
 
   .close-footer-button:hover {
-    background: rgba(255, 255, 255, 0.15);
-    color: #fff;
+    background: var(--tint-medium);
+    color: var(--text-bright);
   }
 </style>

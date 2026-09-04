@@ -73,17 +73,17 @@
     min-height: 96px;
     resize: vertical;
     box-sizing: border-box;
-    border: 1px solid #3a3a3a;
+    border: 1px solid var(--border-raised);
     border-radius: 4px;
-    background: #171717;
-    color: #d4d4d4;
+    background: var(--surface-app);
+    color: var(--text-code);
     padding: 7px;
     font: 10px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 
   textarea:focus {
     outline: none;
-    border-color: #0e639c;
+    border-color: var(--accent-alt-deep);
   }
 
   .tree {
@@ -93,13 +93,13 @@
 
   .error {
     margin-top: 4px;
-    color: #f48771;
+    color: var(--status-error-soft);
     font-size: 9px;
   }
 
   .hint {
     margin-top: 3px;
-    color: #666;
+    color: var(--text-faintest);
     font-size: 8px;
   }
 </style>

@@ -48,4 +48,4 @@
 
 {#if error}<span class="renderer-error" role="alert">{error}</span>{:else}<div bind:this={host}></div>{/if}
 
-<style>.renderer-error { color: #ff6b6b; }</style>
+<style>.renderer-error { color: var(--status-error); }</style>

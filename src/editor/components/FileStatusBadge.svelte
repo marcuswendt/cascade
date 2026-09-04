@@ -71,23 +71,23 @@
   }
 
   .status-synced {
-    background: rgba(76, 175, 80, 0.2);
-    color: #4caf50;
+    background: var(--status-ok-tint);
+    color: var(--status-ok);
   }
 
   .status-missing {
-    background: rgba(244, 67, 54, 0.2);
-    color: #f44336;
+    background: var(--status-error-tint);
+    color: var(--status-danger);
   }
 
   .status-conflict {
-    background: rgba(255, 152, 0, 0.2);
-    color: #ff9800;
+    background: var(--status-warn-tint);
+    color: var(--status-warn);
   }
 
   .status-modified {
-    background: rgba(33, 150, 243, 0.2);
-    color: #2196f3;
+    background: var(--status-info-tint);
+    color: var(--status-info);
   }
 
   .label {

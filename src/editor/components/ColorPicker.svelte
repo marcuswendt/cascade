@@ -743,8 +743,8 @@
   .color-swatch {
     width: 100%;
     height: 32px;
-    background: #000;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--surface-inverse);
+    border: 1px solid var(--tint);
     border-radius: 3px;
     cursor: pointer;
     display: flex;
@@ -755,7 +755,7 @@
   }
   
   .color-swatch:hover:not(:disabled) {
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
   
   .color-swatch:disabled {
@@ -766,8 +766,8 @@
   .swatch-label {
     font-size: 11px;
     font-family: 'Monaco', 'Menlo', monospace;
-    color: #fff;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    color: var(--text-bright);
+    text-shadow: 0 1px 2px var(--shadow-strong);
     pointer-events: none;
   }
   
@@ -776,11 +776,11 @@
     top: calc(100% + 4px);
     left: 0;
     z-index: 1000;
-    background: rgba(20, 20, 20, 0.98);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--surface-popover);
+    border: 1px solid var(--tint);
     border-radius: 6px;
     padding: 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 4px 16px var(--shadow);
     min-width: 280px;
   }
   
@@ -793,23 +793,23 @@
   .mode-button {
     flex: 1;
     padding: 4px 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 3px;
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 11px;
     cursor: pointer;
     transition: all 0.15s ease;
   }
   
   .mode-button:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--tint-weak);
   }
   
   .mode-button.active {
-    background: rgba(74, 158, 255, 0.2);
-    border-color: #4a9eff;
-    color: #4a9eff;
+    background: var(--accent-tint-medium);
+    border-color: var(--accent);
+    color: var(--accent);
   }
   
   .picker-content {
@@ -843,7 +843,7 @@
   
   .brightness-control label {
     font-size: 11px;
-    color: #aaa;
+    color: var(--text-muted);
     min-width: 20px;
   }
   
@@ -861,7 +861,7 @@
   
   .input-row label {
     font-size: 11px;
-    color: #aaa;
+    color: var(--text-muted);
     min-width: 20px;
   }
   
@@ -869,7 +869,7 @@
     flex: 1;
     min-width: 0;
     height: 4px;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--tint);
     border-radius: 2px;
     outline: none;
     -webkit-appearance: none;
@@ -882,20 +882,20 @@
     appearance: none;
     width: 12px;
     height: 12px;
-    background: #4a9eff;
+    background: var(--accent);
     border-radius: 50%;
     cursor: pointer;
     transition: background 0.15s ease;
   }
   
   .slider-input:hover::-webkit-slider-thumb {
-    background: #6bb6ff;
+    background: var(--accent-hover);
   }
   
   .slider-input::-moz-range-thumb {
     width: 12px;
     height: 12px;
-    background: #4a9eff;
+    background: var(--accent);
     border-radius: 50%;
     cursor: pointer;
     border: none;
@@ -903,17 +903,17 @@
   }
   
   .slider-input:hover::-moz-range-thumb {
-    background: #6bb6ff;
+    background: var(--accent-hover);
   }
   
   .number-input-small {
     width: 50px;
     flex-shrink: 0;
     padding: 3px 4px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 3px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 11px;
     font-family: 'Monaco', 'Menlo', monospace;
     text-align: right;
@@ -921,16 +921,16 @@
   
   .number-input-small:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
   
   .hex-input {
     flex: 1;
     padding: 4px 6px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 3px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 11px;
     font-family: 'Monaco', 'Menlo', monospace;
     text-transform: uppercase;
@@ -938,7 +938,7 @@
   
   .hex-input:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
   
   .palette-section {
@@ -955,14 +955,14 @@
   .history-swatch {
     width: 12px;
     height: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid var(--tint-strong);
     border-radius: 2px;
     cursor: pointer;
     padding: 0;
   }
   
   .history-swatch:hover {
-    border-color: #4a9eff;
+    border-color: var(--accent);
     transform: scale(1.1);
   }
   
@@ -985,7 +985,7 @@
   
   .palette-swatch:hover {
     transform: scale(1.1);
-    outline: 2px solid #4a9eff;
+    outline: 2px solid var(--accent);
     outline-offset: -2px;
     z-index: 1;
     position: relative;

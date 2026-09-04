@@ -1475,11 +1475,11 @@
     width: 100%;
     background: none;
     border: none;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--border-subtle);
     font-size: 9px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #6b6b6b;
+    color: var(--text-faintest);
     padding: 3px 0;
     margin-bottom: 2px;
     cursor: pointer;
@@ -1488,7 +1488,7 @@
   }
 
   .port-heading:hover {
-    color: #aaa;
+    color: var(--text-muted);
   }
 
   .port-heading .twisty {
@@ -1512,35 +1512,35 @@
   .promote {
     margin-top: 7px;
     background: none;
-    border: 1px solid #333;
+    border: 1px solid var(--border-subtle);
     border-radius: 3px;
-    color: #5a5a5a;
+    color: var(--text-disabled);
     font-size: 8px;
     padding: 0 4px;
     cursor: pointer;
   }
 
   .promote:hover {
-    color: #bbb;
-    border-color: #555;
+    color: var(--text-tertiary);
+    border-color: var(--border-strong);
   }
 
   .promote.on {
-    color: #9cdcfe;
-    border-color: #2a4a5e;
+    color: var(--syntax-variable);
+    border-color: var(--border-selected);
   }
 
   .port-heading .tally {
     margin-left: auto;
     letter-spacing: 0;
-    color: #555;
+    color: var(--text-disabled);
   }
 
   .inspector {
     position: relative;
     width: 100%;
     height: 100%;
-    background: rgba(20, 20, 20, 0.95);
+    background: var(--surface-popover);
     backdrop-filter: blur(10px);
     display: flex;
     flex-direction: column;
@@ -1549,13 +1549,13 @@
   
   .error-badge-container {
     padding: 12px 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--tint);
   }
   
   .error-badge {
     padding: 4px 8px;
-    background: #ff4444;
-    color: white;
+    background: var(--status-error-strong);
+    color: var(--text-on-accent);
     border-radius: 4px;
     font-size: 10px;
     font-weight: 600;
@@ -1578,7 +1578,7 @@
   .section-title {
     font-size: 11px;
     font-weight: 600;
-    color: #888;
+    color: var(--text-subtle);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -1586,10 +1586,10 @@
   .content-textarea {
     width: 100%;
     padding: 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 13px;
     font-family: inherit;
     min-height: 60px;
@@ -1599,7 +1599,7 @@
   
   .content-textarea:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
   
   .position-grid,
@@ -1620,7 +1620,7 @@
   .layout-label {
     font-size: 11px;
     font-weight: 500;
-    color: #aaa;
+    color: var(--text-muted);
     min-width: 16px;
   }
   
@@ -1628,10 +1628,10 @@
   .layout-input {
     flex: 1;
     padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 12px;
     font-family: inherit;
   }
@@ -1639,7 +1639,7 @@
   .position-input:focus,
   .layout-input:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
   
   .number-input-with-buttons {
@@ -1664,10 +1664,10 @@
     width: 20px;
     height: 12px;
     padding: 0;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 2px;
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 10px;
     font-weight: 600;
     line-height: 1;
@@ -1693,15 +1693,15 @@
   }
   
   .number-input-with-buttons .number-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
-    color: #fff;
+    background: var(--tint);
+    border-color: var(--tint-strong);
+    color: var(--text-bright);
   }
   
   .number-input-with-buttons .number-button:active {
-    background: rgba(74, 158, 255, 0.2);
-    border-color: #4a9eff;
-    color: #4a9eff;
+    background: var(--accent-tint-medium);
+    border-color: var(--accent);
+    color: var(--accent);
   }
   
   .typography-row {
@@ -1720,15 +1720,15 @@
   .typography-label {
     font-size: 11px;
     font-weight: 500;
-    color: #aaa;
+    color: var(--text-muted);
   }
   
   .typography-number-input {
     padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 12px;
     font-family: inherit;
     width: 100%;
@@ -1736,14 +1736,14 @@
   
   .typography-number-input:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
   
   .align-buttons {
     display: flex;
     gap: 2px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
     padding: 2px;
   }
@@ -1754,7 +1754,7 @@
     background: transparent;
     border: none;
     border-radius: 2px;
-    color: #aaa;
+    color: var(--text-muted);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -1763,13 +1763,13 @@
   }
   
   .align-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
   
   .align-button.active {
-    background: rgba(74, 158, 255, 0.2);
-    color: #4a9eff;
+    background: var(--accent-tint-medium);
+    color: var(--accent);
   }
   
   .typography-presets {
@@ -1781,10 +1781,10 @@
   .preset-button {
     flex: 1;
     padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
@@ -1793,15 +1793,15 @@
   }
   
   .preset-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-    border-color: rgba(255, 255, 255, 0.2);
+    background: var(--tint);
+    color: var(--text-bright);
+    border-color: var(--tint-strong);
   }
   
   .preset-button.active {
-    background: rgba(74, 158, 255, 0.2);
-    border-color: #4a9eff;
-    color: #4a9eff;
+    background: var(--accent-tint-medium);
+    border-color: var(--accent);
+    color: var(--accent);
   }
   
   .typography-toggles {
@@ -1813,10 +1813,10 @@
   .toggle-button {
     flex: 1;
     padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
@@ -1825,15 +1825,15 @@
   }
   
   .toggle-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-    border-color: rgba(255, 255, 255, 0.2);
+    background: var(--tint);
+    color: var(--text-bright);
+    border-color: var(--tint-strong);
   }
   
   .toggle-button.active {
-    background: rgba(74, 158, 255, 0.2);
-    border-color: #4a9eff;
-    color: #4a9eff;
+    background: var(--accent-tint-medium);
+    border-color: var(--accent);
+    color: var(--accent);
   }
   
   .fill-controls {
@@ -1845,7 +1845,7 @@
   .color-picker {
     width: 40px;
     height: 32px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--tint);
     border-radius: 4px;
     cursor: pointer;
     -webkit-appearance: none;
@@ -1867,10 +1867,10 @@
   .color-hex-input {
     flex: 1;
     padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 11px;
     font-family: 'Monaco', 'Menlo', monospace;
     text-transform: uppercase;
@@ -1878,7 +1878,7 @@
   
   .color-hex-input:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
   
   .appearance-row {
@@ -1897,15 +1897,15 @@
   .appearance-label {
     font-size: 11px;
     font-weight: 500;
-    color: #aaa;
+    color: var(--text-muted);
   }
   
   .appearance-number-input {
     padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 12px;
     font-family: inherit;
     width: 100%;
@@ -1913,17 +1913,17 @@
   
   .appearance-number-input:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
   
   .param-input,
   .param-textarea {
     width: 100%;
     padding: 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 14px;
     font-family: inherit;
   }
@@ -1931,7 +1931,7 @@
   .param-input:focus,
   .param-textarea:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
   
   .param-textarea {
@@ -1942,12 +1942,12 @@
   .comment-section {
     margin-top: 16px;
     padding-top: 16px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid var(--tint);
   }
   
   .comment {
     font-size: 12px;
-    color: #888;
+    color: var(--text-subtle);
     font-style: italic;
     line-height: 1.5;
   }
@@ -1955,7 +1955,7 @@
   .empty-state {
     padding: 32px;
     text-align: center;
-    color: #666;
+    color: var(--text-faintest);
     font-size: 14px;
   }
   
@@ -1976,7 +1976,7 @@
     display: block;
     font-size: 11px;
     font-weight: 500;
-    color: #aaa;
+    color: var(--text-muted);
     flex-shrink: 0;
     min-width: 80px;
   }

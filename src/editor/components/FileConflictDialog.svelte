@@ -1,6 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { monaco } from '../monaco';
+  import { monacoThemeFor } from '../theme';
+  import { resolvedTheme } from '../themeController';
   import { X, AlertTriangle, FileCode, Download, Upload, GitMerge } from '@lucide/svelte';
 
   export let open = false;
@@ -45,7 +47,7 @@
     if (!diffContainer || isDestroyed) return;
 
     diffEditor = monaco.editor.createDiffEditor(diffContainer, {
-      theme: 'vs-dark',
+      theme: monacoThemeFor($resolvedTheme),
       readOnly: true,
       renderSideBySide: true,
       minimap: { enabled: false },
@@ -156,7 +158,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.75);
+    background: var(--shade-stronger);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -164,9 +166,9 @@
   }
 
   .modal {
-    background: #1e1e1e;
+    background: var(--surface-panel-alt);
     border-radius: 8px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 20px 60px var(--shadow);
     width: 900px;
     max-width: 95vw;
     height: 600px;
@@ -180,7 +182,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 16px 20px;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .header-title {
@@ -190,20 +192,20 @@
   }
 
   .header-title :global(.warning-icon) {
-    color: #ff9800;
+    color: var(--status-warn);
   }
 
   .modal-header h2 {
     margin: 0;
     font-size: 18px;
     font-weight: 600;
-    color: #fff;
+    color: var(--text-bright);
   }
 
   .close-button {
     background: transparent;
     border: none;
-    color: #888;
+    color: var(--text-subtle);
     cursor: pointer;
     padding: 4px;
     border-radius: 4px;
@@ -213,20 +215,20 @@
   }
 
   .close-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
 
   .conflict-info {
     padding: 16px 20px;
-    background: rgba(255, 152, 0, 0.1);
-    border-bottom: 1px solid #333;
+    background: var(--status-warn-tint-weak);
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .conflict-info p {
     margin: 0 0 12px 0;
     font-size: 14px;
-    color: #ccc;
+    color: var(--text-secondary);
     line-height: 1.5;
   }
 
@@ -234,13 +236,13 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    color: #888;
+    color: var(--text-subtle);
     font-size: 13px;
   }
 
   .file-path {
     font-family: 'SF Mono', Monaco, monospace;
-    color: #4a9eff;
+    color: var(--accent);
   }
 
   .diff-section {
@@ -252,8 +254,8 @@
 
   .diff-header {
     padding: 10px 20px;
-    background: #252526;
-    border-bottom: 1px solid #333;
+    background: var(--surface-raised);
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .diff-labels {
@@ -270,11 +272,11 @@
   }
 
   .diff-label.local {
-    color: #4caf50;
+    color: var(--status-ok);
   }
 
   .diff-label.external {
-    color: #2196f3;
+    color: var(--status-info);
   }
 
   .diff-container {
@@ -287,7 +289,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 16px 20px;
-    border-top: 1px solid #333;
+    border-top: 1px solid var(--border-subtle);
   }
 
   .action-group {
@@ -309,39 +311,39 @@
   }
 
   .keep-local {
-    background: rgba(76, 175, 80, 0.2);
-    color: #4caf50;
-    border: 1px solid rgba(76, 175, 80, 0.3);
+    background: var(--status-ok-tint);
+    color: var(--status-ok);
+    border: 1px solid var(--status-ok-tint-strong);
   }
 
   .keep-local:hover {
-    background: rgba(76, 175, 80, 0.3);
-    border-color: #4caf50;
+    background: var(--status-ok-tint-strong);
+    border-color: var(--status-ok);
   }
 
   .accept-external {
-    background: rgba(33, 150, 243, 0.2);
-    color: #2196f3;
-    border: 1px solid rgba(33, 150, 243, 0.3);
+    background: var(--status-info-tint);
+    color: var(--status-info);
+    border: 1px solid var(--status-info-tint-strong);
   }
 
   .accept-external:hover {
-    background: rgba(33, 150, 243, 0.3);
-    border-color: #2196f3;
+    background: var(--status-info-tint-strong);
+    border-color: var(--status-info);
   }
 
   .cancel-button {
     padding: 10px 20px;
     background: transparent;
-    color: #aaa;
-    border: 1px solid #444;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
   }
 
   .cancel-button:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: #fff;
+    background: var(--tint-weak);
+    color: var(--text-bright);
   }
 </style>

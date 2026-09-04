@@ -465,14 +465,14 @@
     width: 100%;
     min-height: 28px;
     padding: 4px 8px;
-    background: rgba(74, 158, 255, 0.12);
-    border: 1px solid rgba(74, 158, 255, 0.4);
+    background: var(--accent-tint-weak);
+    border: 1px solid var(--accent-tint-stronger);
     border-radius: 4px;
     transition: all 0.15s ease;
   }
 
   .expression-view:hover {
-    background: rgba(74, 158, 255, 0.18);
+    background: var(--accent-tint);
   }
 
   .expression-display {
@@ -489,7 +489,7 @@
   .expression-code {
     font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
     font-size: 11px;
-    color: #6ab0ff;
+    color: var(--accent-hover);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -504,12 +504,12 @@
 
   .evaluated-badge {
     padding: 2px 6px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 3px;
     font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
     font-size: 10px;
-    color: #aaa;
+    color: var(--text-muted);
     cursor: pointer;
     white-space: nowrap;
     max-width: 80px;
@@ -519,12 +519,12 @@
   }
 
   .evaluated-badge:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
 
   .expression-error {
-    color: #ff6b6b;
+    color: var(--status-error);
     display: flex;
     align-items: center;
     cursor: help;
@@ -540,14 +540,14 @@
     background: transparent;
     border: none;
     border-radius: 3px;
-    color: #888;
+    color: var(--text-subtle);
     cursor: pointer;
     transition: all 0.15s ease;
   }
 
   .remove-expression:hover {
-    background: rgba(255, 100, 100, 0.2);
-    color: #ff6b6b;
+    background: var(--status-error-tint);
+    color: var(--status-error);
   }
 
   /* Expression input container */
@@ -560,23 +560,23 @@
   .expression-input {
     width: 100%;
     padding: 2px 4px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(74, 158, 255, 0.6);
+    background: var(--shade-weak);
+    border: 1px solid var(--accent-tint-heavy);
     border-radius: 3px;
-    color: #6ab0ff;
+    color: var(--accent-hover);
     font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
     font-size: 11px;
   }
 
   .expression-input:focus {
     outline: none;
-    border-color: #6ab0ff;
-    box-shadow: 0 0 0 1px rgba(74, 158, 255, 0.3);
+    border-color: var(--accent-hover);
+    box-shadow: 0 0 0 1px var(--accent-tint-strong);
   }
 
   .expression-input.error {
-    border-color: #ff6b6b;
-    color: #ff6b6b;
+    border-color: var(--status-error);
+    color: var(--status-error);
   }
 
   /* Value view styling */
@@ -590,7 +590,7 @@
 
   .value-view.expression-active {
     padding: 2px;
-    background: rgba(74, 158, 255, 0.08);
+    background: var(--accent-tint-weakest);
     border-radius: 4px;
   }
 
@@ -610,7 +610,7 @@
     background: transparent;
     border: 1px solid transparent;
     border-radius: 3px;
-    color: #666;
+    color: var(--text-faintest);
     cursor: pointer;
     opacity: 0;
     transition: all 0.15s ease;
@@ -623,30 +623,30 @@
   }
 
   .add-expression:hover {
-    background: rgba(74, 158, 255, 0.1);
-    border-color: rgba(74, 158, 255, 0.3);
-    color: #4a9eff;
+    background: var(--accent-tint-weak);
+    border-color: var(--accent-tint-strong);
+    color: var(--accent);
   }
 
   .toggle-to-expression {
     opacity: 1;
-    background: rgba(74, 158, 255, 0.2);
-    border-color: rgba(74, 158, 255, 0.4);
-    color: #4a9eff;
+    background: var(--accent-tint-medium);
+    border-color: var(--accent-tint-stronger);
+    color: var(--accent);
   }
 
   .toggle-to-expression:hover {
-    background: rgba(74, 158, 255, 0.3);
+    background: var(--accent-tint-strong);
   }
 
   /* Error state */
   .has-error .expression-view {
-    background: rgba(255, 100, 100, 0.12);
-    border-color: rgba(255, 100, 100, 0.4);
+    background: var(--status-error-tint-weak);
+    border-color: var(--status-error-tint-strong);
   }
 
   .has-error .expression-code {
-    color: #ff6b6b;
+    color: var(--status-error);
   }
 
   /* Autocomplete dropdown */
@@ -656,10 +656,10 @@
     left: 0;
     right: 0;
     margin-top: 4px;
-    background: #252525;
-    border: 1px solid #3a3a3a;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-raised);
     border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 4px 12px var(--shadow-soft);
     max-height: 200px;
     overflow-y: auto;
     z-index: 1000;
@@ -673,7 +673,7 @@
     padding: 6px 8px;
     background: transparent;
     border: none;
-    color: #fff;
+    color: var(--text-bright);
     font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
     font-size: 11px;
     text-align: left;
@@ -682,7 +682,7 @@
 
   .autocomplete-item:hover,
   .autocomplete-item.selected {
-    background: #3a3a3a;
+    background: var(--surface-hover);
   }
 
   .item-type {
@@ -692,15 +692,15 @@
   }
 
   .type-func .item-type {
-    color: #4a9eff;
+    color: var(--accent);
   }
 
   .type-node .item-type {
-    color: #ffa500;
+    color: var(--status-warn-bright);
   }
 
   .type-prop .item-type {
-    color: #4aff4a;
+    color: var(--status-ok-bright);
   }
 
   .item-label {

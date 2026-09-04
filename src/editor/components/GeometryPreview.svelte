@@ -41,9 +41,9 @@
 <style>
   .geometry-preview {
     overflow: hidden;
-    border: 1px solid #303030;
+    border: 1px solid var(--border-faint);
     border-radius: 4px;
-    background: #111;
+    background: var(--surface-void);
   }
 
   svg {
@@ -51,20 +51,20 @@
     width: 100%;
     min-height: 100px;
     max-height: 420px;
-    background-image: linear-gradient(#181818 1px, transparent 1px), linear-gradient(90deg, #181818 1px, transparent 1px);
+    background-image: linear-gradient(var(--surface-app) 1px, transparent 1px), linear-gradient(90deg, var(--surface-app) 1px, transparent 1px);
     background-size: 16px 16px;
   }
 
   polyline,
   rect {
     fill: none;
-    stroke: #4ade80;
+    stroke: var(--status-ok-bright);
     stroke-width: 0.5%;
     vector-effect: non-scaling-stroke;
   }
 
   circle {
-    fill: #4ade80;
+    fill: var(--status-ok-bright);
   }
 
   .meta {
@@ -72,7 +72,7 @@
     justify-content: space-between;
     gap: 8px;
     padding: 5px 7px;
-    color: #888;
+    color: var(--text-subtle);
     font: 9px ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 
@@ -80,7 +80,7 @@
     display: grid;
     min-height: 80px;
     place-items: center;
-    color: #666;
+    color: var(--text-faintest);
     font-size: 10px;
   }
 </style>

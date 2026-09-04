@@ -1,6 +1,13 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { settingsStore, setSettings, type UserSettings } from './stores/settingsStore';
+  import { THEME_PREFERENCES, type ThemePreference } from './theme';
+
+  const THEME_LABELS: Record<ThemePreference, string> = {
+    auto: 'Auto',
+    dark: 'Dark',
+    light: 'Light'
+  };
 
   export let open = false;
 
@@ -41,7 +48,23 @@
       </header>
 
       <main>
-        <h3>Editor</h3>
+        <h3>Appearance</h3>
+        <div class="setting-row">
+          <span class="setting-label" id="theme-label">Theme</span>
+          <div class="segmented" role="radiogroup" aria-labelledby="theme-label">
+            {#each THEME_PREFERENCES as preference}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={localSettings.appearance.theme === preference}
+                class:selected={localSettings.appearance.theme === preference}
+                on:click={() => (localSettings.appearance.theme = preference)}
+              >{THEME_LABELS[preference]}</button>
+            {/each}
+          </div>
+        </div>
+
+        <h3 class="section">Editor</h3>
         <div class="setting-row">
           <label for="font-size">Font size</label>
           <input
@@ -71,18 +94,18 @@
     z-index: 1000;
     display: grid;
     place-items: center;
-    background: rgb(0 0 0 / 70%);
+    background: var(--shade-stronger);
     backdrop-filter: blur(4px);
   }
 
   .dialog {
     width: min(90vw, 520px);
     overflow: hidden;
-    color: #e5e5e5;
-    background: #1e1e1e;
-    border: 1px solid #3a3a3a;
+    color: var(--text-primary);
+    background: var(--surface-panel-alt);
+    border: 1px solid var(--border-raised);
     border-radius: 8px;
-    box-shadow: 0 10px 40px rgb(0 0 0 / 50%);
+    box-shadow: 0 10px 40px var(--shadow);
   }
 
   header,
@@ -94,12 +117,37 @@
 
   header {
     justify-content: space-between;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   header h2,
   main h3 {
     margin: 0;
+  }
+
+  main h3.section {
+    margin-top: 28px;
+  }
+
+  .setting-label {
+    font-size: 13px;
+  }
+
+  .segmented {
+    display: flex;
+    gap: 4px;
+  }
+
+  .segmented button {
+    flex: 1;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .segmented button.selected {
+    color: var(--text-on-accent);
+    background: var(--accent-alt-deep);
+    border-color: var(--accent-alt-hover);
   }
 
   main {
@@ -115,27 +163,27 @@
   }
 
   output {
-    color: #aaa;
+    color: var(--text-muted);
     text-align: right;
   }
 
   footer {
     justify-content: flex-end;
     gap: 8px;
-    border-top: 1px solid #333;
+    border-top: 1px solid var(--border-subtle);
   }
 
   button {
     padding: 8px 16px;
-    color: #ddd;
+    color: var(--text-primary);
     cursor: pointer;
-    background: #333;
-    border: 1px solid #4a4a4a;
+    background: var(--surface-input);
+    border: 1px solid var(--border);
     border-radius: 4px;
   }
 
   button:hover {
-    background: #404040;
+    background: var(--surface-active);
   }
 
   .icon-button {
@@ -146,12 +194,12 @@
   }
 
   .primary {
-    color: white;
-    background: #0e639c;
-    border-color: #1177bb;
+    color: var(--text-on-accent);
+    background: var(--accent-alt-deep);
+    border-color: var(--accent-alt-hover);
   }
 
   .primary:hover {
-    background: #1177bb;
+    background: var(--accent-alt-hover);
   }
 </style>

@@ -244,7 +244,7 @@
       wrapper.style.display = 'flex';
       wrapper.style.alignItems = 'center';
       wrapper.style.justifyContent = 'center';
-      wrapper.style.background = '#0a0a0a';
+      wrapper.style.background = 'var(--surface-void)';
 
       const img = document.createElement('img');
       img.src = canvas.toDataURL();
@@ -343,7 +343,7 @@
     const bar = document.createElement('div');
     bar.style.cssText =
       'position:absolute;left:8px;bottom:8px;display:flex;gap:6px;align-items:center;' +
-      'font-size:11px;color:#bbb;background:rgba(0,0,0,0.55);padding:3px 8px;border-radius:4px;';
+      'font-size:11px;color:var(--text-tertiary);background:var(--shade-strong);padding:3px 8px;border-radius:4px;';
     wrapper.appendChild(bar);
 
     const zoomText = document.createElement('span');
@@ -353,7 +353,7 @@
       const b = document.createElement('button');
       b.textContent = text;
       b.style.cssText =
-        'background:none;border:1px solid #444;border-radius:3px;color:#bbb;' +
+        'background:none;border:1px solid var(--border);border-radius:3px;color:var(--text-tertiary);' +
         'font-size:10px;padding:1px 5px;cursor:pointer;';
       b.addEventListener('mousedown', (e) => e.stopPropagation());
       b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
@@ -568,7 +568,7 @@
     original.target = '_blank';
     original.rel = 'noopener';
     original.title = source;
-    original.style.cssText = 'color:#9cdcfe;text-decoration:none;font-size:10px;';
+    original.style.cssText = 'color:var(--syntax-variable);text-decoration:none;font-size:10px;';
     original.addEventListener('mousedown', (e) => e.stopPropagation());
     bar.appendChild(original);
 
@@ -664,7 +664,7 @@
     wrapper.style.display = 'flex';
     wrapper.style.alignItems = 'center';
     wrapper.style.justifyContent = 'center';
-    wrapper.style.background = '#0a0a0a';
+    wrapper.style.background = 'var(--surface-void)';
 
     if (image) {
       const img = image.cloneNode(true) as HTMLImageElement;
@@ -708,8 +708,8 @@
       wrapper.style.height = '100%';
       wrapper.style.padding = '16px';
       wrapper.style.overflow = 'auto';
-      wrapper.style.background = '#0a0a0a';
-      wrapper.style.color = '#fff';
+      wrapper.style.background = 'var(--surface-void)';
+      wrapper.style.color = 'var(--text-bright)';
       wrapper.style.fontFamily = 'Monaco, Menlo, monospace';
       wrapper.style.fontSize = '12px';
       wrapper.style.lineHeight = '1.6';
@@ -984,14 +984,14 @@
     width: 100%;
     height: 100%;
     position: relative;
-    background: #0a0a0a;
+    background: var(--surface-void);
   }
 
   .viewer {
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: #0a0a0a;
+    background: var(--surface-void);
   }
 
   .viewer.hidden {
@@ -1006,10 +1006,10 @@
     display: flex;
     max-width: calc(100% - 24px);
     overflow-x: auto;
-    border: 1px solid #333;
+    border: 1px solid var(--border-subtle);
     border-radius: 5px;
-    background: rgba(20, 20, 20, 0.92);
-    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35);
+    background: var(--surface-popover);
+    box-shadow: 0 3px 14px var(--shadow-soft);
     transform: translateX(-50%);
   }
 
@@ -1019,17 +1019,17 @@
     gap: 5px;
     flex: none;
     border: 0;
-    border-right: 1px solid #333;
+    border-right: 1px solid var(--border-subtle);
     background: transparent;
-    color: #888;
+    color: var(--text-subtle);
     padding: 5px 8px;
     font: 9px ui-monospace, SFMono-Regular, Menlo, monospace;
     cursor: pointer;
   }
 
   .output-switcher button:last-child { border-right: 0; }
-  .output-switcher button:hover { color: #ccc; background: #292929; }
-  .output-switcher button.active { color: #fff; background: #333; }
+  .output-switcher button:hover { color: var(--text-secondary); background: var(--surface-control); }
+  .output-switcher button.active { color: var(--text-bright); background: var(--surface-input); }
   .output-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; }
 
   .typed-viewer {
@@ -1038,7 +1038,7 @@
     overflow: auto;
     box-sizing: border-box;
     padding-top: 30px;
-    background: #0a0a0a;
+    background: var(--surface-void);
   }
 
   :global(.empty-viewer) {
@@ -1048,7 +1048,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    color: #666;
+    color: var(--text-faintest);
     font-size: 14px;
     text-align: center;
     padding: 32px;
@@ -1060,7 +1060,7 @@
 
   :global(.empty-viewer .hint) {
     font-size: 12px;
-    color: #444;
+    color: var(--text-ghost);
   }
 
   :global(.canvas-viewer),

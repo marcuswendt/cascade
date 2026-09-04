@@ -239,8 +239,8 @@
     align-items: center;
     justify-content: space-between;
     height: 32px;
-    background: #1a1a1a;
-    border-bottom: 1px solid #333;
+    background: var(--surface-panel);
+    border-bottom: 1px solid var(--border-subtle);
     padding: 0 8px;
     user-select: none;
   }
@@ -270,7 +270,7 @@
   .menu-button {
     background: transparent;
     border: none;
-    color: #ccc;
+    color: var(--text-secondary);
     font-size: 13px;
     padding: 4px 10px;
     border-radius: 4px;
@@ -279,13 +279,13 @@
   }
 
   .menu-button:hover {
-    background: #333;
-    color: #fff;
+    background: var(--surface-input);
+    color: var(--text-bright);
   }
 
   .menu-item.active .menu-button {
-    background: #333;
-    color: #fff;
+    background: var(--surface-input);
+    color: var(--text-bright);
   }
 
   .dropdown {
@@ -293,11 +293,11 @@
     top: 100%;
     left: 0;
     min-width: 200px;
-    background: #252525;
-    border: 1px solid #404040;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-divider);
     border-radius: 6px;
     padding: 4px 0;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 8px 24px var(--shadow-soft);
     z-index: 1000;
   }
 
@@ -308,7 +308,7 @@
     padding: 6px 12px;
     background: transparent;
     border: none;
-    color: #ccc;
+    color: var(--text-secondary);
     font-size: 13px;
     text-align: left;
     cursor: pointer;
@@ -317,12 +317,12 @@
   }
 
   .dropdown-item:hover:not(.disabled) {
-    background: #0078d4;
-    color: #fff;
+    background: var(--accent-alt);
+    color: var(--text-on-accent);
   }
 
   .dropdown-item.disabled {
-    color: #666;
+    color: var(--text-faintest);
     cursor: not-allowed;
   }
 
@@ -331,26 +331,26 @@
   }
 
   .item-shortcut {
-    color: #888;
+    color: var(--text-subtle);
     font-size: 12px;
     margin-left: auto;
     padding-left: 16px;
   }
 
   .dropdown-item:hover:not(.disabled) .item-shortcut {
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--text-tint-strong);
   }
 
   .separator {
     height: 1px;
-    background: #404040;
+    background: var(--surface-active);
     margin: 4px 8px;
   }
 
   .document-name {
     background: transparent;
     border: none;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 13px;
     font-weight: 500;
     padding: 4px 12px;
@@ -360,14 +360,14 @@
   }
 
   .document-name:hover {
-    background: #333;
+    background: var(--surface-input);
   }
 
   .name-input {
-    background: #333;
-    border: 1px solid #0078d4;
+    background: var(--surface-input);
+    border: 1px solid var(--accent-alt);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 13px;
     font-weight: 500;
     padding: 3px 11px;

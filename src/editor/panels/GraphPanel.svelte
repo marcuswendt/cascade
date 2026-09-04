@@ -183,7 +183,7 @@
     align-items: center;
     justify-content: center;
     height: 100%;
-    color: #666;
+    color: var(--text-faintest);
     font-size: 14px;
   }
 </style>

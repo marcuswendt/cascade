@@ -44,7 +44,7 @@
     padding: 6px 8px;
     background: transparent;
     border: none;
-    color: #888;
+    color: var(--text-subtle);
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -58,13 +58,13 @@
   }
   
   .folder-header:hover {
-    color: #aaa;
+    color: var(--text-muted);
   }
   
   .folder-icon {
     flex-shrink: 0;
     transition: transform 0.15s ease;
-    color: #666;
+    color: var(--text-faintest);
   }
   
   .folder-icon.expanded {

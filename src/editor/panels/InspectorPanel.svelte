@@ -76,6 +76,6 @@
     width: 100%;
     height: 100%;
     overflow: auto;
-    background: #1a1a1a;
+    background: var(--surface-panel);
   }
 </style>

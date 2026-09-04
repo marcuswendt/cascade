@@ -342,7 +342,7 @@
   }
 
   .graph-tabs::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--tint-strong);
     border-radius: 2px;
   }
 
@@ -351,7 +351,7 @@
     align-items: center;
     gap: 4px;
     padding: 8px 12px;
-    background: rgba(30, 30, 30, 0.6);
+    background: var(--surface-popover-soft);
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
     border-bottom: 2px solid transparent;
@@ -361,8 +361,8 @@
   }
 
   .document-tab.active {
-    background: rgba(20, 20, 20, 0.95);
-    border-bottom-color: #4a9eff;
+    background: var(--surface-popover);
+    border-bottom-color: var(--accent);
   }
 
   .menu-trigger {
@@ -376,14 +376,14 @@
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    color: #aaa;
+    color: var(--text-muted);
     transition: all 0.15s ease;
     flex-shrink: 0;
   }
 
   .menu-trigger:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
 
   .chevron {
@@ -400,7 +400,7 @@
     flex: 1;
     background: transparent;
     border: none;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 13px;
     font-weight: 500;
     text-align: left;
@@ -414,15 +414,15 @@
   }
 
   .document-name-button:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--tint);
   }
 
   .document-name-input {
     flex: 1;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid #4a9eff;
+    background: var(--shade-weak);
+    border: 1px solid var(--accent);
     border-radius: 3px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 13px;
     font-weight: 500;
     padding: 2px 6px;
@@ -432,18 +432,18 @@
   }
 
   .document-name-input:focus {
-    border-color: #4a9eff;
-    background: rgba(0, 0, 0, 0.5);
+    border-color: var(--accent);
+    background: var(--shade-medium);
   }
 
   .menu-dropdown {
     position: fixed;
     min-width: 220px;
-    background: rgba(30, 30, 30, 0.98);
+    background: var(--surface-popover);
     backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--tint);
     border-radius: 8px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 10px 40px var(--shadow);
     padding: 4px;
     animation: fadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 999999;
@@ -467,7 +467,7 @@
 
   .menu-divider {
     height: 1px;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--tint);
     margin: 4px 0;
   }
 
@@ -480,7 +480,7 @@
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 13px;
     text-align: left;
     width: 100%;
@@ -488,7 +488,7 @@
   }
 
   .menu-item:hover {
-    background: rgba(66, 133, 244, 0.15);
+    background: var(--accent-tint);
   }
 
   .menu-item .icon {
@@ -499,7 +499,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: var(--text-bright);
   }
 
   .menu-item .label {
@@ -507,7 +507,7 @@
   }
 
   .menu-item .shortcut {
-    color: #666;
+    color: var(--text-faintest);
     font-size: 11px;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
   }
@@ -517,12 +517,12 @@
     align-items: center;
     gap: 6px;
     padding: 8px 12px;
-    background: rgba(30, 30, 30, 0.6);
+    background: var(--surface-popover-soft);
     border: none;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
     border-bottom: 2px solid transparent;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--text-tint-strong);
     cursor: move;
     transition: all 0.15s ease;
     white-space: nowrap;
@@ -541,14 +541,14 @@
   }
 
   .tab:hover {
-    background: rgba(40, 40, 40, 0.8);
-    color: rgba(255, 255, 255, 0.9);
+    background: var(--surface-veil);
+    color: var(--text-tint-bright);
   }
 
   .tab.active {
-    background: rgba(20, 20, 20, 0.95);
-    border-bottom-color: #4a9eff;
-    color: #fff;
+    background: var(--surface-popover);
+    border-bottom-color: var(--accent);
+    color: var(--text-bright);
   }
 
   .tab-icon {
@@ -575,7 +575,7 @@
     background: transparent;
     border: none;
     border-radius: 3px;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--text-tint-half);
     cursor: pointer;
     transition: all 0.1s ease;
     font-size: 18px;
@@ -589,11 +589,11 @@
   }
 
   .tab-close:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.9);
+    background: var(--tint);
+    color: var(--text-tint-bright);
   }
 
   .tab.active .tab-close:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--tint-medium);
   }
 </style>

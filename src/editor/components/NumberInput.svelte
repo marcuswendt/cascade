@@ -103,7 +103,7 @@
   .slider {
     flex: 1;
     height: 4px;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--tint);
     border-radius: 2px;
     outline: none;
     -webkit-appearance: none;
@@ -121,25 +121,25 @@
     appearance: none;
     width: 12px;
     height: 12px;
-    background: #4a9eff;
+    background: var(--accent);
     border-radius: 50%;
     cursor: pointer;
     transition: background 0.15s ease;
   }
   
   .slider:hover::-webkit-slider-thumb {
-    background: #6bb6ff;
+    background: var(--accent-hover);
   }
   
   .slider:disabled::-webkit-slider-thumb {
-    background: #666;
+    background: var(--surface-muted);
     cursor: not-allowed;
   }
   
   .slider::-moz-range-thumb {
     width: 12px;
     height: 12px;
-    background: #4a9eff;
+    background: var(--accent);
     border-radius: 50%;
     cursor: pointer;
     border: none;
@@ -147,11 +147,11 @@
   }
   
   .slider:hover::-moz-range-thumb {
-    background: #6bb6ff;
+    background: var(--accent-hover);
   }
   
   .slider:disabled::-moz-range-thumb {
-    background: #666;
+    background: var(--surface-muted);
     cursor: not-allowed;
   }
   
@@ -159,10 +159,10 @@
   .number-input-full {
     width: 70px;
     padding: 4px 6px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 3px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 12px;
     font-family: 'Monaco', 'Menlo', monospace;
     text-align: right;
@@ -175,7 +175,7 @@
   .number-input:focus,
   .number-input-full:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
   
   .number-input:disabled,

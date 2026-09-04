@@ -55,5 +55,5 @@
 
 <style>
   .project-panel { width: 100%; height: 100%; overflow: auto; }
-  .panel-error { padding: 16px; color: #ff6b6b; }
+  .panel-error { padding: 16px; color: var(--status-error); }
 </style>

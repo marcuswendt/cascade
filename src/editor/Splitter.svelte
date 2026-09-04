@@ -54,7 +54,7 @@
 
 <style>
   .splitter {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--tint-weak);
     transition: background 0.15s ease;
     flex-shrink: 0;
     position: relative;
@@ -62,11 +62,11 @@
   }
   
   .splitter:hover {
-    background: rgba(74, 158, 255, 0.3);
+    background: var(--accent-tint-strong);
   }
   
   .splitter.dragging {
-    background: rgba(74, 158, 255, 0.5);
+    background: var(--accent-tint-half);
   }
   
   .splitter.vertical {

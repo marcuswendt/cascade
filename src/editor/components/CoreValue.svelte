@@ -262,7 +262,7 @@
   .slider-row input[type='range'] {
     flex: 1;
     min-width: 0;
-    accent-color: #4a9eff;
+    accent-color: var(--accent);
     height: 14px;
   }
 
@@ -275,23 +275,23 @@
   .core-value.mode-view { width: min(100%, 1100px); margin: auto; padding: 24px; box-sizing: border-box; }
   .vector { display: flex; gap: 5px; }
   .component { display: flex; align-items: center; gap: 3px; flex: 1; min-width: 0; }
-  .component span { width: 9px; flex: none; color: #777; font-size: 9px; }
+  .component span { width: 9px; flex: none; color: var(--text-faint); font-size: 9px; }
   .matrix { display: grid; gap: 4px; }
-  input[type='number'], input[type='text'], select { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #3a3a3a; border-radius: 3px; background: #1e1e1e; color: #ddd; padding: 3px 5px; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
-  input:disabled { background: #232323; color: #999; }
-  input:focus { outline: none; border-color: #0e639c; }
-  .reset { margin-top: 4px; border: 1px solid #3a3a3a; border-radius: 3px; background: none; color: #999; font-size: 9px; cursor: pointer; }
-  .boolean { color: #bbb; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .image img { display: block; width: 100%; max-height: 70vh; object-fit: contain; border-radius: 4px; background: #111; }
-  .meta, .path, .summary, .notice, .color-css { overflow: hidden; color: #888; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+  input[type='number'], input[type='text'], select { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border-raised); border-radius: 3px; background: var(--surface-panel-alt); color: var(--text-primary); padding: 3px 5px; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  input:disabled { background: var(--surface-raised); color: var(--text-dim); }
+  input:focus { outline: none; border-color: var(--accent-alt-deep); }
+  .reset { margin-top: 4px; border: 1px solid var(--border-raised); border-radius: 3px; background: none; color: var(--text-dim); font-size: 9px; cursor: pointer; }
+  .boolean { color: var(--text-tertiary); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .image img { display: block; width: 100%; max-height: 70vh; object-fit: contain; border-radius: 4px; background: var(--surface-void); }
+  .meta, .path, .summary, .notice, .color-css { overflow: hidden; color: var(--text-subtle); font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
   .meta { margin-top: 5px; }
-  .path { color: #666; }
-  .notice { margin-top: 3px; color: #9b8264; }
+  .path { color: var(--text-faintest); }
+  .notice { margin-top: 3px; color: var(--syntax-muted); }
   .color-row { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
   input[type='color'] { width: 28px; height: 22px; border: 0; padding: 0; background: none; }
-  .swatch { width: 24px; height: 18px; border: 1px solid #555; border-radius: 3px; }
+  .swatch { width: 24px; height: 18px; border: 1px solid var(--border-strong); border-radius: 3px; }
   .structured { margin-top: 7px; }
-  .text-value { margin: 0; color: #ddd; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .text-value { margin: 0; color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
   .mode-view .vector, .mode-view .matrix { max-width: 720px; margin-inline: auto; }
   .mode-view .component span, .mode-view input, .mode-view .boolean { font-size: 12px; }
 </style>

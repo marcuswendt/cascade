@@ -40,11 +40,11 @@
 </div>
 
 <style>
-  .port-editor { padding: 7px 0; border-bottom: 1px solid #2e2e2e; }
+  .port-editor { padding: 7px 0; border-bottom: 1px solid var(--border-faint); }
   .row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
   .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-  .name { flex: 1; overflow: hidden; color: #ddd; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-  .source { margin: -1px 0 5px 13px; color: #777; font-size: 9px; }
+  .name { flex: 1; overflow: hidden; color: var(--text-primary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  .source { margin: -1px 0 5px 13px; color: var(--text-faint); font-size: 9px; }
   .value { margin-left: 13px; min-width: 0; }
   .read-only .value { opacity: 0.92; }
 </style>

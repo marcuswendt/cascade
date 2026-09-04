@@ -181,10 +181,10 @@
   .select-button {
     width: 100%;
     padding: 6px 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 3px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 12px;
     font-family: inherit;
     cursor: pointer;
@@ -196,12 +196,12 @@
   }
   
   .select-button:hover:not(:disabled) {
-    border-color: #4a9eff;
-    background: rgba(0, 0, 0, 0.4);
+    border-color: var(--accent);
+    background: var(--shade);
   }
   
   .select-button.open {
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
   
   .select-button:disabled {
@@ -219,7 +219,7 @@
   
   .dropdown-icon {
     flex-shrink: 0;
-    color: #aaa;
+    color: var(--text-muted);
     transition: transform 0.15s ease;
   }
   
@@ -233,10 +233,10 @@
     left: 0;
     right: 0;
     z-index: 1000;
-    background: rgba(20, 20, 20, 0.98);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--surface-popover);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 4px 16px var(--shadow);
     max-height: 200px;
     overflow: hidden;
     display: flex;
@@ -245,23 +245,23 @@
   
   .search-box {
     padding: 8px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--tint);
   }
   
   .search-input {
     width: 100%;
     padding: 4px 6px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 3px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 11px;
     font-family: inherit;
   }
   
   .search-input:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
   
   .options-list {
@@ -274,7 +274,7 @@
     padding: 6px 12px;
     background: transparent;
     border: none;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 12px;
     text-align: left;
     cursor: pointer;
@@ -282,12 +282,12 @@
   }
   
   .option-item:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--tint-weak);
   }
   
   .option-item.selected {
-    background: rgba(74, 158, 255, 0.2);
-    color: #4a9eff;
+    background: var(--accent-tint-medium);
+    color: var(--accent);
   }
 
   .option-item:disabled {
@@ -303,11 +303,11 @@
     padding: 6px 12px 4px;
     font-size: 10px;
     font-weight: 600;
-    color: #888;
+    color: var(--text-subtle);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    background: rgba(255, 255, 255, 0.02);
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    background: var(--tint-weakest);
+    border-top: 1px solid var(--tint-weak);
   }
 
   .option-group-header:first-child {
@@ -317,7 +317,7 @@
   .no-results {
     padding: 12px;
     text-align: center;
-    color: #666;
+    color: var(--text-faintest);
     font-size: 11px;
   }
 </style>

@@ -150,7 +150,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--shade-strong);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -158,10 +158,10 @@
   }
 
   .dialog {
-    background: #252526;
+    background: var(--surface-raised);
     border-radius: 8px;
-    border: 1px solid #404040;
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border-divider);
+    box-shadow: 0 16px 48px var(--shadow);
     width: 460px;
     max-width: 90vw;
     max-height: 80vh;
@@ -175,27 +175,27 @@
     align-items: center;
     justify-content: space-between;
     padding: 14px 16px;
-    border-bottom: 1px solid #404040;
+    border-bottom: 1px solid var(--border-divider);
   }
 
   h2 {
     margin: 0;
     font-size: 14px;
     font-weight: 600;
-    color: #e0e0e0;
+    color: var(--text-primary);
   }
 
   .close-button {
     background: none;
     border: none;
-    color: #999;
+    color: var(--text-dim);
     cursor: pointer;
     padding: 2px;
     display: flex;
   }
 
   .close-button:hover {
-    color: #e0e0e0;
+    color: var(--text-primary);
   }
 
   .dialog-body {
@@ -207,28 +207,28 @@
     margin: 0 0 12px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 12px;
-    color: #9cdcfe;
+    color: var(--syntax-variable);
   }
 
   .note {
     margin: 0 0 10px;
     font-size: 12px;
     line-height: 1.5;
-    color: #999;
+    color: var(--text-dim);
   }
 
   .note.error {
-    color: #f48771;
+    color: var(--status-error-soft);
   }
 
   .note.dirty {
-    color: #d7ba7d;
+    color: var(--syntax-regexp);
   }
 
   .footnote {
     margin: 12px 0 0;
     padding-top: 10px;
-    border-top: 1px solid #333;
+    border-top: 1px solid var(--border-subtle);
   }
 
   .versions {
@@ -244,7 +244,7 @@
     gap: 2px 12px;
     align-items: center;
     padding: 9px 0;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .versions li:last-child {
@@ -257,11 +257,11 @@
     align-items: center;
     gap: 8px;
     font-size: 11px;
-    color: #888;
+    color: var(--text-subtle);
   }
 
   .date {
-    color: #ccc;
+    color: var(--text-secondary);
   }
 
   .sha {
@@ -271,15 +271,15 @@
   .tag {
     padding: 1px 6px;
     border-radius: 3px;
-    background: #37373d;
-    color: #9cdcfe;
+    background: var(--surface-hover);
+    color: var(--syntax-variable);
     font-size: 10px;
   }
 
   .message {
     grid-area: message;
     font-size: 12px;
-    color: #ddd;
+    color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -287,17 +287,17 @@
 
   .restore {
     grid-area: button;
-    background: #0e639c;
+    background: var(--accent-alt-deep);
     border: none;
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-on-accent);
     cursor: pointer;
     font-size: 12px;
     padding: 5px 12px;
   }
 
   .restore:hover:not(:disabled) {
-    background: #1177bb;
+    background: var(--accent-alt-hover);
   }
 
   .restore:disabled {

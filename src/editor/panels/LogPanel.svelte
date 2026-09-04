@@ -27,6 +27,6 @@
     overflow: auto;
     font-family: 'SF Mono', Monaco, 'Cascadia Code', Consolas, monospace;
     font-size: 12px;
-    background: #1a1a1a;
+    background: var(--surface-panel);
   }
 </style>

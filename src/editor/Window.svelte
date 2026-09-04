@@ -87,7 +87,7 @@
   .window {
     display: flex;
     flex-direction: column;
-    background: rgba(20, 20, 20, 0.95);
+    background: var(--surface-popover);
     border: none;
     overflow: hidden;
     transition: height 0.2s ease;
@@ -103,8 +103,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: rgba(10, 10, 10, 0.8);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-strongest);
+    border-bottom: 1px solid var(--tint);
     flex-shrink: 0;
     gap: 12px;
     overflow: visible;
@@ -115,7 +115,7 @@
   .title {
     font-size: 12px;
     font-weight: 600;
-    color: #fff;
+    color: var(--text-bright);
     user-select: none;
     display: flex;
     align-items: center;
@@ -148,7 +148,7 @@
     background: transparent;
     border: none;
     border-radius: 3px;
-    color: #aaa;
+    color: var(--text-muted);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -157,8 +157,8 @@
   }
   
   .icon-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
   
   .content {

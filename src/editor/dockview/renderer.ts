@@ -171,14 +171,14 @@ export function createSvelteRenderer(
       // Safeguard: ensure params has required properties
       if (!params || !params.type) {
         console.error('Panel params missing or invalid:', params);
-        container.innerHTML = `<div style="padding: 16px; color: #ff6b6b;">Invalid panel configuration</div>`;
+        container.innerHTML = `<div style="padding: 16px; color: var(--status-error);">Invalid panel configuration</div>`;
         return;
       }
 
       const entry = componentRegistry.get(params.type);
       if (!entry) {
         console.error(`Unknown panel type: ${params.type}`);
-        container.innerHTML = `<div style="padding: 16px; color: #ff6b6b;">Unknown panel type: ${params.type}</div>`;
+        container.innerHTML = `<div style="padding: 16px; color: var(--status-error);">Unknown panel type: ${params.type}</div>`;
         return;
       }
 
@@ -190,7 +190,7 @@ export function createSvelteRenderer(
       // Lazy entry: show a lightweight placeholder immediately (the load
       // is a real multi-MB fetch, not instant), swap in the real
       // component once it resolves.
-      container.innerHTML = `<div style="padding: 16px; color: #888;">Loading ${entry.defaultTitle}…</div>`;
+      container.innerHTML = `<div style="padding: 16px; color: var(--text-subtle);">Loading ${entry.defaultTitle}…</div>`;
       entry
         .loader()
         .then((mod) => {
@@ -201,7 +201,7 @@ export function createSvelteRenderer(
         .catch((err) => {
           console.error(`Failed to load panel component for type ${params.type}:`, err);
           if (disposed || !container) return;
-          container.innerHTML = `<div style="padding: 16px; color: #ff6b6b;">Failed to load ${entry.defaultTitle}: ${String(err)}</div>`;
+          container.innerHTML = `<div style="padding: 16px; color: var(--status-error);">Failed to load ${entry.defaultTitle}: ${String(err)}</div>`;
         });
     },
 

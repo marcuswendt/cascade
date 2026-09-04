@@ -140,7 +140,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: var(--shade-stronger);
     backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
@@ -159,9 +159,9 @@
   }
 
   .dialog {
-    background: #1e1e1e;
+    background: var(--surface-panel-alt);
     border-radius: 8px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 10px 40px var(--shadow);
     width: 90%;
     max-width: 500px;
     max-height: 90vh;
@@ -186,12 +186,12 @@
     align-items: center;
     justify-content: space-between;
     padding: 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--tint);
   }
 
   .header h2 {
     margin: 0;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 20px;
     font-weight: 600;
   }
@@ -199,7 +199,7 @@
   .close-button {
     background: transparent;
     border: none;
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 24px;
     cursor: pointer;
     padding: 0;
@@ -213,8 +213,8 @@
   }
 
   .close-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
 
   .content {
@@ -229,7 +229,7 @@
 
   .form-group label {
     display: block;
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 12px;
     font-weight: 500;
     margin-bottom: 8px;
@@ -238,17 +238,17 @@
   .form-group input {
     width: 100%;
     padding: 10px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 14px;
     box-sizing: border-box;
   }
 
   .form-group input:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
 
   .form-group input:disabled,
@@ -260,10 +260,10 @@
   .form-group select {
     width: 100%;
     padding: 10px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 14px;
     box-sizing: border-box;
     cursor: pointer;
@@ -271,19 +271,19 @@
   
   .form-group select:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
 
   .info {
-    background: rgba(74, 158, 255, 0.1);
-    border: 1px solid rgba(74, 158, 255, 0.2);
+    background: var(--accent-tint-weak);
+    border: 1px solid var(--accent-tint-medium);
     border-radius: 4px;
     padding: 16px;
     margin-top: 20px;
   }
 
   .info p {
-    color: #fff;
+    color: var(--text-bright);
     font-size: 14px;
     margin: 0 0 12px 0;
   }
@@ -291,7 +291,7 @@
   .info ul {
     margin: 0;
     padding-left: 20px;
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 13px;
   }
 
@@ -300,11 +300,11 @@
   }
 
   .error {
-    background: rgba(255, 68, 68, 0.1);
-    border: 1px solid rgba(255, 68, 68, 0.3);
+    background: var(--status-error-tint-weak);
+    border: 1px solid var(--status-error-tint-strong);
     border-radius: 4px;
     padding: 12px;
-    color: #ff6b6b;
+    color: var(--status-error);
     font-size: 13px;
     margin-top: 16px;
   }
@@ -313,7 +313,7 @@
     display: flex;
     gap: 12px;
     padding: 20px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid var(--tint);
     justify-content: flex-end;
   }
 
@@ -330,21 +330,21 @@
 
   .cancel-button {
     background: transparent;
-    color: #aaa;
+    color: var(--text-muted);
   }
 
   .cancel-button:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
 
   .export-button {
-    background: #4a9eff;
-    color: white;
+    background: var(--accent);
+    color: var(--text-on-accent);
   }
 
   .export-button:hover:not(:disabled) {
-    background: #357abd;
+    background: var(--accent-strong);
   }
 
   .export-button:disabled,

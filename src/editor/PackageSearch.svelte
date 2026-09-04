@@ -186,7 +186,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: var(--shade-stronger);
     backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
@@ -205,9 +205,9 @@
   }
 
   .dialog {
-    background: #1e1e1e;
+    background: var(--surface-panel-alt);
     border-radius: 8px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 10px 40px var(--shadow);
     width: 90%;
     max-width: 600px;
     max-height: 80vh;
@@ -232,12 +232,12 @@
     align-items: center;
     justify-content: space-between;
     padding: 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--tint);
   }
 
   .header h2 {
     margin: 0;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 20px;
     font-weight: 600;
   }
@@ -245,7 +245,7 @@
   .close-button {
     background: transparent;
     border: none;
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 24px;
     cursor: pointer;
     padding: 0;
@@ -259,40 +259,40 @@
   }
 
   .close-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
 
   .search-section {
     padding: 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid var(--tint);
   }
 
   .search-input {
     width: 100%;
     padding: 12px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 14px;
     box-sizing: border-box;
   }
 
   .search-input:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
 
   .loading {
     margin-top: 8px;
-    color: #888;
+    color: var(--text-subtle);
     font-size: 12px;
   }
 
   .error {
     margin-top: 8px;
-    color: #ff6b6b;
+    color: var(--status-error);
     font-size: 12px;
   }
 
@@ -314,8 +314,8 @@
     flex-direction: column;
     gap: 4px;
     padding: 12px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
     cursor: pointer;
     text-align: left;
@@ -324,18 +324,18 @@
 
   .result-item:hover,
   .result-item.selected {
-    background: rgba(66, 133, 244, 0.15);
-    border-color: #4a9eff;
+    background: var(--accent-tint);
+    border-color: var(--accent);
   }
 
   .package-name {
-    color: #fff;
+    color: var(--text-bright);
     font-size: 14px;
     font-weight: 600;
   }
 
   .package-description {
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 12px;
   }
 
@@ -346,19 +346,19 @@
   }
 
   .version {
-    color: #666;
+    color: var(--text-faintest);
     font-size: 11px;
   }
 
   .keywords {
-    color: #666;
+    color: var(--text-faintest);
     font-size: 11px;
     font-style: italic;
   }
 
   .empty-state {
     text-align: center;
-    color: #666;
+    color: var(--text-faintest);
     padding: 40px;
     font-size: 14px;
   }
@@ -371,7 +371,7 @@
 
   .popular-section h3 {
     margin: 0;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 16px;
     font-weight: 600;
   }
@@ -387,8 +387,8 @@
     flex-direction: column;
     gap: 4px;
     padding: 12px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 4px;
     cursor: pointer;
     text-align: left;
@@ -396,28 +396,28 @@
   }
 
   .popular-item:hover {
-    background: rgba(66, 133, 244, 0.15);
-    border-color: #4a9eff;
+    background: var(--accent-tint);
+    border-color: var(--accent);
   }
 
   .popular-item .name {
-    color: #4a9eff;
+    color: var(--accent);
     font-size: 13px;
     font-weight: 600;
   }
 
   .popular-item .description {
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 11px;
   }
 
   .footer {
     padding: 12px 20px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid var(--tint);
   }
 
   .hint {
-    color: #666;
+    color: var(--text-faintest);
     font-size: 11px;
     text-align: center;
   }

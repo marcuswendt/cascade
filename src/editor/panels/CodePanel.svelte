@@ -79,16 +79,16 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: #1e1e1e;
+    background: var(--surface-panel-alt);
   }
 
   .error {
     padding: 16px;
-    color: #ff6b6b;
+    color: var(--status-error);
   }
 
   .loading {
     padding: 16px;
-    color: #888;
+    color: var(--text-subtle);
   }
 </style>

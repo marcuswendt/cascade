@@ -69,11 +69,11 @@
   .annotation-image {
     overflow: hidden;
     border-radius: 4px;
-    background: rgba(0, 0, 0, 0.3);
+    background: var(--shade-weak);
   }
 
   .annotation-image.selected {
-    outline: 2px solid var(--accent-color, #4a9eff);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
 
@@ -95,8 +95,8 @@
     left: 0;
     right: 0;
     padding: 4px 8px;
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
+    background: var(--shade-stronger);
+    color: var(--text-bright);
     font-size: 12px;
     text-align: center;
   }
@@ -114,7 +114,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    border: 1px solid var(--tint-half);
   }
 
   .annotation-port {

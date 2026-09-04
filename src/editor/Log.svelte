@@ -165,8 +165,8 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    background: #0a0a0a;
-    color: #fff;
+    background: var(--surface-void);
+    color: var(--text-bright);
   }
   
   .log-content {
@@ -181,25 +181,25 @@
   
   .clear-button {
     padding: 4px 8px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--tint);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 11px;
     cursor: pointer;
     transition: all 0.15s ease;
   }
   
   .clear-button:hover {
-    background: rgba(255, 255, 255, 0.15);
-    color: #fff;
+    background: var(--tint-medium);
+    color: var(--text-bright);
   }
   
   .log-entry {
     display: flex;
     gap: 8px;
     padding: 4px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--tint-weak);
     word-break: break-word;
   }
   
@@ -208,30 +208,30 @@
   }
   
   .log-source {
-    color: #4a9eff;
+    color: var(--accent);
     flex-shrink: 0;
     font-weight: 500;
   }
   
   .log-message {
     flex: 1;
-    color: #ccc;
+    color: var(--text-secondary);
   }
   
   .log-message.error {
-    color: #ff6b6b;
+    color: var(--status-error);
   }
   
   .log-message.warn {
-    color: #ffd93d;
+    color: var(--status-attention);
   }
   
   .log-entry.error {
-    background: rgba(255, 107, 107, 0.05);
+    background: var(--status-error-tint-weak);
   }
   
   .log-entry.warn {
-    background: rgba(255, 217, 61, 0.05);
+    background: var(--status-warn-tint-weak);
   }
   
   .log-content::-webkit-scrollbar {
@@ -239,16 +239,16 @@
   }
   
   .log-content::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--shade-weakest);
   }
   
   .log-content::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--tint-strong);
     border-radius: 4px;
   }
   
   .log-content::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: var(--tint-stronger);
   }
 </style>
 

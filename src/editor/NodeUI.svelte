@@ -532,18 +532,18 @@
   /* Amber for server-side work, blue for in-page. Deliberately quiet: it is a
      property of the node, not an alert about it. */
   .locus-server {
-    background: rgba(215, 186, 125, 0.22);
-    color: #d7ba7d;
+    background: var(--syntax-regexp-tint);
+    color: var(--syntax-regexp);
   }
 
   .locus-browser {
-    background: rgba(156, 220, 254, 0.20);
-    color: #9cdcfe;
+    background: var(--syntax-variable-tint);
+    color: var(--syntax-variable);
   }
 
   .locus-portable {
-    background: rgba(114, 216, 150, 0.20);
-    color: #72d896;
+    background: var(--status-ok-tint);
+    color: var(--status-ok-soft);
   }
 
   .node {
@@ -562,11 +562,11 @@
   }
   
   .node.selected {
-    --node-border-color: #4a9eff;
+    --node-border-color: var(--accent);
   }
   
   .node.error {
-    --node-border-color: #ff4444;
+    --node-border-color: var(--status-error-strong);
   }
 
   .node.stale .node-container {
@@ -645,7 +645,7 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
-    background: #1a1a1a;
+    background: var(--surface-panel);
     border-radius: 3px;
     padding: 2px;
     min-width: 80px;
@@ -658,13 +658,13 @@
     justify-content: space-between;
     gap: 4px;
     padding: 2px 4px;
-    background: #2a2a2a;
+    background: var(--surface-control);
     border-radius: 2px;
     font-size: 9px;
   }
 
   .variadic-source {
-    color: #aaa;
+    color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -678,7 +678,7 @@
     margin: 0;
     border: none;
     background: transparent;
-    color: #666;
+    color: var(--text-faintest);
     font-size: 12px;
     line-height: 1;
     cursor: pointer;
@@ -690,8 +690,8 @@
   }
 
   .variadic-remove:hover {
-    background: #ff4444;
-    color: #fff;
+    background: var(--status-error-strong);
+    color: var(--text-on-accent);
   }
 
   /* The node's own colour arrives as a custom property, never as an inline
@@ -708,9 +708,9 @@
     align-self: stretch;
     position: relative;
     height: 36px;
-    background: var(--node-fill, #2a2a2a);
+    background: var(--node-fill, var(--surface-control));
     border-radius: 5px;
-    border: 1px solid var(--node-border-color, #444);
+    border: 1px solid var(--node-border-color, var(--border));
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -726,7 +726,7 @@
     content: '';
     position: absolute;
     inset: -4px;
-    border: 2px solid rgba(91, 192, 235, 0.78);
+    border: 2px solid var(--accent-cyan-tint-strong);
     border-radius: 8px;
     pointer-events: none;
   }
@@ -763,7 +763,7 @@
      was making the old border-only cue invisible. */
   .node.selected .body {
     border-color: var(--node-border-color);
-    box-shadow: 0 0 0 2px #4a9eff, 0 0 12px rgba(74, 158, 255, 0.35);
+    box-shadow: 0 0 0 2px var(--accent), 0 0 12px var(--accent-tint-strong);
   }
   
   .node.error .body {
@@ -776,15 +776,15 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: var(--text-bright);
     flex: 1;
   }
   
   .node-button {
     width: 16px;
     height: 36px;
-    border: 0px solid #555;
-    background: #1a1a1a;
+    border: 0px solid var(--border-strong);
+    background: var(--surface-panel);
     border-radius: 0;
     display: flex;
     align-items: center;
@@ -807,35 +807,35 @@
   }
   
   .node-button:hover {
-    background: #2a2a2a;
-    border-color: #666;
+    background: var(--surface-control);
+    border-color: var(--border-dim);
   }
   
   .node-button.active {
-    background: #4a9eff;
-    border-color: #4a9eff;
+    background: var(--accent);
+    border-color: var(--accent);
   }
   
   .bypass-button.active {
-    background: #ffd700;
-    border-color: #ffd700;
+    background: var(--status-attention);
+    border-color: var(--status-attention);
   }
   
   .cook-button.active {
-    background: #4a9eff;
-    border-color: #4a9eff;
+    background: var(--accent);
+    border-color: var(--accent);
   }
   
   .button-label {
     font-size: 9px;
     font-weight: 600;
-    color: #fff;
+    color: var(--text-bright);
     line-height: 1;
     user-select: none;
   }
   
   .node-button.active .button-label {
-    color: #000;
+    color: var(--text-fixed-dark);
   }
   
   .label {
@@ -843,7 +843,7 @@
     align-items: center;
     justify-content: flex-start;
     font-size: 11px;
-    color: #fff;
+    color: var(--text-bright);
     white-space: nowrap;
   }
   
@@ -858,10 +858,10 @@
   }
   
   .node-name-input {
-    background: #1a1a1a;
-    border: 1px solid #4a9eff;
+    background: var(--surface-panel);
+    border: 1px solid var(--accent);
     border-radius: 3px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 11px;
     font-weight: 500;
     padding: 2px 4px;
@@ -872,23 +872,23 @@
   }
   
   .node-name-input:focus {
-    border-color: #4a9eff;
-    box-shadow: 0 0 0 1px #4a9eff;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
   }
   
   
   .comment {
     margin-top: 4px;
     font-size: 10px;
-    color: #666;
+    color: var(--text-faintest);
     font-style: italic;
   }
   
   .error-message {
     margin-top: 4px;
     padding: 4px;
-    background: #ff4444;
-    color: white;
+    background: var(--status-error-strong);
+    color: var(--text-on-accent);
     font-size: 10px;
     border-radius: 2px;
   }
@@ -896,15 +896,15 @@
   .port-tooltip {
     position: absolute;
     pointer-events: none;
-    background: #1a1a1a;
-    color: #fff;
+    background: var(--surface-panel);
+    color: var(--text-bright);
     padding: 4px 10px;
     border-radius: 4px;
     font-size: 11px;
     white-space: nowrap;
     z-index: 10000;
     border: 1px solid;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 2px 8px var(--shadow);
     display: flex;
     gap: 6px;
     align-items: center;

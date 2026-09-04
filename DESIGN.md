@@ -88,7 +88,7 @@
 
 ## Visual language
 
-- Color: retain the dark neutral workbench and family colors from `TYPE_COLORS`; color communicates type family, not decoration
+- Color: the workbench resolves through one set of semantic tokens in `src/editor/theme.css`, which carries a dark and a light value for each name; the theme setting follows the system unless the artist picks one. Family colors from `TYPE_COLORS` are unchanged, and color still communicates type family, not decoration
 - Typography: system UI font for labels; compact monospace for values, paths, dimensions, and diagnostics
 - Spacing/layout rhythm: dense 4/6/8px rhythm; metadata rows remain scannable without nested card chrome
 - Shape/radius/elevation: 3–4px radii; borders establish hierarchy; shadows reserved for floating dialogs/menus

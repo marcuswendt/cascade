@@ -11,6 +11,8 @@
   import { isStandardLibraryNode, typeToPackagePath, getNodeClass, getNodeSource } from '@/utils/nodeTypeUtils';
   import type { NodeSource, FileStatus } from '@/types/node.types';
   import { settingsStore } from './stores/settingsStore';
+  import { monacoThemeFor } from './theme';
+  import { resolvedTheme } from './themeController';
 
   /**
    * Transpile TypeScript code to JavaScript
@@ -194,6 +196,12 @@ declare const graph: any;
     editor.updateOptions({ fontSize: $settingsStore.editor.fontSize });
   }
 
+  // Monaco's theme is global rather than per-instance, so this also covers the
+  // diff editor in the history panel.
+  $: if (editor) {
+    monaco.editor.setTheme(monacoThemeFor($resolvedTheme));
+  }
+
   // Determine source info from node
   function updateSourceInfo() {
     const fullType = node.type.includes('.') ? node.type : typeToPackagePath(node.type);
@@ -255,7 +263,7 @@ declare const graph: any;
       editor = monaco.editor.create(container, {
         value: node.code || getDefaultNodeCode(node.type),
         language: 'typescript',
-        theme: 'vs-dark',
+        theme: monacoThemeFor($resolvedTheme),
         minimap: { enabled: false },
         fontSize: $settingsStore.editor.fontSize,
         automaticLayout: true,
@@ -707,15 +715,15 @@ node.onReady = () => {
     flex-direction: column;
     width: 100%;
     height: 100%;
-    background: #1e1e1e;
+    background: var(--surface-panel-alt);
     overflow: hidden;
   }
 
   /* Header Bar */
   .header-bar {
     padding: 8px 12px;
-    background: #252526;
-    border-bottom: 1px solid #333;
+    background: var(--surface-raised);
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .header-info {
@@ -729,7 +737,7 @@ node.onReady = () => {
     align-items: center;
     gap: 8px;
     font-size: 13px;
-    color: #ccc;
+    color: var(--text-secondary);
   }
 
   .source-path {
@@ -741,7 +749,7 @@ node.onReady = () => {
   }
 
   .path-text.secondary {
-    color: #888;
+    color: var(--text-subtle);
   }
 
   .source-badge {
@@ -756,18 +764,18 @@ node.onReady = () => {
   }
 
   .badge-stdlib {
-    background: rgba(255, 193, 7, 0.2);
-    color: #ffc107;
+    background: var(--status-warn-tint);
+    color: var(--status-warn-alt);
   }
 
   .badge-embedded {
-    background: rgba(76, 175, 80, 0.2);
-    color: #4caf50;
+    background: var(--status-ok-tint);
+    color: var(--status-ok);
   }
 
   .badge-project {
-    background: rgba(33, 150, 243, 0.2);
-    color: #2196f3;
+    background: var(--status-info-tint);
+    color: var(--status-info);
   }
 
   .history-badge {
@@ -775,8 +783,8 @@ node.onReady = () => {
     align-items: center;
     gap: 4px;
     padding: 2px 6px;
-    background: rgba(156, 39, 176, 0.2);
-    color: #9c27b0;
+    background: var(--status-special-tint);
+    color: var(--status-special);
     border-radius: 10px;
     font-size: 11px;
   }
@@ -784,7 +792,7 @@ node.onReady = () => {
   /* Status Bar */
   .status-bar {
     padding: 8px 12px;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .status {
@@ -792,15 +800,15 @@ node.onReady = () => {
     align-items: center;
     gap: 6px;
     font-size: 13px;
-    color: #888;
+    color: var(--text-subtle);
   }
 
   .status-error {
-    color: #ff4444;
+    color: var(--status-error-strong);
   }
 
   .status-success {
-    color: #44ff44;
+    color: var(--status-ok-bright);
   }
 
   /* Editor */
@@ -814,8 +822,8 @@ node.onReady = () => {
     display: flex;
     gap: 8px;
     padding: 8px 12px;
-    background: #252526;
-    border-top: 1px solid #333;
+    background: var(--surface-raised);
+    border-top: 1px solid var(--border-subtle);
     flex-wrap: wrap;
   }
 
@@ -824,9 +832,9 @@ node.onReady = () => {
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    background: rgba(255, 255, 255, 0.05);
-    color: #aaa;
-    border: 1px solid #444;
+    background: var(--tint-weak);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
     border-radius: 4px;
     cursor: pointer;
     font-size: 12px;
@@ -834,9 +842,9 @@ node.onReady = () => {
   }
 
   .action-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-    border-color: #555;
+    background: var(--tint);
+    color: var(--text-bright);
+    border-color: var(--border-strong);
   }
 
   /* Footer */
@@ -846,7 +854,7 @@ node.onReady = () => {
     justify-content: space-between;
     gap: 8px;
     padding: 12px;
-    border-top: 1px solid #333;
+    border-top: 1px solid var(--border-subtle);
   }
 
   .footer-right {
@@ -859,9 +867,9 @@ node.onReady = () => {
     align-items: center;
     gap: 6px;
     padding: 8px 16px;
-    background: rgba(74, 158, 255, 0.2);
-    color: #4a9eff;
-    border: 1px solid rgba(74, 158, 255, 0.3);
+    background: var(--accent-tint-medium);
+    color: var(--accent);
+    border: 1px solid var(--accent-tint-strong);
     border-radius: 4px;
     cursor: pointer;
     font-size: 13px;
@@ -869,8 +877,8 @@ node.onReady = () => {
   }
 
   .package-button:hover:not(:disabled) {
-    background: rgba(74, 158, 255, 0.3);
-    border-color: #4a9eff;
+    background: var(--accent-tint-strong);
+    border-color: var(--accent);
   }
 
   .package-button:disabled {
@@ -880,8 +888,8 @@ node.onReady = () => {
 
   button {
     padding: 8px 16px;
-    background: #4a9eff;
-    color: white;
+    background: var(--accent);
+    color: var(--text-on-accent);
     border: none;
     border-radius: 4px;
     cursor: pointer;
@@ -889,7 +897,7 @@ node.onReady = () => {
   }
 
   button:hover:not(:disabled) {
-    background: #357abd;
+    background: var(--accent-strong);
   }
 
   button:disabled {

@@ -324,7 +324,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--shade-strong);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -332,9 +332,9 @@
   }
 
   .modal {
-    background: #1e1e1e;
+    background: var(--surface-panel-alt);
     border-radius: 8px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 20px 60px var(--shadow);
     width: 560px;
     max-width: 90vw;
     max-height: 80vh;
@@ -347,7 +347,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 16px 20px;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .modal-header h2 {
@@ -357,13 +357,13 @@
     margin: 0;
     font-size: 18px;
     font-weight: 600;
-    color: #fff;
+    color: var(--text-bright);
   }
 
   .close-button {
     background: transparent;
     border: none;
-    color: #888;
+    color: var(--text-subtle);
     cursor: pointer;
     padding: 4px;
     border-radius: 4px;
@@ -373,8 +373,8 @@
   }
 
   .close-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
 
   .modal-body {
@@ -394,23 +394,23 @@
   .section h3 {
     font-size: 14px;
     font-weight: 600;
-    color: #fff;
+    color: var(--text-bright);
     margin: 0 0 8px 0;
   }
 
   .section-description {
     font-size: 13px;
-    color: #888;
+    color: var(--text-subtle);
     margin: 0 0 16px 0;
     line-height: 1.5;
   }
 
   .section-description code {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--tint);
     padding: 2px 6px;
     border-radius: 3px;
     font-size: 12px;
-    color: #4a9eff;
+    color: var(--accent);
   }
 
   .empty-state {
@@ -419,10 +419,10 @@
     align-items: center;
     gap: 12px;
     padding: 32px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px dashed #444;
+    background: var(--tint-weakest);
+    border: 1px dashed var(--border);
     border-radius: 8px;
-    color: #666;
+    color: var(--text-faintest);
   }
 
   .empty-state p {
@@ -442,8 +442,8 @@
     align-items: center;
     justify-content: space-between;
     padding: 12px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid #333;
+    background: var(--tint-weak);
+    border: 1px solid var(--border-subtle);
     border-radius: 6px;
   }
 
@@ -456,20 +456,20 @@
   .package-alias {
     font-size: 14px;
     font-weight: 500;
-    color: #4a9eff;
+    color: var(--accent);
     font-family: 'SF Mono', Monaco, monospace;
   }
 
   .package-path {
     font-size: 12px;
-    color: #888;
+    color: var(--text-subtle);
     font-family: 'SF Mono', Monaco, monospace;
   }
 
   .remove-button {
     background: transparent;
     border: none;
-    color: #666;
+    color: var(--text-faintest);
     cursor: pointer;
     padding: 6px;
     border-radius: 4px;
@@ -479,8 +479,8 @@
   }
 
   .remove-button:hover {
-    background: rgba(255, 68, 68, 0.2);
-    color: #ff4444;
+    background: var(--status-error-tint);
+    color: var(--status-error-strong);
   }
 
   .add-button {
@@ -488,8 +488,8 @@
     align-items: center;
     gap: 6px;
     padding: 10px 16px;
-    background: #4a9eff;
-    color: white;
+    background: var(--accent);
+    color: var(--text-on-accent);
     border: none;
     border-radius: 6px;
     cursor: pointer;
@@ -498,23 +498,23 @@
   }
 
   .add-button:hover {
-    background: #357abd;
+    background: var(--accent-strong);
   }
 
   .add-button.secondary {
-    background: rgba(74, 158, 255, 0.2);
-    color: #4a9eff;
-    border: 1px solid rgba(74, 158, 255, 0.3);
+    background: var(--accent-tint-medium);
+    color: var(--accent);
+    border: 1px solid var(--accent-tint-strong);
   }
 
   .add-button.secondary:hover {
-    background: rgba(74, 158, 255, 0.3);
+    background: var(--accent-tint-strong);
   }
 
   .add-form {
     padding: 16px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid #444;
+    background: var(--tint-weakest);
+    border: 1px solid var(--border);
     border-radius: 8px;
     margin-top: 12px;
   }
@@ -527,7 +527,7 @@
     display: block;
     font-size: 12px;
     font-weight: 500;
-    color: #aaa;
+    color: var(--text-muted);
     margin-bottom: 6px;
   }
 
@@ -535,10 +535,10 @@
   .form-row textarea {
     width: 100%;
     padding: 10px 12px;
-    background: #252526;
-    border: 1px solid #444;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 14px;
     font-family: 'SF Mono', Monaco, monospace;
     box-sizing: border-box;
@@ -548,18 +548,18 @@
   .form-row input:focus,
   .form-row textarea:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
 
   .form-row input::placeholder {
-    color: #666;
+    color: var(--text-faintest);
   }
 
-  .section h3 small { color: #777; font-weight: 400; }
-  .credentials-status { display: flex; flex-wrap: wrap; gap: 8px; color: #ff9b7a; font-size: 12px; }
-  .credentials-status span { padding: 4px 8px; background: rgba(255, 90, 70, .1); border-radius: 4px; }
-  .credentials-status span.set { color: #79d89a; background: rgba(70, 190, 110, .1); }
-  .credentials-status small { flex-basis: 100%; color: #888; }
+  .section h3 small { color: var(--text-faint); font-weight: 400; }
+  .credentials-status { display: flex; flex-wrap: wrap; gap: 8px; color: var(--status-error-soft); font-size: 12px; }
+  .credentials-status span { padding: 4px 8px; background: var(--status-error-tint-weak); border-radius: 4px; }
+  .credentials-status span.set { color: var(--status-ok-soft); background: var(--status-ok-tint-weak); }
+  .credentials-status small { flex-basis: 100%; color: var(--text-subtle); }
 
   .input-with-button {
     display: flex;
@@ -572,10 +572,10 @@
 
   .browse-button {
     padding: 10px 12px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid #444;
+    background: var(--tint);
+    border: 1px solid var(--border);
     border-radius: 4px;
-    color: #aaa;
+    color: var(--text-muted);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -583,8 +583,8 @@
   }
 
   .browse-button:hover {
-    background: rgba(255, 255, 255, 0.15);
-    color: #fff;
+    background: var(--tint-medium);
+    color: var(--text-bright);
   }
 
   .error-message {
@@ -592,10 +592,10 @@
     align-items: center;
     gap: 6px;
     padding: 8px 12px;
-    background: rgba(255, 68, 68, 0.1);
-    border: 1px solid rgba(255, 68, 68, 0.3);
+    background: var(--status-error-tint-weak);
+    border: 1px solid var(--status-error-tint-strong);
     border-radius: 4px;
-    color: #ff6666;
+    color: var(--status-error);
     font-size: 13px;
     margin-bottom: 12px;
   }
@@ -609,22 +609,22 @@
   .cancel-button {
     padding: 8px 16px;
     background: transparent;
-    color: #aaa;
-    border: 1px solid #444;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
     border-radius: 4px;
     cursor: pointer;
     font-size: 14px;
   }
 
   .cancel-button:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: #fff;
+    background: var(--tint-weak);
+    color: var(--text-bright);
   }
 
   .confirm-button {
     padding: 8px 16px;
-    background: #4a9eff;
-    color: white;
+    background: var(--accent);
+    color: var(--text-on-accent);
     border: none;
     border-radius: 4px;
     cursor: pointer;
@@ -633,7 +633,7 @@
   }
 
   .confirm-button:hover {
-    background: #357abd;
+    background: var(--accent-strong);
   }
 
   .info-grid {
@@ -644,15 +644,15 @@
 
   .info-item {
     padding: 12px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid #333;
+    background: var(--tint-weakest);
+    border: 1px solid var(--border-subtle);
     border-radius: 6px;
   }
 
   .info-label {
     display: block;
     font-size: 12px;
-    color: #888;
+    color: var(--text-subtle);
     margin-bottom: 4px;
   }
 
@@ -660,7 +660,7 @@
     display: block;
     font-size: 20px;
     font-weight: 600;
-    color: #fff;
+    color: var(--text-bright);
   }
 
   .modal-footer {
@@ -668,13 +668,13 @@
     justify-content: flex-end;
     gap: 8px;
     padding: 16px 20px;
-    border-top: 1px solid #333;
+    border-top: 1px solid var(--border-subtle);
   }
 
   .save-button {
     padding: 10px 20px;
-    background: #4a9eff;
-    color: white;
+    background: var(--accent);
+    color: var(--text-on-accent);
     border: none;
     border-radius: 6px;
     cursor: pointer;
@@ -683,6 +683,6 @@
   }
 
   .save-button:hover {
-    background: #357abd;
+    background: var(--accent-strong);
   }
 </style>

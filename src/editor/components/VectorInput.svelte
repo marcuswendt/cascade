@@ -236,7 +236,7 @@
     min-width: 0;
     max-width: 100%;
     height: 4px;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--tint);
     border-radius: 2px;
     outline: none;
     -webkit-appearance: none;
@@ -249,20 +249,20 @@
     appearance: none;
     width: 12px;
     height: 12px;
-    background: #4a9eff;
+    background: var(--accent);
     border-radius: 50%;
     cursor: pointer;
     transition: background 0.15s ease;
   }
   
   .slider-input:hover::-webkit-slider-thumb {
-    background: #6bb6ff;
+    background: var(--accent-hover);
   }
   
   .slider-input::-moz-range-thumb {
     width: 12px;
     height: 12px;
-    background: #4a9eff;
+    background: var(--accent);
     border-radius: 50%;
     cursor: pointer;
     border: none;
@@ -270,7 +270,7 @@
   }
   
   .slider-input:hover::-moz-range-thumb {
-    background: #6bb6ff;
+    background: var(--accent-hover);
   }
   
   .slider-input:disabled {
@@ -282,10 +282,10 @@
     flex: 1;
     min-width: 0;
     padding: 3px 4px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--shade-weak);
+    border: 1px solid var(--tint);
     border-radius: 3px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 11px;
     font-family: 'Monaco', 'Menlo', monospace;
     text-align: right;
@@ -294,7 +294,7 @@
   
   .number-input:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent);
   }
   
   .number-input:disabled {
@@ -305,9 +305,9 @@
   .lock-button {
     padding: 4px;
     background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--tint);
     border-radius: 3px;
-    color: #aaa;
+    color: var(--text-muted);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -317,15 +317,15 @@
   }
   
   .lock-button:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.2);
-    color: #fff;
+    background: var(--tint-weak);
+    border-color: var(--tint-strong);
+    color: var(--text-bright);
   }
   
   .lock-button.locked {
-    background: rgba(74, 158, 255, 0.2);
-    border-color: #4a9eff;
-    color: #4a9eff;
+    background: var(--accent-tint-medium);
+    border-color: var(--accent);
+    color: var(--accent);
   }
   
   .lock-button:disabled {
@@ -341,9 +341,9 @@
   .preset-button {
     padding: 4px;
     background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--tint);
     border-radius: 3px;
-    color: #aaa;
+    color: var(--text-muted);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -352,9 +352,9 @@
   }
   
   .preset-button:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.2);
-    color: #fff;
+    background: var(--tint-weak);
+    border-color: var(--tint-strong);
+    color: var(--text-bright);
   }
   
   .preset-button:disabled {
@@ -367,10 +367,10 @@
     top: calc(100% + 4px);
     right: 0;
     z-index: 1000;
-    background: rgba(20, 20, 20, 0.98);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--surface-popover);
+    border: 1px solid var(--tint);
     border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 4px 12px var(--shadow);
     min-width: 140px;
     padding: 4px;
     display: flex;
@@ -382,7 +382,7 @@
     background: transparent;
     border: none;
     border-radius: 3px;
-    color: #aaa;
+    color: var(--text-muted);
     font-size: 11px;
     text-align: left;
     cursor: pointer;
@@ -390,13 +390,13 @@
   }
   
   .preset-option:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: #fff;
+    background: var(--tint-weak);
+    color: var(--text-bright);
   }
   
   .preset-option:active {
-    background: rgba(74, 158, 255, 0.2);
-    color: #4a9eff;
+    background: var(--accent-tint-medium);
+    color: var(--accent);
   }
 </style>
 

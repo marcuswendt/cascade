@@ -74,11 +74,11 @@
     left: 12px;
     bottom: 12px;
     z-index: 40;
-    background: #252526;
-    border: 1px solid #404040;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-divider);
     border-radius: 6px;
     padding: 8px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 10px 30px var(--shadow);
     user-select: none;
   }
 
@@ -87,12 +87,12 @@
     justify-content: space-between;
     gap: 12px;
     font-size: 10px;
-    color: #bbb;
+    color: var(--text-tertiary);
     margin-bottom: 6px;
   }
 
   .count {
-    color: #777;
+    color: var(--text-faint);
   }
 
   .grid {
@@ -104,14 +104,14 @@
   .swatch {
     width: 18px;
     height: 18px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--tint-weak);
     border-radius: 3px;
     cursor: pointer;
     padding: 0;
   }
 
   .swatch:hover {
-    border-color: #fff;
+    border-color: var(--border-bright);
   }
 
   .foot {
@@ -123,16 +123,16 @@
   .clear {
     flex: 1;
     background: none;
-    border: 1px solid #3a3a3a;
+    border: 1px solid var(--border-raised);
     border-radius: 3px;
-    color: #999;
+    color: var(--text-dim);
     font-size: 10px;
     padding: 3px 6px;
     cursor: pointer;
   }
 
   .clear:hover {
-    color: #ddd;
-    border-color: #555;
+    color: var(--text-primary);
+    border-color: var(--border-strong);
   }
 </style>

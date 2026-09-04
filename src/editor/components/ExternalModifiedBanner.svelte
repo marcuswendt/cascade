@@ -56,15 +56,15 @@
     align-items: center;
     gap: 12px;
     padding: 8px 12px;
-    background: rgba(33, 150, 243, 0.15);
-    border-bottom: 1px solid rgba(33, 150, 243, 0.3);
+    background: var(--status-info-tint);
+    border-bottom: 1px solid var(--status-info-tint-strong);
   }
 
   .banner-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #2196f3;
+    color: var(--status-info);
     animation: spin 2s linear infinite;
   }
 
@@ -84,13 +84,13 @@
   .banner-text {
     font-size: 13px;
     font-weight: 500;
-    color: #2196f3;
+    color: var(--status-info);
   }
 
   .file-path {
     font-size: 11px;
     font-family: 'SF Mono', Monaco, monospace;
-    color: #888;
+    color: var(--text-subtle);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -108,34 +108,34 @@
     gap: 4px;
     padding: 4px 10px;
     background: transparent;
-    border: 1px solid #444;
+    border: 1px solid var(--border);
     border-radius: 4px;
     cursor: pointer;
     font-size: 12px;
-    color: #aaa;
+    color: var(--text-muted);
     transition: all 0.15s ease;
   }
 
   .action-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: var(--tint);
+    color: var(--text-bright);
   }
 
   .action-button.reload {
-    background: rgba(33, 150, 243, 0.2);
-    color: #2196f3;
-    border-color: rgba(33, 150, 243, 0.3);
+    background: var(--status-info-tint);
+    color: var(--status-info);
+    border-color: var(--status-info-tint-strong);
   }
 
   .action-button.reload:hover {
-    background: rgba(33, 150, 243, 0.3);
-    border-color: #2196f3;
+    background: var(--status-info-tint-strong);
+    border-color: var(--status-info);
   }
 
   .dismiss-button {
     background: transparent;
     border: none;
-    color: #666;
+    color: var(--text-faintest);
     cursor: pointer;
     padding: 4px;
     border-radius: 4px;
@@ -145,7 +145,7 @@
   }
 
   .dismiss-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #aaa;
+    background: var(--tint);
+    color: var(--text-muted);
   }
 </style>

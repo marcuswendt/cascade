@@ -70,8 +70,8 @@
 
 <style>
   .missing-file-warning {
-    background: rgba(244, 67, 54, 0.1);
-    border: 1px solid rgba(244, 67, 54, 0.3);
+    background: var(--status-error-tint-weak);
+    border: 1px solid var(--status-error-tint-strong);
     border-radius: 8px;
     padding: 12px;
     margin: 8px 12px;
@@ -90,9 +90,9 @@
     justify-content: center;
     width: 36px;
     height: 36px;
-    background: rgba(244, 67, 54, 0.2);
+    background: var(--status-error-tint);
     border-radius: 8px;
-    color: #f44336;
+    color: var(--status-danger);
     flex-shrink: 0;
   }
 
@@ -105,14 +105,14 @@
     margin: 0 0 4px 0;
     font-size: 14px;
     font-weight: 600;
-    color: #f44336;
+    color: var(--status-danger);
   }
 
   .file-path {
     margin: 0;
     font-size: 12px;
     font-family: 'SF Mono', Monaco, monospace;
-    color: #888;
+    color: var(--text-subtle);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -121,7 +121,7 @@
   .dismiss-button {
     background: transparent;
     border: none;
-    color: #666;
+    color: var(--text-faintest);
     cursor: pointer;
     padding: 4px;
     border-radius: 4px;
@@ -131,8 +131,8 @@
   }
 
   .dismiss-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #aaa;
+    background: var(--tint);
+    color: var(--text-muted);
   }
 
   .warning-message {
@@ -140,10 +140,10 @@
     align-items: center;
     gap: 8px;
     padding: 8px 12px;
-    background: rgba(255, 152, 0, 0.1);
+    background: var(--status-warn-tint-weak);
     border-radius: 4px;
     font-size: 12px;
-    color: #ff9800;
+    color: var(--status-warn);
     margin-bottom: 12px;
   }
 
@@ -158,9 +158,9 @@
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    background: rgba(255, 255, 255, 0.05);
-    color: #aaa;
-    border: 1px solid #444;
+    background: var(--tint-weak);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
     border-radius: 4px;
     cursor: pointer;
     font-size: 12px;
@@ -168,30 +168,30 @@
   }
 
   .action-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-    border-color: #555;
+    background: var(--tint);
+    color: var(--text-bright);
+    border-color: var(--border-strong);
   }
 
   .action-button.restore {
-    background: rgba(76, 175, 80, 0.15);
-    color: #4caf50;
-    border-color: rgba(76, 175, 80, 0.3);
+    background: var(--status-ok-tint-weak);
+    color: var(--status-ok);
+    border-color: var(--status-ok-tint-strong);
   }
 
   .action-button.restore:hover {
-    background: rgba(76, 175, 80, 0.25);
-    border-color: #4caf50;
+    background: var(--status-ok-tint);
+    border-color: var(--status-ok);
   }
 
   .action-button.convert {
-    background: rgba(156, 39, 176, 0.15);
-    color: #9c27b0;
-    border-color: rgba(156, 39, 176, 0.3);
+    background: var(--status-special-tint);
+    color: var(--status-special);
+    border-color: var(--status-special-tint-strong);
   }
 
   .action-button.convert:hover {
-    background: rgba(156, 39, 176, 0.25);
-    border-color: #9c27b0;
+    background: var(--status-special-tint);
+    border-color: var(--status-special);
   }
 </style>

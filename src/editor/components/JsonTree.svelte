@@ -97,7 +97,7 @@
   .twisty {
     background: none;
     border: none;
-    color: #777;
+    color: var(--text-faint);
     cursor: pointer;
     padding: 0;
     width: 9px;
@@ -111,12 +111,12 @@
   }
 
   .key {
-    color: #9cdcfe;
+    color: var(--syntax-variable);
     flex: none;
   }
 
   .count {
-    color: #666;
+    color: var(--text-faintest);
   }
 
   .value {
@@ -125,29 +125,29 @@
   }
 
   .value.number {
-    color: #b5cea8;
+    color: var(--syntax-number);
   }
 
   .value.string {
-    color: #ce9178;
+    color: var(--syntax-string);
   }
 
   .value.boolean {
-    color: #569cd6;
+    color: var(--syntax-keyword);
   }
 
   .value.null {
-    color: #777;
+    color: var(--text-faint);
   }
 
   .value.plain {
-    color: #ccc;
+    color: var(--text-secondary);
   }
 
   .more {
     background: none;
     border: none;
-    color: #9cdcfe;
+    color: var(--syntax-variable);
     cursor: pointer;
     font-size: 9px;
     padding: 1px 0;

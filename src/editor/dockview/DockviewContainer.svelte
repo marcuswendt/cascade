@@ -252,32 +252,32 @@
     position: relative;
   }
 
-  /* Cascade dark theme overrides */
+  /* Cascade theme overrides */
   .dockview-container :global(.dv-dockview) {
     --dv-paneview-active-outline-color: transparent;
-    --dv-group-view-background-color: #1a1a1a;
-    --dv-tabs-and-actions-container-background-color: #252525;
-    --dv-activegroup-visiblepanel-tab-background-color: #1a1a1a;
-    --dv-activegroup-hiddenpanel-tab-background-color: #2d2d2d;
-    --dv-inactivegroup-visiblepanel-tab-background-color: #2d2d2d;
-    --dv-inactivegroup-hiddenpanel-tab-background-color: #252525;
-    --dv-tab-divider-color: #404040;
-    --dv-activegroup-visiblepanel-tab-color: #ffffff;
-    --dv-activegroup-hiddenpanel-tab-color: #888888;
-    --dv-inactivegroup-visiblepanel-tab-color: #cccccc;
-    --dv-inactivegroup-hiddenpanel-tab-color: #888888;
-    --dv-separator-border: #404040;
-    --dv-paneview-header-border-color: #404040;
+    --dv-group-view-background-color: var(--surface-panel);
+    --dv-tabs-and-actions-container-background-color: var(--surface-raised);
+    --dv-activegroup-visiblepanel-tab-background-color: var(--surface-panel);
+    --dv-activegroup-hiddenpanel-tab-background-color: var(--surface-control-hover);
+    --dv-inactivegroup-visiblepanel-tab-background-color: var(--surface-control-hover);
+    --dv-inactivegroup-hiddenpanel-tab-background-color: var(--surface-raised);
+    --dv-tab-divider-color: var(--border-divider);
+    --dv-activegroup-visiblepanel-tab-color: var(--text-bright);
+    --dv-activegroup-hiddenpanel-tab-color: var(--text-subtle);
+    --dv-inactivegroup-visiblepanel-tab-color: var(--text-secondary);
+    --dv-inactivegroup-hiddenpanel-tab-color: var(--text-subtle);
+    --dv-separator-border: var(--border-divider);
+    --dv-paneview-header-border-color: var(--border-divider);
   }
 
   .dockview-container :global(.dv-tabs-container) {
-    background: #252525;
-    border-bottom: 1px solid #404040;
+    background: var(--surface-raised);
+    border-bottom: 1px solid var(--border-divider);
   }
 
   .dockview-container :global(.dv-tab) {
-    background: #2d2d2d;
-    color: #cccccc;
+    background: var(--surface-control-hover);
+    color: var(--text-secondary);
     border: none;
     padding: 6px 12px;
     font-size: 12px;
@@ -285,24 +285,24 @@
   }
 
   .dockview-container :global(.dv-tab.dv-active-tab) {
-    background: #1a1a1a;
-    color: #ffffff;
+    background: var(--surface-panel);
+    color: var(--text-bright);
   }
 
   .dockview-container :global(.dv-tab:hover:not(.dv-active-tab)) {
-    background: #383838;
+    background: var(--surface-hover);
   }
 
   .dockview-container :global(.dv-resize-container-handle) {
-    background: #404040;
+    background: var(--surface-active);
   }
 
   .dockview-container :global(.dv-resize-container-handle:hover) {
-    background: #0078d4;
+    background: var(--accent-alt);
   }
 
   .dockview-container :global(.dv-groupview) {
-    background: #1a1a1a;
+    background: var(--surface-panel);
   }
 
   .dockview-container :global(.dv-default-tab-content) {
@@ -321,13 +321,13 @@
   }
 
   .dockview-container :global(.dv-drop-target-dropzone) {
-    background: rgba(0, 120, 212, 0.2);
-    border: 2px dashed #0078d4;
+    background: var(--accent-alt-tint);
+    border: 2px dashed var(--accent-alt);
   }
 
   /* Panel content styling */
   .dockview-container :global(.dockview-panel-content) {
-    background: #1a1a1a;
+    background: var(--surface-panel);
     height: 100%;
     width: 100%;
   }
@@ -344,7 +344,7 @@
     height: 20px;
     border: none;
     background: transparent;
-    color: #888;
+    color: var(--text-subtle);
     font-size: 16px;
     font-weight: 500;
     cursor: pointer;
@@ -356,8 +356,8 @@
   }
 
   .dockview-container :global(.cascade-add-panel-btn:hover) {
-    background: #404040;
-    color: #fff;
+    background: var(--surface-active);
+    color: var(--text-bright);
   }
 
   /* Custom tab styling */
@@ -379,11 +379,11 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: #aaa;
+    color: var(--text-muted);
   }
 
   .dockview-container :global(.cascade-tab-title:hover) {
-    color: #fff;
+    color: var(--text-bright);
   }
 
   .dockview-container :global(.cascade-tab-close) {
@@ -391,7 +391,7 @@
     height: 16px;
     border: none;
     background: transparent;
-    color: #888;
+    color: var(--text-subtle);
     font-size: 14px;
     cursor: pointer;
     border-radius: 3px;
@@ -407,8 +407,8 @@
   }
 
   .dockview-container :global(.cascade-tab-close:hover) {
-    background: #404040;
-    color: #fff;
+    background: var(--surface-active);
+    color: var(--text-bright);
   }
 
   /* Lock button in tab */
@@ -417,7 +417,7 @@
     height: 18px;
     border: none;
     background: transparent;
-    color: #666;
+    color: var(--text-faintest);
     cursor: pointer;
     border-radius: 3px;
     display: flex;
@@ -429,8 +429,8 @@
   }
 
   .dockview-container :global(.cascade-tab-lock:hover:not(:disabled)) {
-    background: #404040;
-    color: #ccc;
+    background: var(--surface-active);
+    color: var(--text-secondary);
   }
 
   .dockview-container :global(.cascade-tab-lock:disabled) {
@@ -439,22 +439,22 @@
   }
 
   .dockview-container :global(.cascade-tab-lock.locked) {
-    color: #4a9eff;
+    color: var(--accent);
   }
 
   .dockview-container :global(.cascade-tab-lock.locked:hover) {
-    background: #404040;
-    color: #6bb3ff;
+    background: var(--surface-active);
+    color: var(--accent-hover);
   }
 
   /* Add panel dropdown menu */
   .add-panel-menu {
     position: fixed;
-    background: #252525;
-    border: 1px solid #404040;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-divider);
     border-radius: 6px;
     padding: 4px 0;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 8px 24px var(--shadow-soft);
     z-index: 10000;
     min-width: 140px;
   }
@@ -467,7 +467,7 @@
     padding: 8px 12px;
     background: transparent;
     border: none;
-    color: #ccc;
+    color: var(--text-secondary);
     font-size: 13px;
     text-align: left;
     cursor: pointer;
@@ -475,8 +475,8 @@
   }
 
   .add-panel-option:hover {
-    background: #0078d4;
-    color: #fff;
+    background: var(--accent-alt);
+    color: var(--text-on-accent);
   }
 
   :global(.panel-icon) {

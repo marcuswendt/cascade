@@ -939,10 +939,10 @@
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    background: #252525;
+    background: var(--surface-raised);
     border-radius: 6px;
-    border: 1px solid #404040;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-divider);
+    box-shadow: 0 8px 24px var(--shadow-soft);
     z-index: 200;
     padding: 4px 0;
     animation: fadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
@@ -976,7 +976,7 @@
 
   .search {
     padding: 6px 8px;
-    border-bottom: 1px solid #404040;
+    border-bottom: 1px solid var(--border-divider);
     flex-shrink: 0;
     margin-bottom: 4px;
   }
@@ -984,26 +984,26 @@
   .search-input {
     width: 100%;
     padding: 5px 8px;
-    background: #333;
-    border: 1px solid #404040;
+    background: var(--surface-input);
+    border: 1px solid var(--border-divider);
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-bright);
     font-size: 13px;
     box-sizing: border-box;
   }
 
   .search-input:focus {
     outline: none;
-    border-color: #0078d4;
-    background: #3a3a3a;
+    border-color: var(--accent-alt);
+    background: var(--surface-hover);
   }
 
   .search-input::placeholder {
-    color: #888;
+    color: var(--text-subtle);
   }
 
   .library-item .arrow-icon {
-    color: #888;
+    color: var(--text-subtle);
     margin-left: auto;
     display: flex;
     align-items: center;
@@ -1011,7 +1011,7 @@
 
   .library-item:hover .arrow-icon,
   .library-item.active .arrow-icon {
-    color: #fff;
+    color: var(--text-bright);
   }
 
   .library-item,
@@ -1027,28 +1027,28 @@
     text-align: left;
     width: 100%;
     font-size: 13px;
-    color: #ccc;
+    color: var(--text-secondary);
   }
 
   .library-item:hover,
   .node-item:hover {
-    background: #0078d4;
-    color: #fff;
+    background: var(--accent-alt);
+    color: var(--text-on-accent);
   }
 
   .library-item.active {
-    background: #0078d4;
-    color: #fff;
+    background: var(--accent-alt);
+    color: var(--text-on-accent);
   }
 
   .library-item.keyboard-selected,
   .node-item.keyboard-selected {
-    background: #0078d4;
-    color: #fff;
+    background: var(--accent-alt);
+    color: var(--text-on-accent);
   }
 
   .library-item.keyboard-selected.active {
-    background: #0078d4;
+    background: var(--accent-alt);
   }
 
   .node-item .node-icon {
@@ -1057,12 +1057,12 @@
     justify-content: center;
     width: 16px;
     flex-shrink: 0;
-    color: #888;
+    color: var(--text-subtle);
   }
 
   .node-item:hover .node-icon,
   .node-item.keyboard-selected .node-icon {
-    color: #fff;
+    color: var(--text-bright);
   }
 
   .library-item .label,
@@ -1076,7 +1076,7 @@
 
   .node-path {
     font-size: 10px;
-    color: #666;
+    color: var(--text-faintest);
     margin-left: auto;
     padding-left: 8px;
     white-space: nowrap;
@@ -1085,35 +1085,35 @@
 
   .node-item:hover .node-path,
   .node-item.keyboard-selected .node-path {
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--text-tint-half);
   }
 
   .separator {
     height: 1px;
-    background: #404040;
+    background: var(--surface-active);
     margin: 4px 8px;
   }
 
   .section-label {
     font-size: 11px;
-    color: #888;
+    color: var(--text-subtle);
     padding: 4px 12px 2px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
 
   .history-item {
-    color: #999;
+    color: var(--text-dim);
   }
 
   .history-item:hover {
-    color: #fff;
+    color: var(--text-bright);
   }
 
   .empty-state {
     padding: 24px 12px;
     text-align: center;
-    color: #888;
+    color: var(--text-subtle);
     font-size: 13px;
   }
 </style>

@@ -1423,27 +1423,27 @@
     justify-content: center;
     gap: 12px;
     padding: 6px 12px;
-    background: #3a2f14;
-    border-bottom: 1px solid #6a5520;
-    color: #f0dfae;
+    background: var(--banner-warn-bg);
+    border-bottom: 1px solid var(--banner-warn-border);
+    color: var(--banner-warn-text);
     font-size: 12px;
   }
 
   .build-stale button {
-    background: #6a5520;
-    border: 1px solid #8a7030;
+    background: var(--banner-warn-border);
+    border: 1px solid var(--banner-warn-hover);
     border-radius: 4px;
-    color: #fff6dd;
+    color: var(--banner-warn-text-bright);
     font-size: 12px;
     padding: 2px 10px;
     cursor: pointer;
   }
 
   .build-stale button:hover {
-    background: #8a7030;
+    background: var(--banner-warn-hover);
   }
 
-  .credential-warning { background: #4a2a16; color: #ffd3b6; padding: 7px 12px; font-size: 12px; display: flex; gap: 8px; align-items: center; }
+  .credential-warning { background: var(--banner-alert-bg); color: var(--banner-alert-text); padding: 7px 12px; font-size: 12px; display: flex; gap: 8px; align-items: center; }
   .credential-warning button { margin-left: auto; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 4px; cursor: pointer; }
 
   .app :global(.dockview-container) {

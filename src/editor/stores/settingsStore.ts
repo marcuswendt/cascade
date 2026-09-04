@@ -1,4 +1,5 @@
 import { get, writable } from 'svelte/store';
+import { sanitizeThemePreference, type ThemePreference } from '../theme';
 
 const STORAGE_KEY = 'cascade-user-settings';
 const DEFAULT_FONT_SIZE = 12;
@@ -6,7 +7,9 @@ const MIN_FONT_SIZE = 10;
 const MAX_FONT_SIZE = 24;
 
 export interface UserSettings {
-  appearance: Record<string, never>;
+  appearance: {
+    theme: ThemePreference;
+  };
   editor: {
     fontSize: number;
   };
@@ -20,10 +23,12 @@ function sanitizeFontSize(value: unknown): number {
 
 function sanitizeSettings(value: unknown): UserSettings {
   const stored = value && typeof value === 'object'
-    ? value as { editor?: { fontSize?: unknown } }
+    ? value as { appearance?: { theme?: unknown }; editor?: { fontSize?: unknown } }
     : {};
   return {
-    appearance: {},
+    appearance: {
+      theme: sanitizeThemePreference(stored.appearance?.theme)
+    },
     editor: {
       fontSize: sanitizeFontSize(stored.editor?.fontSize)
     }
@@ -57,6 +62,17 @@ export function setSettings(settings: UserSettings): void {
 
 export function getEditorFontSize(): number {
   return get(settingsStore).editor.fontSize;
+}
+
+export function getThemePreference(): ThemePreference {
+  return get(settingsStore).appearance.theme;
+}
+
+export function updateAppearanceSettings(updates: Partial<UserSettings['appearance']>): void {
+  settingsStore.update(settings => sanitizeSettings({
+    ...settings,
+    appearance: { ...settings.appearance, ...updates }
+  }));
 }
 
 export function updateEditorSettings(updates: Partial<UserSettings['editor']>): void {

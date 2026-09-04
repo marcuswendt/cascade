@@ -56,10 +56,10 @@
   .button-input {
     width: 100%;
     padding: 8px 12px;
-    background: rgba(74, 158, 255, 0.2);
-    border: 1px solid #4a9eff;
+    background: var(--accent-tint-medium);
+    border: 1px solid var(--accent);
     border-radius: 3px;
-    color: #4a9eff;
+    color: var(--accent);
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
@@ -71,13 +71,13 @@
   }
   
   .button-input:hover:not(:disabled) {
-    background: rgba(74, 158, 255, 0.3);
-    border-color: #6bb6ff;
-    color: #6bb6ff;
+    background: var(--accent-tint-strong);
+    border-color: var(--accent-hover);
+    color: var(--accent-hover);
   }
   
   .button-input:active:not(:disabled) {
-    background: rgba(74, 158, 255, 0.4);
+    background: var(--accent-tint-stronger);
   }
   
   .button-input:disabled {
@@ -97,8 +97,8 @@
   .loading-spinner {
     width: 12px;
     height: 12px;
-    border: 2px solid rgba(74, 158, 255, 0.3);
-    border-top-color: #4a9eff;
+    border: 2px solid var(--accent-tint-strong);
+    border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 0.6s linear infinite;
   }

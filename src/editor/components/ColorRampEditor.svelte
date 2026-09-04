@@ -417,7 +417,7 @@
     flex-direction: column;
     gap: 8px;
     padding: 8px;
-    background: var(--bg-secondary, #1e1e1e);
+    background: var(--surface-panel-alt);
     border-radius: 4px;
   }
   
@@ -429,7 +429,7 @@
   
   .ramp-label {
     font-size: 12px;
-    color: var(--text-primary, #ffffff);
+    color: var(--text-bright);
   }
   
   .auto-update-label {
@@ -437,7 +437,7 @@
     align-items: center;
     gap: 4px;
     font-size: 11px;
-    color: var(--text-secondary, #cccccc);
+    color: var(--text-secondary);
     cursor: pointer;
   }
   
@@ -451,7 +451,7 @@
     width: 100%;
     height: 20px;
     cursor: crosshair;
-    border: 1px solid var(--border-color, #444);
+    border: 1px solid var(--border);
     border-radius: 2px;
   }
   
@@ -476,7 +476,7 @@
   .swatch-color {
     width: 100%;
     height: 100%;
-    border: 1px solid #fff;
+    border: 1px solid var(--border-bright);
     box-sizing: border-box;
   }
   
@@ -496,7 +496,7 @@
     margin-left: -4px;
     border-left: 4px solid transparent;
     border-right: 4px solid transparent;
-    border-top: 6px solid #888;
+    border-top: 6px solid var(--border-muted);
     cursor: move;
     pointer-events: all;
   }
@@ -513,7 +513,7 @@
     grid-template-columns: 80px 40px 80px 1fr;
     gap: 8px;
     padding: 4px;
-    color: var(--text-secondary, #cccccc);
+    color: var(--text-secondary);
     font-weight: 500;
   }
   
@@ -532,17 +532,17 @@
   .position-input {
     width: 100%;
     padding: 2px 4px;
-    background: var(--bg-tertiary, #2a2a2a);
-    border: 1px solid var(--border-color, #444);
+    background: var(--surface-control);
+    border: 1px solid var(--border);
     border-radius: 2px;
-    color: var(--text-primary, #ffffff);
+    color: var(--text-bright);
     font-size: 11px;
   }
   
   .color-cell {
     width: 32px;
     height: 20px;
-    border: 1px solid var(--border-color, #444);
+    border: 1px solid var(--border);
     border-radius: 2px;
     cursor: pointer;
   }
@@ -550,10 +550,10 @@
   .interpolation-select {
     width: 100%;
     padding: 2px 4px;
-    background: var(--bg-tertiary, #2a2a2a);
-    border: 1px solid var(--border-color, #444);
+    background: var(--surface-control);
+    border: 1px solid var(--border);
     border-radius: 2px;
-    color: var(--text-primary, #ffffff);
+    color: var(--text-bright);
     font-size: 11px;
   }
   
@@ -567,10 +567,10 @@
     width: 20px;
     height: 20px;
     padding: 0;
-    background: var(--bg-tertiary, #2a2a2a);
-    border: 1px solid var(--border-color, #444);
+    background: var(--surface-control);
+    border: 1px solid var(--border);
     border-radius: 2px;
-    color: var(--text-primary, #ffffff);
+    color: var(--text-bright);
     cursor: pointer;
     font-size: 14px;
     display: flex;
@@ -579,7 +579,7 @@
   }
   
   .icon-button:hover:not(:disabled) {
-    background: var(--bg-hover, #3a3a3a);
+    background: var(--surface-hover);
   }
   
   .icon-button:disabled {
@@ -588,7 +588,7 @@
   }
   
   .delete-button {
-    color: #ff6b6b;
+    color: var(--status-error);
   }
   
   .color-picker-overlay {
@@ -597,7 +597,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--shade-medium);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -605,7 +605,7 @@
   }
   
   .color-picker-container {
-    background: var(--bg-secondary, #1e1e1e);
+    background: var(--surface-panel-alt);
     border-radius: 8px;
     padding: 16px;
   }

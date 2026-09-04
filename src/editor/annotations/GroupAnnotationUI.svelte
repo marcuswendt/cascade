@@ -106,13 +106,13 @@
   }
 
   .annotation-group {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px dashed rgba(255, 255, 255, 0.3);
+    background: var(--tint-weak);
+    border: 1px dashed var(--tint-stronger);
     border-radius: 8px;
   }
 
   .annotation-group.selected {
-    border-color: var(--accent-color, #4a9eff);
+    border-color: var(--accent);
     border-style: solid;
   }
 
@@ -124,7 +124,7 @@
     padding: 8px 12px;
     font-size: 12px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--text-tint-strong);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -146,7 +146,7 @@
     position: absolute;
     width: 10px;
     height: 10px;
-    background: var(--accent-color, #4a9eff);
+    background: var(--accent);
     border-radius: 2px;
     cursor: nwse-resize;
   }
