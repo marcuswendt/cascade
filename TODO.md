@@ -13,6 +13,9 @@ in [spec/CHANGELOG.md](spec/CHANGELOG.md); architecture decisions live in
 
 ## Creative workspace
 
+- Add a theme setting: auto from the system by default, with explicit dark and
+  light. Studio is hard-coded dark today, so this is a token pass over the
+  editor's colours rather than a preference toggle on top of them.
 - Improve text annotation auto-sizing, dragging, and keyboard shortcuts.
 - Finish Quill chat cables, model selection, and UI polish.
 
