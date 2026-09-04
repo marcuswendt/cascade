@@ -1,7 +1,11 @@
 import type { Geometry, PrimitiveKind } from "@cascade/contracts";
-import { PRIMITIVE_KINDS } from "@cascade/contracts";
+import { BEZIER_STRIDE, PRIMITIVE_KINDS } from "@cascade/contracts";
 
-import { positionAttribute, positionSize } from "./attributes.js";
+import {
+  geometryError,
+  positionAttribute,
+  positionSize,
+} from "./attributes.js";
 
 /** Topology and measurement reads that the operations share. */
 
@@ -14,6 +18,39 @@ export function primitiveKind(
 
 export function isClosed(geometry: Geometry, primitive: number): boolean {
   return geometry.topology.closed[primitive] === 1;
+}
+
+/** True when the primitive's vertex run is a cubic Bézier chain. */
+export function isBezier(geometry: Geometry, primitive: number): boolean {
+  return primitiveKind(geometry, primitive) === "bezier";
+}
+
+/**
+ * The cubic segments of a `bezier` primitive, each as the four point indices
+ * `[anchor, handle, handle, anchor]`. A closed primitive's last segment wraps
+ * to the first anchor. The arity is guaranteed by `createGeometry`, so this
+ * needs no defensive branch.
+ */
+export function bezierSegments(
+  geometry: Geometry,
+  primitive: number,
+): number[][] {
+  const points = primitivePoints(geometry, primitive);
+  const closed = isClosed(geometry, primitive);
+  const count = closed
+    ? points.length / BEZIER_STRIDE
+    : (points.length - 1) / BEZIER_STRIDE;
+  const segments: number[][] = [];
+  for (let index = 0; index < count; index += 1) {
+    const base = index * BEZIER_STRIDE;
+    segments.push([
+      points[base],
+      points[base + 1],
+      points[base + 2],
+      points[(base + BEZIER_STRIDE) % points.length],
+    ]);
+  }
+  return segments;
 }
 
 /** Half-open vertex range `[start, end)` of one primitive. */
@@ -72,8 +109,18 @@ export function distance(
  * Cumulative arc lengths along one primitive, one entry per segment. A closed
  * primitive has one more segment than an open one, the one that returns to its
  * first point.
+ *
+ * Linear only. A `bezier` primitive is refused rather than measured along its
+ * control polygon, because a length that is quietly 10% short is worse than one
+ * that is missing: flatten the curve first, and see the note on the kind
+ * vocabulary in `packages/contracts/src/geometry.ts`.
  */
 export function arcLengths(geometry: Geometry, primitive: number): number[] {
+  if (isBezier(geometry, primitive))
+    geometryError(
+      "curve-measure",
+      `primitive ${primitive} is a bezier; arc length along a curve is not implemented`,
+    );
   const position = positionAttribute(geometry);
   const size = position.size;
   const points = primitivePoints(geometry, primitive);

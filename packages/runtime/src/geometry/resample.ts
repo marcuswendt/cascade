@@ -13,7 +13,13 @@ import {
   readString,
 } from "./attributes.js";
 import { groupMask } from "./groups.js";
-import { arcLengths, isClosed, loosePointMask, primitivePoints } from "./primitives.js";
+import {
+  arcLengths,
+  isBezier,
+  isClosed,
+  loosePointMask,
+  primitivePoints,
+} from "./primitives.js";
 
 /**
  * Rewrite each primitive at a uniform arc-length spacing, or at a target
@@ -74,6 +80,16 @@ export function resampleGeometry(
   let resampled = 0;
   for (let primitive = 0; primitive < geometry.primitiveCount; primitive += 1) {
     if (selected !== undefined && selected[primitive] !== 1) continue;
+    // Resample is the explicit "make this a polyline" operation, and the one it
+    // cannot yet perform is the interesting one: flattening a cubic chain needs
+    // a subdivision and an arc-length table over the curve rather than over its
+    // control polygon. Refusing is the only honest answer, because reading the
+    // handles as vertices returns a plausible shape that is the wrong shape.
+    if (isBezier(geometry, primitive))
+      geometryError(
+        "curve-resample",
+        `primitive ${primitive} is a bezier; resampling a curve is not implemented`,
+      );
     const points = primitivePoints(geometry, primitive);
     if (points.length < 2) continue;
     const cumulative = arcLengths(geometry, primitive);

@@ -10,9 +10,13 @@
  */
 export * from "./attributes.js";
 export * from "./builder.js";
+export * from "./copy.js";
+export * from "./generate.js";
 export * from "./groups.js";
+export * from "./matrix.js";
 export * from "./merge.js";
 export * from "./primitives.js";
 export * from "./promote.js";
 export * from "./resample.js";
+export * from "./svg.js";
 export * from "./transform.js";

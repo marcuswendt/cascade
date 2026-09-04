@@ -1,0 +1,129 @@
+import type { NodeDefinition, NodeExecutionContext } from "@cascade/contracts";
+import { emptyGeometry } from "@cascade/contracts";
+
+import { geometryToSvg, utf8Bytes } from "../../geometry/svg.js";
+import type { DefinitionNodeRegistration } from "../../types.js";
+import { geoModuleId } from "./namespace.js";
+
+/**
+ * The output end: an SVG document, as a string and as a written asset.
+ *
+ * It declares `assets` and nothing else. Writing is not optional and there is
+ * no `write` prop, because an export node whose file is a choice is a node that
+ * silently did nothing. `assets` is available to a `portable` node, so this
+ * stays portable and needs no `files` capability: the host decides where an
+ * asset lands, which is the whole point of the capability.
+ *
+ * The props are the fallbacks for `Cd`, `width` and `opacity`. A per-primitive
+ * attribute wins where it exists; see `geometryToSvg`, which also owns the one
+ * +Y-up-to-+Y-down flip in the system.
+ */
+export const svgExportDefinition = {
+  apiVersion: 1,
+  label: "SVG Export",
+  description: "Write geometry as an SVG document, one group element per group.",
+  icon: "FileDown",
+  runsOn: "portable",
+  capabilities: ["assets"],
+  inputs: {
+    geometry: { kind: "data", type: "geometry" },
+  },
+  outputs: {
+    svg: { kind: "data", type: "string" },
+    asset: { kind: "data", type: "asset" },
+  },
+  props: {
+    filename: { type: "string", default: "geometry.svg", label: "Filename" },
+    width: {
+      type: "float",
+      default: 0,
+      min: 0,
+      label: "Width",
+      description: "0 derives the width from the geometry bounds.",
+    },
+    height: { type: "float", default: 0, min: 0, label: "Height" },
+    margin: { type: "float", default: 0, label: "Margin" },
+    stroke: {
+      type: "color",
+      default: [0, 0, 0, 1],
+      label: "Stroke",
+      description: "Fallback for a primitive with no Cd attribute.",
+    },
+    strokeWidth: {
+      type: "float",
+      default: 1,
+      min: 0,
+      label: "Stroke Width",
+      description: "Fallback for a primitive with no width attribute.",
+    },
+    opacity: {
+      type: "float",
+      default: 1,
+      min: 0,
+      max: 1,
+      label: "Opacity",
+      description: "Fallback for a primitive with no opacity attribute.",
+    },
+    fill: {
+      type: "string",
+      default: "none",
+      label: "Fill",
+      description: "An SVG paint string; none is what plotter work wants.",
+    },
+    pointRadius: {
+      type: "float",
+      default: 0.5,
+      min: 0,
+      label: "Point Radius",
+      description: "Fallback radius for a loose point with no pscale.",
+    },
+    precision: {
+      type: "int",
+      default: 3,
+      min: 0,
+      step: 1,
+      label: "Precision",
+      description: "Decimal places on emitted coordinates.",
+    },
+  },
+} as const satisfies NodeDefinition;
+
+export async function executeSvgExport(
+  context: NodeExecutionContext<typeof svgExportDefinition>,
+): Promise<void> {
+  const { props } = context;
+  const svg = geometryToSvg(context.inputs.geometry ?? emptyGeometry(2), {
+    width: props.width,
+    height: props.height,
+    margin: props.margin,
+    stroke: hex(props.stroke),
+    strokeWidth: props.strokeWidth,
+    opacity: props.opacity,
+    fill: props.fill,
+    pointRadius: props.pointRadius,
+    precision: props.precision,
+  });
+  context.outputs.svg.set(svg);
+  const asset = await context.capabilities.assets.write(
+    utf8Bytes(svg),
+    { mediaType: "image/svg+xml", suggestedName: props.filename },
+    { signal: context.signal },
+  );
+  context.outputs.asset.set(asset);
+}
+
+/** A `color` prop is four unit components; SVG wants a paint string. */
+function hex(color: readonly [number, number, number, number]): string {
+  const channel = (value: number) =>
+    Math.round(Math.min(1, Math.max(0, value)) * 255)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${channel(color[0])}${channel(color[1])}${channel(color[2])}`;
+}
+
+export const svgExportRegistration = {
+  kind: "definition-v1",
+  moduleId: geoModuleId("SvgExport"),
+  definition: svgExportDefinition,
+  loadExecute: async () => executeSvgExport,
+} satisfies DefinitionNodeRegistration<typeof svgExportDefinition>;

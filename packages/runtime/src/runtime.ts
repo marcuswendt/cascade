@@ -12,7 +12,7 @@ import {
   type TriggerEvent,
 } from "@cascade/contracts";
 import { CascadeRuntimeError } from "./error.js";
-import { coreNodeRegistrations } from "./builtins/core/index.js";
+import { builtinNodeRegistrations } from "./builtins/index.js";
 import type {
   CascadeDocument,
   CascadeDocumentConnection,
@@ -104,7 +104,7 @@ class MutableAbortSignal implements CascadeAbortSignal {
 }
 
 export function createRuntime(options: CreateRuntimeOptions): CascadeRuntime {
-  return new Runtime(options.host, [...coreNodeRegistrations, ...(options.nodes ?? [])]);
+  return new Runtime(options.host, [...builtinNodeRegistrations, ...(options.nodes ?? [])]);
 }
 
 class Runtime implements CascadeRuntime {

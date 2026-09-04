@@ -114,14 +114,44 @@ export type AttributeSet = Readonly<Record<string, AnyAttribute>>;
 export type DetailValue = number | string | readonly number[];
 export type DetailSet = Readonly<Record<string, DetailValue>>;
 
-export const PRIMITIVE_KINDS = ["poly", "curve", "mesh", "packed"] as const;
+export const PRIMITIVE_KINDS = ["poly", "bezier", "mesh", "packed"] as const;
 
 /**
- * Primitive kinds. `poly` is the only one produced or consumed today. The
- * others are declared now so that adding them later is a new case in a switch
- * rather than a change to the document format.
+ * Primitive kinds. A kind does not change what a primitive is made of: every
+ * primitive is a run of vertices over the same point list. It selects **how
+ * that run is interpolated**, which is why curves need no second geometry type
+ * and no parallel container, and why an operation that only reads positions
+ * keeps working when a curve arrives.
+ *
+ * Marcus, 2026-09-04, ruling on the plan's open question about curves:
+ * *"No, we want curves + polylines; very similar but different
+ * interpolations."*
+ *
+ * `poly` — the run is interpolated linearly. Vertex count is the point count of
+ * the outline, and `closed` adds the segment from the last vertex back to the
+ * first without repeating a vertex.
+ *
+ * `bezier` — the run is a chain of cubic Bézier segments in SVG's own order:
+ * anchor, handle, handle, anchor, handle, handle, anchor, and so on. An open
+ * primitive therefore has `3n + 1` vertices for `n` segments; a closed one has
+ * `3n`, its final two handles belonging to the segment that returns to the
+ * first anchor. This is the form a print or plotter pipeline actually wants,
+ * and it is affine-invariant, so `Transform` and `CopyToPoints` are exactly
+ * right on a curve without knowing it is one.
+ *
+ * `mesh` and `packed` are declared and unused, so that adding them later is a
+ * new case in a switch rather than a change to the document format. The list is
+ * deliberately open-ended rather than a closed pair: a volume is a primitive
+ * kind in Houdini and will be one here, which is the direction the plan records.
+ *
+ * Operations that measure along a primitive (arc length, resampling) are
+ * linear-only today and must refuse a `bezier` rather than read its handles as
+ * vertices, which would produce a subtly wrong shape instead of an error.
  */
 export type PrimitiveKind = (typeof PRIMITIVE_KINDS)[number];
+
+/** Vertices per cubic Bézier segment after the first anchor. */
+export const BEZIER_STRIDE = 3;
 
 /**
  * Primitive topology, CSR-style: `vertexPoints` is the flat vertex-to-point
@@ -409,6 +439,21 @@ export function createGeometry(parts: GeometryParts): Geometry {
   for (const kind of topology.kinds)
     if (kind >= PRIMITIVE_KINDS.length)
       fail("primitive-kind", `unknown primitive kind ${kind}`);
+  // A Bézier chain's vertex count is not free: the handles are vertices too, so
+  // an arity mistake here is a malformed curve that every later operation would
+  // read as a valid one.
+  const bezier = PRIMITIVE_KINDS.indexOf("bezier");
+  for (let index = 0; index < primitiveCount; index += 1) {
+    if (topology.kinds[index] !== bezier) continue;
+    const count = topology.offsets[index + 1]! - topology.offsets[index]!;
+    const closed = topology.closed[index] === 1;
+    const minimum = closed ? BEZIER_STRIDE : BEZIER_STRIDE + 1;
+    if (count < minimum || (count - (closed ? 0 : 1)) % BEZIER_STRIDE !== 0)
+      fail(
+        "bezier-arity",
+        `primitive ${index} has ${count} vertices, and a ${closed ? "closed" : "open"} bezier needs ${closed ? "3n" : "3n + 1"}`,
+      );
+  }
 
   const point = parts.point;
   const position = point[POSITION_ATTRIBUTE];

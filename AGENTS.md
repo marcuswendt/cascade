@@ -120,6 +120,12 @@ Use the runtime-native core vocabulary before creating a project wrapper:
 - `cascade.core.Random` maps explicit integer `seed` and `sample` inputs to a stable float in `[0, 1)`.
 - `cascade.core.Remap` maps scalar ranges and optionally clamps via its `clamp` prop.
 
+The geometry set is reserved the same way, under `cascade.geo.*`:
+`Rectangle`, `Circle`, `Transform`, `Merge`, `CopyToPoints`, and `SvgExport`.
+They all speak the one `geometry` type, so any output fits any input, and they
+follow Houdini's parameter names where Houdini has an equivalent node. Geometry
+is +Y up; the flip into SVG's frame lives in `SvgExport` alone.
+
 These modules are reserved and need no file under `nodes/`. Do not override a
 `cascade.core.*` module or use ambient random/time state in a portable node.
 
@@ -156,7 +162,7 @@ Do not add dependencies without a concrete need. Do not create extra packages un
 ## Versioning
 
 Cascade `0.2.0` is the 2026 architecture rework. The current release is
-`0.2.12`. Increment the root package and CLI patch version for every committed
-feature or release change (`0.2.12`, `0.2.13`, …), keeping `package.json`, the
+`0.2.13`. Increment the root package and CLI patch version for every committed
+feature or release change (`0.2.13`, `0.2.14`, …), keeping `package.json`, the
 lockfile, and CLI output aligned. Internal private workspaces do not receive
 independent versions unless they become separately published packages.
