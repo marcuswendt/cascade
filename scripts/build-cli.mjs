@@ -29,7 +29,26 @@ writeFileSync(resolve('dist', 'shell.d.ts'), `export {
 export declare function run(command: string, args?: readonly string[], options?: import('cascade/contracts').ShellRunOptions): Promise<import('cascade/contracts').ShellRunResult>;
 export declare function runJson<T = unknown>(command: string, args?: readonly string[], options?: import('cascade/contracts').ShellRunOptions): Promise<T>;
 `);
+writeFileSync(resolve('dist', 'stage.d.ts'), `export interface StageBridge {
+  (stage: string, args: Record<string, unknown>): Promise<unknown>;
+}
+export declare function installStageBridge(bridge: StageBridge | null): () => void;
+export declare function runStage<T = unknown>(stage: string, args?: Record<string, unknown>): Promise<T>;
+export declare function cachePath(nodeId: string, suffix: string): string;
+`);
+
 cpSync(resolve('src', 'studio', 'panel.ts'), resolve('dist', 'studio', 'panel.d.ts'));
+
+await build({
+  entryPoints: ['server/src/runtime/stage.ts'],
+  outfile: resolve('dist', 'stage.js'),
+  bundle: true,
+  platform: 'browser',
+  target: 'es2022',
+  format: 'esm',
+  packages: 'external',
+  sourcemap: true
+});
 
 await build({
   entryPoints: ['server/src/runtime/shell.ts'],
@@ -43,9 +62,6 @@ await build({
   sourcemap: true
 });
 
-// Every runtime module the server build copies. `net` was missing here, so a
-// node importing `cascade/net` failed under the CLI with the same "runtime not
-// found" error that a missing `io` produced, while working under the dev server.
 // Every runtime module the server ships, read from the directory rather than
 // listed here: a module missing from the CLI's copy fails as "cascade/<name>
 // runtime not found", which reads like a broken node rather than a short build.
