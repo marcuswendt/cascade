@@ -8,6 +8,8 @@ import { runGraph, type RunOptions } from '@/cli/runner';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Graph } from '@/nodes/Graph';
+import { loadProjectModule } from '@/engine/nodeModuleLoader';
+import { stageAvailable } from '../server/src/runtime/stage.js';
 
 // Mock fs/promises
 vi.mock('fs/promises', () => ({
@@ -184,17 +186,45 @@ describe('CLI Runner', () => {
       const mockConsoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       const mockConsoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await expect(runGraph({ file: '/test/legacy.cascade', verbose: true }))
+      await expect(runGraph({ file: path.resolve('legacy.cascade'), verbose: true }))
         .rejects.toThrow('process.exit called');
       expect(mockConsoleError).toHaveBeenCalledWith('Graph execution failed:');
       expect(mockConsoleError).toHaveBeenCalledWith(
         '  - node/cook-failed [broken]: deliberate failure'
       );
       expect(mockConsoleLog).not.toHaveBeenCalledWith('Graph execution completed');
+      await expect(stageAvailable()).resolves.toBe(false);
 
       mockExit.mockRestore();
       mockConsoleError.mockRestore();
       mockConsoleLog.mockRestore();
+    });
+
+    it('removes process-wide compilers and the stage bridge after a legacy run', async () => {
+      const mockGraphData = { version: '0.2', nodes: [], connections: [] };
+      vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(mockGraphData));
+      const graph = {
+        elements: [],
+        nodes: [],
+        connections: [],
+        restoreConnections: vi.fn(),
+        validate: vi.fn(() => ({ errors: [], warnings: [] })),
+        execute: vi.fn(),
+      } as any;
+      vi.spyOn(Graph, 'fromJSON').mockReturnValue(graph);
+      const fetcher = vi.fn().mockResolvedValue(new Response(
+        'export function execute() {}',
+        { status: 200 },
+      ));
+      vi.stubGlobal('fetch', fetcher);
+
+      await runGraph({ file: path.resolve('scope-test.cascade') });
+
+      await expect(stageAvailable()).resolves.toBe(false);
+      await expect(loadProjectModule('project.after-run')).resolves.toMatchObject({
+        execute: expect.any(Function),
+      });
+      expect(fetcher).toHaveBeenCalledWith('/api/nodes/after-run/compiled');
     });
   });
 

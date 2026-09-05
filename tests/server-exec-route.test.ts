@@ -5,7 +5,7 @@ import path from 'node:path';
 import http, { type Server } from 'node:http';
 import { ProjectRoot } from '../server/src/project.js';
 import { startServer } from '../server/src/index.js';
-import { runProjectStage } from '../server/src/stageRunner.js';
+import { readStageConfig, runProjectStage } from '../server/src/stageRunner.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
@@ -106,6 +106,40 @@ describe('/api/exec security and project boundary', () => {
     expect(response.status).toBe(200);
     const result = await response.json() as { stdout: string };
     expect(JSON.parse(result.stdout)).toEqual({ stage: 'large', args: { payload }, transport: 'stdin' });
+  });
+
+  it('resolves a project-local Python environment without relying on ambient PATH', async () => {
+    const { project } = await fixture();
+    fs.mkdirSync(path.join(project.root, '.venv', 'bin'), { recursive: true });
+    fs.symlinkSync(process.execPath, path.join(project.root, '.venv', 'bin', 'python3'));
+    fs.writeFileSync(path.join(project.root, 'cascade.json'), JSON.stringify({
+      exec: { stages: { entrypoint: 'bridge/stages.py', python: '.venv/bin/python3' } },
+    }));
+
+    expect(readStageConfig(project).python).toBe(path.join(project.root, '.venv', 'bin', 'python3'));
+  });
+
+  it('rejects a Python executable path that lexically escapes the project', async () => {
+    const { project } = await fixture();
+    fs.writeFileSync(path.join(project.root, 'cascade.json'), JSON.stringify({
+      exec: { stages: { entrypoint: 'bridge/stages.py', python: '../python3' } },
+    }));
+
+    expect(() => readStageConfig(project)).toThrow('project-relative executable');
+  });
+
+  it('rejects an absolute Python executable path even when it points inside the project', async () => {
+    const { project } = await fixture();
+    fs.writeFileSync(path.join(project.root, 'cascade.json'), JSON.stringify({
+      exec: {
+        stages: {
+          entrypoint: 'bridge/stages.py',
+          python: path.join(project.root, '.venv', 'bin', 'python3'),
+        },
+      },
+    }));
+
+    expect(() => readStageConfig(project)).toThrow('project-relative executable');
   });
 
   it('surfaces dispatcher errors written to stdout', async () => {

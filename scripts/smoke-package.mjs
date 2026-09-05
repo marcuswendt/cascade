@@ -33,7 +33,8 @@ try {
     import * as browserHost from 'cascade/runtime/browser';
     import * as extract from 'cascade/runtime/definition/extract';
     import * as shell from 'cascade/shell';
-    for (const [name, value] of Object.entries({ contracts, schema, runtime, nodeHost, browserHost, extract, shell })) {
+    import * as stage from 'cascade/stage';
+    for (const [name, value] of Object.entries({ contracts, schema, runtime, nodeHost, browserHost, extract, shell, stage })) {
       if (!Object.keys(value).length) throw new Error(name + ' has no exports');
     }
   `);
@@ -41,10 +42,11 @@ try {
     import type { NodeDefinition } from 'cascade/contracts';
     import type { ProjectPanelApi, ProjectPanelModule } from 'cascade/studio/panel';
     import { createRuntime } from 'cascade/runtime';
+    import { runStage, stageAvailable } from 'cascade/stage';
     declare const definition: NodeDefinition;
     declare const api: ProjectPanelApi;
     declare const panel: ProjectPanelModule;
-    void definition; void api; void panel; void createRuntime;
+    void definition; void api; void panel; void createRuntime; void runStage; void stageAvailable;
   `);
 
   execFileSync(process.execPath, ['imports.mjs'], { cwd: consumerRoot, stdio: 'inherit' });

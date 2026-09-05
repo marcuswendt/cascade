@@ -7,13 +7,14 @@
  */
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 import type { ProjectRoot } from './project.js';
 
 const TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_BUFFER = 64 * 1024 * 1024;
 
 export interface StageConfig {
-  python: 'python' | 'python3';
+  python: string;
   entrypoint: string;
   worker?: string;
 }
@@ -22,6 +23,18 @@ export interface StageRunOptions {
   readonly env?: NodeJS.ProcessEnv;
   readonly timeout?: number;
   readonly signal?: AbortSignal;
+}
+
+function resolveProjectExecutable(project: ProjectRoot, configuredPath: string): string {
+  if (path.isAbsolute(configuredPath)) {
+    throw new Error('cascade.json exec.stages.python must be python, python3, or a project-relative executable');
+  }
+  const executable = path.resolve(project.root, configuredPath);
+  const relative = path.relative(project.root, executable);
+  if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error('cascade.json exec.stages.python must be python, python3, or a project-relative executable');
+  }
+  return executable;
 }
 
 /**
@@ -57,7 +70,18 @@ export function readStageConfig(project: ProjectRoot): StageConfig {
     throw new Error('cascade.json exec.stages.worker must be a project-relative path');
   }
   if (worker) project.resolve(worker);
-  return { python: value?.python === 'python' ? 'python' : 'python3', entrypoint, ...(worker ? { worker } : {}) };
+  const configuredPython = value?.python;
+  let python = 'python3';
+  if (configuredPython !== undefined) {
+    if (typeof configuredPython !== 'string' || !configuredPython.trim()) {
+      throw new Error('cascade.json exec.stages.python must be python, python3, or a project-relative executable');
+    }
+    const executable = configuredPython.trim();
+    python = executable === 'python' || executable === 'python3'
+      ? executable
+      : resolveProjectExecutable(project, executable);
+  }
+  return { python, entrypoint, ...(worker ? { worker } : {}) };
 }
 
 /**

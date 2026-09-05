@@ -42,13 +42,21 @@ function localBridge(): StageBridge | null {
   return typeof bridge === 'function' ? (bridge as StageBridge) : null;
 }
 
-let capabilityPromise: Promise<string> | undefined;
+let capabilityPromise: Promise<string | null> | undefined;
 
-async function capability(): Promise<string> {
+async function discoverCapability(): Promise<string | null> {
   capabilityPromise ??= fetch('/api/exec/capability', { cache: 'no-store' })
     .then(async (response) => {
+      if (response.status === 404) {
+        capabilityPromise = undefined;
+        return null;
+      }
       if (!response.ok) throw new Error(`Cascade exec capability is unavailable (${response.status})`);
-      return (await response.json() as { capability: string }).capability;
+      const token = (await response.json() as { capability?: unknown }).capability;
+      if (typeof token !== 'string' || !token) {
+        throw new Error('Cascade exec capability response did not contain a capability');
+      }
+      return token;
     })
     .catch((error) => {
       capabilityPromise = undefined;
@@ -57,20 +65,45 @@ async function capability(): Promise<string> {
   return capabilityPromise;
 }
 
+async function capability(): Promise<string> {
+  const token = await discoverCapability();
+  if (token === null) throw new Error('Cascade exec capability is unavailable (404)');
+  return token;
+}
+
 async function overHttp<T>(stage: string, args: Record<string, unknown>): Promise<T> {
-  const response = await fetch('/api/exec', {
+  const postStage = async () => fetch('/api/exec', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Cascade-Exec-Capability': await capability() },
     body: JSON.stringify({ stage, args }),
   });
+
+  let response = await postStage();
+  if (response.status === 403) {
+    capabilityPromise = undefined;
+    response = await postStage();
+  }
+
   const body = await response.json() as { ok?: boolean; stdout?: string; stderr?: string; error?: string };
   if (!response.ok || !body.ok) {
     throw new Error(`stage "${stage}" failed: ${body.stderr || body.error || 'unknown error'}`);
   }
+  if (typeof body.stdout !== 'string') {
+    throw new Error(`stage "${stage}" returned an invalid response`);
+  }
   // The dispatcher's result is the last line it printed, so a stage that logs
   // on its way through does not corrupt its own return value.
-  const lastLine = String(body.stdout ?? '').trim().split('\n').pop() || '{}';
+  const lastLine = body.stdout.trim().split('\n').pop() || '{}';
   return JSON.parse(lastLine) as T;
+}
+
+/** Whether this host has a local stage bridge or a browser-accessible stage
+ * endpoint. A missing browser route is a supported "not available" result;
+ * authorization and transport failures remain errors. */
+export async function stageAvailable(): Promise<boolean> {
+  if (localBridge()) return true;
+  if (typeof document === 'undefined') return false;
+  return (await discoverCapability()) !== null;
 }
 
 /**

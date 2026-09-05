@@ -33,6 +33,7 @@ writeFileSync(resolve('dist', 'stage.d.ts'), `export interface StageBridge {
   (stage: string, args: Record<string, unknown>): Promise<unknown>;
 }
 export declare function installStageBridge(bridge: StageBridge | null): () => void;
+export declare function stageAvailable(): Promise<boolean>;
 export declare function runStage<T = unknown>(stage: string, args?: Record<string, unknown>): Promise<T>;
 export declare function cachePath(nodeId: string, suffix: string): string;
 `);

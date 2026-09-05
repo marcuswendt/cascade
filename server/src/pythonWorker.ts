@@ -23,13 +23,13 @@ interface PendingRequest {
 export class PythonWorker {
   private project: ProjectRoot;
   private entrypoint: string;
-  private python: 'python' | 'python3';
+  private python: string;
   private env: NodeJS.ProcessEnv;
   private proc: ChildProcessWithoutNullStreams | null = null;
   private nextId = 1;
   private pending = new Map<number, PendingRequest>();
 
-  constructor(project: ProjectRoot, entrypoint: string, python: 'python' | 'python3' = 'python3', env: NodeJS.ProcessEnv = process.env) {
+  constructor(project: ProjectRoot, entrypoint: string, python: string = 'python3', env: NodeJS.ProcessEnv = process.env) {
     this.project = project;
     this.entrypoint = entrypoint;
     this.python = python;
