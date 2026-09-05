@@ -340,16 +340,6 @@
     }, 150);
   }
 
-  function handleContainerClick(e: MouseEvent) {
-    // If we have an expression and click on the display, toggle or start editing
-    if (hasExpression && viewMode === 'expression' && !isEditing) {
-      const target = e.target as HTMLElement;
-      // If clicking on the expression text itself, start editing
-      if (target.classList.contains('expression-display') || target.closest('.expression-display')) {
-        startEditExpression();
-      }
-    }
-  }
 </script>
 
 <div
@@ -357,7 +347,6 @@
   class:has-expression={hasExpression}
   class:has-error={!!expressionError}
   class:editing={isEditing}
-  on:click={handleContainerClick}
 >
   {#if viewMode === 'expression' && hasExpression}
     <!-- Expression view: shows expression code -->

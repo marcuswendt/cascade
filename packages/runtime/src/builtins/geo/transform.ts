@@ -1,9 +1,10 @@
-import type { NodeDefinition, NodeExecutionContext } from "@cascade/contracts";
+import type { NodeExecutionContext } from "@cascade/contracts";
 import { emptyGeometry } from "@cascade/contracts";
 
 import { transformMatrix } from "../../geometry/matrix.js";
 import { transformGeometry } from "../../geometry/transform.js";
 import type { DefinitionNodeRegistration } from "../../types.js";
+import { transformDefinition } from "./definitions.js";
 import { geoModuleId } from "./namespace.js";
 
 /**
@@ -16,36 +17,6 @@ import { geoModuleId } from "./namespace.js";
  * to put in front of an artist, and the four parameters are what a Houdini user
  * reaches for.
  */
-export const transformDefinition = {
-  apiVersion: 1,
-  label: "Transform",
-  description: "Translate, rotate and scale geometry about a pivot.",
-  icon: "Move",
-  runsOn: "portable",
-  inputs: {
-    /**
-     * `geometry` in and `geometry` out, which is what a SOP is. This was named
-     * `input` while the definition validator kept one namespace across `inputs`
-     * and `outputs`; outputs now have their own, so the port has the name it
-     * should always have had and every node in the set speaks `geometry` in both
-     * directions.
-     */
-    geometry: { kind: "data", type: "geometry" },
-    translate: { kind: "data", type: "vec2", default: [0, 0] },
-    rotate: {
-      kind: "data",
-      type: "float",
-      default: 0,
-      description: "Degrees, counter-clockwise.",
-    },
-    scale: { kind: "data", type: "vec2", default: [1, 1] },
-    pivot: { kind: "data", type: "vec2", default: [0, 0] },
-  },
-  outputs: {
-    geometry: { kind: "data", type: "geometry" },
-  },
-} as const satisfies NodeDefinition;
-
 export function executeTransform(
   context: NodeExecutionContext<typeof transformDefinition>,
 ): void {
@@ -69,3 +40,5 @@ export const transformRegistration = {
   definition: transformDefinition,
   loadExecute: async () => executeTransform,
 } satisfies DefinitionNodeRegistration<typeof transformDefinition>;
+
+export { transformDefinition } from "./definitions.js";

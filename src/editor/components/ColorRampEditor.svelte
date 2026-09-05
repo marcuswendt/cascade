@@ -17,6 +17,10 @@
   let dragStartX = 0;
   let selectedColorIndex: number | null = null;
   let showColorPicker = false;
+
+  function handleWindowKeydown(event: KeyboardEvent) {
+    if (showColorPicker && event.key === 'Escape') showColorPicker = false;
+  }
   
   // Interpolation options
   const interpolationOptions = [
@@ -232,6 +236,13 @@
     drawRamp();
     onValueChange([...points]);
   }
+
+  function handlePointKeydown(index: number, event: KeyboardEvent) {
+    const delta = event.key === 'ArrowLeft' ? -0.01 : event.key === 'ArrowRight' ? 0.01 : 0;
+    if (!delta) return;
+    event.preventDefault();
+    updatePointPosition(index, points[index].position + delta);
+  }
   
   // Initialize
   onMount(() => {
@@ -260,9 +271,11 @@
   }
 </script>
 
+<svelte:window on:keydown={handleWindowKeydown} />
+
 <div class="color-ramp-editor">
   <div class="ramp-header">
-    <label class="ramp-label">{prop.displayName || 'Ramp'}</label>
+    <span class="ramp-label">{prop.displayName || 'Ramp'}</span>
     <label class="auto-update-label">
       <input type="checkbox" bind:checked={autoUpdate} />
       Auto-update
@@ -292,16 +305,18 @@
     <div class="color-swatches">
       {#each points.sort((a, b) => a.position - b.position) as point, i}
         {@const sortedIndex = points.indexOf(point)}
-        <div
+        <button
+          type="button"
           class="color-swatch"
           style="left: {point.position * 100}%"
+          aria-label={`Edit color stop at ${Math.round(point.position * 100)}%`}
           on:click={() => {
             selectedColorIndex = sortedIndex;
             showColorPicker = true;
           }}
         >
           <div class="swatch-color" style="background-color: {point.color}"></div>
-        </div>
+        </button>
       {/each}
     </div>
     
@@ -312,6 +327,13 @@
         <div
           class="ramp-handle"
           style="left: {point.position * 100}%"
+          role="slider"
+          tabindex="0"
+          aria-label="Color stop position"
+          aria-valuemin="0"
+          aria-valuemax="1"
+          aria-valuenow={point.position}
+          on:keydown={(event) => handlePointKeydown(sortedIndex, event)}
           on:mousedown|stopPropagation={(e) => {
             draggingIndex = sortedIndex;
             dragStartX = e.clientX;
@@ -350,14 +372,16 @@
             }
           }}
         />
-        <div
+        <button
+          type="button"
           class="color-cell"
           style="background-color: {point.color}"
+          aria-label={`Edit color stop at ${Math.round(point.position * 100)}%`}
           on:click={() => {
             selectedColorIndex = sortedIndex;
             showColorPicker = true;
           }}
-        ></div>
+        ></button>
         <select
           class="interpolation-select"
           value={point.interpolation}
@@ -391,8 +415,10 @@
   
   <!-- Color Picker (shown when clicking on color) -->
   {#if showColorPicker && selectedColorIndex !== null}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="color-picker-overlay" on:click|self={() => showColorPicker = false}>
-      <div class="color-picker-container" on:click|stopPropagation>
+      <div class="color-picker-container" role="dialog" aria-modal="true" aria-label="Edit color stop">
         <ColorPicker
           prop={{
             value: points[selectedColorIndex].color,
@@ -471,6 +497,9 @@
     margin-left: -6px;
     cursor: pointer;
     pointer-events: all;
+    padding: 0;
+    background: none;
+    border: 0;
   }
   
   .swatch-color {
@@ -610,4 +639,3 @@
     padding: 16px;
   }
 </style>
-

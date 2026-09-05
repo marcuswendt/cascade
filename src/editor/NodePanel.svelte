@@ -5,16 +5,19 @@
   import Icon from './Icon.svelte';
   import { typeToPackagePath } from '@/utils/nodeTypeUtils';
   import { nodeHistoryStore } from './stores/nodeHistoryStore';
-  import CustomNodeDialog from './CustomNodeDialog.svelte';
-
   import { onMount } from 'svelte';
 
   // Custom node dialog state
   let showCustomNodeDialog = false;
+  let CustomNodeDialog: any = null;
+
+  async function openCustomNodeDialog() {
+    CustomNodeDialog ??= (await import('./CustomNodeDialog.svelte')).default;
+    showCustomNodeDialog = true;
+  }
   
   export let libraryId: string | null = null;
   export let categoryId: string | null = null;
-  export let position: { x: number; y: number } = { x: 0, y: 0 };
   export let centerPosition: { x: number; y: number } = { x: 0, y: 0 };
   // When set, positions panel at this exact location (for dropdown menus)
   export let fixedPosition: { x: number; y: number } | null = null;
@@ -647,6 +650,8 @@
   <!-- Main column with libraries -->
   <div 
     class="menu-column main-column" 
+    role="dialog"
+    aria-label="Create node"
     bind:this={panelElement} 
     style="left: {calculatedPosition.x}px; top: {calculatedPosition.y}px"
     tabindex="-1"
@@ -754,9 +759,7 @@
       <!-- Custom button -->
       <button
         class="library-item"
-        on:click={() => {
-          showCustomNodeDialog = true;
-        }}
+        on:click={openCustomNodeDialog}
         title={customNodeTemplate.description}
       >
         <span class="node-icon">
@@ -792,6 +795,8 @@
     {#if hoveredLibraryId === null && hoveredNodes.length > 0}
       <div
         class="menu-column submenu-column"
+        role="group"
+        aria-label="All nodes"
         style="left: {calculatedPosition.x + mainColumnWidth}px; top: {hoveredLibraryY}px; max-height: {Math.max(200, window.innerHeight - hoveredLibraryY - 20)}px;"
         on:mouseenter={() => {}}
         on:mouseleave|self={() => {
@@ -829,6 +834,8 @@
       <div
         bind:this={submenuElement}
         class="menu-column submenu-column"
+        role="group"
+        aria-label={`${hoveredLibrary.label} nodes`}
         style="left: {calculatedPosition.x + mainColumnWidth}px; top: {hoveredLibraryY}px; max-height: {Math.max(200, window.innerHeight - hoveredLibraryY - 20)}px;"
         on:mouseenter={() => {}}
         on:mouseleave|self={() => {
@@ -888,6 +895,8 @@
       {#if hoveredCategoryId && hoveredCategoryNodes.length > 0}
         <div
           class="menu-column submenu-column nodes-submenu"
+          role="group"
+          aria-label={`${hoveredCategoryId} nodes`}
           style="left: {calculatedPosition.x + mainColumnWidth + submenuColumnWidth}px; top: {hoveredCategoryY}px; max-height: {Math.max(200, window.innerHeight - hoveredCategoryY - 20)}px;"
           on:mouseenter={() => {}}
           on:mouseleave|self={() => {
@@ -925,11 +934,14 @@
 {/if}
 
 <!-- Custom Node Creation Dialog -->
-<CustomNodeDialog
-  bind:open={showCustomNodeDialog}
-  on:create={handleCustomNodeCreate}
-  on:close={() => showCustomNodeDialog = false}
-/>
+{#if CustomNodeDialog}
+  <svelte:component
+    this={CustomNodeDialog}
+    bind:open={showCustomNodeDialog}
+    on:create={handleCustomNodeCreate}
+    on:close={() => showCustomNodeDialog = false}
+  />
+{/if}
 
 <style>
   .menu-column {

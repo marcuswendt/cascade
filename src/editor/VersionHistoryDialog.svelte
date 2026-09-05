@@ -87,11 +87,11 @@
 {#if open}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="dialog-overlay" on:click={close} role="dialog">
-    <div class="dialog" on:click|stopPropagation>
+  <div class="dialog-overlay" on:click|self={close}>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="version-history-title">
       <div class="dialog-header">
-        <h2>Version History</h2>
-        <button class="close-button" on:click={close}>
+        <h2 id="version-history-title">Version History</h2>
+        <button class="close-button" on:click={close} aria-label="Close">
           <X size={18} />
         </button>
       </div>

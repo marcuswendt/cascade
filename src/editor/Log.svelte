@@ -179,22 +179,6 @@
     line-height: 1.6;
   }
   
-  .clear-button {
-    padding: 4px 8px;
-    background: var(--tint);
-    border: 1px solid var(--tint);
-    border-radius: 4px;
-    color: var(--text-muted);
-    font-size: 11px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-  
-  .clear-button:hover {
-    background: var(--tint-medium);
-    color: var(--text-bright);
-  }
-  
   .log-entry {
     display: flex;
     gap: 8px;
@@ -251,4 +235,3 @@
     background: var(--tint-stronger);
   }
 </style>
-

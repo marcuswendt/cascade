@@ -121,12 +121,16 @@
     </div>
   {:else if previewType === 'video' && previewUrl}
     <div class="preview-container">
+      <!-- User-selected local previews do not have an associated caption track. -->
+      <!-- svelte-ignore a11y_media_has_caption -->
       <video src={previewUrl} class="preview-video" controls></video>
     </div>
   {/if}
   
   <div
     class="drop-zone"
+    role="region"
+    aria-label="File drop zone"
     class:has-preview={previewType !== 'none'}
     on:drop={handleDrop}
     on:dragover={handleDragOver}
@@ -256,4 +260,3 @@
     color: var(--text-faintest);
   }
 </style>
-

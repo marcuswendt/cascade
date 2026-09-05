@@ -269,10 +269,8 @@
   }
   
   function selectTab(tabId: string, windowId: string) {
-    console.log('selectTab called:', tabId, windowId);
     // Verify the tab exists before selecting it
     const tabs = getTabsForWindow(windowId);
-    console.log('Available tabs:', tabs.map(t => ({ id: t.id, type: t.type, label: t.label })));
     const tab = tabs.find(t => t.id === tabId);
     if (!tab) {
       console.warn(`Tab ${tabId} not found in window ${windowId}. Available tabs:`, tabs.map(t => t.id));
@@ -284,7 +282,6 @@
         activeTabIds.set(windowId, defaultTabId);
         activeTabIds = new Map(activeTabIds);
         tabsByWindow = new Map(tabsByWindow);
-        console.log('Switched to default tab:', defaultTabId);
       }
       return;
     }
@@ -292,7 +289,6 @@
     activeTabIds = new Map(activeTabIds);
     // Force update of reactive variables
     tabsByWindow = new Map(tabsByWindow);
-    console.log('Tab selected:', tabId, 'Active tab ID set to:', activeTabIds.get(windowId));
   }
   
   function moveTab(tabId: string, fromWindowId: string, toWindowId: string) {
@@ -718,6 +714,8 @@
       
       <div 
         class="graph-container"
+        role="region"
+        aria-label="Graph workspace"
         on:mouseenter={handleGraphWindowMouseEnter}
         on:mouseleave={handleGraphWindowMouseLeave}
         bind:this={graphWindowElement}
@@ -1390,4 +1388,3 @@
     height: 100%;
   }
 </style>
-

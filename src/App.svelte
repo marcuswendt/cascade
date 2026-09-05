@@ -69,7 +69,6 @@
   $: inspectorIsVisible = selectedNode !== null || selectedAnnotation !== null;
   $: shouldSkipAnimation = inspectorWasVisible && inspectorIsVisible;
   $: inspectorWasVisible = inspectorIsVisible;
-  let nodePanelPosition = { x: 0, y: 0 };
   let nodePanelFixedPosition: { x: number; y: number } | null = null; // For dropdown menu positioning
   let activeTool = 'select';
   let mousePosition = { x: 0, y: 0 };
@@ -158,9 +157,6 @@
   function handleLibraryToggle(libraryId: string | null) {
     activeLibrary = libraryId;
     activeCategory = null; // Reset category when library changes
-    if (libraryId) {
-      nodePanelPosition = { x: 0, y: 64 };
-    }
   }
   
   function handleCategorySelect(e: CustomEvent<{ libraryId: string; categoryId: string }>) {
@@ -1334,7 +1330,6 @@
     <NodePanel
       libraryId={activeLibrary}
       categoryId={activeCategory}
-      position={nodePanelPosition}
       centerPosition={mousePosition}
       fixedPosition={nodePanelFixedPosition}
       on:addNode={handleAddNode}

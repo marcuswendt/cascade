@@ -16,13 +16,9 @@
   $: tooltip = prop.params?.tooltip as string | undefined;
 
   async function handleClick() {
-    console.log('[ButtonInput] Click triggered, prop:', prop.displayName || prop.value);
     isLoading = true;
     try {
-      // Trigger onChange via onValueChange
-      console.log('[ButtonInput] Calling onValueChange');
       onValueChange(true);
-      console.log('[ButtonInput] onValueChange called');
     } catch (error) {
       console.error('[ButtonInput] Error:', error);
     } finally {
@@ -109,4 +105,3 @@
     }
   }
 </style>
-

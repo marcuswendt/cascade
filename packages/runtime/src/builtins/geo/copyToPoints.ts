@@ -1,8 +1,9 @@
-import type { NodeDefinition, NodeExecutionContext } from "@cascade/contracts";
+import type { NodeExecutionContext } from "@cascade/contracts";
 import { emptyGeometry } from "@cascade/contracts";
 
 import { copyToPoints } from "../../geometry/copy.js";
 import type { DefinitionNodeRegistration } from "../../types.js";
+import { copyToPointsDefinition } from "./definitions.js";
 import { geoModuleId } from "./namespace.js";
 
 /**
@@ -16,35 +17,6 @@ import { geoModuleId } from "./namespace.js";
  * This and `Merge` are the pair that fails loudly if the attribute model does
  * not compose, which is why both are in the first six rather than the second.
  */
-export const copyToPointsDefinition = {
-  apiVersion: 1,
-  label: "Copy to Points",
-  description: "Instance one geometry onto every point of another.",
-  icon: "Copy",
-  runsOn: "portable",
-  inputs: {
-    source: { kind: "data", type: "geometry" },
-    target: { kind: "data", type: "geometry" },
-  },
-  outputs: {
-    geometry: { kind: "data", type: "geometry" },
-  },
-  props: {
-    targetGroup: {
-      type: "string",
-      default: "",
-      label: "Target Group",
-      description: "Copy onto this point group only; empty means every point.",
-    },
-    useTargetOrientations: {
-      type: "bool",
-      default: true,
-      label: "Transform Using Target Point Orientations",
-      description: "Read pscale and N from the target points.",
-    },
-  },
-} as const satisfies NodeDefinition;
-
 export function executeCopyToPoints(
   context: NodeExecutionContext<typeof copyToPointsDefinition>,
 ): void {
@@ -68,3 +40,5 @@ export const copyToPointsRegistration = {
   definition: copyToPointsDefinition,
   loadExecute: async () => executeCopyToPoints,
 } satisfies DefinitionNodeRegistration<typeof copyToPointsDefinition>;
+
+export { copyToPointsDefinition } from "./definitions.js";

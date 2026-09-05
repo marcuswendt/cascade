@@ -1,0 +1,191 @@
+import type { NodeDefinition } from "@cascade/contracts";
+
+export const rectangleDefinition = {
+  apiVersion: 1,
+  label: "Rectangle",
+  description: "A closed four-point polygon, counter-clockwise from bottom-left.",
+  icon: "Square",
+  runsOn: "portable",
+  inputs: {
+    size: { kind: "data", type: "vec2", default: [1, 1] },
+    center: { kind: "data", type: "vec2", default: [0, 0] },
+  },
+  outputs: { geometry: { kind: "data", type: "geometry" } },
+} as const satisfies NodeDefinition;
+
+export const circleDefinition = {
+  apiVersion: 1,
+  label: "Circle",
+  description:
+    "A closed circle, as one cubic Bezier chain or as a polygon of divisions segments.",
+  icon: "Circle",
+  runsOn: "portable",
+  inputs: {
+    center: { kind: "data", type: "vec2", default: [0, 0] },
+    radius: { kind: "data", type: "vec2", default: [1, 1] },
+    divisions: {
+      kind: "data",
+      type: "int",
+      default: 32,
+      min: 3,
+      step: 1,
+      description: "Segments of the polygonal form. Ignored by the Bezier form.",
+    },
+  },
+  outputs: { geometry: { kind: "data", type: "geometry" } },
+  props: {
+    type: {
+      type: "string",
+      default: "bezier",
+      label: "Primitive Type",
+      control: "select",
+      options: ["bezier", "poly"],
+      description:
+        "A Bezier circle is a circle; a polygon of any division count is visibly a polygon in print.",
+    },
+  },
+} as const satisfies NodeDefinition;
+
+export const transformDefinition = {
+  apiVersion: 1,
+  label: "Transform",
+  description: "Translate, rotate and scale geometry about a pivot.",
+  icon: "Move",
+  runsOn: "portable",
+  inputs: {
+    geometry: { kind: "data", type: "geometry" },
+    translate: { kind: "data", type: "vec2", default: [0, 0] },
+    rotate: {
+      kind: "data",
+      type: "float",
+      default: 0,
+      description: "Degrees, counter-clockwise.",
+    },
+    scale: { kind: "data", type: "vec2", default: [1, 1] },
+    pivot: { kind: "data", type: "vec2", default: [0, 0] },
+  },
+  outputs: { geometry: { kind: "data", type: "geometry" } },
+} as const satisfies NodeDefinition;
+
+export const mergeDefinition = {
+  apiVersion: 1,
+  label: "Merge",
+  description: "Concatenate geometries, taking the union of their attributes.",
+  icon: "GitMerge",
+  runsOn: "portable",
+  inputs: { inputs: { kind: "data", type: "geometry", variadic: true } },
+  outputs: { geometry: { kind: "data", type: "geometry" } },
+} as const satisfies NodeDefinition;
+
+export const copyToPointsDefinition = {
+  apiVersion: 1,
+  label: "Copy to Points",
+  description: "Instance one geometry onto every point of another.",
+  icon: "Copy",
+  runsOn: "portable",
+  inputs: {
+    source: { kind: "data", type: "geometry" },
+    target: { kind: "data", type: "geometry" },
+  },
+  outputs: { geometry: { kind: "data", type: "geometry" } },
+  props: {
+    targetGroup: {
+      type: "string",
+      default: "",
+      label: "Target Group",
+      description: "Copy onto this point group only; empty means every point.",
+    },
+    useTargetOrientations: {
+      type: "bool",
+      default: true,
+      label: "Transform Using Target Point Orientations",
+      description: "Read pscale and N from the target points.",
+    },
+  },
+} as const satisfies NodeDefinition;
+
+export const svgExportDefinition = {
+  apiVersion: 1,
+  label: "SVG Export",
+  description: "Write geometry as an SVG document, one group element per group.",
+  icon: "FileDown",
+  runsOn: "portable",
+  capabilities: ["assets"],
+  inputs: { geometry: { kind: "data", type: "geometry" } },
+  outputs: {
+    svg: { kind: "data", type: "string" },
+    asset: { kind: "data", type: "asset" },
+  },
+  props: {
+    filename: { type: "string", default: "geometry.svg", label: "Filename" },
+    width: {
+      type: "float",
+      default: 0,
+      min: 0,
+      label: "Width",
+      description: "0 derives the width from the geometry bounds.",
+    },
+    height: { type: "float", default: 0, min: 0, label: "Height" },
+    margin: { type: "float", default: 0, label: "Margin" },
+    stroke: {
+      type: "color",
+      default: [0, 0, 0, 1],
+      label: "Stroke",
+      description: "Fallback for a primitive with no Cd attribute.",
+    },
+    strokeWidth: {
+      type: "float",
+      default: 1,
+      min: 0,
+      label: "Stroke Width",
+      description: "Fallback for a primitive with no width attribute.",
+    },
+    opacity: {
+      type: "float",
+      default: 1,
+      min: 0,
+      max: 1,
+      label: "Opacity",
+      description: "Fallback for a primitive with no opacity attribute.",
+    },
+    fillMode: {
+      type: "string",
+      default: "none",
+      label: "Fill Mode",
+      control: "select",
+      options: ["none", "solid"],
+      description: "none leaves primitives unfilled, which is what plotter work wants.",
+    },
+    fill: {
+      type: "color",
+      default: [1, 1, 1, 1],
+      label: "Fill",
+      description: "Fill colour, used only when Fill Mode is solid.",
+    },
+    pointRadius: {
+      type: "float",
+      default: 0.5,
+      min: 0,
+      label: "Point Radius",
+      description: "Fallback radius for a loose point with no pscale.",
+    },
+    precision: {
+      type: "int",
+      default: 3,
+      min: 0,
+      max: 15,
+      step: 1,
+      label: "Precision",
+      description: "Decimal places on emitted coordinates.",
+    },
+  },
+} as const satisfies NodeDefinition;
+
+export const geoNodeDefinitions = Object.freeze([
+  ["cascade.geo.Rectangle", rectangleDefinition],
+  ["cascade.geo.Circle", circleDefinition],
+  ["cascade.geo.Transform", transformDefinition],
+  ["cascade.geo.Merge", mergeDefinition],
+  ["cascade.geo.CopyToPoints", copyToPointsDefinition],
+  ["cascade.geo.SvgExport", svgExportDefinition],
+] as const);

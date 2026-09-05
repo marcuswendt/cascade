@@ -311,6 +311,7 @@
 <div 
   class="node"
   role="application"
+  tabindex="-1"
   aria-label="Node: {node.id}"
   class:selected
   class:error={hasError}
@@ -383,7 +384,7 @@
 
         <!-- Variadic connections list (between pill and body) -->
         {#if hasVariadicInputs && variadicConnections.length > 0}
-          <div class="variadic-list" on:mousedown|stopPropagation>
+          <div class="variadic-list" role="list" on:mousedown|stopPropagation>
             {#each variadicConnections as conn}
               <div class="variadic-item">
                 <span class="variadic-source">{conn.sourceNodeId}</span>
@@ -832,10 +833,6 @@
     color: var(--text-bright);
     line-height: 1;
     user-select: none;
-  }
-  
-  .node-button.active .button-label {
-    color: var(--text-fixed-dark);
   }
   
   .label {

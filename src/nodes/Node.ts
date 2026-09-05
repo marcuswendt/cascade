@@ -57,6 +57,7 @@ export class Node {
 
   variadic: boolean = false;
   protected variadicDefault: any = null;
+  private variadicOptions: PortOptions = {};
 
   // Visual
   preview: HTMLCanvasElement | HTMLImageElement | null = null;
@@ -596,9 +597,10 @@ export class Node {
 
   // ============ Variadic Inputs ============
 
-  setVariadic(defaultValue: any = null): void {
+  setVariadic(defaultValue: any = null, options: PortOptions = {}): void {
     this.variadic = true;
     this.variadicDefault = defaultValue;
+    this.variadicOptions = options;
     this.syncVariadicPorts();
   }
 
@@ -615,7 +617,10 @@ export class Node {
     ).length;
 
     for (let i = 0; i < usedCount + 1; i++) {
-      const port = this.in(`input_${i}`, this.variadicDefault, { hidden: false });
+      const port = this.in(`input_${i}`, this.variadicDefault, {
+        ...this.variadicOptions,
+        hidden: false,
+      });
       port.variadic = true;
       if (!port.onChange) {
         port.onChange = () => this.onUpdate?.();

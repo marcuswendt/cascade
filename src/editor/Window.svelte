@@ -29,6 +29,8 @@
 
 <div 
   class="window" 
+  role="region"
+  aria-label={title}
   class:minimized 
   data-window-id={windowId}
   on:dragover|stopPropagation={handleDragOver}
@@ -168,4 +170,3 @@
     flex-direction: column;
   }
 </style>
-

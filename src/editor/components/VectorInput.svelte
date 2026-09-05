@@ -178,7 +178,7 @@
           </svg>
         </button>
         {#if showPresets}
-          <div class="preset-dropdown" bind:this={presetDropdown} on:click|stopPropagation>
+          <div class="preset-dropdown" bind:this={presetDropdown} role="menu" tabindex="-1" on:click|stopPropagation on:keydown|stopPropagation>
             {#each presets as preset}
               <button
                 class="preset-option"
@@ -229,53 +229,6 @@
     gap: 6px;
     width: 100%;
     min-width: 0;
-  }
-  
-  .slider-input {
-    flex: 1 1 0;
-    min-width: 0;
-    max-width: 100%;
-    height: 4px;
-    background: var(--tint);
-    border-radius: 2px;
-    outline: none;
-    -webkit-appearance: none;
-    appearance: none;
-    cursor: pointer;
-  }
-  
-  .slider-input::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 12px;
-    height: 12px;
-    background: var(--accent);
-    border-radius: 50%;
-    cursor: pointer;
-    transition: background 0.15s ease;
-  }
-  
-  .slider-input:hover::-webkit-slider-thumb {
-    background: var(--accent-hover);
-  }
-  
-  .slider-input::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
-    background: var(--accent);
-    border-radius: 50%;
-    cursor: pointer;
-    border: none;
-    transition: background 0.15s ease;
-  }
-  
-  .slider-input:hover::-moz-range-thumb {
-    background: var(--accent-hover);
-  }
-  
-  .slider-input:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
   
   .number-input {
@@ -399,4 +352,3 @@
     color: var(--accent);
   }
 </style>
-

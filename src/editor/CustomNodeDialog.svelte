@@ -107,15 +107,16 @@
   }
 </script>
 
+<svelte:window on:keydown={handleKeydown} />
+
 {#if open}
-  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-  <div class="dialog-overlay" on:click={handleCancel} on:keydown={handleKeydown} role="dialog">
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="dialog" on:click|stopPropagation>
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="dialog-overlay" on:click|self={handleCancel}>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="custom-node-title">
       <div class="dialog-header">
-        <h2>Create Custom Node</h2>
-        <button class="close-button" on:click={handleCancel}>
+        <h2 id="custom-node-title">Create Custom Node</h2>
+        <button class="close-button" on:click={handleCancel} aria-label="Close">
           <X size={18} />
         </button>
       </div>
@@ -154,7 +155,7 @@
         </div>
 
         <div class="form-group">
-          <label>Base Class</label>
+          <span class="field-label">Base Class</span>
           <div class="base-class-options">
             {#each baseClasses as base}
               <label class="radio-option" class:selected={baseClassSelection === base.id}>
@@ -290,7 +291,8 @@
     gap: 4px;
   }
 
-  .form-group > label {
+  .form-group > label,
+  .field-label {
     font-size: 12px;
     font-weight: 500;
     color: var(--text-muted);
@@ -392,10 +394,6 @@
     font-size: 10px;
     font-family: 'SF Mono', Monaco, monospace;
     color: var(--text-faintest);
-  }
-
-  .radio-description {
-    display: none;
   }
 
   .custom-base-input {

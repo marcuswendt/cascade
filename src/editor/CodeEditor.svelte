@@ -129,7 +129,7 @@ declare namespace Cascade {
     watchProp(name: string, callback: Function): void;
 
     // Variadic inputs
-    setVariadic(defaultValue?: any): void;
+    setVariadic(defaultValue?: any, options?: PortOptions): void;
     getVariadicInputs(): InputPort[];
 
     // Lifecycle hooks

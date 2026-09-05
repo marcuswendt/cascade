@@ -99,11 +99,13 @@
 <svelte:window on:keydown={handleKeyDown} />
 
 {#if open}
-  <div class="overlay" on:click={handleClose} on:click|self={handleClose}>
-    <div class="dialog" on:click|stopPropagation>
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="overlay" on:click|self={handleClose}>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="package-search-title">
       <div class="header">
-        <h2>Search NPM Packages</h2>
-        <button class="close-button" on:click={handleClose}>×</button>
+        <h2 id="package-search-title">Search NPM Packages</h2>
+        <button class="close-button" on:click={handleClose} aria-label="Close">×</button>
       </div>
 
       <div class="search-section">
@@ -113,7 +115,6 @@
           bind:this={searchInput}
           bind:value={searchQuery}
           placeholder="Search packages (e.g., three, lodash, chroma-js)..."
-          on:keydown={handleKeyDown}
         />
         {#if isSearching}
           <div class="loading">Searching...</div>
@@ -422,6 +423,4 @@
     text-align: center;
   }
 </style>
-
-
 

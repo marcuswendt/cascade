@@ -2,6 +2,7 @@
 // Import only library metadata, not the full node implementations
 import { imageLibrary } from '@/nodes/image/library';
 import { coreLibrary } from '@/nodes/core/library';
+import { geoLibrary } from '@/nodes/geo/library';
 import { quillLibrary } from '@/nodes/quill/library';
 import type { Library, NodeTemplate } from '@/types/library.types';
 
@@ -31,6 +32,7 @@ export const annotationsLibrary: Library = {
 export const nodeLibraries: Library[] = [
   annotationsLibrary,
   coreLibrary,
+  geoLibrary,
   imageLibrary,
   quillLibrary
 ];
@@ -235,6 +237,7 @@ export function getNodePath(nodeType: string, libraryId?: string, categoryId?: s
     return `cascade.annotations.${annotationType}`;
   }
   if (nodeType.startsWith('project.')) return nodeType;
+  if (nodeType.startsWith('cascade.')) return nodeType;
 
   // Search through libraries to find the node
   for (const library of nodeLibraries) {

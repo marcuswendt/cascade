@@ -1,7 +1,8 @@
-import type { NodeDefinition, NodeExecutionContext } from "@cascade/contracts";
+import type { NodeExecutionContext } from "@cascade/contracts";
 
 import { mergeGeometries } from "../../geometry/merge.js";
 import type { DefinitionNodeRegistration } from "../../types.js";
+import { mergeDefinition } from "./definitions.js";
 import { geoModuleId } from "./namespace.js";
 
 /**
@@ -14,20 +15,6 @@ import { geoModuleId } from "./namespace.js";
  * The widening rules for a colliding attribute name belong to `mergeGeometries`
  * and are not re-decided here.
  */
-export const mergeDefinition = {
-  apiVersion: 1,
-  label: "Merge",
-  description: "Concatenate geometries, taking the union of their attributes.",
-  icon: "GitMerge",
-  runsOn: "portable",
-  inputs: {
-    inputs: { kind: "data", type: "geometry", variadic: true },
-  },
-  outputs: {
-    geometry: { kind: "data", type: "geometry" },
-  },
-} as const satisfies NodeDefinition;
-
 export function executeMerge(
   context: NodeExecutionContext<typeof mergeDefinition>,
 ): void {
@@ -42,3 +29,5 @@ export const mergeRegistration = {
   definition: mergeDefinition,
   loadExecute: async () => executeMerge,
 } satisfies DefinitionNodeRegistration<typeof mergeDefinition>;
+
+export { mergeDefinition } from "./definitions.js";

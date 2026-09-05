@@ -24,6 +24,8 @@ export interface NodeParameter<T = any> {
   dataType: DataType;
   promoted: boolean;
   options: ParamOptions;
+  /** Public document field used by deterministic definition props. */
+  documentField?: 'props';
 }
 
 export interface ParamOptions {
@@ -142,6 +144,8 @@ export interface PortOptions {
   max?: number;
   step?: number;
   values?: any[];
+  /** Select choices for a data input, in the same shape as parameter choices. */
+  choices?: Array<{ value: any; label: string }>;
   accept?: string[];
   description?: string;
   hidden?: boolean;

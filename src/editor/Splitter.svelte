@@ -39,15 +39,30 @@
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
   }
+
+  function handleKeyDown(e: KeyboardEvent) {
+    const delta = direction === 'vertical'
+      ? (e.key === 'ArrowLeft' ? -10 : e.key === 'ArrowRight' ? 10 : 0)
+      : (e.key === 'ArrowUp' ? -10 : e.key === 'ArrowDown' ? 10 : 0);
+    if (!delta) return;
+    e.preventDefault();
+    dispatch('resize', { splitterId, delta, direction });
+  }
 </script>
 
-<div 
+<!-- The separator implements Arrow-key resizing; Svelte does not classify
+     role="separator" as interactive for these two structural checks. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div
   class="splitter" 
   class:horizontal={direction === 'horizontal'}
   class:vertical={direction === 'vertical'}
   class:dragging={isDragging}
   on:mousedown={handleMouseDown}
+  on:keydown={handleKeyDown}
   role="separator"
+  tabindex="0"
   aria-orientation={direction}
   aria-label="Resize"
 ></div>
@@ -79,4 +94,3 @@
     cursor: row-resize;
   }
 </style>
-

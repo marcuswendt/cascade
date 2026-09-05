@@ -13,7 +13,8 @@
  * see src/editor/ instead.
  */
 
-export { AssetManager, NodeAssetLoader, type Asset } from './AssetManager.js';
+export { AssetManager, type Asset } from './AssetManager.js';
+export { NodeAssetLoader } from './NodeAssetLoader.js';
 export { PackageManager } from './PackageManager.js';
 export { ModuleResolver, createModuleResolver } from './ModuleResolver.js';
 export { GraphValidator, type ValidationResult } from './GraphValidator.js';

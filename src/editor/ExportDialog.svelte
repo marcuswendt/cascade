@@ -56,11 +56,13 @@
 <svelte:window on:keydown={handleKeyDown} />
 
 {#if open}
-  <div class="overlay" on:click={handleClose} on:click|self={handleClose}>
-    <div class="dialog" on:click|stopPropagation>
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="overlay" on:click|self={handleClose}>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="export-title">
       <div class="header">
-        <h2>Export Project</h2>
-        <button class="close-button" on:click={handleClose}>×</button>
+        <h2 id="export-title">Export Project</h2>
+        <button class="close-button" on:click={handleClose} aria-label="Close">×</button>
       </div>
 
       <div class="content">
@@ -353,6 +355,4 @@
     cursor: not-allowed;
   }
 </style>
-
-
 

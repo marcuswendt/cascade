@@ -1,6 +1,7 @@
 import { Graph } from '../nodes/Graph.js';
 import { Node } from '../nodes/Node.js';
-import { AssetManager, NodeAssetLoader } from '../engine/AssetManager.js';
+import { AssetManager } from '../engine/AssetManager.js';
+import { NodeAssetLoader } from '../engine/NodeAssetLoader.js';
 import { PackageManager } from '../engine/PackageManager.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -40,7 +41,7 @@ export async function runGraph(options: RunOptions): Promise<void> {
 
   // Create environment-specific managers
   const projectRoot = path.dirname(path.resolve(file));
-  const assetLoader = new NodeAssetLoader(fs, path);
+  const assetLoader = new NodeAssetLoader(fs);
   const assetManager = new AssetManager(projectRoot, assetLoader);
   const packageManager = new PackageManager();
 

@@ -70,52 +70,6 @@ export class BrowserAssetLoader implements AssetLoader {
   }
 }
 
-/**
- * Node.js-based asset loader (uses fs)
- */
-export class NodeAssetLoader implements AssetLoader {
-  private fs: any;
-  private path: any;
-
-  constructor(fsModule?: any, pathModule?: any) {
-    // Accept fs and path modules as parameters for ES module compatibility
-    // If not provided, try to use require (for CommonJS)
-    if (fsModule && pathModule) {
-      this.fs = fsModule;
-      this.path = pathModule;
-    } else if (typeof require !== 'undefined') {
-      try {
-        this.fs = require('fs/promises');
-        this.path = require('path');
-      } catch (err) {
-        throw new Error('Node.js modules not available. Are you running in Node.js?');
-      }
-    } else {
-      throw new Error('NodeAssetLoader requires fs and path modules. Pass them as constructor parameters.');
-    }
-  }
-
-  async loadImage(path: string): Promise<Buffer> {
-    // In Node.js, we return Buffer instead of HTMLImageElement
-    // The actual image processing would need to be done by the consumer
-    return this.fs.readFile(path);
-  }
-
-  async loadJSON(path: string): Promise<any> {
-    const data = await this.fs.readFile(path, 'utf-8');
-    return JSON.parse(data);
-  }
-
-  async loadText(path: string): Promise<string> {
-    return this.fs.readFile(path, 'utf-8');
-  }
-
-  async loadBinary(path: string): Promise<ArrayBuffer> {
-    const buffer = await this.fs.readFile(path);
-    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-  }
-}
-
 export class AssetManager {
   cache = new Map<string, Asset>(); // Made public for drag-drop access
   private projectRoot: string;
@@ -123,16 +77,7 @@ export class AssetManager {
   
   constructor(projectRoot: string = '', loader?: AssetLoader) {
     this.projectRoot = projectRoot;
-    // Auto-detect environment if no loader provided
-    if (loader) {
-      this.loader = loader;
-    } else if (typeof window !== 'undefined' && typeof Image !== 'undefined') {
-      // Browser environment
-      this.loader = new BrowserAssetLoader();
-    } else {
-      // Node.js environment
-      this.loader = new NodeAssetLoader();
-    }
+    this.loader = loader ?? new BrowserAssetLoader();
   }
   
   async load(path: string): Promise<Asset> {
@@ -235,4 +180,3 @@ export class AssetManager {
     return Array.from(this.cache.values());
   }
 }
-

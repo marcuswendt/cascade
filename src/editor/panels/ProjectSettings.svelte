@@ -162,8 +162,10 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if open}
-  <div class="modal-overlay" on:click={handleClose} on:keydown={handleKeydown} role="button" tabindex="-1">
-    <div class="modal" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="modal-overlay" on:click|self={handleClose}>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-header">
         <h2 id="modal-title">
           <Package size={20} />
@@ -180,7 +182,7 @@
           <div class="form-row"><label for="graph-name">Name</label><input id="graph-name" bind:value={graphName} /></div>
           <div class="form-row"><label for="graph-description">Description</label><input id="graph-description" bind:value={graphDescription} /></div>
           <div class="form-row"><label for="graph-author">Author</label><input id="graph-author" bind:value={graphAuthor} /></div>
-          <div class="form-row"><label>Created</label><input value={graph?.created ?? ''} readonly /></div>
+          <div class="form-row"><label for="graph-created">Created</label><input id="graph-created" value={graph?.created ?? ''} readonly /></div>
         </section>
 
         <section class="section">

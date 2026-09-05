@@ -1226,8 +1226,10 @@ export class Graph {
      * default, plus anything promoted to a pin, so a file records decisions
      * rather than restating every default a module already has.
      */
-    const parameters = (node.parameters ?? [])
-      .filter(p => p.promoted || JSON.stringify(p.value) !== JSON.stringify(p.defaultValue))
+    const changedParameters = (node.parameters ?? [])
+      .filter(p => p.promoted || JSON.stringify(p.value) !== JSON.stringify(p.defaultValue));
+    const parameters = changedParameters
+      .filter(p => p.documentField !== 'props')
       .map(p => (p.promoted ? { name: p.name, value: p.value, promoted: true } : { name: p.name, value: p.value }));
     if (parameters.length > 0) {
       result.params = parameters;
@@ -1274,6 +1276,9 @@ export class Graph {
       }
       return acc;
     }, {} as Record<string, any>);
+    for (const parameter of changedParameters) {
+      if (parameter.documentField === 'props') props[parameter.name] = parameter.value;
+    }
     if (Object.keys(props).length > 0) {
       result.props = props;
     }
@@ -1431,14 +1436,20 @@ export class Graph {
       if (Array.isArray(nodeData.params)) {
         nodeData.params.forEach((saved: any) => {
           if (!saved?.name) return;
-          node.parameters.push({
-            name: saved.name,
-            value: saved.value,
-            defaultValue: saved.value,
-            dataType: 'any',
-            promoted: Boolean(saved.promoted),
-            options: {},
-          });
+          const declared = node.parameters.find(parameter => parameter.name === saved.name);
+          if (declared) {
+            declared.value = saved.value;
+            declared.promoted = Boolean(saved.promoted);
+          } else {
+            node.parameters.push({
+              name: saved.name,
+              value: saved.value,
+              defaultValue: saved.value,
+              dataType: 'any',
+              promoted: Boolean(saved.promoted),
+              options: {},
+            });
+          }
           // A promoted parameter needs its pin to exist now, or the connection
           // into it has nothing to bind to on the first pass.
           if (saved.promoted) {
@@ -1449,24 +1460,44 @@ export class Graph {
       }
       graph.addElement(node);
 
-      // Ports (inputs/outputs) are no longer serialized - they are defined in node code
-      // and will be created when the node code executes. For backward compatibility,
-      // we still support restoring ports from old saved files if they exist.
-      if (nodeData.inputs && Array.isArray(nodeData.inputs)) {
-        nodeData.inputs.forEach((portData: any) => {
-          // Create port using the stored metadata
-          const port = node.in(portData.name, portData.defaultValue, {
-            type: portData.dataType || 'any'
-          });
-          // Restore the saved port ID, but ONLY if the file actually carried
-          // one. A hand-authored .cascade lists a node's inputs by name and
-          // default alone, and assigning that missing id overwrote a perfectly
-          // good generated one with undefined — after which every connection
-          // into the node failed with "Invalid port ID format", silently, and
-          // the node never received an input or ran.
-          if (portData.id && port.id !== portData.id) {
-            (port as any).id = portData.id;
-          }
+      // Runtime documents accept either the legacy port array or the compact
+      // name/value record. A class node's declared schema remains authoritative:
+      // authored values override its live value, never its type or reset default.
+      const restoreInput = (
+        name: string,
+        value: unknown,
+        hasValue: boolean,
+        saved: { dataType?: any; id?: string } = {},
+      ) => {
+        if (!name) return;
+        const declared = node.inputs.find(port => port.name === name);
+        const port = declared ?? node.in(
+          name,
+          hasValue ? value : undefined,
+          saved.dataType ? { type: saved.dataType } : {},
+        );
+        if (declared && hasValue) declared.value = value;
+
+        // Never replace a generated ID with an absent one. The generated ID is
+        // what name-based, hand-authored documents need for connections.
+        if (saved.id && port.id !== saved.id) (port as any).id = saved.id;
+      };
+
+      if (Array.isArray(nodeData.inputs)) {
+        nodeData.inputs.forEach((saved: any) => {
+          if (!saved || typeof saved !== 'object') return;
+          const hasDefault = Object.prototype.hasOwnProperty.call(saved, 'defaultValue');
+          const hasValue = Object.prototype.hasOwnProperty.call(saved, 'value');
+          restoreInput(
+            saved.name,
+            hasDefault ? saved.defaultValue : saved.value,
+            hasDefault || hasValue,
+            saved,
+          );
+        });
+      } else if (nodeData.inputs && typeof nodeData.inputs === 'object') {
+        Object.entries(nodeData.inputs).forEach(([name, value]) => {
+          restoreInput(name, value, true);
         });
       }
 
@@ -1509,16 +1540,22 @@ export class Graph {
               : { r: normalized.r, g: normalized.g, b: normalized.b };
           }
 
-          // Props will be defined when node code executes
-          // For now, we store the values to restore later
-          if (!node.props[key]) {
+          const definitionProp = node.parameters.find(parameter =>
+            parameter.name === key && parameter.documentField === 'props'
+          );
+          if (definitionProp) {
+            // Definition props are Studio parameters but public document props.
+            // Keep their contract value shape (not legacy UI color objects).
+            definitionProp.value = value;
+          } else if (!node.props[key]) {
+            // Dynamic node props may be defined after the module first executes.
             node.props[key] = { value: normalizedValue } as any;
           } else {
             node.props[key].value = normalizedValue;
           }
 
           // Restore expression if present
-          if (expression) {
+          if (expression && !definitionProp) {
             node.props[key].expression = expression;
           }
         });

@@ -1,8 +1,9 @@
-import type { NodeDefinition, NodeExecutionContext } from "@cascade/contracts";
+import type { NodeExecutionContext } from "@cascade/contracts";
 import { emptyGeometry } from "@cascade/contracts";
 
 import { geometryToSvg, utf8Bytes } from "../../geometry/svg.js";
 import type { DefinitionNodeRegistration } from "../../types.js";
+import { svgExportDefinition } from "./definitions.js";
 import { geoModuleId } from "./namespace.js";
 
 /**
@@ -25,86 +26,6 @@ import { geoModuleId } from "./namespace.js";
  * `fillMode` prop and the writer converts to text through `Color.toHex`. The
  * reason "no fill" is a mode rather than a zero alpha is in `SvgExportOptions`.
  */
-export const svgExportDefinition = {
-  apiVersion: 1,
-  label: "SVG Export",
-  description: "Write geometry as an SVG document, one group element per group.",
-  icon: "FileDown",
-  runsOn: "portable",
-  capabilities: ["assets"],
-  inputs: {
-    geometry: { kind: "data", type: "geometry" },
-  },
-  outputs: {
-    svg: { kind: "data", type: "string" },
-    asset: { kind: "data", type: "asset" },
-  },
-  props: {
-    filename: { type: "string", default: "geometry.svg", label: "Filename" },
-    width: {
-      type: "float",
-      default: 0,
-      min: 0,
-      label: "Width",
-      description: "0 derives the width from the geometry bounds.",
-    },
-    height: { type: "float", default: 0, min: 0, label: "Height" },
-    margin: { type: "float", default: 0, label: "Margin" },
-    stroke: {
-      type: "color",
-      default: [0, 0, 0, 1],
-      label: "Stroke",
-      description: "Fallback for a primitive with no Cd attribute.",
-    },
-    strokeWidth: {
-      type: "float",
-      default: 1,
-      min: 0,
-      label: "Stroke Width",
-      description: "Fallback for a primitive with no width attribute.",
-    },
-    opacity: {
-      type: "float",
-      default: 1,
-      min: 0,
-      max: 1,
-      label: "Opacity",
-      description: "Fallback for a primitive with no opacity attribute.",
-    },
-    fillMode: {
-      type: "string",
-      default: "none",
-      label: "Fill Mode",
-      control: "select",
-      options: ["none", "solid"],
-      description:
-        "none leaves primitives unfilled, which is what plotter work wants.",
-    },
-    fill: {
-      type: "color",
-      default: [1, 1, 1, 1],
-      label: "Fill",
-      description: "Fill colour, used only when Fill Mode is solid.",
-    },
-    pointRadius: {
-      type: "float",
-      default: 0.5,
-      min: 0,
-      label: "Point Radius",
-      description: "Fallback radius for a loose point with no pscale.",
-    },
-    precision: {
-      type: "int",
-      default: 3,
-      min: 0,
-      max: 15,
-      step: 1,
-      label: "Precision",
-      description: "Decimal places on emitted coordinates.",
-    },
-  },
-} as const satisfies NodeDefinition;
-
 export async function executeSvgExport(
   context: NodeExecutionContext<typeof svgExportDefinition>,
 ): Promise<void> {
@@ -136,3 +57,5 @@ export const svgExportRegistration = {
   definition: svgExportDefinition,
   loadExecute: async () => executeSvgExport,
 } satisfies DefinitionNodeRegistration<typeof svgExportDefinition>;
+
+export { svgExportDefinition } from "./definitions.js";

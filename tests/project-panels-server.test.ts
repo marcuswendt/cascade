@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import net from 'node:net';
 import type { Server } from 'node:http';
 import { ProjectRoot, PathSafetyError } from '../server/src/project.js';
 import { compileProjectPanel } from '../server/src/compile.js';
@@ -9,7 +10,6 @@ import { startServer } from '../server/src/index.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
-let nextPort = 40_000 + (process.pid % 8_000);
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
@@ -29,12 +29,25 @@ function writePanel(project: ProjectRoot, location: 'panels' | 'shared/panels', 
 }
 
 async function serve(project: ProjectRoot): Promise<string> {
-  const server = startServer(project, { port: nextPort++ });
+  const port = await freePort();
+  const server = startServer(project, { port });
   servers.push(server);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('missing server address');
   return `http://127.0.0.1:${address.port}`;
+}
+
+async function freePort(): Promise<number> {
+  const probe = net.createServer();
+  await new Promise<void>((resolve, reject) => {
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', resolve);
+  });
+  const address = probe.address();
+  if (!address || typeof address === 'string') throw new Error('missing probe address');
+  await new Promise<void>((resolve, reject) => probe.close(error => error ? reject(error) : resolve()));
+  return address.port;
 }
 
 // These compile panels with esbuild, and under a full parallel suite one of

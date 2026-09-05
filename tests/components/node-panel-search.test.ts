@@ -25,4 +25,13 @@ describe('node selector search', () => {
     projectNodeModules.set([]);
     iconByModule.set({});
   });
+
+  it('loads the custom node dialog only when requested', async () => {
+    const view = render(NodePanel, { props: { libraryId: 'all' } });
+
+    expect(view.queryByRole('heading', { name: 'Create Custom Node' })).toBeNull();
+    await fireEvent.click(view.getByRole('button', { name: 'Custom' }));
+
+    expect(await view.findByRole('heading', { name: 'Create Custom Node' })).toBeTruthy();
+  });
 });

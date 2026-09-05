@@ -21,8 +21,37 @@
   function handleTabClick(tabId: string, e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    console.log('Tab click:', tabId);
     dispatch('tabSelect', { tabId });
+  }
+
+  function handleTabKeydown(tabId: string, e: KeyboardEvent) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      dispatch('tabSelect', { tabId });
+      return;
+    }
+
+    const tablist = (e.currentTarget as HTMLElement).closest('[role="tablist"]');
+    const tabElements = tablist
+      ? Array.from(tablist.querySelectorAll<HTMLElement>('[role="tab"]'))
+      : [];
+    const currentIndex = tabElements.indexOf(e.currentTarget as HTMLElement);
+    if (currentIndex < 0 || tabElements.length < 2) return;
+
+    let nextIndex: number | null = null;
+    if (e.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabElements.length;
+    if (e.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabElements.length) % tabElements.length;
+    if (e.key === 'Home') nextIndex = 0;
+    if (e.key === 'End') nextIndex = tabElements.length - 1;
+    if (nextIndex === null) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    const nextTab = tabElements[nextIndex];
+    nextTab.focus();
+    const nextTabId = nextTab.dataset.tabId;
+    if (nextTabId) dispatch('tabSelect', { tabId: nextTabId });
   }
   
   function handleTabClose(tabId: string, e: MouseEvent) {
@@ -45,7 +74,6 @@
       
       // If it was a quick click with little movement, cancel the drag
       if (timeDelta < 300 && posDelta < 5) {
-        console.log('Canceling drag - was a click');
         e.preventDefault();
         e.stopPropagation();
         mouseDownInfo.delete(tabId);
@@ -69,30 +97,33 @@
 </script>
 
 {#if tabs.length > 0}
-  <div class="tabs">
-    {#each tabs as tab (tab.id)}
-      <button
+  <div class="tabs" role="tablist" aria-label="Open views">
+    {#each tabs as tab, index (tab.id)}
+      <div
         class="tab"
         class:active={activeTabId === tab.id}
-        draggable="true"
-        on:mousedown={(e) => handleMouseDown(tab.id, e)}
-        on:mouseup={() => handleMouseUp(tab.id)}
-        on:click={(e) => {
-          console.log('Tab button clicked:', tab.id);
-          handleTabClick(tab.id, e);
-        }}
-        on:dragstart={(e) => {
-          console.log('Drag start on tab:', tab.id);
-          handleTabDragStart(tab.id, e);
-        }}
         title={tab.label}
       >
-        {#if tab.icon}
-          <span class="tab-icon">
-            <Icon name={tab.icon} size={14} />
-          </span>
-        {/if}
-        <span class="tab-label">{tab.label}</span>
+        <div
+          class="tab-target"
+          role="tab"
+          tabindex={activeTabId === tab.id || (activeTabId === null && index === 0) ? 0 : -1}
+          aria-selected={activeTabId === tab.id}
+          data-tab-id={tab.id}
+          draggable="true"
+          on:mousedown={(e) => handleMouseDown(tab.id, e)}
+          on:mouseup={() => handleMouseUp(tab.id)}
+          on:click={(e) => handleTabClick(tab.id, e)}
+          on:keydown={(e) => handleTabKeydown(tab.id, e)}
+          on:dragstart={(e) => handleTabDragStart(tab.id, e)}
+        >
+          {#if tab.icon}
+            <span class="tab-icon">
+              <Icon name={tab.icon} size={14} />
+            </span>
+          {/if}
+          <span class="tab-label">{tab.label}</span>
+        </div>
         {#if tab.type === 'editor'}
           <button
             class="tab-close"
@@ -103,7 +134,7 @@
             ×
           </button>
         {/if}
-      </button>
+      </div>
     {/each}
   </div>
 {/if}
@@ -154,11 +185,11 @@
     position: relative;
   }
   
-  .tab[draggable="true"] {
+  .tab-target[draggable="true"] {
     cursor: grab;
   }
   
-  .tab[draggable="true"]:active {
+  .tab-target[draggable="true"]:active {
     cursor: grabbing;
     opacity: 0.7;
   }
@@ -172,6 +203,22 @@
     background: var(--surface-popover);
     border-bottom-color: var(--accent);
     color: var(--text-bright);
+  }
+
+  .tab-target {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    color: inherit;
+    outline: none;
+  }
+
+  .tab-target:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 3px;
   }
   
   .tab-icon {
@@ -220,4 +267,3 @@
     background: var(--tint-medium);
   }
 </style>
-

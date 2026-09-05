@@ -617,6 +617,7 @@
 <div class="color-picker-container">
   <button
     class="color-swatch"
+    aria-label="Choose color"
     style="background-color: {colorToCss({ r: red, g: green, b: blue, a: 1.0 })};"
     on:click|stopPropagation={() => {
       if (showPicker) {
@@ -636,7 +637,7 @@
   </button>
   
   {#if showPicker}
-    <div class="picker-popover" bind:this={pickerElement} on:click|stopPropagation>
+    <div class="picker-popover" bind:this={pickerElement} role="dialog" aria-label="Color picker" tabindex="-1" on:click|stopPropagation on:keydown|stopPropagation>
       <div class="picker-header">
         <button class="mode-button" class:active={colorMode === 'hsv'} on:click={() => {
           colorMode = 'hsv';
@@ -674,48 +675,48 @@
         <div class="inputs-section">
           {#if colorMode === 'hsv'}
             <div class="input-row">
-              <label>H</label>
-              <input type="number" min="0" max="360" value={Math.round(hue)} on:input={(e) => handleHsvInput('h', e)} class="number-input-small" />
-              <input type="range" min="0" max="360" step="1" value={Math.round(hue)} on:input={(e) => handleHsvInput('h', e)} class="slider-input" />
+              <label for={`${id}-h`}>H</label>
+              <input id={`${id}-h`} type="number" min="0" max="360" value={Math.round(hue)} on:input={(e) => handleHsvInput('h', e)} class="number-input-small" />
+              <input aria-label="Hue" type="range" min="0" max="360" step="1" value={Math.round(hue)} on:input={(e) => handleHsvInput('h', e)} class="slider-input" />
             </div>
             <div class="input-row">
-              <label>S</label>
-              <input type="number" min="0" max="100" value={Math.round(saturation * 100)} on:input={(e) => handleHsvInput('s', e)} class="number-input-small" />
-              <input type="range" min="0" max="100" step="1" value={Math.round(saturation * 100)} on:input={(e) => handleHsvInput('s', e)} class="slider-input" />
+              <label for={`${id}-s`}>S</label>
+              <input id={`${id}-s`} type="number" min="0" max="100" value={Math.round(saturation * 100)} on:input={(e) => handleHsvInput('s', e)} class="number-input-small" />
+              <input aria-label="Saturation" type="range" min="0" max="100" step="1" value={Math.round(saturation * 100)} on:input={(e) => handleHsvInput('s', e)} class="slider-input" />
             </div>
             <div class="input-row">
-              <label>V</label>
-              <input type="number" min="0" max="100" value={Math.round(brightness * 100)} on:input={(e) => handleHsvInput('v', e)} class="number-input-small" />
-              <input type="range" min="0" max="100" step="1" value={Math.round(brightness * 100)} on:input={(e) => handleHsvInput('v', e)} class="slider-input" />
+              <label for={`${id}-v`}>V</label>
+              <input id={`${id}-v`} type="number" min="0" max="100" value={Math.round(brightness * 100)} on:input={(e) => handleHsvInput('v', e)} class="number-input-small" />
+              <input aria-label="Value" type="range" min="0" max="100" step="1" value={Math.round(brightness * 100)} on:input={(e) => handleHsvInput('v', e)} class="slider-input" />
             </div>
           {:else}
             <div class="input-row">
-              <label>R</label>
-              <input type="number" min="0" max="255" value={Math.round(red * 255)} on:input={(e) => handleRgbInput('r', e)} class="number-input-small" />
-              <input type="range" min="0" max="255" step="1" value={Math.round(red * 255)} on:input={(e) => handleRgbInput('r', e)} class="slider-input" />
+              <label for={`${id}-r`}>R</label>
+              <input id={`${id}-r`} type="number" min="0" max="255" value={Math.round(red * 255)} on:input={(e) => handleRgbInput('r', e)} class="number-input-small" />
+              <input aria-label="Red" type="range" min="0" max="255" step="1" value={Math.round(red * 255)} on:input={(e) => handleRgbInput('r', e)} class="slider-input" />
             </div>
             <div class="input-row">
-              <label>G</label>
-              <input type="number" min="0" max="255" value={Math.round(green * 255)} on:input={(e) => handleRgbInput('g', e)} class="number-input-small" />
-              <input type="range" min="0" max="255" step="1" value={Math.round(green * 255)} on:input={(e) => handleRgbInput('g', e)} class="slider-input" />
+              <label for={`${id}-g`}>G</label>
+              <input id={`${id}-g`} type="number" min="0" max="255" value={Math.round(green * 255)} on:input={(e) => handleRgbInput('g', e)} class="number-input-small" />
+              <input aria-label="Green" type="range" min="0" max="255" step="1" value={Math.round(green * 255)} on:input={(e) => handleRgbInput('g', e)} class="slider-input" />
             </div>
             <div class="input-row">
-              <label>B</label>
-              <input type="number" min="0" max="255" value={Math.round(blue * 255)} on:input={(e) => handleRgbInput('b', e)} class="number-input-small" />
-              <input type="range" min="0" max="255" step="1" value={Math.round(blue * 255)} on:input={(e) => handleRgbInput('b', e)} class="slider-input" />
+              <label for={`${id}-b`}>B</label>
+              <input id={`${id}-b`} type="number" min="0" max="255" value={Math.round(blue * 255)} on:input={(e) => handleRgbInput('b', e)} class="number-input-small" />
+              <input aria-label="Blue" type="range" min="0" max="255" step="1" value={Math.round(blue * 255)} on:input={(e) => handleRgbInput('b', e)} class="slider-input" />
             </div>
           {/if}
           
           <div class="input-row">
-            <label>Hex</label>
-            <input type="text" value={hex} on:input={handleHexInput} class="hex-input" />
+            <label for={`${id}-hex`}>Hex</label>
+            <input id={`${id}-hex`} type="text" value={hex} on:input={handleHexInput} class="hex-input" />
           </div>
         </div>
         
         <div class="palette-section">
           <div class="color-history">
             <button class="history-swatch" style="background-color: {previousColor};" on:click={swapColors} title="Swap with previous"></button>
-            <button class="history-swatch" style="background-color: {hex};"></button>
+            <button class="history-swatch" style="background-color: {hex};" aria-label="Current color"></button>
           </div>
           <div class="palette-grid">
             {#each palette as row}
@@ -723,6 +724,7 @@
                 <button
                   class="palette-swatch"
                   style="background-color: {color};"
+                  aria-label={`Choose ${color}`}
                   on:click={() => selectPaletteColor(color)}
                 ></button>
               {/each}
@@ -761,14 +763,6 @@
   .color-swatch:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-  
-  .swatch-label {
-    font-size: 11px;
-    font-family: 'Monaco', 'Menlo', monospace;
-    color: var(--text-bright);
-    text-shadow: 0 1px 2px var(--shadow-strong);
-    pointer-events: none;
   }
   
   .picker-popover {
@@ -832,19 +826,6 @@
     image-rendering: pixelated;
     image-rendering: -moz-crisp-edges;
     image-rendering: crisp-edges;
-  }
-  
-  .brightness-control {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-  }
-  
-  .brightness-control label {
-    font-size: 11px;
-    color: var(--text-muted);
-    min-width: 20px;
   }
   
   .inputs-section {
@@ -991,4 +972,3 @@
     position: relative;
   }
 </style>
-

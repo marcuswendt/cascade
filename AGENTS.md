@@ -162,7 +162,7 @@ Do not add dependencies without a concrete need. Do not create extra packages un
 ## Versioning
 
 Cascade `0.2.0` is the 2026 architecture rework. The current release is
-`0.2.15`. Increment the root package and CLI patch version for every committed
-feature or release change (`0.2.15`, `0.2.16`, …), keeping `package.json`, the
+`0.2.16`. Increment the root package and CLI patch version for every committed
+feature or release change (`0.2.16`, `0.2.17`, …), keeping `package.json`, the
 lockfile, and CLI output aligned. Internal private workspaces do not receive
 independent versions unless they become separately published packages.

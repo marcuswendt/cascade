@@ -169,6 +169,12 @@ cancellation, event subscriptions, output retrieval, and disposal. Hosts
 decide which capabilities exist; Cascade never silently moves a stage between
 browser and server.
 
+The same registration path exposes the initial `cascade.geo.*` library in
+Studio and headless hosts: `Rectangle`, `Circle`, `Transform`, `Merge`,
+`CopyToPoints`, and `SvgExport`. Their definitions, ports, and executors are
+owned by the runtime; Studio adapts those definitions instead of maintaining a
+second set of node algorithms.
+
 ## Repository map
 
 ```text
