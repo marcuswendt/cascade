@@ -44,3 +44,41 @@ not a requirement of graph execution.
 See [Project authoring](PROJECT_AUTHORING.md) for the project layout, node
 contract, remote-workstation launch, panels, external services, and headless
 workflow.
+
+## Prior art, and the one that shares the bet
+
+Cascade sits in a long-populated field — Houdini, TouchDesigner, Notch,
+Nodes.io, Cables, vvvv, Blender geometry nodes — and none of those is the
+comparison that matters. The instructive one is **ComfyUI**, which went from
+nothing to ubiquitous not by being a better node editor but by being the only
+sane interface to something people urgently needed. That is the only shape in
+which a node tool wins: not "a node tool", but the only good interface to a
+thing people suddenly need.
+
+**Sentinel** (OOD Labs, <https://ood-labs.com/sentinel/>, noted 2026-09-07) is
+the one tool sharing Cascade's actual bet, and states it more precisely than we
+had: *"a real-time node graph built for agents, not adapted for them."* The
+agent writes modules as GPU shader code and wires them in. Alpha, $199.99
+one-time then $80/year, built by "one person and an agent", shipping most
+weeks.
+
+It is also not a competitor, and the difference is worth stating because it
+explains what Cascade is for. Sentinel is Windows plus an NVIDIA card, CUDA,
+RTX 4090 territory: live diffusion, audio reactivity, depth and gesture
+tracking, Spout and NDI out — a **live visuals and stage** tool sold to VJs and
+show designers, who are a real paying audience. Cascade is a Mac, offline,
+print-and-archive pipeline where every generative parameter must trace back to
+evidence. Same architectural insight, opposite ends of the building.
+
+Two conclusions follow, and they are the reason this section exists rather than
+a bookmark somewhere:
+
+- **Agent-native authoring is not a moat.** One person and an agent built
+  Sentinel; one person and an agent rebuilt Cascade in a day. The cost of
+  making one of these has collapsed, so there will be many, and the survivors
+  will be the ones sitting on a paying audience with hardware it already owns.
+- **Therefore Cascade is a published instrument, not a product.** MIT, openly
+  installable, no roadmap and no support promise — deliberately, because the
+  freedom to hard-cut the geometry types across every sketch in an afternoon is
+  currently its most valuable property, and a product cannot do that. Marcus's
+  call, 2026-09-07.
