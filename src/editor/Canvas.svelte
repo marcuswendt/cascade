@@ -4304,10 +4304,10 @@ node.onReady = () => {
   <svg class="grid">
     <defs>
       <pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse">
-        <circle cx="10" cy="10" r="0.5" fill="#2a2a2a" />
+        <circle class="grid-dot" cx="10" cy="10" r="0.5" />
       </pattern>
     </defs>
-    <rect width="100%" height="100%" fill="#0a0a0a" />
+    <rect class="grid-ground" width="100%" height="100%" />
     <rect width="100%" height="100%" fill="url(#dots)" />
   </svg>
   
@@ -4370,11 +4370,11 @@ node.onReady = () => {
     {#if hoveredConnection}
       {@const pos = hoveredConnection.position}
       <g transform="translate({pos.x}, {pos.y})">
-        <circle cx="0" cy="0" r="12" fill="#1a1a1a" stroke="#888" stroke-width="1" opacity="0.9" />
+        <circle class="endpoint-marker" cx="0" cy="0" r="12" stroke-width="1" opacity="0.9" />
         <!-- Scissors icon (simplified SVG path) -->
         <path
+          class="endpoint-icon"
           d="M -6,-4 L -6,4 M 6,-4 L 6,4 M -4,-6 L 4,6 M -4,6 L 4,-6"
-          stroke="#fff"
           stroke-width="1.5"
           stroke-linecap="round"
           fill="none"
@@ -4621,6 +4621,28 @@ node.onReady = () => {
     width: 100%;
     height: 100%;
     pointer-events: none;
+  }
+
+  /* Fill as CSS, not as a presentation attribute. `fill="var(--x)"` in markup
+     does not resolve, which is why these four colours survived the token pass
+     and the graph stayed black in light mode while every panel around it
+     turned. Anything painted with an SVG attribute is invisible to a sweep
+     that reads style blocks. */
+  .grid-ground {
+    fill: var(--surface-void);
+  }
+
+  .grid-dot {
+    fill: var(--border-faint);
+  }
+
+  .endpoint-marker {
+    fill: var(--surface-raised);
+    stroke: var(--border-divider);
+  }
+
+  .endpoint-icon {
+    stroke: var(--text-bright);
   }
   
   .connections-layer {

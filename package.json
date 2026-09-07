@@ -1,6 +1,6 @@
 {
   "name": "cascade",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "description": "Visual programming for generative art",
   "type": "module",
   "engines": {
