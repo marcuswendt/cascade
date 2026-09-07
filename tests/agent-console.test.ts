@@ -5,7 +5,7 @@ import path from 'node:path';
 import { ProjectRoot } from '../server/src/project.js';
 import { createGraphWatcher, graphFileFor } from '../server/src/graphWatch.js';
 import { agentAvailability, agentExtraArgs, allowlistHint, resolveExecutable } from '../server/src/agent/allowlist.js';
-import { argsFor, claudeArgs, codexArgs, sessionIdFrom } from '../server/src/agent/session.js';
+import { argsFor, childEnvironment, claudeArgs, codexArgs, sessionIdFrom } from '../server/src/agent/session.js';
 import { documentFingerprint } from '../src/editor/graphDocumentWatch.js';
 import { describeStreamLine } from '../src/editor/agentConsole.js';
 
@@ -211,6 +211,29 @@ describe('headless launch arguments', () => {
     expect(agentExtraArgs(project.root, 'claude')).toEqual(['--permission-mode', 'acceptEdits']);
     expect(agentExtraArgs(project.root, 'codex')).toEqual([]);
     expect(argsFor('claude', 'go', null, agentExtraArgs(project.root, 'claude')).slice(-2)).toEqual(['--permission-mode', 'acceptEdits']);
+  });
+
+  it('does not hand the child this process\'s channel bindings', () => {
+    // Spawning with process.env intact took down the Telegram bot that had
+    // launched the Studio server: the child inherited TELEGRAM_STATE_DIR, bound
+    // itself to the same bot token, and the Bot API allows exactly one
+    // getUpdates long-poll per token — so one of the two was dropped. A
+    // console-launched agent has no business joining a chat.
+    const before = process.env.TELEGRAM_STATE_DIR;
+    process.env.TELEGRAM_STATE_DIR = '/tmp/some-bot';
+    process.env.TELEGRAM_BOT_TOKEN = 'secret';
+    try {
+      const env = childEnvironment();
+      expect(env.TELEGRAM_STATE_DIR).toBeUndefined();
+      expect(env.TELEGRAM_BOT_TOKEN).toBeUndefined();
+      // Everything the agent actually needs is still inherited.
+      expect(env.PATH).toBe(process.env.PATH);
+      expect(env.HOME).toBe(process.env.HOME);
+    } finally {
+      delete process.env.TELEGRAM_BOT_TOKEN;
+      if (before === undefined) delete process.env.TELEGRAM_STATE_DIR;
+      else process.env.TELEGRAM_STATE_DIR = before;
+    }
   });
 
   it('reads the session id out of a stream line', () => {

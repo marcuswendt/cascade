@@ -22,6 +22,30 @@ import { AgentRequestError, agentAvailability, agentExtraArgs, requireExecutable
 const DEFAULT_TIMEOUT_MS = 900_000;
 const MAX_PROMPT_BYTES = 64 * 1024;
 
+/**
+ * The child's environment, with this process's channel bindings removed.
+ *
+ * Handing over `process.env` wholesale took down Marcus's Telegram bot on
+ * 2026-09-07, and the mechanism is worth writing down because it is invisible
+ * from either end. A Studio server launched from a bot session inherits that
+ * bot's `TELEGRAM_STATE_DIR`. Spawning `claude` with that env starts a *second*
+ * process bound to the same channel state and the same bot token — and
+ * Telegram's Bot API allows exactly one `getUpdates` long-poll per token, so one
+ * of the two consumers is dropped. His diagnosis, and he was right: starting a
+ * Claude from the console broke the plugin that started it.
+ *
+ * A console-launched agent has no business joining a chat, so the binding is
+ * stripped rather than negotiated. Everything else is inherited, because PATH,
+ * HOME and the credential locations are exactly what the agent needs.
+ */
+export function childEnvironment(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('TELEGRAM_') || key === 'CLAUDE_CHANNELS') delete env[key];
+  }
+  return env;
+}
+
 export type AgentEvent =
   | { type: 'started'; agent: string; sketch: string; resumed: boolean }
   | { type: 'stdout'; text: string }
@@ -147,7 +171,7 @@ export class AgentSessions {
       sink({ type: 'started', agent: request.agent, sketch: request.sketch, resumed });
       const child = spawn(executable, args, {
         cwd: this.project.root,
-        env: process.env,
+        env: childEnvironment(),
         shell: false,
         detached: process.platform !== 'win32',
         stdio: ['pipe', 'pipe', 'pipe'],
