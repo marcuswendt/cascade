@@ -140,6 +140,9 @@
     if (parm) {
       parm.deleteExpression();
       node.markDirty();
+      // Same reason as applyExpression: the model forgets the expression and
+      // the panel has to be told, or the removal is invisible.
+      onValueChange?.(prop.value);
     }
     isEditing = false;
     viewMode = 'value';
@@ -314,6 +317,13 @@
       if (parm) {
         parm.setExpression(expressionText);
         node.markDirty();
+        // Tell the Inspector. Setting an expression mutates node.props in
+        // place, which Svelte cannot see, so without this the panel kept
+        // rendering the old state and the expression looked like it had not
+        // been applied at all. `onValueChange` was declared and never called —
+        // svelte-check had been reporting it as an unused export the whole
+        // time, which is the kind of warning that turns out to be a bug.
+        onValueChange?.(node.evalParm(propKey));
       }
     }
     isEditing = false;
@@ -601,7 +611,11 @@
     border-radius: 3px;
     color: var(--text-faintest);
     cursor: pointer;
-    opacity: 0;
+    /* Visible at rest rather than hover-only. It was opacity 0 until you
+       happened to hover the row, so the only way to discover that a parameter
+       could hold an expression was to already know. Faint enough not to
+       compete with the value, present enough to aim at. */
+    opacity: 0.4;
     transition: all 0.15s ease;
     flex-shrink: 0;
   }
