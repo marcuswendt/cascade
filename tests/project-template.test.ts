@@ -25,7 +25,12 @@ describe('project templates', () => {
     ]);
     expect(JSON.parse(fs.readFileSync(path.join(directory, 'cascade.json'), 'utf8'))).toEqual({ name: 'my-artwork' });
     const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8'));
-    expect(manifest.devDependencies).toMatchObject({ cascade: expect.any(String), typescript: '^6.0.0' });
+    // `expect.any(String)` was too loose to be a test: the bare name `cascade`
+    // on npm belongs to an unrelated package, so a scaffolded project asking
+    // for it by name would install a stranger's code. The dependency has to be
+    // an alias onto the published scope, keeping `cascade/...` imports intact.
+    expect(manifest.devDependencies).toMatchObject({ cascade: 'npm:@field/cascade@^0.2.0', typescript: '^6.0.0' });
+    expect(manifest.devDependencies.cascade).toMatch(/^npm:@field\/cascade@/);
     expect(JSON.parse(fs.readFileSync(path.join(directory, 'tsconfig.json'), 'utf8')).compilerOptions).toMatchObject({
       module: 'ESNext',
       moduleResolution: 'Bundler',

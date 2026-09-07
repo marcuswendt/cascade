@@ -36,7 +36,11 @@ export function createProject(projectsRoot: string, name: string): string {
       inspect: 'cascade inspect index.cascade',
       run: 'cascade run index.cascade',
     },
-    devDependencies: { cascade: '^0.2.0', typescript: '^6.0.0' },
+    // Aliased, not renamed: the package publishes as `@field/cascade` because
+    // the bare name belongs to somebody else on npm — and a scaffolded project
+    // asking for `cascade` would silently install that stranger's package.
+    // The alias keeps every `cascade/contracts` import in a project working.
+    devDependencies: { cascade: 'npm:@field/cascade@^0.2.0', typescript: '^6.0.0' },
   });
   writeJson(path.join(directory, 'tsconfig.json'), {
     compilerOptions: {
