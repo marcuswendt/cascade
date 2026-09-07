@@ -609,20 +609,6 @@ export function execute(node, graph) {
     showCode(code);
   }
 
-  /** Hands the path to the OS rather than opening anything itself: the file is
-   *  on the server's disk, and the browser cannot reach it. */
-  async function handleOpenExternally() {
-    const name = modulePath.replace(/^project\./, '');
-    try {
-      const response = await fetch(`/api/nodes/${encodeURIComponent(name)}/path`);
-      if (!response.ok) throw new Error(await response.text());
-      const { path } = await response.json();
-      window.open(`vscode://file${path}:1`, '_blank');
-    } catch (error) {
-      reportActionError('could not resolve the file path: ' + (error instanceof Error ? error.message : String(error)));
-    }
-  }
-
   /** The buffer is now a different module's, so the editor has to be told;
    *  updateSourceInfo only refreshes the badge and the path. */
   function showCode(code: string): void {
@@ -728,12 +714,6 @@ export function execute(node, graph) {
       <button class="action-button" on:click={handleShowHistory} title="View version history">
         <History size={14} />
         History ({historyCount})
-      </button>
-    {/if}
-    {#if sourceType === 'project'}
-      <button class="action-button" on:click={handleOpenExternally} title="Open in external editor">
-        <FolderOpen size={14} />
-        Open in VSCode
       </button>
     {/if}
   </div>
