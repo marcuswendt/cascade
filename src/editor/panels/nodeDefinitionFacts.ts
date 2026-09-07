@@ -271,7 +271,7 @@ export async function readDefinitionFacts(
       facts.flavourNote = 'Registered through the definition-v1 adapter (registerDefinitionNodes).';
     } else {
       facts.flavour = 'core-class';
-      facts.flavourNote = 'A Node subclass compiled into Studio — neither definition-v1 nor a legacy dynamic module.';
+      facts.flavourNote = 'A Node subclass compiled into Studio — neither definition-v1 nor a dynamic module.';
       const metadata = getNodeMetadata(moduleId);
       facts.icon = metadata?.icon ?? null;
       facts.iconNote = metadata?.icon ? null : 'No icon in the node metadata registry.';

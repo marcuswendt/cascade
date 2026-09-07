@@ -74,7 +74,7 @@
 
   const FLAVOUR_LABELS: Record<string, string> = {
     'definition-v1': 'definition-v1',
-    'legacy-dynamic': 'legacy dynamic',
+    'legacy-dynamic': 'dynamic',
     'core-class': 'core class',
     unknown: 'Unknown',
   };
@@ -233,7 +233,7 @@
           {/if}
         {/each}
       {:else if facts.flavour === 'legacy-dynamic'}
-        <p class="note standalone">A legacy dynamic module declares nothing up front — its ports appear only once it has cooked, so what it takes and returns is in the Parameters panel rather than here.</p>
+        <p class="note standalone">A dynamic module declares nothing up front — its ports appear only once it has cooked, so what it takes and returns is in the Parameters panel rather than here. It is also the style that runs everywhere today: definition-v1 gives you a statically readable declaration, which is where Cascade is heading, but Studio cannot cook one yet.</p>
       {/if}
 
       <!--

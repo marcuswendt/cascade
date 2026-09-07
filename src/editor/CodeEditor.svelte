@@ -190,8 +190,20 @@ declare const graph: any;
 
   // Computed
   $: isReadOnly = sourceType === 'stdlib';
+  // Two independent axes, and conflating them is what made the old labels
+  // confusing. **Where the code lives**: embedded in the .cascade document, or
+  // external in nodes/<Name>/index.ts. **How it declares itself**: dynamic, with
+  // ports appearing only once it has cooked, or definition-v1, a static literal
+  // the toolchain can read without running anything.
+  //
+  // Marcus's standing preference, 2026-09-07: the system should prefer and
+  // subtly work towards external files that compile as ordinary ES modules and
+  // can be inspected statically — while keeping it possible to edit a whole
+  // project as dynamic code nodes. So both directions stay available and the
+  // labels say plainly which way is which.
   $: canDuplicate = sourceType === 'stdlib';
   $: canExtract = sourceType === 'embedded';
+  $: canEmbed = sourceType === 'project';
   $: canShowHistory = sourceType === 'embedded' && historyCount > 0;
 
   $: if (editor) {
@@ -573,6 +585,57 @@ export function execute(node, graph) {
     showCode(created.module.code);
   }
 
+  /**
+   * Embed an external project module back into this graph, for a local edit.
+   *
+   * The reverse of Extract, and the missing half of the pair: embedding existed
+   * only for stdlib nodes, so a project module — the thing you are most likely
+   * to want to fork for one graph — had no way back in. Marcus asked for both
+   * directions on 2026-09-07.
+   *
+   * It copies the file's current contents into the document under a `local.*`
+   * name and repoints this node at the copy. The file is left alone, and the
+   * other instances of the module keep using it, which is the point: this graph
+   * diverges and nothing else notices.
+   */
+  async function handleEmbed() {
+    const name = projectModuleName();
+    if (!name || !activeGraph) return;
+    const resolver = activeGraph.moduleResolver;
+    if (!resolver) { reportActionError('no module resolver on this graph'); return; }
+
+    let code = projectSource;
+    if (code === null) {
+      try {
+        const response = await fetch(`/api/nodes/${encodeURIComponent(name)}/index.ts`);
+        if (!response.ok) throw new Error(await response.text());
+        code = await response.text();
+      } catch (error) {
+        reportActionError('could not read the module source: ' + (error instanceof Error ? error.message : String(error)));
+        return;
+      }
+    }
+
+    // Same uniqueness walk duplicateToEmbedded does, so two embeds of one
+    // module do not collide on the second.
+    const base = `local.${name}`;
+    let modulePath = base;
+    let counter = 1;
+    while (resolver.exportConfig().embeddedModules[modulePath]) {
+      modulePath = `${base}${counter}`;
+      counter += 1;
+    }
+
+    const created = resolver.createEmbeddedModule(modulePath, code, 'user');
+    if (!activeGraph.retargetModule(node.id, created.modulePath, 'embedded', code)) {
+      reportActionError('could not point the node at the embedded copy');
+      return;
+    }
+    projectSource = null;
+    updateSourceInfo();
+    showCode(code);
+  }
+
   /** Embedded code lives inside the .cascade document, which makes it
    *  invisible to git, to an external editor and to the other graphs in the
    *  project. Extracting writes it to nodes/<Name>/index.ts and repoints the
@@ -702,6 +765,12 @@ export function execute(node, graph) {
       <button class="action-button" on:click={handleDuplicate} title="Duplicate to local.*">
         <Copy size={14} />
         Duplicate to local
+      </button>
+    {/if}
+    {#if canEmbed}
+      <button class="action-button" on:click={handleEmbed} title="Copy this module into the graph for a local edit">
+        <Copy size={14} />
+        Embed in Graph
       </button>
     {/if}
     {#if canExtract}
