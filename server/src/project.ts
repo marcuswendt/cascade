@@ -18,6 +18,9 @@ import fssync from 'fs';
 import path from 'path';
 import { resolveWithinRoot, PathSafetyError } from './pathSafety.js';
 import { ShellService } from './shell/service.js';
+import ts from 'typescript';
+import { extractNodeDefinition } from '@cascade/runtime/definition/extract';
+import type { NodeDefinition } from '@cascade/contracts';
 
 export { PathSafetyError };
 
@@ -199,13 +202,23 @@ export class ProjectRoot {
     } catch {
       return 'browser';
     }
+    // A definition-v1 node states its environment inside the `definition`
+    // literal, where `export const runsOn` never appears. Reading only the
+    // legacy form classified every such node as 'browser' — so the deliberate,
+    // preferred node style was the one the server got wrong.
+    const fromDefinition = this.definitionOf(moduleName, source);
+    if (fromDefinition?.runsOn) return fromDefinition.runsOn;
+
     const declared = source.match(/export\s+const\s+runsOn\s*[:=][^'"`]*['"`](portable|server|browser)['"`]/);
     const importsShell = /(?:from\s+|import\s*(?:\(\s*)?|require\s*\(\s*)['"`]cascade\/shell['"`]/.test(source);
     if (importsShell && declared && declared[1] !== 'server') {
       throw new Error(`Node module "${moduleName}" imports cascade/shell but declares runsOn = '${declared?.[1]}'; shell nodes must run on the server`);
     }
     if (declared) return declared[1] as 'portable' | 'server' | 'browser';
-    return /\/api\/exec|runStage\s*\(/.test(source) || importsShell ? 'server' : 'browser';
+    // `runStage<{ path: string }>(...)` is the idiomatic call and the old
+    // pattern could not see past the type argument, so a Python-backed node
+    // written the normal way fell through to 'browser'.
+    return /\/api\/exec|runStage\s*(?:<[^>]*>)?\s*\(/.test(source) || importsShell ? 'server' : 'browser';
   }
 
   /**
@@ -219,7 +232,29 @@ export class ProjectRoot {
   async moduleIcon(moduleName: string): Promise<string | null> {
     try {
       const source = await this.readNodeModuleFile(moduleName);
-      return source.match(/export\s+const\s+icon\s*[:=][^'"`]*['"`]([A-Za-z0-9]+)['"`]/)?.[1] ?? null;
+      // Same two spellings as runsOn: inside the definition, or the legacy export.
+      return (
+        this.definitionOf(moduleName, source)?.icon ??
+        source.match(/export\s+const\s+icon\s*[:=][^'"`]*['"`]([A-Za-z0-9]+)['"`]/)?.[1] ??
+        null
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A node module's definition-v1 `definition`, read statically.
+   *
+   * Static on purpose: classification happens before compilation, so the module
+   * cannot be imported to be asked. `extractNodeDefinition` walks the AST, which
+   * is the same thing `cascade check` does, so Studio and the CLI agree.
+   * Returns null for a legacy dynamic module, which has no definition to find.
+   */
+  private definitionOf(moduleName: string, source: string): NodeDefinition | null {
+    try {
+      const result = extractNodeDefinition(source, `nodes/${moduleName}/index.ts`, ts);
+      return result.ok ? result.definition : null;
     } catch {
       return null;
     }
