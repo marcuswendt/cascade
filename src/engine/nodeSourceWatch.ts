@@ -8,6 +8,7 @@
  * watches the files; this consumes what it reports.
  */
 import { invalidateProjectModule } from './nodeModuleLoader.js';
+import { invalidateDefinitionFacts } from '../editor/panels/nodeDefinitionFacts.js';
 
 /** Matches the server's sentinel for a change it cannot attribute to one module. */
 const ALL_MODULES = '*';
@@ -45,12 +46,22 @@ export function watchNodeSources(options: NodeSourceWatchOptions): () => void {
       ? nodes.filter(node => node.modulePath?.startsWith('project.'))
       : nodes.filter(node => node.modulePath === `project.${moduleName}`);
 
+    // Two caches, one edit. The compiled bundle is what runs; the definition
+    // facts are what the Definition panel reads about where a node comes from
+    // and what it declares. Invalidating only the first left the panel showing
+    // the previous definition's ports after an edit, which is the kind of stale
+    // read that gets believed.
     if (moduleName === ALL_MODULES) {
-      for (const node of affected) invalidateProjectModule(node.modulePath!.slice('project.'.length));
+      for (const node of affected) {
+        const folder = node.modulePath!.slice('project.'.length);
+        invalidateProjectModule(folder);
+        invalidateDefinitionFacts(folder);
+      }
     } else {
       // Invalidate even with nothing on the canvas using it, so dropping the
       // node in afterwards does not resurrect the stale bundle.
       invalidateProjectModule(moduleName);
+      invalidateDefinitionFacts(moduleName);
     }
 
     for (const node of affected) node.markDirty();

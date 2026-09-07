@@ -60,13 +60,13 @@
       if (displayNodes.length > 1) {
         // A list of ids would not fit the tab, and the count is the thing that
         // actually changed.
-        panelApi.setTitle(`${lockPrefix}Inspector: ${displayNodes.length} nodes`);
+        panelApi.setTitle(`${lockPrefix}Parameters: ${displayNodes.length} nodes`);
       } else if (displayNodes.length === 1) {
-        panelApi.setTitle(`${lockPrefix}Inspector: ${displayNodes[0].id}`);
+        panelApi.setTitle(`${lockPrefix}Parameters: ${displayNodes[0].id}`);
       } else if (annotation) {
-        panelApi.setTitle(`${lockPrefix}Inspector: ${annotation.type}`);
+        panelApi.setTitle(`${lockPrefix}Parameters: ${annotation.type}`);
       } else {
-        panelApi.setTitle(`${lockPrefix}Inspector`);
+        panelApi.setTitle(`${lockPrefix}Parameters`);
       }
     }
   }

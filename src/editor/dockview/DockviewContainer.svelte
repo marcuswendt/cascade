@@ -16,6 +16,7 @@
   // they don't)". It (and CodeEditor.svelte, and monaco-editor itself)
   // are only fetched the first time a 'code' panel is actually created —
   // see registerLazyPanelComponent below and renderer.ts's own note.
+  import DefinitionPanel from '../panels/DefinitionPanel.svelte';
   import CookInfoPanel from '../panels/CookInfoPanel.svelte';
   import ProjectPanelHost from '../panels/ProjectPanelHost.svelte';
   import { discoverProjectPanels } from '../projectPanels';
@@ -179,7 +180,12 @@
   onMount(async () => {
     // Register all panel components
     registerPanelComponent('graph', GraphPanel, 'Graph');
-    registerPanelComponent('inspector', InspectorPanel, 'Inspector');
+    // The component name stays 'inspector' — it is written into every saved
+    // dockview layout and into the layout a .cascade file carries, so renaming
+    // it would silently drop the panel from existing documents. Only the title
+    // is the reader-facing half, and that is what changed.
+    registerPanelComponent('inspector', InspectorPanel, 'Parameters');
+    registerPanelComponent('definition', DefinitionPanel, 'Definition');
     registerPanelComponent('viewer', ViewerPanel, 'Viewer');
     registerPanelComponent('log', LogPanel, 'Log');
     registerLazyPanelComponent('code', () => import('../panels/CodePanel.svelte'), 'Code');

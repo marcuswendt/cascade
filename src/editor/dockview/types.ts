@@ -6,7 +6,7 @@ import type {
 import type { Graph } from '@/nodes/Graph';
 import type { Node } from '@/nodes/Node';
 
-export type BuiltInPanelType = 'graph' | 'inspector' | 'viewer' | 'log' | 'code' | 'info';
+export type BuiltInPanelType = 'graph' | 'inspector' | 'definition' | 'viewer' | 'log' | 'code' | 'info';
 export type ProjectPanelType = `project:${string}`;
 export type PanelType = BuiltInPanelType | ProjectPanelType;
 
@@ -16,7 +16,7 @@ export interface CascadePanelParams {
   type: PanelType;
   title: string;
   // Panel-specific params
-  nodeId?: string;      // For inspector/code panels
+  nodeId?: string;      // For inspector/definition/code panels
   graphId?: string;     // For graph panels
   projectPanelName?: string;
   sourceNodeId?: string;

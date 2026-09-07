@@ -3,7 +3,6 @@
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
   import { sharedContextStore, panelLockStore } from '../dockview/renderer';
-  import { typeToPackagePath } from '@/utils/nodeTypeUtils';
   import { ImageNodeBase } from '@/nodes/image/ImageNodeBase';
 
   export let panelId: string;
@@ -59,11 +58,6 @@
     if (timestamp === 0) return 'Never';
     const date = new Date(timestamp);
     return date.toLocaleTimeString();
-  }
-
-  // Get full module path
-  function getModulePath(node: Node): string {
-    return typeToPackagePath(node.type);
   }
 
   // Get class name
@@ -159,10 +153,6 @@
           <div class="info-row">
             <span class="label">Type</span>
             <span class="value mono">{displayNode.type}</span>
-          </div>
-          <div class="info-row">
-            <span class="label">Module</span>
-            <span class="value mono path">{getModulePath(displayNode)}</span>
           </div>
           <div class="info-row">
             <span class="label">Class</span>

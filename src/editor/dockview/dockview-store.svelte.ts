@@ -45,7 +45,8 @@ export function groupResizeAxis(grid: SerializedDockview['grid'], groupId: strin
 export const BUILT_IN_PANEL_TYPES: { type: PanelType; label: string; icon: string }[] = [
   { type: 'graph', label: 'Graph', icon: '⬡' },
   { type: 'viewer', label: 'Viewer', icon: '👁' },
-  { type: 'inspector', label: 'Inspector', icon: '⚙' },
+  { type: 'inspector', label: 'Parameters', icon: '⚙' },
+  { type: 'definition', label: 'Definition', icon: '❖' },
   { type: 'info', label: 'Node Info', icon: 'ℹ' },
   { type: 'log', label: 'Log', icon: '📋' },
 ];
@@ -632,9 +633,17 @@ class DockviewStore {
       this._api.addPanel({
         id: 'inspector-main',
         component: 'inspector',
-        title: 'Inspector',
+        title: 'Parameters',
         position: { referencePanel: 'viewer-main', direction: 'right' },
-        params: { id: 'inspector-main', type: 'inspector', title: 'Inspector' }
+        params: { id: 'inspector-main', type: 'inspector', title: 'Parameters' }
+      });
+
+      this._api.addPanel({
+        id: 'definition-main',
+        component: 'definition',
+        title: 'Definition',
+        position: { referencePanel: 'inspector-main', direction: 'within' },
+        params: { id: 'definition-main', type: 'definition', title: 'Definition' }
       });
     } catch (error) {
       console.error('Failed to create default panels:', error);
@@ -695,11 +704,11 @@ class DockviewStore {
               ],
               size: 250
             },
-            // Right column: Inspector (25%)
+            // Right column: Parameters (25%)
             {
               type: 'leaf',
               data: {
-                views: ['inspector-main'],
+                views: ['inspector-main', 'definition-main'],
                 activeView: 'inspector-main',
                 id: 'group-inspector'
               },
@@ -735,11 +744,21 @@ class DockviewStore {
         'inspector-main': {
           id: 'inspector-main',
           contentComponent: 'inspector',
-          title: 'Inspector',
+          title: 'Parameters',
           params: {
             id: 'inspector-main',
             type: 'inspector',
-            title: 'Inspector'
+            title: 'Parameters'
+          }
+        },
+        'definition-main': {
+          id: 'definition-main',
+          contentComponent: 'definition',
+          title: 'Definition',
+          params: {
+            id: 'definition-main',
+            type: 'definition',
+            title: 'Definition'
           }
         },
         'log-main': {
