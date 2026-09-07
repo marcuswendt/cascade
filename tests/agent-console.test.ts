@@ -265,8 +265,22 @@ describe('transcript rendering', () => {
   });
 
   it('never silently swallows a line it does not recognise', () => {
+    // The principle is unchanged and is the point of the test: nothing the
+    // stream emits disappears. What changed on 2026-09-07 is where it goes.
+    //
+    // Text that did not parse stays `raw` and visible, because that is where a
+    // real error message arrives. Parsed JSON carrying a type we do not render
+    // — rate_limit_event, and whatever the format grows next — becomes
+    // `detail`: still returned, still in the transcript, but behind a toggle,
+    // because a wall of bookkeeping between the parts that are a conversation
+    // is what made Marcus ask for it to be hidden.
     expect(describeStreamLine('warning: something happened')).toEqual({ kind: 'raw', text: 'warning: something happened' });
-    expect(describeStreamLine('{"type":"unheard-of"}')?.kind).toBe('raw');
+    expect(describeStreamLine('{"type":"unheard-of"}')?.kind).toBe('detail');
+    expect(describeStreamLine('{"type":"rate_limit_event","rate_limit_info":{}}')?.kind).toBe('detail');
+    // Not swallowed: the text survives in full for whoever opens the toggle.
+    expect(describeStreamLine('{"type":"rate_limit_event"}')?.text).toBe('{"type":"rate_limit_event"}');
+    // A JSON object with no type at all is not bookkeeping, so it stays visible.
+    expect(describeStreamLine('{"unexpected":true}')?.kind).toBe('raw');
     expect(describeStreamLine('   ')).toBeNull();
   });
 });

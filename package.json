@@ -28,6 +28,7 @@
     "AGENTS.md",
     "ARCHITECTURE.md",
     "DESIGN.md",
+    "doc/NODE_REFERENCE.md",
     "doc/PROJECT_AUTHORING.md",
     "README.md",
     "LICENSE"
@@ -100,14 +101,15 @@
     "build:packages": "npm run build --workspace @cascade/contracts && npm run build --workspace @cascade/runtime && node scripts/copy-package-builds.mjs",
     "check:packages": "npm run check --workspace @cascade/contracts && npm run build --workspace @cascade/contracts && npm run check --workspace @cascade/runtime",
     "test:packages": "npm run test --workspace @cascade/contracts && npm run test --workspace @cascade/runtime",
-    "build:cli": "npm run build:packages && node scripts/build-cli.mjs",
+    "build:cli": "npm run build:packages && node scripts/build-cli.mjs && npm run build:node-reference",
     "prepack": "npm run build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:package": "node scripts/smoke-package.mjs"
+    "test:package": "node scripts/smoke-package.mjs",
+    "build:node-reference": "tsx scripts/build-node-reference.mjs"
   },
   "dependencies": {
     "esbuild": "^0.28.2",

@@ -3096,18 +3096,35 @@ node.onReady = () => {
       return;
     }
 
-    // Check if there's a node at this position (with tolerance)
-    const tolerance = 50; // pixels
-    const nodeAtPosition = graph.nodes.find(node => {
+    // Place a new node *below* the selected one, aligned to it.
+    //
+    // Marcus, 2026-09-07: "make these graphs naturally flow better visually."
+    // Cascade graphs read top to bottom — a source at the top, a render at the
+    // bottom — so the next node almost always belongs under the current one,
+    // and the old diagonal nudge left a staircase to tidy up by hand.
+    // Left-aligned rather than centred, because a column of aligned nodes is
+    // what makes the flow legible.
+    const BELOW_GAP = 90;
+    const anchor = previouslySelectedNodeIds.length === 1
+      ? graph.getNode(previouslySelectedNodeIds[0])
+      : null;
+
+    if (anchor) {
+      centerX = anchor.position.x;
+      centerY = anchor.position.y + BELOW_GAP;
+    }
+
+    // Whatever the starting point, do not stack two nodes on the same spot:
+    // step down until the slot is clear rather than sideways.
+    const tolerance = 50;
+    let guard = 0;
+    while (guard < 64 && graph.nodes.some(node => {
       const dx = Math.abs(node.position.x - centerX);
       const dy = Math.abs(node.position.y - centerY);
       return dx < tolerance && dy < tolerance;
-    });
-
-    // If there's a node at this position, offset the new node to bottom right
-    if (nodeAtPosition) {
-      centerX += 50; // Offset to the right (1/3 of 150)
-      centerY += 33; // Offset downward (1/3 of 100)
+    })) {
+      centerY += BELOW_GAP;
+      guard += 1;
     }
 
     const newNode = graph.addNode(nodeType, { x: centerX, y: centerY });

@@ -140,7 +140,7 @@ function emit(line: string, onEvent: (event: AgentEvent) => void): void {
  * being dropped, because a silently swallowed line is how you end up trusting
  * an empty transcript.
  */
-export function describeStreamLine(line: string): { kind: 'text' | 'tool' | 'result' | 'raw'; text: string } | null {
+export function describeStreamLine(line: string): { kind: 'text' | 'tool' | 'result' | 'raw' | 'detail'; text: string } | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
   if (!trimmed.startsWith('{')) return { kind: 'raw', text: trimmed };
@@ -169,6 +169,13 @@ export function describeStreamLine(line: string): { kind: 'text' | 'tool' | 'res
     const text = typeof value.result === 'string' && value.result.trim() ? value.result.trim() : null;
     return text ? { kind: 'result', text } : null;
   }
+
+  // Parsed JSON carrying a type we do not render — rate_limit_event and
+  // whatever the stream format grows next. Not swallowed, because a line the
+  // console silently drops is one nobody can debug; classified as detail so the
+  // panel can keep it behind a toggle. Anything that did *not* parse stays
+  // `raw` and visible, since that is where a real error message would arrive.
+  if (typeof value?.type === 'string') return { kind: 'detail', text: trimmed };
 
   return { kind: 'raw', text: trimmed };
 }

@@ -63,6 +63,10 @@ export function createProject(projectsRoot: string, name: string): string {
 
 Read \`node_modules/cascade/AGENTS.md\` for the framework itself. What follows is what an agent working in *this* project needs.
 
+## Read this first
+
+\`node_modules/cascade/doc/NODE_REFERENCE.md\` — every built-in node with its inputs, props and outputs, generated from the definitions themselves. Under 2,500 tokens for the whole catalogue. **Read it instead of searching the codebase for what a node does**, and note before you start that anything time-based is an expression rather than a node.
+
 ## Common commands
 
 - \`npm run check\` — type-check custom nodes.

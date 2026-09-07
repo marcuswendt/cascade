@@ -29,7 +29,7 @@
   export let panelApi: any = null;
   export let containerApi: any = null;
 
-  type EntryKind = 'you' | 'agent' | 'tool' | 'result' | 'system' | 'error';
+  type EntryKind = 'you' | 'agent' | 'tool' | 'result' | 'system' | 'error' | 'detail';
   interface Entry {
     kind: EntryKind;
     text: string;
@@ -40,6 +40,11 @@
   let agent = 'claude';
   let prompt = '';
   let entries: Entry[] = [];
+  /** Stream bookkeeping — rate_limit_event and anything else the format grows.
+   *  Kept rather than dropped, because a line the console silently discards is
+   *  one nobody can debug, but hidden by default: it is noise between the parts
+   *  of the transcript that are actually a conversation. */
+  let showDetail = false;
   let busy = false;
   let availability: AgentAvailability[] = [];
   let projectRoot = '';
@@ -85,6 +90,9 @@
     entries = [...entries, { kind, text }];
     void scrollToEnd();
   }
+
+  $: detailCount = entries.filter((entry) => entry.kind === 'detail').length;
+  $: visibleEntries = showDetail ? entries : entries.filter((entry) => entry.kind !== 'detail');
 
   async function scrollToEnd(): Promise<void> {
     await tick();
@@ -268,9 +276,14 @@
     {#if entries.length === 0}
       <div class="hint">Type what the sketch should become — "create an oscillator and connect it to ORB". The agent edits the project's files; the graph window reloads when they change. Drag a node or parameter in to paste its address.</div>
     {/if}
-    {#each entries as entry, index (index)}
+    {#each visibleEntries as entry, index (index)}
       <div class="entry {entry.kind}">{entry.text}</div>
     {/each}
+    {#if detailCount > 0}
+      <button class="detail-toggle" on:click={() => (showDetail = !showDetail)}>
+        {showDetail ? 'Hide' : 'Show'} {detailCount} stream {detailCount === 1 ? 'event' : 'events'}
+      </button>
+    {/if}
   </div>
 
   <div class="composer">
@@ -404,8 +417,31 @@
     color: var(--text-faint);
   }
 
+  .entry.detail {
+    color: var(--text-faint);
+    font-size: 0.9em;
+  }
+
   .entry.error {
     color: var(--status-error);
+  }
+
+  .detail-toggle {
+    align-self: flex-start;
+    margin-top: 0.25rem;
+    padding: 0.1rem 0.4rem;
+    border: 1px solid var(--border-faint);
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-faint);
+    font: inherit;
+    font-size: 0.85em;
+    cursor: pointer;
+  }
+
+  .detail-toggle:hover {
+    color: var(--text-secondary);
+    border-color: var(--border-divider);
   }
 
   .composer {
