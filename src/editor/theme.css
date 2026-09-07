@@ -170,9 +170,9 @@
 }
 
 @media (prefers-color-scheme: light) {
-  --node-tint-strength: 26%;
   :root:not([data-theme='dark']) {
     color-scheme: light;
+    --node-tint-strength: 26%;
 
     /* Surfaces */
     --surface-void: #eef0f2;
