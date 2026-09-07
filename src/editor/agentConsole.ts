@@ -5,9 +5,14 @@
  * same origin, then send the token on every call. Streaming is a POST reading
  * NDJSON off the response body rather than an EventSource, because EventSource
  * cannot set that header and the endpoint must not be reachable without it.
+ *
+ * Two calls stream: `sendAgentPrompt` starts a run, `attachAgentSession` joins
+ * one already going. They read the identical event shape, which is what lets a
+ * reloaded panel resume a transcript without a second code path.
  */
 
 export type AgentEvent =
+  | { type: 'attached'; agent: string; sketch: string; running: boolean; sessionId: string | null; dropped: number; replayed: number; since: number }
   | { type: 'started'; agent: string; sketch: string; resumed: boolean }
   | { type: 'stdout'; text: string }
   | { type: 'stderr'; text: string }
@@ -22,9 +27,22 @@ export interface AgentAvailability {
   hint: string | null;
 }
 
+export interface AgentSessionSummary {
+  agent: string;
+  sketch: string;
+  running: boolean;
+  sessionId: string | null;
+  startedAt: number;
+  endedAt: number | null;
+  buffered: number;
+  dropped: number;
+  nextSeq: number;
+}
+
 export interface AgentStatus {
   root: string;
   agents: AgentAvailability[];
+  sessions: AgentSessionSummary[];
 }
 
 export class AgentUnavailableError extends Error {
@@ -63,11 +81,29 @@ async function call(path: string, init: RequestInit): Promise<Response> {
   return response;
 }
 
-export async function agentStatus(): Promise<AgentStatus> {
-  const response = await call('/api/agent/status', { method: 'GET' });
+export async function agentStatus(sketch?: string): Promise<AgentStatus> {
+  const query = sketch ? `?sketch=${encodeURIComponent(sketch)}` : '';
+  const response = await call(`/api/agent/status${query}`, { method: 'GET' });
   if (!response.ok) throw new AgentUnavailableError(`Could not read agent status (${response.status})`);
   const body = await response.json();
-  return { root: String(body?.root ?? ''), agents: Array.isArray(body?.agents) ? body.agents : [] };
+  return {
+    root: String(body?.root ?? ''),
+    agents: Array.isArray(body?.agents) ? body.agents : [],
+    sessions: Array.isArray(body?.sessions) ? body.sessions : [],
+  };
+}
+
+/** Stop a run. Since a closing socket no longer kills the agent, this is the
+ *  only thing that does. */
+export async function cancelAgentSession(agent: string, sketch: string): Promise<boolean> {
+  const response = await call('/api/agent/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agent, sketch }),
+  });
+  if (!response.ok) return false;
+  const body = await response.json().catch(() => null);
+  return body?.cancelled === true;
 }
 
 export async function resetAgentSession(agent: string, sketch: string): Promise<void> {
@@ -76,6 +112,36 @@ export async function resetAgentSession(agent: string, sketch: string): Promise<
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ agent, sketch }),
   });
+}
+
+export interface AttachOptions {
+  agent: string;
+  sketch: string;
+  onEvent: (event: AgentEvent) => void;
+  signal?: AbortSignal;
+  /** Resume point. 0 — the default — replays everything the server still holds. */
+  since?: number;
+}
+
+/**
+ * Reconnect to whatever is running for this sketch.
+ *
+ * Always resolves, never throws for "nothing is running": the stream's first
+ * event is `attached` and its `running` flag is the answer. Resolves when the
+ * run ends or the caller aborts.
+ */
+export async function attachAgentSession(options: AttachOptions): Promise<void> {
+  const response = await call('/api/agent/attach', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agent: options.agent, sketch: options.sketch, since: options.since ?? 0 }),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new AgentUnavailableError(String(body?.error ?? `Could not reconnect to the agent (${response.status})`));
+  }
+  await readNdjson(response, options.onEvent);
 }
 
 export interface SendPromptOptions {
@@ -106,8 +172,11 @@ export async function sendAgentPrompt(options: SendPromptOptions): Promise<void>
       body?.code ?? null,
     );
   }
-  if (!response.body) throw new AgentUnavailableError('Agent produced no stream');
+  await readNdjson(response, options.onEvent);
+}
 
+async function readNdjson(response: Response, onEvent: (event: AgentEvent) => void): Promise<void> {
+  if (!response.body) throw new AgentUnavailableError('Agent produced no stream');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let carry = '';
@@ -117,9 +186,9 @@ export async function sendAgentPrompt(options: SendPromptOptions): Promise<void>
     carry += decoder.decode(value, { stream: true });
     const lines = carry.split('\n');
     carry = lines.pop() ?? '';
-    for (const line of lines) emit(line, options.onEvent);
+    for (const line of lines) emit(line, onEvent);
   }
-  emit(carry, options.onEvent);
+  emit(carry, onEvent);
 }
 
 function emit(line: string, onEvent: (event: AgentEvent) => void): void {

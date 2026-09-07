@@ -11,16 +11,28 @@
    * the loss would be silent. And nothing is launched that is not in the
    * project's own `cascade.json` allowlist; when it is missing, the panel prints
    * exactly the line to add rather than a permission error.
+   *
+   * And it **reconnects rather than stranding**. The agent is a detached child
+   * of the Studio server, so a browser reload never ended it — it only ever
+   * lost sight of it, leaving a Claude editing the project with nobody reading
+   * its output. On mount the panel asks the server what is happening for this
+   * sketch, replays the buffered transcript, and rejoins the live stream if
+   * there is one. When there is nothing running it says so, which is the other
+   * half of the same fix: a console that looks identical whether it is idle or
+   * broken is what made a stranded agent invisible in the first place.
    */
   import { onDestroy, onMount, tick } from 'svelte';
   import type { CascadePanelParams } from '../dockview/types';
   import {
     agentStatus,
+    attachAgentSession,
+    cancelAgentSession,
     describeStreamLine,
     resetAgentSession,
     sendAgentPrompt,
     AgentUnavailableError,
     type AgentAvailability,
+    type AgentEvent,
   } from '../agentConsole';
   import { studioDocument } from '../studioDocumentBridge';
 
@@ -51,18 +63,43 @@
   let statusError: string | null = null;
   let statusLoaded = false;
   let controller: AbortController | null = null;
+  /** The reader rejoining a run somebody else (or a previous page load)
+   *  started. Separate from `controller`, which belongs to a prompt this panel
+   *  sent, because aborting either must not touch the other. */
+  let attachController: AbortController | null = null;
+  let attachedTo: string | null = null;
+  let attachedAgent: string | null = null;
+  let live = false;
   let transcriptEl: HTMLDivElement | null = null;
   let inputEl: HTMLTextAreaElement | null = null;
   let dropActive = false;
 
   $: selected = availability.find(entry => entry.alias === agent) ?? null;
+  /** Busy is "this panel sent the prompt"; live is "an agent is running for
+   *  this sketch", which is also true after a reload or in a second window.
+   *  Everything the user can do is gated on the second one — a prompt sent
+   *  while a run is live would be refused with BUSY anyway. */
+  $: working = busy || live;
   $: launchable = !statusLoaded || Boolean(selected?.configured && selected?.resolved);
   // Polled rather than derived: the open document lives in App.svelte and a
   // panel has no reactive path to it, so the label would otherwise still name
   // the graph that was open when the panel was created.
   let sketch: string | null = studioDocument()?.file() ?? null;
   onMount(() => {
-    const timer = setInterval(() => { sketch = studioDocument()?.file() ?? null; }, 1000);
+    void reconnect(sketch);
+    const timer = setInterval(() => {
+      const current = studioDocument()?.file() ?? null;
+      if (current !== sketch) {
+        sketch = current;
+        void reconnect(current);
+      } else if (!busy && attachedAgent !== agent) {
+        // The selected agent changed — including the switch loadStatus makes
+        // when Claude is not the one this project allows.
+        void reconnect(current);
+      } else {
+        void watchForLiveRun();
+      }
+    }, 1000);
     return () => clearInterval(timer);
   });
 
@@ -70,7 +107,7 @@
 
   async function loadStatus(): Promise<void> {
     try {
-      const status = await agentStatus();
+      const status = await agentStatus(sketch ?? undefined);
       availability = status.agents;
       projectRoot = status.root;
       // Prefer whatever is actually runnable, still defaulting to Claude.
@@ -82,6 +119,98 @@
       statusError = error instanceof Error ? error.message : String(error);
     } finally {
       statusLoaded = true;
+    }
+  }
+
+  /**
+   * What one stream event does to the transcript. Shared by the prompt stream
+   * and the attach stream on purpose: a replayed line and a live one are the
+   * same event, so a reconnected transcript reads exactly like one that was
+   * never interrupted.
+   */
+  function handleEvent(event: AgentEvent): void {
+    if (event.type === 'attached') {
+      live = event.running;
+      if (event.dropped > 0) {
+        push('system', `${event.dropped} earlier ${event.dropped === 1 ? 'line' : 'lines'} were dropped from the server's buffer.`);
+      }
+      if (event.running) push('system', `Reconnected to the ${event.agent} session running for ${event.sketch}.`);
+      else if (event.replayed > 0) push('system', `Showing the last ${event.agent} run for ${event.sketch}. Nothing is running now.`);
+    } else if (event.type === 'started') {
+      live = true;
+      push('system', `${event.agent} ${event.resumed ? 'resumed' : 'started'} for ${event.sketch}`);
+    } else if (event.type === 'stdout') {
+      const described = describeStreamLine(event.text);
+      if (described) push(described.kind === 'raw' ? 'system' : described.kind === 'text' ? 'agent' : described.kind, described.text);
+    } else if (event.type === 'stderr') {
+      push('error', event.text.trimEnd());
+    } else if (event.type === 'exit') {
+      live = false;
+      if (event.cancelled) push('system', 'Stopped.');
+      else if (event.timedOut) push('error', 'The agent was still running after 15 minutes and was stopped.');
+      else if (event.code !== 0) push('error', `${agent} exited with code ${event.code}.`);
+    } else if (event.type === 'error') {
+      live = false;
+      push('error', event.message);
+    }
+  }
+
+  /**
+   * Join whatever the server has for this sketch: the buffered transcript of
+   * the last run, and the live stream if one is still going.
+   *
+   * Called on mount and whenever the open document changes. Never starts
+   * anything — attaching to nothing is a one-line answer and an idle console.
+   */
+  async function reconnect(file: string | null): Promise<void> {
+    attachController?.abort();
+    attachController = null;
+    attachedTo = file;
+    attachedAgent = agent;
+    live = false;
+    if (busy) return;
+    entries = [];
+    if (!file) return;
+
+    const controllerForAttach = new AbortController();
+    attachController = controllerForAttach;
+    try {
+      await attachAgentSession({
+        agent,
+        sketch: file,
+        onEvent: (event) => {
+          // A document switched during the round trip must not paint the old
+          // sketch's transcript over the new one.
+          if (attachedTo !== file) return;
+          handleEvent(event);
+        },
+      signal: controllerForAttach.signal,
+      });
+    } catch (error) {
+      if ((error as Error)?.name !== 'AbortError') {
+        push('error', error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      if (attachController === controllerForAttach) attachController = null;
+      live = false;
+    }
+  }
+
+  /**
+   * Pick up a run this panel did not start — a second window on the same
+   * sketch, or one launched before this page loaded. Cheap status poll rather
+   * than a held-open request, so an idle console costs one small GET a second
+   * and never a process.
+   */
+  async function watchForLiveRun(): Promise<void> {
+    if (busy || live || attachController || !sketch || statusError) return;
+    try {
+      const status = await agentStatus(sketch);
+      const running = status.sessions.find((entry) => entry.sketch === sketch && entry.agent === agent && entry.running);
+      if (running && !busy && !attachController) await reconnect(sketch);
+    } catch {
+      // A transient status failure is not worth a line in the transcript; the
+      // next tick tries again.
     }
   }
 
@@ -144,6 +273,11 @@
     const file = await saveFirst();
     if (!file) return;
 
+    // This panel becomes the run's reader through the prompt stream, so any
+    // attach reader it is holding would double every line.
+    attachController?.abort();
+    attachController = null;
+
     push('you', text);
     prompt = '';
     void tick().then(autoGrow);
@@ -156,22 +290,7 @@
         sketch: file,
         prompt: text,
         signal: controller.signal,
-        onEvent: (event) => {
-          if (event.type === 'started') {
-            push('system', `${agent} ${event.resumed ? 'resumed' : 'started'} for ${event.sketch}`);
-          } else if (event.type === 'stdout') {
-            const described = describeStreamLine(event.text);
-            if (described) push(described.kind === 'raw' ? 'system' : described.kind === 'text' ? 'agent' : described.kind, described.text);
-          } else if (event.type === 'stderr') {
-            push('error', event.text.trimEnd());
-          } else if (event.type === 'exit') {
-            if (event.cancelled) push('system', 'Stopped.');
-            else if (event.timedOut) push('error', 'The agent was still running after 15 minutes and was stopped.');
-            else if (event.code !== 0) push('error', `${agent} exited with code ${event.code}.`);
-          } else if (event.type === 'error') {
-            push('error', event.message);
-          }
-        },
+        onEvent: handleEvent,
       });
     } catch (error) {
       if (error instanceof AgentUnavailableError) {
@@ -185,17 +304,31 @@
     } finally {
       busy = false;
       controller = null;
+      live = false;
     }
   }
 
-  function stop(): void {
+  /**
+   * Stop means stop the agent, not stop watching it.
+   *
+   * Aborting the request alone used to be enough because a closing socket
+   * killed the child. It no longer does — that is what makes a reload
+   * survivable — so the kill has to be asked for.
+   */
+  async function stop(): Promise<void> {
+    const file = sketch ?? studioDocument()?.file() ?? null;
+    if (file) await cancelAgentSession(agent, file);
     controller?.abort();
+    attachController?.abort();
   }
 
   async function newSession(): Promise<void> {
     const file = studioDocument()?.file();
+    attachController?.abort();
+    attachController = null;
     if (file) await resetAgentSession(agent, file);
     entries = [];
+    live = false;
     push('system', `New ${agent} session for ${file ?? 'this sketch'}.`);
   }
 
@@ -245,7 +378,12 @@
     });
   }
 
-  onDestroy(() => controller?.abort());
+  // Detaching both readers. Neither stops the agent, which is the point: this
+  // panel closing is not a reason to abandon a run mid-edit.
+  onDestroy(() => {
+    controller?.abort();
+    attachController?.abort();
+  });
 </script>
 
 <div
@@ -258,14 +396,15 @@
   aria-label="Agent console"
 >
   <div class="bar">
-    <select bind:value={agent} disabled={busy} aria-label="Agent">
+    <select bind:value={agent} disabled={working} aria-label="Agent">
       {#each AGENTS as alias}
         <option value={alias}>{alias}</option>
       {/each}
     </select>
     <span class="sketch" title={sketch ?? 'no project file'}>{sketch ?? 'no project file'}</span>
     <span class="spacer"></span>
-    {#if busy}
+    {#if working}
+      <span class="running" title="An agent is running for this sketch">running</span>
       <button type="button" on:click={stop}>Stop</button>
     {:else}
       <button type="button" on:click={newSession} title="Forget the conversation for this sketch">Reset</button>
@@ -285,7 +424,13 @@
 
   <div class="transcript" bind:this={transcriptEl}>
     {#if entries.length === 0}
-      <div class="hint">Say what the sketch should become. Drag a node in for its path.</div>
+      <div class="hint">
+        {#if !sketch}
+          No project file is open, so there is nothing for an agent to edit.
+        {:else}
+          No {agent} session is running for {sketch}. Say what the sketch should become. Drag a node in for its path.
+        {/if}
+      </div>
     {/if}
     {#each visibleEntries as entry, index (index)}
       <div class="entry {entry.kind}">{entry.text}</div>
@@ -305,10 +450,10 @@
       on:input={autoGrow}
       rows="2"
       spellcheck="false"
-      placeholder={busy ? `${agent} is working…` : 'Prompt the sketch'}
-      disabled={busy}
+      placeholder={working ? `${agent} is working…` : 'Prompt the sketch'}
+      disabled={working}
     ></textarea>
-    <button type="button" class="send" on:click={send} disabled={busy || !prompt.trim() || !launchable}>Send</button>
+    <button type="button" class="send" on:click={send} disabled={working || !prompt.trim() || !launchable}>Send</button>
   </div>
 </div>
 
@@ -359,6 +504,10 @@
   .send:disabled {
     color: var(--text-disabled);
     cursor: default;
+  }
+
+  .running {
+    color: var(--accent);
   }
 
   .sketch {

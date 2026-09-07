@@ -5,7 +5,10 @@ import path from 'node:path';
 import { ProjectRoot } from '../server/src/project.js';
 import { createGraphWatcher, graphFileFor } from '../server/src/graphWatch.js';
 import { agentAvailability, agentExtraArgs, allowlistHint, resolveExecutable } from '../server/src/agent/allowlist.js';
-import { argsFor, childEnvironment, claudeArgs, codexArgs, sessionIdFrom } from '../server/src/agent/session.js';
+import type { Server } from 'node:http';
+import { argsFor, childEnvironment, claudeArgs, codexArgs, reapAgentChildren, sessionIdFrom, type AgentEvent } from '../server/src/agent/session.js';
+import { AgentEventBuffer } from '../server/src/agent/eventBuffer.js';
+import { startServer } from '../server/src/index.js';
 import { documentFingerprint } from '../src/editor/graphDocumentWatch.js';
 import { describeStreamLine } from '../src/editor/agentConsole.js';
 
@@ -283,4 +286,225 @@ describe('transcript rendering', () => {
     expect(describeStreamLine('{"unexpected":true}')?.kind).toBe('raw');
     expect(describeStreamLine('   ')).toBeNull();
   });
+});
+
+describe('agent event buffer', () => {
+  it('keeps the newest events and reports what it evicted', () => {
+    const buffer = new AgentEventBuffer<AgentEvent>(3, 1_000_000);
+    for (let i = 0; i < 10; i += 1) buffer.push({ type: 'stdout', text: `line ${i}` });
+
+    expect(buffer.size).toBe(3);
+    expect(buffer.droppedTotal).toBe(7);
+    const replay = buffer.replay(0);
+    expect(replay.events.map((event) => (event as { text: string }).text)).toEqual(['line 7', 'line 8', 'line 9']);
+    // A reader asking from the top is told the seven lines it can never have.
+    expect(replay.dropped).toBe(7);
+    expect(replay.nextSeq).toBe(10);
+  });
+
+  it('bounds on bytes as well as on count, so one huge line cannot outgrow the cap', () => {
+    const buffer = new AgentEventBuffer<AgentEvent>(1_000, 4_000);
+    for (let i = 0; i < 20; i += 1) buffer.push({ type: 'stdout', text: 'x'.repeat(1_000) });
+
+    expect(buffer.size).toBeLessThanOrEqual(4);
+    expect(buffer.droppedTotal).toBeGreaterThan(15);
+  });
+
+  it('replays only what a reconnecting reader has not seen', () => {
+    const buffer = new AgentEventBuffer<AgentEvent>();
+    for (let i = 0; i < 5; i += 1) buffer.push({ type: 'stdout', text: `line ${i}` });
+
+    const replay = buffer.replay(3);
+    expect(replay.events.map((event) => (event as { text: string }).text)).toEqual(['line 3', 'line 4']);
+    expect(replay.dropped).toBe(0);
+  });
+
+  it('never evicts its only event', () => {
+    const buffer = new AgentEventBuffer<AgentEvent>(1, 1);
+    buffer.push({ type: 'stdout', text: 'x'.repeat(10_000) });
+    expect(buffer.size).toBe(1);
+  });
+});
+
+/**
+ * The reconnect, end to end against a fake agent rather than the real `claude`.
+ *
+ * `fake-agent.sh` emits stream-json lines a few hundred milliseconds apart, so
+ * the test can hang up in the middle of a run the way a browser reload does and
+ * then prove three separate things: the process was not killed, the lines it
+ * produced while nobody was listening were kept, and attaching to it is not
+ * refused as BUSY.
+ */
+describe('/api/agent reconnect', () => {
+  const servers: Server[] = [];
+  let nextPort = 34_000 + (process.pid % 6_000);
+
+  afterEach(async () => {
+    await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+    reapAgentChildren();
+  });
+
+  async function fixture(lines = 6, gapSeconds = '0.25') {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-agent-attach-'));
+    roots.push(root);
+    fs.writeFileSync(path.join(root, 'index.cascade'), '{"nodes":[]}');
+    const script = path.join(root, 'fake-agent.sh');
+    fs.writeFileSync(script, [
+      '#!/bin/sh',
+      'echo \'{"type":"system","subtype":"init","session_id":"fake-session-1"}\'',
+      `i=1; while [ $i -le ${lines} ]; do`,
+      `  sleep ${gapSeconds}`,
+      '  echo "{\\"type\\":\\"assistant\\",\\"message\\":{\\"content\\":[{\\"type\\":\\"text\\",\\"text\\":\\"step $i\\"}]}}"',
+      '  i=$((i+1))',
+      'done',
+      'echo \'{"type":"result","session_id":"fake-session-1","result":"done"}\'',
+      '',
+    ].join('\n'));
+    fs.chmodSync(script, 0o755);
+    fs.writeFileSync(path.join(root, 'cascade.json'), JSON.stringify({ commands: { claude: script }, agents: { claude: { args: [] } } }));
+
+    const project = new ProjectRoot(root);
+    const port = nextPort++;
+    const server = startServer(project, { port });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('missing address');
+    const base = `http://127.0.0.1:${address.port}`;
+    const headers = { Origin: base, Host: `127.0.0.1:${address.port}` };
+    const { capability } = await (await fetch(`${base}/api/agent/capability`, { headers })).json() as { capability: string };
+    const post = (route: string, body: unknown, signal?: AbortSignal) => fetch(`${base}/api/agent/${route}`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json', 'X-Cascade-Agent-Capability': capability },
+      body: JSON.stringify(body),
+      signal,
+    });
+    const status = async (sketch?: string) => (await fetch(
+      `${base}/api/agent/status${sketch ? `?sketch=${encodeURIComponent(sketch)}` : ''}`,
+      { headers: { ...headers, 'X-Cascade-Agent-Capability': capability } },
+    )).json() as Promise<{ sessions: Array<{ sketch: string; running: boolean; buffered: number }> }>;
+    return { base, post, status, project };
+  }
+
+  /** Reads NDJSON, handing each event to `onEvent`; stops early when it says so. */
+  async function readEvents(response: Response, onEvent: (event: any) => boolean | void): Promise<any[]> {
+    const seen: any[] = [];
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let carry = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      carry += decoder.decode(value, { stream: true });
+      const parts = carry.split('\n');
+      carry = parts.pop() ?? '';
+      for (const part of parts) {
+        if (!part.trim()) continue;
+        const event = JSON.parse(part);
+        seen.push(event);
+        if (onEvent(event) === false) {
+          await reader.cancel().catch(() => {});
+          return seen;
+        }
+      }
+    }
+    return seen;
+  }
+
+  const text = (events: any[]) => events
+    .filter((event) => event.type === 'stdout')
+    .map((event) => { try { return JSON.parse(event.text); } catch { return null; } })
+    .map((value) => value?.message?.content?.[0]?.text ?? value?.result)
+    .filter(Boolean);
+
+  it('survives the reader hanging up, keeps the output, and hands it to the next attach', async () => {
+    const { post, status } = await fixture();
+
+    // A browser that starts a prompt and then reloads: read two events, hang up.
+    const promptResponse = await post('prompt', { agent: 'claude', sketch: 'index.cascade', prompt: 'make it blue' });
+    expect(promptResponse.status).toBe(200);
+    const before = await readEvents(promptResponse, (event) => !(event.type === 'stdout' && text([event]).length > 0));
+    expect(before.some((event) => event.type === 'started')).toBe(true);
+
+    // The agent is still running, because nothing killed it.
+    const live = await status('index.cascade');
+    expect(live.sessions.find((entry) => entry.sketch === 'index.cascade')?.running).toBe(true);
+
+    // The reloaded panel attaches. Not refused, and it gets the whole run.
+    const attachResponse = await post('attach', { agent: 'claude', sketch: 'index.cascade', since: 0 });
+    expect(attachResponse.status).toBe(200);
+    const after = await readEvents(attachResponse, () => undefined);
+
+    const attached = after[0];
+    expect(attached.type).toBe('attached');
+    expect(attached.running).toBe(true);
+    expect(attached.dropped).toBe(0);
+    expect(attached.sessionId).toBe('fake-session-1');
+    // Every step, including the ones produced while no reader was attached.
+    expect(text(after)).toEqual(['step 1', 'step 2', 'step 3', 'step 4', 'step 5', 'step 6', 'done']);
+    expect(after.at(-1).type).toBe('exit');
+  }, 20_000);
+
+  it('refuses a second concurrent prompt with BUSY but never refuses an attach', async () => {
+    const { post } = await fixture();
+
+    const first = await post('prompt', { agent: 'claude', sketch: 'index.cascade', prompt: 'one' });
+    expect(first.status).toBe(200);
+    await readEvents(first, (event) => event.type !== 'started');
+
+    const second = await post('prompt', { agent: 'claude', sketch: 'index.cascade', prompt: 'two' });
+    expect(second.status).toBe(409);
+    expect((await second.json() as { code: string }).code).toBe('BUSY');
+
+    // Two viewers, one session: both attach streams see the same run.
+    const viewers = await Promise.all([
+      post('attach', { agent: 'claude', sketch: 'index.cascade', since: 0 }),
+      post('attach', { agent: 'claude', sketch: 'index.cascade', since: 0 }),
+    ]);
+    const [a, b] = await Promise.all(viewers.map((response) => readEvents(response, () => undefined)));
+    expect(a[0].running).toBe(true);
+    expect(b[0].running).toBe(true);
+    expect(text(a)).toEqual(text(b));
+    expect(text(a).at(-1)).toBe('done');
+  }, 20_000);
+
+  it('says plainly that nothing is running, and starts nothing to find out', async () => {
+    const { post, status } = await fixture();
+
+    const response = await post('attach', { agent: 'claude', sketch: 'index.cascade', since: 0 });
+    const events = await readEvents(response, () => undefined);
+    expect(events).toEqual([
+      { type: 'attached', agent: 'claude', sketch: 'index.cascade', running: false, sessionId: null, dropped: 0, replayed: 0, since: 0 },
+    ]);
+    expect((await status('index.cascade')).sessions).toEqual([]);
+  }, 20_000);
+
+  it('replays a finished run, so a reload does not lose the transcript', async () => {
+    const { post } = await fixture(2, '0.05');
+
+    const promptResponse = await post('prompt', { agent: 'claude', sketch: 'index.cascade', prompt: 'one' });
+    await readEvents(promptResponse, () => undefined);
+
+    const attachResponse = await post('attach', { agent: 'claude', sketch: 'index.cascade', since: 0 });
+    const events = await readEvents(attachResponse, () => undefined);
+    expect(events[0].running).toBe(false);
+    expect(events[0].replayed).toBeGreaterThan(0);
+    expect(text(events)).toEqual(['step 1', 'step 2', 'done']);
+  }, 20_000);
+
+  it('cancel is what stops an agent now, and a reset is refused while one runs', async () => {
+    const { post, status } = await fixture(40, '0.25');
+
+    const promptResponse = await post('prompt', { agent: 'claude', sketch: 'index.cascade', prompt: 'one' });
+    await readEvents(promptResponse, (event) => event.type !== 'started');
+
+    const reset = await post('reset', { agent: 'claude', sketch: 'index.cascade' });
+    expect(reset.status).toBe(409);
+
+    const cancelled = await post('cancel', { agent: 'claude', sketch: 'index.cascade' });
+    expect((await cancelled.json() as { cancelled: boolean }).cancelled).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect((await status('index.cascade')).sessions[0]?.running).toBe(false);
+  }, 20_000);
 });
