@@ -1357,12 +1357,11 @@ export class Graph {
         value = [normalized.r, normalized.g, normalized.b, normalized.a ?? 1.0];
       }
 
-      // If prop has an expression, save both value and expression
-      if (prop.expression) {
-        acc[key] = { value, expression: prop.expression };
-      } else {
-        acc[key] = value;
-      }
+      // A prop may carry an expression, a keyframe channel, both, or neither.
+      // Node owns the shape because Node owns the bindings; this keeps the
+      // three-way decision in one place rather than growing another branch
+      // here every time a binding is added.
+      acc[key] = node.serializePropValue(key, value);
       return acc;
     }, {} as Record<string, any>);
     for (const parameter of changedParameters) {
@@ -1646,6 +1645,12 @@ export class Graph {
           // Restore expression if present
           if (expression && !definitionProp) {
             node.props[key].expression = expression;
+          }
+          // And the keyframe channel, which also has to reinstate the node's
+          // time-dependence — a keyed parameter loaded from disk must be
+          // recooked per frame exactly as one keyed in the session is.
+          if (propData?.channel && !definitionProp) {
+            node.restorePropChannel(key, propData.channel);
           }
         });
       }

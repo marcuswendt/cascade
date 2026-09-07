@@ -4,6 +4,36 @@ import { typeToPackagePath, isStandardLibraryNode } from '../utils/nodeTypeUtils
 import { normalizeColor, isColorValue } from '../utils/colorUtils.js';
 import { normalizeType } from '../types/coreTypes.js';
 import { expressionEngine } from '../engine/expressions/index.js';
+import {
+  deleteKey as channelDeleteKey,
+  deserializeChannel,
+  isEmptyChannel,
+  sampleChannel,
+  serializeChannel,
+  setKey as channelSetKey
+} from '@cascade/runtime/animation';
+import type { Channel, Interpolation, Keyframe, SerializedChannel } from '@cascade/runtime/animation';
+
+export type { Channel as ParamChannel, Interpolation, Keyframe };
+
+/**
+ * A keyed parameter, declared where the parameter type lives.
+ *
+ * `Prop` already carries `value` and `expression`; a channel is the third
+ * binding and belongs beside them rather than in a timeline that pushes
+ * values — so it travels with the node through copy, duplicate and retarget,
+ * and serialises in one place.
+ *
+ * Declared as an augmentation rather than edited into `node.types.ts` only
+ * because the panels are being written against that file at the same time.
+ * It should move there once they land.
+ */
+declare module '../types/node.types.js' {
+  interface Prop<T> {
+    /** Keyframes. Present and non-empty means the parameter is animated. */
+    channel?: Channel;
+  }
+}
 
 export type CookState = 'clean' | 'stale' | 'queued' | 'cooking' | 'error';
 
@@ -53,6 +83,9 @@ export interface CarriedParameter {
   type: string;
   value: unknown;
   expression?: string;
+  /** A keyed parameter carries its animation across a retarget too — the
+   *  channel lives on the parameter precisely so this works for free. */
+  channel?: Channel;
 }
 
 /**
@@ -513,24 +546,37 @@ export class Node {
     deleteExpression: () => void;
     hasExpression: () => boolean;
     expressionError: () => string | null;
+    // Keyframe channel support
+    channel: () => Channel | null;
+    hasChannel: () => boolean;
+    keys: () => readonly Keyframe[];
+    setKey: (frame?: number, value?: number, interpolation?: Interpolation) => void;
+    deleteKey: (frame: number) => void;
+    clearChannel: () => void;
   } | null {
     const prop = this.props[name];
     if (!prop) return null;
 
     const self = this;
+    // Every accessor reads `self.props[name]` rather than the `prop` captured
+    // above: a prop object is REPLACED on every write (`this.props[name] = {
+    // ...prop, ... }`), so a handle held across a set would otherwise report
+    // the state the parameter was in when the handle was made. Caught by
+    // `hasExpression()` going false after keying the same parameter.
+    const live = () => self.props[name] ?? prop;
     return {
       name: () => name,
       path: () => `${self.path()}/${name}`,
       node: () => self,
-      eval: () => prop.value,
-      evalAsFloat: () => parseFloat(prop.value) || 0,
-      evalAsInt: () => parseInt(prop.value, 10) || 0,
-      evalAsString: () => String(prop.value ?? ''),
-      rawValue: () => prop.value,
+      eval: () => live().value,
+      evalAsFloat: () => parseFloat(live().value) || 0,
+      evalAsInt: () => parseInt(live().value, 10) || 0,
+      evalAsString: () => String(live().value ?? ''),
+      rawValue: () => live().value,
       set: (value: any) => self.updateProp(name, value),
-      parmType: () => prop.type || 'any',
+      parmType: () => live().type || 'any',
       // Expression support
-      expression: () => prop.expression ?? null,
+      expression: () => live().expression ?? null,
       setExpression: (expr: string) => {
         self.props[name] = { ...self.props[name], expression: expr };
         // Update time dependency based on all expressions
@@ -544,18 +590,126 @@ export class Node {
         self.updateTimeDependent();
         self.markDirty();
       },
-      hasExpression: () => !!prop.expression,
-      expressionError: () => prop.expressionError ?? null
+      hasExpression: () => !!live().expression,
+      expressionError: () => live().expressionError ?? null,
+
+      // ---- Keyframe channel ----
+      // Same shape as the expression API above, deliberately: a channel and an
+      // expression are the same kind of binding, one drawn and one written.
+      channel: () => self.props[name]?.channel ?? null,
+      hasChannel: () => !isEmptyChannel(self.props[name]?.channel),
+      keys: () => self.props[name]?.channel?.keys ?? [],
+      /**
+       * Key the parameter. Both arguments default to "here, now": the current
+       * frame and the parameter's current evaluated value, which is what
+       * alt-clicking a parameter has to mean.
+       */
+      setKey: (frame?: number, value?: number, interpolation?: Interpolation) => {
+        const at = frame ?? self.currentFrame();
+        const v = value ?? Number(self.evalParm(name));
+        if (!Number.isFinite(v)) return;
+        self.setPropChannel(name, channelSetKey(self.props[name]?.channel, at, v, interpolation));
+      },
+      deleteKey: (frame: number) => {
+        const current = self.props[name]?.channel;
+        if (!current) return;
+        self.setPropChannel(name, channelDeleteKey(current, frame));
+      },
+      clearChannel: () => self.setPropChannel(name, null)
     };
   }
 
+  // ============ Keyframe channels ============
+
   /**
-   * Evaluate a parameter value directly (shorthand for props access)
-   * If the prop has an expression, evaluates it; otherwise returns the raw value
+   * The frame a channel is sampled against.
+   *
+   * One clock today — the expression engine's, which the host keeps in step
+   * with its own frame — so `sin($T)` and a keyed curve on the same node
+   * always agree. When timelines become document objects this is the single
+   * place that has to learn which one a node belongs to.
+   */
+  currentFrame(): number {
+    return expressionEngine.fframe;
+  }
+
+  /**
+   * Attach, replace or clear a channel. An empty channel is removed rather
+   * than stored, so `hasChannel()` and the serialised form never disagree
+   * about whether a parameter is animated.
+   */
+  setPropChannel(name: string, channel: Channel | null): void {
+    const prop = this.props[name];
+    if (!prop) return;
+
+    if (!channel || isEmptyChannel(channel)) {
+      const { channel: _dropped, ...rest } = this.props[name];
+      this.props[name] = rest as Prop;
+    } else {
+      this.props[name] = { ...prop, channel };
+    }
+
+    this.props = { ...this.props };
+    this.updateTimeDependent();
+    this.markDirty();
+    Node.onPropParamsChanged?.(this.id);
+  }
+
+  /**
+   * A prop as it goes to disk: the bare value when there is nothing more to
+   * say, the object form when it carries an expression, a channel, or both.
+   *
+   * Lives here rather than in the serializer because the channel type is the
+   * node's, and one writer is what stops the two forms disagreeing.
+   */
+  serializePropValue(name: string, value: unknown): unknown {
+    const prop = this.props[name];
+    if (!prop) return value;
+
+    const channel = serializeChannel(prop.channel);
+    if (!prop.expression && !channel) return value;
+
+    return {
+      value,
+      ...(prop.expression ? { expression: prop.expression } : {}),
+      ...(channel ? { channel } : {})
+    };
+  }
+
+  /** Read a channel back off disk. Bad data yields no channel, never a throw. */
+  restorePropChannel(name: string, data: unknown): void {
+    if (!this.props[name]) return;
+    const channel = deserializeChannel(data);
+    this.setPropChannel(name, isEmptyChannel(channel) ? null : channel);
+  }
+
+  /** The serialised channel for one prop, or undefined when it is not keyed. */
+  serializePropChannel(name: string): SerializedChannel | undefined {
+    return serializeChannel(this.props[name]?.channel);
+  }
+
+  /**
+   * The one place a parameter becomes a value.
+   *
+   * Three bindings, in this order: a keyframe channel, an expression, the raw
+   * value. All of them resolve BEFORE execute, so the node receives a plain
+   * number and never reads a clock — determinism is "same graph plus same
+   * frame gives the same output", which is still cacheable once the cache key
+   * gains a frame.
+   *
+   * A parameter can carry both a channel and an expression, and the channel
+   * wins. The expression is kept, inert, and comes back when the channel is
+   * deleted: silently discarding what an author wrote is the worse of the two
+   * failures, and there is nowhere else for it to be shown.
    */
   evalParm(name: string): any {
     const prop = this.props[name];
     if (!prop) return undefined;
+
+    if (!isEmptyChannel(prop.channel)) {
+      const sampled = sampleChannel(prop.channel, this.currentFrame());
+      if (sampled !== undefined) return sampled;
+    }
 
     // If prop has an expression, evaluate it
     if (prop.expression) {
@@ -728,6 +882,7 @@ export class Node {
         type: carryType(parameter.dataType),
         value: parameter.value,
         expression: this.props[parameter.name]?.expression,
+        channel: this.props[parameter.name]?.channel,
       });
     }
     for (const [name, prop] of Object.entries(this.props)) {
@@ -738,6 +893,7 @@ export class Node {
         type: carryType(prop.type),
         value: prop.value,
         expression: prop.expression,
+        channel: prop.channel,
       });
     }
 
@@ -845,11 +1001,12 @@ export class Node {
 
     if (carryTypesMatch(carried.type, declaredType)) {
       parameter.value = carried.value as any;
-      if (carried.expression) {
+      if (carried.expression || carried.channel) {
         this.props[parameter.name] = {
           ...(this.props[parameter.name] ?? {}),
           value: carried.value,
-          expression: carried.expression,
+          ...(carried.expression ? { expression: carried.expression } : {}),
+          ...(carried.channel ? { channel: carried.channel } : {}),
         } as Prop;
         carry.resolved.add(crossKey);
         this.updateTimeDependent();
@@ -886,8 +1043,9 @@ export class Node {
         ...prop,
         value: carried.value,
         ...(carried.expression ? { expression: carried.expression } : {}),
+        ...(carried.channel ? { channel: carried.channel } : {}),
       } as Prop;
-      if (carried.expression) this.updateTimeDependent();
+      if (carried.expression || carried.channel) this.updateTimeDependent();
       carry.report.kept.push(name);
     } else {
       carry.report.retyped.push({ name, from: carried.type, to: declaredType });
@@ -1245,11 +1403,17 @@ export class Node {
   }
 
   /**
-   * Check all expressions and update time dependency flag
+   * Re-derive time dependency from every binding on the node.
+   *
+   * A keyed parameter is time-dependent for exactly the reason a
+   * time-referencing expression is: its value changes with the frame, so a
+   * per-frame cook has to recook the subgraph it feeds. One key is enough —
+   * the value it holds is still a function of the frame everywhere else.
    */
   updateTimeDependent(): void {
     const hasTimeRef = Object.values(this.props).some(prop =>
-      prop.expression && expressionEngine.hasTimeReference(prop.expression)
+      (prop.expression && expressionEngine.hasTimeReference(prop.expression)) ||
+      !isEmptyChannel(prop.channel)
     );
     this.setTimeDependent(hasTimeRef);
   }
