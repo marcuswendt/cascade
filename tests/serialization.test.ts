@@ -163,6 +163,11 @@ describe('Serialization', () => {
       'cascade.quill.Enhance',
       'cascade.quill.Chat',
       'cascade.quill.System',
+      // Prompt was the last node in the quill library, removed 2026-09-07 at
+      // Marcus's request as outdated. It joins its four siblings here: a
+      // document that still names it must be rejected rather than silently
+      // loading a node that no longer exists.
+      'cascade.quill.Prompt',
       'cascade.image.DoesNotExist',
     ])('rejects unknown standard-library module %s regardless of serialized source', (moduleId) => {
       for (const source of [undefined, 'stdlib', 'embedded', 'project'] as const) {

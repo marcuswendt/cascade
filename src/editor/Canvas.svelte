@@ -10,7 +10,7 @@
   import type { Node } from '@/nodes/Node';
   import type { Connection } from '@/types/node.types';
   import { packagePathToType, getNodeClass } from '@/utils/nodeTypeUtils';
-  import { loadEmbeddedModule } from '@/engine/nodeModuleLoader';
+  import { loadEmbeddedModule, loadProjectModule } from '@/engine/nodeModuleLoader';
   import { isFileDrag } from './dragKind';
   import { getPortColor, getConnectionColor, DATA_TYPE_COLORS } from '@/utils/portColors';
   import { recordSnapshotImmediate } from './stores/historyStore';
@@ -3121,6 +3121,30 @@ node.onReady = () => {
     // Custom nodes need code and compilation
     const isClassBased = getNodeClass(nodeType) !== null;
 
+    // A `project.*` type is an *instance of a module that already exists* on
+    // disk, not a new custom node. Falling through to the branch below gave it
+    // the blank-node template and compiled that as embedded code, so adding a
+    // second brand-orb from the Create menu produced "node is not defined" and
+    // "Failed to initialize node: {}" beside three working instances of the
+    // same module. Wired the way Graph.fromJSON wires the ones already in the
+    // document: module path, project source, and no code of its own, because
+    // the real content lives in nodes/<Name>/index.ts.
+    if (!isClassBased && nodeType.startsWith('project.')) {
+      (newNode as any).modulePath = nodeType;
+      (newNode as any).sourceType = 'project';
+      newNode.code = '';
+      try {
+        newNode.resetPortTracking();
+        const compiled = await loadProjectModule(nodeType);
+        newNode.setFunction(compiled.execute);
+        newNode.markDirty();
+      } catch (error) {
+        console.error(`Failed to load project module ${nodeType}:`, error);
+      }
+      recordHistory();
+      return newNode;
+    }
+
     if (!isClassBased) {
       // Custom node: set default code template and compile
       // Use custom config code if provided, otherwise use default template
@@ -3237,35 +3261,24 @@ node.onReady = () => {
   // Helper function to get default code template for custom nodes
   function getDefaultNodeCode(type: string): string {
     const shortType = packagePathToType(type);
+    // `export function execute(node, graph)`, not top-level statements. The
+    // previous template declared its ports at module top level, which is the
+    // pre-ESM shape: the loader imports a real module now and requires that
+    // export, so `node` was genuinely undefined and a brand-new custom node
+    // failed with "node is not defined" the moment it was created. Kept in step
+    // with the identical template in CodeEditor.svelte.
     return `// ${shortType} - Custom Node
 //
-// Define inputs
-const input = node.in('input', null);
+// Ports and parameters are declared inside execute(); it runs once to discover
+// them and again whenever the node cooks.
+export function execute(node, graph) {
+  const input = node.in('input', null).value;
 
-// Define properties (shown in inspector)
-node.defineProp('value', {
-  value: 1.0,
-  params: { min: 0, max: 10, step: 0.1 },
-  displayName: 'Value'
-});
+  const value = node.param('value', 1.0, { min: 0, max: 10, step: 0.1, type: 'float' }).value;
 
-// Define outputs
-const output = node.out('output');
-
-// React to input changes
-input.onChange = (value) => {
-  output.setValue(value);
-};
-
-// React to property changes
-node.watchProp('value', (newValue) => {
-  output.setValue(newValue);
-});
-
-// Called once when node is ready
-node.onReady = () => {
-  output.setValue(node.props.value.value);
-};
+  const output = node.out('output');
+  output.setValue(input ?? value);
+}
 `;
   }
   

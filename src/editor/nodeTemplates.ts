@@ -3,7 +3,6 @@
 import { imageLibrary } from '@/nodes/image/library';
 import { coreLibrary } from '@/nodes/core/library';
 import { geoLibrary } from '@/nodes/geo/library';
-import { quillLibrary } from '@/nodes/quill/library';
 import type { Library, NodeTemplate } from '@/types/library.types';
 
 // Re-export types for backward compatibility
@@ -33,8 +32,7 @@ export const nodeLibraries: Library[] = [
   annotationsLibrary,
   coreLibrary,
   geoLibrary,
-  imageLibrary,
-  quillLibrary
+  imageLibrary
 ];
 
 export function projectNodeLibrary(modules: string[], icons: Record<string, string> = {}): Library {

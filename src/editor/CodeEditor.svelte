@@ -177,6 +177,8 @@ declare const graph: any;
 
   // Source information
   let sourceType: 'stdlib' | 'embedded' | 'project' = 'embedded';
+  /** Real source for a project module, read from the server rather than the node. */
+  let projectSource: string | null = null;
   let modulePath = '';
   let displayPath = '';
   let fileStatus: FileStatus = 'synced';
@@ -200,6 +202,43 @@ declare const graph: any;
   // diff editor in the history panel.
   $: if (editor) {
     monaco.editor.setTheme(monacoThemeFor($resolvedTheme));
+  }
+
+  /** The folder name under `nodes/` for a project module, or null. */
+  function projectModuleName(): string | null {
+    const path = (node as any).modulePath as string | undefined;
+    if (!path?.startsWith('project.')) return null;
+    return path.slice('project.'.length);
+  }
+
+  /**
+   * A project node's code lives in `nodes/<Name>/index.ts`, not on the node, so
+   * `node.code` is empty for one and the editor fell through to the blank-node
+   * template — showing generic boilerplate under a real node's name. Which would
+   * be merely confusing if Compile were not sitting beside it: compileNode()
+   * takes whatever is in the editor and replaces the live node's behaviour, and
+   * `isReadOnly` only covers stdlib. So the editor offered to overwrite a working
+   * node with a template of a node, and the graph was already dirty.
+   *
+   * The source was always fetchable; nothing was reading it. This path went
+   * unexercised because ENABLE_CODE_EDITOR was false until 2026-09-07.
+   */
+  async function loadProjectSource(): Promise<void> {
+    const name = projectModuleName();
+    if (!name) return;
+    try {
+      const response = await fetch(`/api/nodes/${encodeURIComponent(name)}/index.ts`);
+      if (response.ok) projectSource = await response.text();
+    } catch {
+      // Leave projectSource null: the editor then shows whatever the node
+      // carries, and Compile is blocked for project modules regardless.
+    }
+    try {
+      const resolved = await fetch(`/api/nodes/${encodeURIComponent(name)}/path`);
+      if (resolved.ok) displayPath = (await resolved.json()).path ?? displayPath;
+    } catch {
+      // A missing path is cosmetic.
+    }
   }
 
   // Determine source info from node
@@ -232,6 +271,7 @@ declare const graph: any;
     if (!container || isDestroyed) return;
 
     updateSourceInfo();
+    await loadProjectSource();
 
     await tick();
 
@@ -261,7 +301,7 @@ declare const graph: any;
       ]);
 
       editor = monaco.editor.create(container, {
-        value: node.code || getDefaultNodeCode(node.type),
+        value: projectSource ?? node.code ?? getDefaultNodeCode(node.type),
         language: 'typescript',
         theme: monacoThemeFor($resolvedTheme),
         minimap: { enabled: false },
@@ -328,8 +368,39 @@ declare const graph: any;
     }
   });
 
+  /** Write a project module back to its file and let the watcher reload it. */
+  async function saveProjectSource(): Promise<void> {
+    const name = projectModuleName();
+    if (!name || !editor) return;
+    status = 'compiling';
+    try {
+      const response = await fetch(`/api/nodes/${encodeURIComponent(name)}/index.ts`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: editor.getValue() }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      status = 'success';
+      // No local recook here: the server's node watcher fires, invalidates the
+      // bundle and marks every instance dirty. One reload path, not two.
+    } catch (error) {
+      status = 'error';
+      reportActionError('could not write the file: ' + (error instanceof Error ? error.message : String(error)));
+    }
+  }
+
   async function compileNode() {
     if (!editor || isDestroyed || isReadOnly) return;
+
+    // A project module is a file on disk and the server watches it: writing it
+    // is the whole edit, and `nodeWatch` invalidates the compiled bundle and
+    // recooks every instance. Transpiling it into this one node instead would
+    // fork the graph's copy away from the file silently, and leave the other
+    // instances of the same module running the old code.
+    if (projectModuleName()) {
+      await saveProjectSource();
+      return;
+    }
 
     onRecordHistory?.();
 
@@ -431,37 +502,25 @@ declare const graph: any;
 `;
     }
 
-    // Default template for custom nodes
+    // Default template for custom nodes.
+    //
+    // `export function execute(node, graph)`, not top-level statements. The
+    // previous template declared its ports at module top level, which is the
+    // pre-ESM shape: the loader imports a real module now and requires that
+    // export, so `node` was genuinely undefined and a brand-new custom node
+    // failed with "node is not defined" the moment it was created.
     return `// ${type} - Custom Node
 //
-// Define inputs
-const input = node.in('input', null);
+// Ports and parameters are declared inside execute(); it runs once to discover
+// them and again whenever the node cooks.
+export function execute(node, graph) {
+  const input = node.in('input', null).value;
 
-// Define properties (shown in inspector)
-node.defineProp('value', {
-  value: 1.0,
-  params: { min: 0, max: 10, step: 0.1 },
-  displayName: 'Value'
-});
+  const value = node.param('value', 1.0, { min: 0, max: 10, step: 0.1, type: 'float' }).value;
 
-// Define outputs
-const output = node.out('output');
-
-// React to input changes
-input.onChange = (value) => {
-  // Process input and set output
-  output.setValue(value);
-};
-
-// React to property changes
-node.watchProp('value', (newValue) => {
-  output.setValue(newValue);
-});
-
-// Called once when node is ready
-node.onReady = () => {
-  output.setValue(node.props.value.value);
-};
+  const output = node.out('output');
+  output.setValue(input ?? value);
+}
 `;
   }
 
