@@ -325,6 +325,11 @@
       case 'focusLog':
         dockviewStore.focusPanel('log-main');
         break;
+      case 'focusAgent':
+        // The agent console shares a group with the log, so focusing it is what
+        // brings the tab forward — there is no other way to reach it by keyboard.
+        dockviewStore.focusPanel('agent-main');
+        break;
     }
   }
 
@@ -1313,7 +1318,7 @@
         }
       }
 
-      // Panel focus shortcuts (Ctrl+1-4)
+      // Panel focus shortcuts (Ctrl+1-5)
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
         if (e.key === '1') {
           e.preventDefault();
@@ -1327,6 +1332,9 @@
         } else if (e.key === '4') {
           e.preventDefault();
           dockviewStore.focusPanel('log-main');
+        } else if (e.key === '5') {
+          e.preventDefault();
+          dockviewStore.focusPanel('agent-main');
         }
       }
 

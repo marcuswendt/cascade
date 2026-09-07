@@ -673,7 +673,13 @@
       img.style.objectFit = 'contain';
       wrapper.appendChild(img);
     } else if (imageSrc) {
-      buildZoomableImage(wrapper, imageSrc);
+      // `portsVersion` advances on every cook, and it has to reach the URL: a
+      // Python-backed node rewrites the *same* file path each time, so the
+      // <img src> string was identical across cooks and the browser never
+      // re-requested it. Moving a parameter re-rendered the file on disk and
+      // changed nothing on screen. The version parameter existed and this call
+      // was the one place that did not pass it.
+      buildZoomableImage(wrapper, imageSrc, portsVersion);
     }
 
     container.appendChild(wrapper);
