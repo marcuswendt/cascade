@@ -113,7 +113,8 @@
     { label: 'Focus Parameters', action: 'focusInspector', shortcut: '⌘3' },
     { label: 'Focus Definition', action: 'focusDefinition', shortcut: '⌘6' },
     { label: 'Focus Log', action: 'focusLog', shortcut: '⌘4' },
-    { label: 'Focus Agent', action: 'focusAgent', shortcut: '⌘5' }
+    { label: 'Focus Agent', action: 'focusAgent', shortcut: '⌘5' },
+    { label: 'Focus Timeline', action: 'focusTimeline', shortcut: '⌘7' }
   ];
 </script>
 

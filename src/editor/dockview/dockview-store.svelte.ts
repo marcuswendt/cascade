@@ -49,6 +49,7 @@ export const BUILT_IN_PANEL_TYPES: { type: PanelType; label: string; icon: strin
   { type: 'definition', label: 'Definition', icon: '❖' },
   { type: 'info', label: 'Node Info', icon: 'ℹ' },
   { type: 'log', label: 'Log', icon: '📋' },
+  { type: 'timeline', label: 'Timeline', icon: '⏱' },
   { type: 'agent', label: 'Agent', icon: '✦' },
 ];
 export const panelTypes = writable([...BUILT_IN_PANEL_TYPES]);
@@ -357,7 +358,16 @@ class DockviewStore {
    * default layout. If that neighbour is gone too, dockview places it on its
    * own rather than refusing.
    */
-  focusOrOpenPanel(panelId: string, type: PanelType, title: string, neighbour?: string): void {
+  focusOrOpenPanel(
+    panelId: string,
+    type: PanelType,
+    title: string,
+    neighbour?: string,
+    /** Where to put it beside that neighbour. 'within' (a tab in the same
+     *  group) is right for the panels that share a column; the Timeline is a
+     *  wide, short strip and belongs below the graph instead. */
+    position: 'left' | 'right' | 'above' | 'below' | 'within' = 'within'
+  ): void {
     if (!this._api) return;
     if (this._api.getPanel(panelId)) {
       this.focusPanel(panelId);
@@ -368,7 +378,7 @@ class DockviewStore {
       id: panelId,
       type,
       title,
-      position: reference ? 'within' : undefined,
+      position: reference ? position : undefined,
       referencePanel: reference,
     });
     this.focusPanel(panelId);
@@ -646,6 +656,14 @@ class DockviewStore {
       });
 
       this._api.addPanel({
+        id: 'timeline-main',
+        component: 'timeline',
+        title: 'Timeline',
+        position: { referencePanel: 'graph-main', direction: 'below' },
+        params: { id: 'timeline-main', type: 'timeline', title: 'Timeline' }
+      });
+
+      this._api.addPanel({
         id: 'viewer-main',
         component: 'viewer',
         title: 'Viewer',
@@ -708,14 +726,31 @@ class DockviewStore {
         root: {
           type: 'branch',
           data: [
-            // Left column: Graph (50%)
+            // Left column: Graph, with the Timeline as a wide, short strip
+            // beneath it — the transport is read along the same axis as the
+            // graph it drives, and it needs width far more than height.
             {
-              type: 'leaf',
-              data: {
-                views: ['graph-main'],
-                activeView: 'graph-main',
-                id: 'group-graph'
-              },
+              type: 'branch',
+              data: [
+                {
+                  type: 'leaf',
+                  data: {
+                    views: ['graph-main'],
+                    activeView: 'graph-main',
+                    id: 'group-graph'
+                  },
+                  size: 620
+                },
+                {
+                  type: 'leaf',
+                  data: {
+                    views: ['timeline-main'],
+                    activeView: 'timeline-main',
+                    id: 'group-timeline'
+                  },
+                  size: 180
+                }
+              ],
               size: 500
             },
             // Middle column: Viewer + Log
@@ -800,6 +835,16 @@ class DockviewStore {
             id: 'definition-main',
             type: 'definition',
             title: 'Definition'
+          }
+        },
+        'timeline-main': {
+          id: 'timeline-main',
+          contentComponent: 'timeline',
+          title: 'Timeline',
+          params: {
+            id: 'timeline-main',
+            type: 'timeline',
+            title: 'Timeline'
           }
         },
         'log-main': {

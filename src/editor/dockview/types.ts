@@ -6,7 +6,7 @@ import type {
 import type { Graph } from '@/nodes/Graph';
 import type { Node } from '@/nodes/Node';
 
-export type BuiltInPanelType = 'graph' | 'inspector' | 'definition' | 'viewer' | 'log' | 'code' | 'info' | 'agent';
+export type BuiltInPanelType = 'graph' | 'inspector' | 'definition' | 'viewer' | 'log' | 'code' | 'info' | 'agent' | 'timeline';
 export type ProjectPanelType = `project:${string}`;
 export type PanelType = BuiltInPanelType | ProjectPanelType;
 

@@ -334,6 +334,9 @@
       case 'focusAgent':
         dockviewStore.focusOrOpenPanel('agent-main', 'agent', 'Agent', 'log-main');
         break;
+      case 'focusTimeline':
+        dockviewStore.focusOrOpenPanel('timeline-main', 'timeline', 'Timeline', 'graph-main', 'below');
+        break;
     }
   }
 
@@ -1322,7 +1325,7 @@
         }
       }
 
-      // Panel focus shortcuts (Ctrl+1-6)
+      // Panel focus shortcuts (Ctrl+1-7)
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
         const focusTargets: Record<string, () => void> = {
           '1': () => handleMenuAction('focusGraph'),
@@ -1331,6 +1334,7 @@
           '4': () => handleMenuAction('focusLog'),
           '5': () => handleMenuAction('focusAgent'),
           '6': () => handleMenuAction('focusDefinition'),
+          '7': () => handleMenuAction('focusTimeline'),
         };
         const focusTarget = focusTargets[e.key];
         if (focusTarget) {

@@ -19,6 +19,7 @@
   // see registerLazyPanelComponent below and renderer.ts's own note.
   import DefinitionPanel from '../panels/DefinitionPanel.svelte';
   import CookInfoPanel from '../panels/CookInfoPanel.svelte';
+  import TimelinePanel from '../panels/TimelinePanel.svelte';
   import ProjectPanelHost from '../panels/ProjectPanelHost.svelte';
   import { discoverProjectPanels } from '../projectPanels';
   import { clampToViewport } from '../menuPlacement';
@@ -192,6 +193,7 @@
     registerPanelComponent('agent', AgentPanel, 'Agent');
     registerLazyPanelComponent('code', () => import('../panels/CodePanel.svelte'), 'Code');
     registerPanelComponent('info', CookInfoPanel, 'Node Info');
+    registerPanelComponent('timeline', TimelinePanel, 'Timeline');
 
     try {
       const panels = await discoverProjectPanels();
