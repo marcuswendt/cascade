@@ -39,14 +39,27 @@ function cascadeRuntimePlugin(project: ProjectRoot): esbuild.Plugin {
         path: args.path,
         namespace: 'cascade-runtime',
       }));
-      // `runtime/shell.ts` re-exports a *value* (ShellProcessError) from the
-      // contracts package. In this repo a workspace link resolves that; in an
-      // installed copy of Cascade there is no `@cascade/contracts` on disk at
-      // all, only the bundled `dist/contracts` — so esbuild failed with
-      // "Could not resolve" and every project node importing `cascade/shell`
-      // was uncompilable off this machine. Resolved from the install location
-      // exactly as the shims themselves are.
-      build.onResolve({ filter: /^@cascade\/contracts$/ }, () => {
+      // Two bare specifiers for the same package, both unresolvable from inside
+      // the shipped tree, and both for the same underlying reason: a file in
+      // `dist/` referring to its own package by name only resolves when the
+      // package sits in somebody's `node_modules` under that name.
+      //
+      // `@cascade/contracts` is what `runtime/shell.ts` re-exports a *value*
+      // from (ShellProcessError). A workspace link resolves it in this repo; an
+      // installed copy has no such package at all, only the bundled
+      // `dist/contracts`.
+      //
+      // `cascade/contracts` is the same fault one level deeper, and it broke
+      // offline rendering for every sketch using the geometry library:
+      // `dist/runtime/builtins/geo/*.js` import it, so once a project node
+      // pulled in `cascade/runtime`, esbuild followed into Cascade's own dist
+      // where `cascade` is not a resolvable name — and the sketch's own
+      // node_modules, which would have resolved it, was no longer on the path.
+      // The symptom was three cook failures reading "node module has no
+      // execute(node, graph) export", which says nothing about resolution.
+      //
+      // Both resolve from the install location, exactly as the shims do.
+      build.onResolve({ filter: /^(?:@cascade|cascade)\/contracts$/ }, () => {
         // Beside the bundled CLI when installed, in the workspace when running from src.
         const candidates = [
           path.join(__dirname_compile, '..', 'contracts', 'index.js'),

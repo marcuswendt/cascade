@@ -57,16 +57,13 @@ export async function runGraph(options: RunOptions): Promise<void> {
     return;
   }
 
-  if (await runDeterministicProjectGraph(file, graphData, entryNode)) {
-    if (verbose) console.log('Graph execution completed');
-    return;
-  }
-
-  // A dynamic graph reaches here, and until now it died trying to fetch its
-  // modules from `/api/nodes/...` — a relative URL, with no server behind it and
-  // no origin to resolve it against. Compiling them in-process with the same
-  // esbuild pass the server uses is what makes `cascade run` work on the graphs
-  // people actually have, rather than only on fully migrated ones.
+  // Project context first, and before either execution path. This used to sit
+  // below the deterministic branch, which meant a definition-v1 node importing
+  // `cascade/stage` failed headlessly with "no host bridge is installed" while
+  // the legacy dynamic path — reached twenty lines further down, after the
+  // install — rendered fine. The preferred node style was the one that could
+  // not render offline.
+  //
   // Best effort: a .cascade file can sit outside a project directory, and such
   // a graph should still run whatever it carries inline rather than failing on
   // a project that is not there.
@@ -81,6 +78,18 @@ export async function runGraph(options: RunOptions): Promise<void> {
   } catch (error) {
     if (verbose) console.warn(`No project context for ${file}: ${error instanceof Error ? error.message : error}`);
   }
+
+  if (await runDeterministicProjectGraph(file, graphData, entryNode)) {
+    if (verbose) console.log('Graph execution completed');
+    disposeStageBridge?.();
+    return;
+  }
+
+  // A dynamic graph reaches here, and until now it died trying to fetch its
+  // modules from `/api/nodes/...` — a relative URL, with no server behind it and
+  // no origin to resolve it against. Compiling them in-process with the same
+  // esbuild pass the server uses is what makes `cascade run` work on the graphs
+  // people actually have, rather than only on fully migrated ones.
 
   try {
     // Create graph from JSON
