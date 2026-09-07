@@ -9,6 +9,8 @@
   import ColorPalette from './editor/components/ColorPalette.svelte';
   import { bumpGraphStructure } from './editor/stores/graphStructure';
   import { watchNodeSources } from './engine/nodeSourceWatch';
+  import { documentFingerprint, watchGraphDocument } from './editor/graphDocumentWatch';
+  import { registerStudioDocumentBridge } from './editor/studioDocumentBridge';
   import { watchBuild } from './editor/buildWatch';
   import { launchHint, missingProjectModules } from './editor/projectMismatch';
   import { layoutTopDown, edgesFromConnections } from '@/utils/autoLayout';
@@ -712,6 +714,50 @@
   }
 
   /**
+   * Reload the open document because it changed on disk.
+   *
+   * This is what makes the agent console work the way Marcus asked for — the
+   * agent rewrites the `.cascade` file and the graph window catches up, without
+   * the whole of Cascade being reloaded mid-scene. It is worth having on its own
+   * account too: the same is true of an edit made in an external editor.
+   *
+   * Two refusals, both deliberate. A document whose content matches what is
+   * already in memory is Studio's own save echoing back off the watcher, and
+   * reloading on it would drop the selection and re-cook for nothing. And
+   * unsaved changes are never discarded by the app deciding for itself — it says
+   * so and leaves the document alone, which is the same rule the build watcher
+   * follows.
+   */
+  let documentReloadInFlight = false;
+
+  async function reloadDocumentFromDisk(file: string): Promise<void> {
+    if (documentReloadInFlight || !graph) return;
+    documentReloadInFlight = true;
+    try {
+      const response = await fetch(`/api/graph/${encodeURIComponent(file)}`, { cache: 'no-store' });
+      if (!response.ok) return;
+      const json = await response.json();
+      const incoming = documentFingerprint(json);
+      if (incoming === documentFingerprint(JSON.parse(serializeGraph(graph)))) return;
+      if (hasUnsavedChanges) {
+        console.warn(`[graph watch] ${file} changed on disk and this document has unsaved changes — not reloading. Save or discard to pick the new version up.`);
+        return;
+      }
+      const candidate = await prepareGraphCandidate(json);
+      await replaceGraph(candidate);
+      hasUnsavedChanges = false;
+      updateWindowTitle();
+      await checkProjectMismatch(json);
+      await cookGraph().catch(err => console.warn('Graph execution failed:', err));
+      console.log(`[graph watch] reloaded ${file} from disk`);
+    } catch (error) {
+      console.warn('[graph watch] could not reload the document:', error);
+    } finally {
+      documentReloadInFlight = false;
+    }
+  }
+
+  /**
    * Warn when a graph has been opened in the wrong server.
    *
    * A Cascade server serves one project root, so another project's `project.*`
@@ -858,6 +904,25 @@
 
     // Say so rather than reload: an unsaved graph must not be thrown away by
     // the app deciding for itself.
+    // The document changing on disk — an agent prompt, or an external editor —
+    // reloads just the graph rather than the whole app.
+    const unsubGraphDocument = watchGraphDocument({
+      getFile: () => projectGraphFile,
+      onChanged: (file) => reloadDocumentFromDisk(file),
+    });
+
+    // What the agent console needs to know before it hands a prompt over: which
+    // file the agent would be editing, whether Studio is still holding changes
+    // the agent's rewrite would silently destroy, and how to save them first.
+    const unsubDocumentBridge = registerStudioDocumentBridge({
+      file: () => projectGraphFile,
+      isDirty: () => hasUnsavedChanges,
+      save: async () => {
+        await handleSave();
+        return !hasUnsavedChanges;
+      },
+    });
+
     const unsubBuild = watchBuild(() => { buildIsStale = true; });
 
     // Subscribe to settings dialog requests from nodes/components
@@ -1288,6 +1353,8 @@
       window.removeEventListener('mousemove', handleMouseMove);
       unsubSettingsRequest();
       unsubNodeSources();
+      unsubGraphDocument();
+      unsubDocumentBridge();
       unsubBuild();
     };
   });

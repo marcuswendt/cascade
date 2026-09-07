@@ -49,6 +49,7 @@ export const BUILT_IN_PANEL_TYPES: { type: PanelType; label: string; icon: strin
   { type: 'definition', label: 'Definition', icon: '❖' },
   { type: 'info', label: 'Node Info', icon: 'ℹ' },
   { type: 'log', label: 'Log', icon: '📋' },
+  { type: 'agent', label: 'Agent', icon: '✦' },
 ];
 export const panelTypes = writable([...BUILT_IN_PANEL_TYPES]);
 
@@ -631,6 +632,14 @@ class DockviewStore {
       });
 
       this._api.addPanel({
+        id: 'agent-main',
+        component: 'agent',
+        title: 'Agent',
+        position: { referencePanel: 'log-main', direction: 'within' },
+        params: { id: 'agent-main', type: 'agent', title: 'Agent' }
+      });
+
+      this._api.addPanel({
         id: 'inspector-main',
         component: 'inspector',
         title: 'Parameters',
@@ -695,7 +704,9 @@ class DockviewStore {
                 {
                   type: 'leaf',
                   data: {
-                    views: ['log-main'],
+                    // The console sits beside the Log, as a tab in the same
+                    // group: it is read in the same glance as the cook output.
+                    views: ['log-main', 'agent-main'],
                     activeView: 'log-main',
                     id: 'group-log'
                   },
@@ -769,6 +780,16 @@ class DockviewStore {
             id: 'log-main',
             type: 'log',
             title: 'Log'
+          }
+        },
+        'agent-main': {
+          id: 'agent-main',
+          contentComponent: 'agent',
+          title: 'Agent',
+          params: {
+            id: 'agent-main',
+            type: 'agent',
+            title: 'Agent'
           }
         }
       },

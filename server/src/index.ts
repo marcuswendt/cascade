@@ -9,6 +9,8 @@ import { createNodesRouter } from './routes/nodes.js';
 import { createPanelsRouter } from './routes/panels.js';
 import { createExecRouter } from './routes/exec.js';
 import { createShellRouter } from './routes/shell.js';
+import { createAgentRouter } from './routes/agent.js';
+import { createGraphWatchRouter } from './routes/graphWatch.js';
 import { createProjectSettingsRouter } from './routes/projectSettings.js';
 import { createNetRouter } from './routes/net.js';
 import { authority, createProjectRequestBoundary, isLoopbackHost, type ServerSecurityOptions } from './security.js';
@@ -59,6 +61,10 @@ export function startServer(project: ProjectRoot, opts: StartServerOptions = {})
   app.use('/api/shell', createShellRouter(project.shell, security));
   app.use('/api/exec', createExecRouter(project, security));
   app.use('/api/net', createNetRouter(project, security));
+  // Launches a coding agent in the project directory, so it is gated exactly
+  // like the two above and for a stronger reason: its whole job is rewriting
+  // the project.
+  app.use('/api/agent', createAgentRouter(project, security));
   app.use('/api/project', createProjectSettingsRouter(project, security));
 
   const projectBoundary = createProjectRequestBoundary(security);
@@ -86,6 +92,9 @@ export function startServer(project: ProjectRoot, opts: StartServerOptions = {})
   app.use('/api/nodes', createNodesRouter(project));
   app.use('/api/panels', createPanelsRouter(project));
   app.use('/api/media', createMediaRouter(project));
+  // Reports a `.cascade` document changing on disk, so an external rewrite
+  // reloads the graph window instead of the whole app.
+  app.use('/api/graph-events', createGraphWatchRouter(project));
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', version: '2.0', projectRoot: project.root, isGitRepo: project.isGitRepo });

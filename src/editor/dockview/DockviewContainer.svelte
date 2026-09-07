@@ -11,6 +11,7 @@
   import InspectorPanel from '../panels/InspectorPanel.svelte';
   import ViewerPanel from '../panels/ViewerPanel.svelte';
   import LogPanel from '../panels/LogPanel.svelte';
+  import AgentPanel from '../panels/AgentPanel.svelte';
   // CodePanel is intentionally NOT statically imported — round 32: "load
   // Monaco only on demand when someone opens that editor view (mostly
   // they don't)". It (and CodeEditor.svelte, and monaco-editor itself)
@@ -188,6 +189,7 @@
     registerPanelComponent('definition', DefinitionPanel, 'Definition');
     registerPanelComponent('viewer', ViewerPanel, 'Viewer');
     registerPanelComponent('log', LogPanel, 'Log');
+    registerPanelComponent('agent', AgentPanel, 'Agent');
     registerLazyPanelComponent('code', () => import('../panels/CodePanel.svelte'), 'Code');
     registerPanelComponent('info', CookInfoPanel, 'Node Info');
 
