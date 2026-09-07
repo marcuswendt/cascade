@@ -11,6 +11,7 @@
   import type { Connection } from '@/types/node.types';
   import { packagePathToType, getNodeClass } from '@/utils/nodeTypeUtils';
   import { loadEmbeddedModule } from '@/engine/nodeModuleLoader';
+  import { isFileDrag } from './dragKind';
   import { getPortColor, getConnectionColor, DATA_TYPE_COLORS } from '@/utils/portColors';
   import { recordSnapshotImmediate } from './stores/historyStore';
   import { setSelectedNodeIds } from './stores/selectionStore';
@@ -2895,11 +2896,18 @@ node.onReady = () => {
   
   // Asset drag-drop
   function handleDragOver(e: DragEvent) {
+    // Only claim a drag the canvas can use. A dockview panel drag is also an
+    // HTML5 drag and its handlers sit on this element's ancestors, so stopping
+    // propagation for everything meant a panel dragged over the graph never
+    // reached dockview: it did not move, and the drop indicator it had already
+    // shown stayed on screen with no error to explain it.
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
   }
   
   function handleDrop(e: DragEvent) {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     
