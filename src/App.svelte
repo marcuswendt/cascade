@@ -313,25 +313,26 @@
       case 'maximizeTab':
         dockviewStore.toggleMaximizeActivePanel();
         break;
+      // A Focus command opens the panel if it is not there. Focusing alone did
+      // nothing for a panel missing from a saved layout, which made
+      // View > Focus Agent inert for exactly the people who needed it.
       case 'focusGraph':
-        dockviewStore.focusPanel('graph-main');
+        dockviewStore.focusOrOpenPanel('graph-main', 'graph', 'Graph');
         break;
       case 'focusViewer':
-        dockviewStore.focusPanel('viewer-main');
+        dockviewStore.focusOrOpenPanel('viewer-main', 'viewer', 'Viewer', 'graph-main');
         break;
       case 'focusInspector':
-        dockviewStore.focusPanel('inspector-main');
+        dockviewStore.focusOrOpenPanel('inspector-main', 'inspector', 'Parameters', 'viewer-main');
         break;
       case 'focusLog':
-        dockviewStore.focusPanel('log-main');
+        dockviewStore.focusOrOpenPanel('log-main', 'log', 'Log', 'viewer-main');
         break;
       case 'focusDefinition':
-        dockviewStore.focusPanel('definition-main');
+        dockviewStore.focusOrOpenPanel('definition-main', 'definition', 'Definition', 'inspector-main');
         break;
       case 'focusAgent':
-        // The agent console shares a group with the log, so focusing it is what
-        // brings the tab forward — there is no other way to reach it by keyboard.
-        dockviewStore.focusPanel('agent-main');
+        dockviewStore.focusOrOpenPanel('agent-main', 'agent', 'Agent', 'log-main');
         break;
     }
   }
@@ -1323,24 +1324,18 @@
 
       // Panel focus shortcuts (Ctrl+1-6)
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
-        if (e.key === '1') {
+        const focusTargets: Record<string, () => void> = {
+          '1': () => handleMenuAction('focusGraph'),
+          '2': () => handleMenuAction('focusViewer'),
+          '3': () => handleMenuAction('focusInspector'),
+          '4': () => handleMenuAction('focusLog'),
+          '5': () => handleMenuAction('focusAgent'),
+          '6': () => handleMenuAction('focusDefinition'),
+        };
+        const focusTarget = focusTargets[e.key];
+        if (focusTarget) {
           e.preventDefault();
-          dockviewStore.focusPanel('graph-main');
-        } else if (e.key === '2') {
-          e.preventDefault();
-          dockviewStore.focusPanel('viewer-main');
-        } else if (e.key === '3') {
-          e.preventDefault();
-          dockviewStore.focusPanel('inspector-main');
-        } else if (e.key === '4') {
-          e.preventDefault();
-          dockviewStore.focusPanel('log-main');
-        } else if (e.key === '5') {
-          e.preventDefault();
-          dockviewStore.focusPanel('agent-main');
-        } else if (e.key === '6') {
-          e.preventDefault();
-          dockviewStore.focusPanel('definition-main');
+          focusTarget();
         }
       }
 

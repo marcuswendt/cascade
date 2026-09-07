@@ -345,6 +345,36 @@ class DockviewStore {
   }
 
   /**
+   * Focus a built-in panel, creating it if it is not open.
+   *
+   * `focusPanel` alone returns silently when the panel does not exist, which
+   * made View > Focus Agent do nothing at all — the Agent panel is not in most
+   * saved layouts, so the menu item was inert for exactly the people who needed
+   * it. Marcus's point, 2026-09-07: a Focus command should bring the panel up.
+   *
+   * `neighbour` is where it belongs when it has to be created: the agent
+   * console beside the log, the definition beside the parameters, matching the
+   * default layout. If that neighbour is gone too, dockview places it on its
+   * own rather than refusing.
+   */
+  focusOrOpenPanel(panelId: string, type: PanelType, title: string, neighbour?: string): void {
+    if (!this._api) return;
+    if (this._api.getPanel(panelId)) {
+      this.focusPanel(panelId);
+      return;
+    }
+    const reference = neighbour && this._api.getPanel(neighbour) ? neighbour : undefined;
+    this.addPanel({
+      id: panelId,
+      type,
+      title,
+      position: reference ? 'within' : undefined,
+      referencePanel: reference,
+    });
+    this.focusPanel(panelId);
+  }
+
+  /**
    * Check if a panel exists
    */
   hasPanel(panelId: string): boolean {

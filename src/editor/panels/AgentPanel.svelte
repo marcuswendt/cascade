@@ -94,6 +94,16 @@
   $: detailCount = entries.filter((entry) => entry.kind === 'detail').length;
   $: visibleEntries = showDetail ? entries : entries.filter((entry) => entry.kind !== 'detail');
 
+  /** Grow the prompt box with the prompt, up to a third of the panel.
+   *  A two-line box is right for "make it blue" and wrong for the paragraph
+   *  that describes a scene, which is most of what gets typed here. */
+  function autoGrow(): void {
+    if (!inputEl) return;
+    inputEl.style.height = 'auto';
+    const cap = Math.max(120, Math.round((transcriptEl?.clientHeight ?? 400) / 2));
+    inputEl.style.height = `${Math.min(inputEl.scrollHeight, cap)}px`;
+  }
+
   async function scrollToEnd(): Promise<void> {
     await tick();
     if (transcriptEl) transcriptEl.scrollTop = transcriptEl.scrollHeight;
@@ -136,6 +146,7 @@
 
     push('you', text);
     prompt = '';
+    void tick().then(autoGrow);
     busy = true;
     controller = new AbortController();
 
@@ -257,7 +268,7 @@
     {#if busy}
       <button type="button" on:click={stop}>Stop</button>
     {:else}
-      <button type="button" on:click={newSession} title="Forget the conversation for this sketch">New session</button>
+      <button type="button" on:click={newSession} title="Forget the conversation for this sketch">Reset</button>
     {/if}
   </div>
 
@@ -274,7 +285,7 @@
 
   <div class="transcript" bind:this={transcriptEl}>
     {#if entries.length === 0}
-      <div class="hint">Type what the sketch should become — "create an oscillator and connect it to ORB". The agent edits the project's files; the graph window reloads when they change. Drag a node or parameter in to paste its address.</div>
+      <div class="hint">Say what the sketch should become. Drag a node in for its path.</div>
     {/if}
     {#each visibleEntries as entry, index (index)}
       <div class="entry {entry.kind}">{entry.text}</div>
@@ -291,9 +302,10 @@
       bind:this={inputEl}
       bind:value={prompt}
       on:keydown={onKeydown}
+      on:input={autoGrow}
       rows="2"
       spellcheck="false"
-      placeholder={busy ? `${agent} is working…` : 'Prompt the sketch (Enter to send, Shift+Enter for a new line)'}
+      placeholder={busy ? `${agent} is working…` : 'Prompt the sketch'}
       disabled={busy}
     ></textarea>
     <button type="button" class="send" on:click={send} disabled={busy || !prompt.trim() || !launchable}>Send</button>
@@ -456,6 +468,8 @@
   .composer textarea {
     flex: 1;
     resize: none;
+    max-height: 50%;
+    overflow-y: auto;
     background: var(--surface-input);
     color: var(--text-primary);
     border: 1px solid var(--border);

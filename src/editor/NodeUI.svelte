@@ -249,6 +249,15 @@
     dispatch('cookToggle', { nodeId: node.id, event: e });
   }
   
+  /** Hand the node's address to whatever it is dropped on. */
+  function handleNameDragStart(event: DragEvent): void {
+    // Stop the canvas seeing this as the start of a node move.
+    event.stopPropagation();
+    if (!event.dataTransfer) return;
+    event.dataTransfer.setData('text/plain', node.id);
+    event.dataTransfer.effectAllowed = 'copy';
+  }
+
   function startEditingName(e: MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
@@ -477,13 +486,22 @@
           on:mousedown|stopPropagation
         />
       {:else}
+        <!-- The name is the drag handle for the node's address. The node body
+             cannot be it: the canvas moves nodes with mouse events, and a
+             native HTML5 drag on the same element would fight it for the
+             pointer. The name is already a click target for renaming rather
+             than a drag target, so it is the one part of a node that is free.
+             `text/plain` carries the address, which is the contract the agent
+             console reads and the same string that goes in an expression. -->
         <span 
           class="node-name"
           role="button"
           tabindex="0"
+          draggable="true"
+          on:dragstart={handleNameDragStart}
           on:click={startEditingName}
           on:keydown={handleNameKeyDownSpan}
-          title="Click to rename (Enter or Space)"
+          title="Click to rename · drag into the agent console for its path"
         >
           {node.id}
         </span>
