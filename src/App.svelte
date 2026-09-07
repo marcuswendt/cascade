@@ -49,6 +49,7 @@
   import { GraphEditorAdapter } from './editor/GraphEditorAdapter';
   import { StudioGraphController } from './editor/StudioGraphController';
   import { incrementPropUpdateCounter } from './editor/stores/propUpdateStore';
+  import { selectedNodeIds, selectedNodesOf } from './editor/stores/selectionStore';
   import {
     recordSnapshotImmediate,
     popUndo,
@@ -129,7 +130,7 @@
    */
   function applyNodeColor(color: string | null) {
     if (!graph) return;
-    const targets = graph.nodes.filter((n: any) => n.selected || n.id === selectedNode?.id);
+    const targets = selectedNodesOf(graph, $selectedNodeIds, selectedNode);
     if (targets.length === 0) return;
     recordHistory();
     targets.forEach((n: any) => {
@@ -1354,7 +1355,7 @@
 
   <ColorPalette
     open={colorPaletteOpen}
-    selectionCount={graph ? graph.nodes.filter((n) => (n as any).selected || n.id === selectedNode?.id).length : 0}
+    selectionCount={selectedNodesOf(graph, $selectedNodeIds, selectedNode).length}
     on:choose={(e) => { applyNodeColor(e.detail); colorPaletteOpen = false; }}
     on:close={() => (colorPaletteOpen = false)}
   />

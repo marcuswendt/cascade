@@ -2,8 +2,9 @@
   import type { CascadePanelParams } from '../dockview/types';
   import type { Graph, CanvasAnnotation } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
-  import Inspector from '../Inspector.svelte';
+  import InspectorStack from '../InspectorStack.svelte';
   import { sharedContextStore, panelLockStore } from '../dockview/renderer';
+  import { selectedNodeIds, selectedNodesOf } from '../stores/selectionStore';
 
   export let panelId: string;
   export let panelParams: CascadePanelParams;
@@ -22,6 +23,14 @@
   $: isLocked = lockState?.isLocked ?? false;
   $: displayNode = isLocked ? lockState?.lockedNode : selectedNode;
   $: displayAnnotationId = isLocked ? lockState?.lockedAnnotationId : selectedAnnotation;
+
+  /**
+   * A locked panel is pinned to the one node it was locked on, so it never
+   * follows the selection. Otherwise show every selected node, in canvas order.
+   */
+  $: displayNodes = isLocked
+    ? (displayNode ? [displayNode] : [])
+    : selectedNodesOf(graph ?? null, $selectedNodeIds, selectedNode);
 
   // Get annotation object from ID
   let annotation: CanvasAnnotation | null = null;
@@ -48,8 +57,12 @@
   $: {
     if (panelApi?.setTitle) {
       const lockPrefix = isLocked ? '~ ' : '';
-      if (displayNode) {
-        panelApi.setTitle(`${lockPrefix}Inspector: ${displayNode.id}`);
+      if (displayNodes.length > 1) {
+        // A list of ids would not fit the tab, and the count is the thing that
+        // actually changed.
+        panelApi.setTitle(`${lockPrefix}Inspector: ${displayNodes.length} nodes`);
+      } else if (displayNodes.length === 1) {
+        panelApi.setTitle(`${lockPrefix}Inspector: ${displayNodes[0].id}`);
       } else if (annotation) {
         panelApi.setTitle(`${lockPrefix}Inspector: ${annotation.type}`);
       } else {
@@ -60,10 +73,10 @@
 </script>
 
 <div class="panel-wrapper">
-  <Inspector
-    node={displayNode}
+  <InspectorStack
+    nodes={displayNodes}
     {annotation}
-    {graph}
+    graph={graph ?? null}
     position="right"
     skipAnimation={true}
     {onRecordHistory}

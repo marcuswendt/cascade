@@ -13,6 +13,7 @@
   import { loadEmbeddedModule } from '@/engine/nodeModuleLoader';
   import { getPortColor, getConnectionColor, DATA_TYPE_COLORS } from '@/utils/portColors';
   import { recordSnapshotImmediate } from './stores/historyStore';
+  import { setSelectedNodeIds } from './stores/selectionStore';
   import { readCascadeClipboard, writeCascadeClipboard } from './clipboard';
   
   const dispatch = createEventDispatcher();
@@ -100,6 +101,26 @@
   let isPanning = false;
   let selectedNodes: string[] = [];
   let selectedAnnotations: string[] = [];
+
+  /**
+   * Publish the whole selection, not just the primary node.
+   *
+   * `selectedNodes` is local to this component and the only thing that ever
+   * left it was one node on `nodeSelect`, so `Node.selected` was read outside
+   * the canvas and written nowhere — every consumer saw a selection of one.
+   * Mirroring the set onto the nodes and into the store makes both readings
+   * true at once, and the inspector panel can then show every selected node
+   * without a second selection signal being threaded up through App.
+   */
+  $: publishSelection(selectedNodes, graph);
+
+  function publishSelection(ids: string[], target: Graph | undefined) {
+    if (target) {
+      const chosen = new Set(ids);
+      for (const candidate of target.nodes) (candidate as any).selected = chosen.has(candidate.id);
+    }
+    setSelectedNodeIds(ids);
+  }
 
   // Network navigation state
   // currentNetwork is the subnet we're "inside" of (null = root level)
@@ -1779,12 +1800,13 @@ node.onReady = () => {
       
       // Update selection
       if (e.shiftKey) {
-        // Add to existing selection
-        nodesInSelection.forEach(nodeId => {
-          if (!selectedNodes.includes(nodeId)) {
-            selectedNodes.push(nodeId);
-          }
-        });
+        // Add to existing selection. Reassigned rather than pushed into: an
+        // in-place push is invisible to Svelte, so the published selection
+        // never saw a shift-drag widen it.
+        selectedNodes = [
+          ...selectedNodes,
+          ...nodesInSelection.filter(nodeId => !selectedNodes.includes(nodeId))
+        ];
         annotationsInSelection.forEach(annotationId => {
           if (!selectedAnnotations.includes(annotationId)) {
             selectedAnnotations.push(annotationId);
@@ -3233,6 +3255,14 @@ node.onReady = () => {
   // Update selectedNodes when selectedNode changes externally (but avoid cycles)
   $: if (selectedNode && selectedNode.id && !selectedNodes.includes(selectedNode.id)) {
     selectedNodes = [selectedNode.id];
+  }
+
+  // And an external deselect has to empty the set, not just the primary node,
+  // now that the whole set is what the inspector renders. Every in-canvas path
+  // that nulls selectedNode already clears it, so this only catches the ones
+  // from outside — the inspector toggle, an undo that restores no selection.
+  $: if (!selectedNode && selectedNodes.length > 0) {
+    selectedNodes = [];
   }
 
   // Helper function to calculate the center of visible nodes in current network

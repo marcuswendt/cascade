@@ -25,6 +25,16 @@
   export let graph: Graph | null = null;
   export let position: 'right' | 'left' = 'right';
   export let skipAnimation: boolean = false;
+  /**
+   * Stacked inside another panel rather than owning one.
+   *
+   * The panel-owning shell is a full-height flex column with its own scroller,
+   * which is exactly wrong when several of these sit under each other: each
+   * would claim the whole panel. Embedded drops the height, the scroller and
+   * the backdrop and lets the stack own all three. Off by default, so the
+   * single-selection panel is byte-for-byte what it was.
+   */
+  export let embedded: boolean = false;
   export let onRecordHistory: (() => void) | undefined = undefined;
   export let onAction: ((action: string, nodeId: string) => void) | undefined = undefined;
 
@@ -540,7 +550,7 @@
 </script>
 
 {#if annotation && annotation.type === 'text'}
-  <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation}>
+  <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation} class:embedded>
     <div class="content">
       <!-- Content -->
       <div class="section">
@@ -871,7 +881,7 @@
     </div>
   </div>
 {:else if annotation && annotation.type === 'line'}
-  <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation}>
+  <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation} class:embedded>
     <div class="content">
       <!-- Position -->
       <div class="section">
@@ -987,7 +997,7 @@
     </div>
   </div>
 {:else if annotation && annotation.type === 'polyline'}
-  <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation}>
+  <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation} class:embedded>
     <div class="content">
       <!-- Position -->
       <div class="section">
@@ -1074,7 +1084,7 @@
     </div>
   </div>
 {:else if node}
-  <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation}>
+  <div class="inspector" class:left={position === 'left'} class:no-animation={skipAnimation} class:embedded>
     <div class="content">
       {#if node.error}
         <div class="error-badge-container">
@@ -1093,7 +1103,7 @@
             >
               {#each folderProps as item}
                 {@const { key, prop, controlType, displayName } = item}
-                {@const inputId = `prop-${key}-${folder}`}
+                {@const inputId = `prop-${node.id}-${key}-${folder}`}
                 {@const isVector = controlType === 'vec2' || controlType === 'vec3' || controlType === 'vec2i' || controlType === 'vec3i' || controlType === 'vector'}
                 <div class="prop-group" class:prop-group-row={isVector}>
                   {#if displayName !== null}
@@ -1218,7 +1228,7 @@
           {:else}
             {#each folderProps as item}
               {@const { key, prop, controlType, displayName } = item}
-              {@const inputId = `prop-${key}-${folder}`}
+              {@const inputId = `prop-${node.id}-${key}-${folder}`}
               {@const isVector = controlType === 'vec2' || controlType === 'vec3' || controlType === 'vec2i' || controlType === 'vec3i' || controlType === 'vector'}
               <div class="prop-group" class:prop-group-row={isVector}>
                 {#if displayName !== null}
@@ -1565,6 +1575,20 @@
     flex: 1;
     overflow-y: auto;
     padding: 8px;
+  }
+
+  /* Stacked: the surrounding stack owns the height, the scrolling and the
+     surface, so this instance is only as tall as its own controls. */
+  .inspector.embedded {
+    height: auto;
+    background: none;
+    backdrop-filter: none;
+    overflow: visible;
+  }
+
+  .inspector.embedded .content {
+    flex: none;
+    overflow: visible;
   }
   
   .section {
