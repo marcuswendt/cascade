@@ -49,22 +49,42 @@ function readCommands(root: string): Record<string, unknown> {
 }
 
 /**
- * Extra flags for one agent, declared per project.
+ * Extra flags for one agent, with a sensible default per agent.
  *
- * The reason this exists rather than being hardcoded: a headless Claude cannot
- * prompt for permission, so by default it will *refuse* the edits the console
- * exists to make. The fix is a flag — `"args": ["--permission-mode",
- * "acceptEdits"]` — and it is a decision about what a process may do to a
- * project, which belongs in the project's own file beside the allowlist rather
- * than baked into Cascade. Declared as:
+ * These started out as required configuration, on the reasoning that what a
+ * process may do to a project is a decision rather than a default. Marcus's
+ * push-back on 2026-09-07 was right, and the argument that changed it: **the
+ * meaningful consent is the allowlist.** Adding `"claude": "claude"` under
+ * `"commands"` already authorises launching a coding agent inside this project.
+ * A second gate that then makes it refuse the only thing it is for is not
+ * security, it is friction — and its failure mode is the confusing one, since
+ * the console launches successfully and silently changes nothing.
+ *
+ * So the default is applied per known agent, and a project can still override
+ * it — including with an explicit `"args": []` to add nothing at all. Declared
+ * as:
  *
  *     "agent": { "claude": { "args": ["--permission-mode", "acceptEdits"] } }
  */
+const DEFAULT_AGENT_ARGS: Record<string, readonly string[]> = {
+  // A headless Claude cannot prompt, so without this it runs and then declines
+  // to edit anything — the console would launch successfully and do nothing,
+  // which is the worst of both.
+  claude: ['--permission-mode', 'acceptEdits'],
+};
+
 export function agentExtraArgs(root: string, alias: string): string[] {
   const raw = readManifest(root);
-  const args = raw?.agent?.[alias]?.args;
-  if (!Array.isArray(args)) return [];
-  return args.filter((value: unknown): value is string => typeof value === 'string' && !value.includes('\0'));
+  const entry = raw?.agent?.[alias];
+  const declared = entry && typeof entry === 'object' && !Array.isArray(entry) && 'args' in entry
+    ? (entry as { args?: unknown }).args
+    : undefined;
+  // Declared wins, including an explicit empty array — that is how a project
+  // says "launch it with nothing added" rather than "I forgot to configure it".
+  if (Array.isArray(declared)) {
+    return declared.filter((value: unknown): value is string => typeof value === 'string' && !value.includes('\0'));
+  }
+  return [...(DEFAULT_AGENT_ARGS[alias] ?? [])];
 }
 
 function executableFile(candidate: string): string | null {

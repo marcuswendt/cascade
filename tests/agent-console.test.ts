@@ -181,6 +181,28 @@ describe('headless launch arguments', () => {
     expect(argsFor('claude', 'do the thing', null)[0]).toBe('-p');
   });
 
+  it('permits headless edits by default, because the allowlist is the real consent', () => {
+    // No `agent` block at all. Adding claude under "commands" already
+    // authorises launching a coding agent in this project; making it then
+    // refuse to edit is friction rather than a second safeguard, and its
+    // failure mode is the confusing one — the console launches and silently
+    // changes nothing.
+    const project = projectRoot({ commands: { claude: '/bin/sh' } });
+    expect(agentExtraArgs(project.root, 'claude')).toEqual(['--permission-mode', 'acceptEdits']);
+    // No default for an agent Cascade knows nothing about.
+    expect(agentExtraArgs(project.root, 'codex')).toEqual([]);
+  });
+
+  it('lets a project add nothing at all with an explicit empty array', () => {
+    // Distinguishable from an absent block on purpose: this is a project saying
+    // "launch it bare", not "I forgot to configure it".
+    const project = projectRoot({
+      commands: { claude: '/bin/sh' },
+      agent: { claude: { args: [] } },
+    });
+    expect(agentExtraArgs(project.root, 'claude')).toEqual([]);
+  });
+
   it('appends the flags a project declares, which is how headless edits are permitted', () => {
     const project = projectRoot({
       commands: { claude: '/bin/sh' },
