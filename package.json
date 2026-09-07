@@ -2,6 +2,19 @@
   "name": "cascade",
   "version": "0.2.22",
   "description": "Visual programming for generative art",
+  "author": "FIELD.IO <marcus@field.io>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcuswendt/cascade.git"
+  },
+  "homepage": "https://github.com/marcuswendt/cascade#readme",
+  "keywords": [
+    "node-graph",
+    "visual-programming",
+    "generative-art",
+    "creative-coding",
+    "dataflow"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -77,19 +90,14 @@
     "test:package": "node scripts/smoke-package.mjs"
   },
   "dependencies": {
-    "@lucide/svelte": "^1.37.0",
-    "dockview": "^8.2.0",
-    "dompurify": "^3.4.14",
     "esbuild": "^0.28.2",
     "express": "^5.2.1",
-    "marked": "^18.0.11",
-    "monaco-editor": "^0.56.0",
     "multer": "^2.3.0",
     "sharp": "^0.35.4",
-    "svelte": "^5.0.0",
     "typescript": "^6.0.3"
   },
   "devDependencies": {
+    "@lucide/svelte": "^1.37.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@testing-library/svelte": "^5.4.2",
     "@testing-library/user-event": "^14.6.6",
@@ -97,7 +105,12 @@
     "@types/express": "^5.0.6",
     "@types/node": "^24.13.3",
     "@vitest/coverage-v8": "^4.1.11",
+    "dockview": "^8.2.0",
+    "dompurify": "^3.4.14",
     "jsdom": "^29.1.1",
+    "marked": "^18.0.11",
+    "monaco-editor": "^0.56.0",
+    "svelte": "^5.0.0",
     "svelte-check": "^4.7.6",
     "tsx": "^4.23.12",
     "vite": "^8.2.2",

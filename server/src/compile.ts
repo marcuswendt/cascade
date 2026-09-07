@@ -39,6 +39,25 @@ function cascadeRuntimePlugin(project: ProjectRoot): esbuild.Plugin {
         path: args.path,
         namespace: 'cascade-runtime',
       }));
+      // `runtime/shell.ts` re-exports a *value* (ShellProcessError) from the
+      // contracts package. In this repo a workspace link resolves that; in an
+      // installed copy of Cascade there is no `@cascade/contracts` on disk at
+      // all, only the bundled `dist/contracts` — so esbuild failed with
+      // "Could not resolve" and every project node importing `cascade/shell`
+      // was uncompilable off this machine. Resolved from the install location
+      // exactly as the shims themselves are.
+      build.onResolve({ filter: /^@cascade\/contracts$/ }, () => {
+        // Beside the bundled CLI when installed, in the workspace when running from src.
+        const candidates = [
+          path.join(__dirname_compile, '..', 'contracts', 'index.js'),
+          path.join(__dirname_compile, '..', '..', 'packages', 'contracts', 'dist', 'index.js'),
+        ];
+        const found = candidates.find((c) => fs.existsSync(c));
+        if (!found) {
+          return { errors: [{ text: `@cascade/contracts not found (looked in ${candidates.join(', ')})` }] };
+        }
+        return { path: found };
+      });
       build.onLoad({ filter: /.*/, namespace: 'cascade-runtime' }, (args) => {
         if (args.path === 'cascade/config') {
           return { contents: configRuntimeSource(readProjectManifest(project.root).settings), loader: 'ts' as const };

@@ -139,6 +139,22 @@ describe('ShellService', () => {
     expect(compiled.code).not.toMatch(/node:child_process|node:fs/);
   });
 
+  // The test above passes in this repo whether or not the resolver exists: a
+  // workspace link makes '@cascade/contracts' resolvable from anywhere under
+  // the root. An installed copy of Cascade has no such package on disk — only
+  // the bundled dist/contracts — so the specifier has to be gone from the
+  // output, not merely resolvable here.
+  it('inlines the contracts package rather than leaving a bare specifier', async () => {
+    const p = project({ commands: { node: process.execPath } });
+    const dir = path.join(p.root, 'nodes', 'shell-errors');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.ts'), `import { run, ShellProcessError } from 'cascade/shell';\nexport async function execute(){ try { return await run('node', ['--version']); } catch (e) { return e instanceof ShellProcessError; } }`);
+    const compiled = await compileProjectModule(p, 'shell-errors');
+    expect(compiled.ok).toBe(true);
+    expect(compiled.code).not.toContain('@cascade/contracts');
+    expect(compiled.code).toContain('ShellProcessError');
+  });
+
   it('rejects an explicit browser classification that imports cascade/shell', async () => {
     const p = project({ commands: { node: process.execPath } });
     const dir = path.join(p.root, 'nodes', 'invalid-browser-shell');
