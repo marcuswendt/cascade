@@ -399,7 +399,7 @@
           </div>
         {/if}
 
-        <div class="body" style={nodeColor ? `--node-fill:${nodeColor}` : ''}>
+        <div class="body" class:tinted={!!nodeColor} style={nodeColor ? `--node-fill:${nodeColor}` : ''}>
           <!-- Bypass button (left side) -->
           <button
             class="node-button bypass-button"
@@ -709,7 +709,7 @@
     align-self: stretch;
     position: relative;
     height: 36px;
-    background: var(--node-fill, var(--surface-control));
+    background: var(--surface-control);
     border-radius: 5px;
     border: 1px solid var(--node-border-color, var(--border));
     display: flex;
@@ -762,6 +762,18 @@
   /* Selection has to survive whatever colour the node was given, so it is a
      ring outside the border rather than the border itself — a coloured node
      was making the old border-only cue invisible. */
+  /* An authored node colour is a hue, not a surface.
+     Documents in ~/Documents/Cascade carry colours like #2a3a4a and #4a3a2a,
+     chosen against a black canvas. Painted as an opaque fill they were the
+     nodes; on a light canvas they read as holes punched in the graph. So the
+     authored colour is mixed into whatever the theme's node surface is, at a
+     strength the theme sets: full in dark, where it is the fill it was drawn
+     as, and a tint in light. The document is never touched, and the author's
+     colour coding still means what it meant. */
+  .body.tinted {
+    background: color-mix(in oklab, var(--node-fill) var(--node-tint-strength, 100%), var(--surface-control));
+  }
+
   .node.selected .body {
     border-color: var(--node-border-color);
     box-shadow: 0 0 0 2px var(--accent), 0 0 12px var(--accent-tint-strong);

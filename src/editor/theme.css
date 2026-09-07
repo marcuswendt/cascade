@@ -19,6 +19,11 @@
  */
 
 :root {
+  /* How much of an authored node colour is used as the node's surface. Full
+     in dark, because those colours were chosen against a black canvas and
+     are the fill they were drawn as; a tint in light, where an opaque dark
+     blue reads as a hole punched in the graph. See NodeUI's .body.tinted. */
+  --node-tint-strength: 100%;
   color-scheme: dark;
 
   /* Surfaces */
@@ -165,6 +170,7 @@
 }
 
 @media (prefers-color-scheme: light) {
+  --node-tint-strength: 26%;
   :root:not([data-theme='dark']) {
     color-scheme: light;
 
@@ -313,6 +319,7 @@
 }
 
 :root[data-theme='dark'] {
+  --node-tint-strength: 100%;
   color-scheme: dark;
 
   /* Surfaces */
@@ -459,6 +466,7 @@
 }
 
 :root[data-theme='light'] {
+  --node-tint-strength: 26%;
   color-scheme: light;
 
   /* Surfaces */

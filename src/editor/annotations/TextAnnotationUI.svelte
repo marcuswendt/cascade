@@ -21,7 +21,9 @@
     `font-weight: ${style.fontWeight || 'normal'}`,
     `font-style: ${style.fontStyle || 'normal'}`,
     `text-align: ${style.textAlign || 'left'}`,
-    `color: ${style.color || '#ffffff'}`,
+    // White was the dark-only default, and on a light canvas it disappears.
+    // An authored colour still wins; only the fallback follows the theme.
+    `color: ${style.color || 'var(--text-default)'}`,
     style.backgroundColor ? `background-color: ${style.backgroundColor}` : '',
     `padding: ${style.padding || 0}px`,
     `border-radius: ${style.borderRadius || 0}px`,

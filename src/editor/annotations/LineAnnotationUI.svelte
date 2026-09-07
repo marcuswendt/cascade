@@ -13,7 +13,8 @@
   $: endX = annotation.endPosition?.x || annotation.position.x;
   $: endY = annotation.endPosition?.y || annotation.position.y;
   $: strokeWidth = style.strokeWidth || 2;
-  $: strokeColor = style.strokeColor || '#ffffff';
+  // Theme-following default; an authored stroke colour still wins.
+  $: strokeColor = style.strokeColor || 'var(--text-default)';
 </script>
 
 <svg

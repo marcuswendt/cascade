@@ -10,7 +10,8 @@
   $: style = (annotation as any).style || {};
   $: points = annotation.points || [];
   $: strokeWidth = style.strokeWidth || 2;
-  $: strokeColor = style.strokeColor || '#ffffff';
+  // Theme-following default; an authored stroke colour still wins.
+  $: strokeColor = style.strokeColor || 'var(--text-default)';
   $: pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
 </script>
 
