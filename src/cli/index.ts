@@ -55,6 +55,9 @@ Options:
   --trusted-host <name>    Allow an exact remote browser hostname (repeatable)
   --no-open                Do not open Studio in a browser
   --entry-node <id>  Execute from a specific entry node
+  --frames <range>   Render a frame sequence: 1-100, 1-100x2 (step), or 42
+  --fps <number>     Frame rate to evaluate the range at
+  --out <dir>        Sequence directory, project-relative (default: renders)
   --validate-only   Validate only (same as 'validate' command)
   --verbose, -v      Show verbose output
   --version          Show version
@@ -68,7 +71,12 @@ Examples:
   cascade run graph.cascade
   cascade run graph.cascade --entry-node node_123
   cascade validate graph.cascade
+  cascade run graph.cascade --frames 1-100
+  cascade run graph.cascade --frames 1-100x2 --fps 25 --out frames
   cascade run graph.cascade --verbose
+
+A frame sequence is written as <out>/<node id>.<frame>.<ext> — one file per
+image output nothing downstream consumes, or per output of --entry-node.
 `);
     process.exit(0);
   }
@@ -105,6 +113,9 @@ Examples:
     checkOnly?: boolean;
     inspectOnly?: boolean;
     verbose?: boolean;
+    frames?: string;
+    fps?: number;
+    out?: string;
   } = {
     file: fileArg,
     validateOnly: command === 'validate',
@@ -122,6 +133,35 @@ Examples:
   if (entryNodeIndex !== -1 && args[entryNodeIndex + 1]) {
     options.entryNode = args[entryNodeIndex + 1];
   }
+
+  // A flag whose value is missing is a typo, not a default: rendering frame 1
+  // when somebody asked for a hundred frames is the worst of the options.
+  const valueOf = (flag: string): string | undefined => {
+    const index = args.indexOf(flag);
+    if (index === -1) return undefined;
+    const value = args[index + 1];
+    if (!value || value.startsWith('-')) {
+      console.error(`Error: ${flag} needs a value`);
+      process.exit(1);
+    }
+    return value;
+  };
+
+  const frames = valueOf('--frames');
+  if (frames) options.frames = frames;
+
+  const fps = valueOf('--fps');
+  if (fps !== undefined) {
+    const rate = Number(fps);
+    if (!Number.isFinite(rate) || rate <= 0) {
+      console.error(`Error: --fps must be a positive number (got "${fps}")`);
+      process.exit(1);
+    }
+    options.fps = rate;
+  }
+
+  const out = valueOf('--out');
+  if (out) options.out = out;
 
   // Run graph
   try {

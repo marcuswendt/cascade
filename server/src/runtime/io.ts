@@ -44,20 +44,84 @@ export function mediaUrl(path: string, options: MediaOptions = {}): string {
 }
 
 /**
+ * The transport a host installs so `cascade/io` can reach project files.
+ *
+ * Same shape of decision as `cascade/stage`: the page posts to the server,
+ * because that is the only door a browser has, and a headless host installs a
+ * local transport before it runs the graph. Without one, every read here is a
+ * `fetch('/api/media/...')` against a relative URL with no origin to resolve it
+ * — which is exactly how a Canvas 2D node came to render in Studio and fail
+ * under `cascade run`.
+ *
+ * Paths stay project-relative on both sides. The bridge, not the node, decides
+ * what that resolves to.
+ */
+export interface IoBridge {
+  /** Read a project file's bytes. */
+  read(path: string, options?: MediaOptions): Promise<Uint8Array>;
+  /** Write bytes into the project cache. Returns the stored project-relative path. */
+  write(path: string, data: Uint8Array): Promise<string>;
+}
+
+const IO_BRIDGE_KEY = '__cascadeIoBridge';
+
+/** Install the local transport. Returns a disposer, so a test can take it down. */
+export function installIoBridge(bridge: IoBridge | null): () => void {
+  const globals = globalThis as Record<string, unknown>;
+  const previous = globals[IO_BRIDGE_KEY];
+  globals[IO_BRIDGE_KEY] = bridge ?? undefined;
+  return () => {
+    globals[IO_BRIDGE_KEY] = previous;
+  };
+}
+
+function localIo(): IoBridge | null {
+  const bridge = (globalThis as Record<string, unknown>)[IO_BRIDGE_KEY] as IoBridge | undefined;
+  return bridge && typeof bridge.read === 'function' && typeof bridge.write === 'function' ? bridge : null;
+}
+
+/**
+ * A project file's bytes, over whichever transport this host has. Every read in
+ * this module goes through here so the two hosts differ in one place only.
+ */
+export async function loadBytes(path: string, options: MediaOptions = { raw: true }): Promise<ArrayBuffer> {
+  const bridge = localIo();
+  if (bridge) {
+    const bytes = await bridge.read(path, options);
+    // A Buffer is usually a view into a larger pool, and `loadFloats` builds a
+    // typed-array VIEW onto whatever comes back — so hand on the exact bytes.
+    const exact = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+      ? bytes.buffer
+      : bytes.slice().buffer;
+    return exact as ArrayBuffer;
+  }
+  const response = await fetch(mediaUrl(path, options));
+  if (!response.ok) throw new Error(`cascade/io: cannot load ${path} (${response.status})`);
+  return await response.arrayBuffer();
+}
+
+/**
  * Load a project image as an <img>. Defaults to `raw` — a node is processing
  * these pixels, not showing them, so a re-encoded copy would be the wrong thing
  * to hand it. Pass a width explicitly to work at a smaller size on purpose.
  */
 export async function loadImage(path: string, options: MediaOptions = { raw: true }): Promise<HTMLImageElement> {
   const image = new Image();
-  image.crossOrigin = 'anonymous';
-  image.src = mediaUrl(path, options);
+  const bridge = localIo();
+  if (bridge) {
+    // No origin to resolve a URL against; hand the decoder the bytes.
+    (image as unknown as { src: unknown }).src = new Uint8Array(await loadBytes(path, options));
+  } else {
+    image.crossOrigin = 'anonymous';
+    image.src = mediaUrl(path, options);
+  }
   await image.decode();
   return image;
 }
 
 /** Same, as an ImageBitmap — the right input for `texImage2D`. */
 export async function loadBitmap(path: string, options: MediaOptions = { raw: true }): Promise<ImageBitmap> {
+  if (localIo()) return createImageBitmap(new Blob([await loadBytes(path, options)]));
   const response = await fetch(mediaUrl(path, options));
   if (!response.ok) throw new Error(`cascade/io: cannot load ${path} (${response.status})`);
   return createImageBitmap(await response.blob());
@@ -81,6 +145,17 @@ export interface SaveOptions {
 }
 
 /**
+ * Anything that can produce encoded pixels. The two browser canvases are the
+ * usual case; a headless host's canvas offers Skia's own encoder instead, and
+ * `saveImage` takes whichever it is handed rather than making a node care.
+ */
+export interface ImageSource {
+  convertToBlob?(options?: { type?: string; quality?: number }): Promise<Blob>;
+  encode?(format: string, quality?: number): Promise<Uint8Array>;
+  toBuffer?(mime: string): Uint8Array;
+}
+
+/**
  * Write pixels into the project and get back the path to hand downstream.
  * Confined to the cache directory, like every other node output.
  *
@@ -88,7 +163,7 @@ export interface SaveOptions {
  *   node.out('path').setValue(out);
  */
 export async function saveImage(
-  source: HTMLCanvasElement | OffscreenCanvas | Blob,
+  source: HTMLCanvasElement | OffscreenCanvas | Blob | ImageSource,
   path: string,
   options: SaveOptions = {}
 ): Promise<string> {
@@ -98,8 +173,14 @@ export async function saveImage(
 
   if (source instanceof Blob) {
     blob = source;
-  } else if ('convertToBlob' in source) {
+  } else if (typeof (source as OffscreenCanvas).convertToBlob === 'function') {
     blob = await (source as OffscreenCanvas).convertToBlob({ type, quality: options.quality });
+  } else if (typeof (source as ImageSource).encode === 'function') {
+    // A headless canvas that was handed over unwrapped — Skia's own encoder,
+    // rather than a browser API it does not have.
+    blob = new Blob([(await (source as ImageSource).encode!(format, options.quality)) as BlobPart], { type });
+  } else if (typeof (source as ImageSource).toBuffer === 'function') {
+    blob = new Blob([(source as ImageSource).toBuffer!(type) as BlobPart], { type });
   } else {
     blob = await new Promise<Blob>((resolve, reject) => {
       (source as HTMLCanvasElement).toBlob(
@@ -116,6 +197,13 @@ export async function saveImage(
 /** Write any bytes into the project cache and return the path. */
 export async function saveBytes(data: Blob | ArrayBuffer | Uint8Array, path: string): Promise<string> {
   const clean = path.replace(/^\.?\//, '');
+  const bridge = localIo();
+  if (bridge) {
+    const bytes = data instanceof Uint8Array
+      ? data
+      : new Uint8Array(data instanceof Blob ? await data.arrayBuffer() : data);
+    return await bridge.write(clean, bytes);
+  }
   const response = await fetch(`/api/media/${clean.split('/').map(encodeURIComponent).join('/')}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/octet-stream' },
@@ -204,9 +292,7 @@ function parseNpyHeader(buffer: ArrayBuffer): NpyHeader {
  * still loads — it just costs a pass.
  */
 export async function loadFloats(path: string): Promise<FloatImage> {
-  const response = await fetch(mediaUrl(path, { raw: true }));
-  if (!response.ok) throw new Error(`cascade/io: cannot load ${path} (${response.status})`);
-  const buffer = await response.arrayBuffer();
+  const buffer = await loadBytes(path, { raw: true });
   const header = parseNpyHeader(buffer);
 
   if (header.fortran) throw new Error('cascade/io: Fortran-ordered .npy is not supported');

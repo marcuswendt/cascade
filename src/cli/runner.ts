@@ -11,6 +11,9 @@ import { compileEmbedded, compileProjectModule } from '../../server/src/compile.
 import { ProjectRoot } from '../../server/src/project.js';
 import { runProjectStage } from '../../server/src/stageRunner.js';
 import { installStageBridge } from '../../server/src/runtime/stage.js';
+import { installProjectIo } from './headlessIo.js';
+import { installHeadlessCanvas, MISSING_CANVAS_MESSAGE, type CanvasHost } from './headlessCanvas.js';
+import { cookUntilSettled, parseFrameSpec, renderFrameRange } from './frames.js';
 
 export interface RunOptions {
   file: string;
@@ -19,10 +22,32 @@ export interface RunOptions {
   checkOnly?: boolean;
   inspectOnly?: boolean;
   verbose?: boolean;
+  /** `--frames 1-100`, `1-100x2`, or a single frame. Renders a sequence. */
+  frames?: string;
+  /** Frame rate to evaluate the range at. Leaves the graph's own rate alone when absent. */
+  fps?: number;
+  /** Sequence directory, project-relative. Default `renders/`. */
+  out?: string;
+}
+
+/**
+ * A drawing failure in a Node process that has no canvas reads as
+ * `OffscreenCanvas is not defined` — which sounds like a broken node and is
+ * really a missing renderer. When the optional renderer failed to load, say so
+ * instead.
+ */
+function looksLikeCanvasFailure(message: string): boolean {
+  return /OffscreenCanvas|createImageBitmap|ImageData|Path2D|DOMMatrix|getContext|createRadialGradient/.test(message);
+}
+
+/** Print the install sentence once, under everything else — never once per
+ *  failed node, which is how a four-node graph produced it four times. */
+function reportMissingCanvas(messages: string[], canvasError: Error | null): void {
+  if (canvasError && messages.some(looksLikeCanvasFailure)) console.error(`\n${MISSING_CANVAS_MESSAGE}`);
 }
 
 export async function runGraph(options: RunOptions): Promise<void> {
-  const { file, entryNode, validateOnly, checkOnly, inspectOnly, verbose } = options;
+  const { file, entryNode, validateOnly, checkOnly, inspectOnly, verbose, frames, fps, out } = options;
 
   if (verbose) {
     console.log(`Loading graph from: ${file}`);
@@ -68,20 +93,58 @@ export async function runGraph(options: RunOptions): Promise<void> {
   // a graph should still run whatever it carries inline rather than failing on
   // a project that is not there.
   let disposeStageBridge: (() => void) | undefined;
+  let disposeIoBridge: (() => void) | undefined;
+  let canvasHost: CanvasHost | undefined;
+  let canvasError: Error | null = null;
+  let project: ProjectRoot | undefined;
   try {
-    const project = new ProjectRoot(path.dirname(path.resolve(file)));
-    setProjectModuleCompiler(async (folderName) => (await compileProjectModule(project, folderName)).code);
-    setEmbeddedCompiler(async (code) => (await compileEmbedded(project, code)).code);
+    project = new ProjectRoot(path.dirname(path.resolve(file)));
+    setProjectModuleCompiler(async (folderName) => (await compileProjectModule(project!, folderName)).code);
+    setEmbeddedCompiler(async (code) => (await compileEmbedded(project!, code)).code);
     // A node importing `cascade/stage` posts to the server in the page and
     // calls this in a headless run, so one Python-backed node renders either way.
-    disposeStageBridge = installStageBridge((stage, args) => runProjectStage(project, stage, args));
+    disposeStageBridge = installStageBridge((stage, args) => runProjectStage(project!, stage, args));
+    // And the same for files: `cascade/io` reads and writes over `/api/media`
+    // in the page and against the directory here, so a node that saves an image
+    // works under both hosts without knowing which it has.
+    disposeIoBridge = installProjectIo(project);
   } catch (error) {
     if (verbose) console.warn(`No project context for ${file}: ${error instanceof Error ? error.message : error}`);
   }
 
-  if (await runDeterministicProjectGraph(file, graphData, entryNode)) {
-    if (verbose) console.log('Graph execution completed');
+  // Web technology is the default renderer, so the headless host needs a canvas
+  // before anything cooks. Optional dependency, deliberately: a graph with no
+  // canvas node in it still runs on a machine that never installed it, and one
+  // that needs pixels gets a sentence naming what to install.
+  try {
+    canvasHost = await installHeadlessCanvas();
+    if (verbose) console.log(`Canvas: ${canvasHost.renderer}`);
+  } catch (error) {
+    canvasError = error instanceof Error ? error : new Error(String(error));
+    if (verbose) console.warn(canvasError.message);
+  }
+
+  const frameSpec = frames ? parseFrameSpec(frames) : null;
+
+  const releaseHost = () => {
     disposeStageBridge?.();
+    disposeIoBridge?.();
+    canvasHost?.dispose();
+  };
+
+  if (frameSpec) {
+    // A definition-v1 graph runs through the deterministic runtime, which owns
+    // its own clock and is not reachable from here. Say that, rather than
+    // silently rendering frame 1 a hundred times.
+    const summary = await inspectProjectGraph(file, graphData);
+    if (summary.deterministic) {
+      releaseHost();
+      console.error('--frames renders dynamic graphs; this graph is definition-v1 and runs through the deterministic runtime.');
+      process.exit(1);
+    }
+  } else if (await runDeterministicProjectGraph(file, graphData, entryNode)) {
+    if (verbose) console.log('Graph execution completed');
+    releaseHost();
     return;
   }
 
@@ -90,6 +153,12 @@ export async function runGraph(options: RunOptions): Promise<void> {
   // no origin to resolve it against. Compiling them in-process with the same
   // esbuild pass the server uses is what makes `cascade run` work on the graphs
   // people actually have, rather than only on fully migrated ones.
+
+  // Held outside the try so the finally can stop the scheduler before the host
+  // goes away. A debounced re-cook that fires after the canvas globals are
+  // removed prints "OffscreenCanvas is not defined" underneath a run that
+  // already succeeded, which reads like a failed render and is not one.
+  let activeGraph: Graph | undefined;
 
   try {
     // Create graph from JSON
@@ -100,6 +169,8 @@ export async function runGraph(options: RunOptions): Promise<void> {
       console.error(`Failed to create graph: ${error.message}`);
       process.exit(1);
     }
+
+    activeGraph = graph;
 
     // Ports should already be restored from JSON metadata (if available)
     // Only execute computations if ports weren't restored from metadata
@@ -177,7 +248,24 @@ export async function runGraph(options: RunOptions): Promise<void> {
 
     // Execute graph
     try {
-      if (entryNode) {
+      if (frameSpec) {
+        if (!project) throw new Error('A frame range needs a project directory around the graph file');
+        const entry = entryNode ? graph.getNode(entryNode) ?? undefined : undefined;
+        if (entryNode && !entry) {
+          console.error(`Entry node not found: ${entryNode}`);
+          process.exit(1);
+        }
+        const rendered = await renderFrameRange({
+          graph,
+          project,
+          entryNode: entry,
+          out: out ?? 'renders',
+          fps,
+          ...frameSpec,
+          verbose,
+        });
+        console.log(`Rendered ${rendered.frames.length} frames, ${rendered.files.length} files -> ${out ?? 'renders'}/`);
+      } else if (entryNode) {
         const node = graph.getNode(entryNode);
         if (!node) {
           console.error(`Entry node not found: ${entryNode}`);
@@ -186,20 +274,20 @@ export async function runGraph(options: RunOptions): Promise<void> {
         if (verbose) {
           console.log(`Executing from entry node: ${entryNode}`);
         }
-        await graph.execute(node);
+        await cookUntilSettled(graph, node, { fixpoint: true });
       } else {
         if (verbose) {
           console.log('Executing all entry points...');
         }
-        await graph.execute();
+        await cookUntilSettled(graph, undefined, { fixpoint: true });
       }
 
       const failedNodes = graph.nodes.filter(node => node.error !== null);
       if (failedNodes.length > 0) {
         console.error('Graph execution failed:');
-        for (const node of failedNodes) {
-          console.error(`  - node/cook-failed [${node.id}]: ${node.error?.message ?? 'Unknown cook error'}`);
-        }
+        const messages = failedNodes.map(node => node.error?.message ?? 'Unknown cook error');
+        failedNodes.forEach((node, index) => console.error(`  - node/cook-failed [${node.id}]: ${messages[index]}`));
+        reportMissingCanvas(messages, canvasError);
         process.exit(1);
       }
 
@@ -208,13 +296,15 @@ export async function runGraph(options: RunOptions): Promise<void> {
       }
     } catch (error: any) {
       console.error(`Graph execution failed: ${error.message}`);
+      reportMissingCanvas([String(error.message)], canvasError);
       if (verbose && error.stack) {
         console.error(error.stack);
       }
       process.exit(1);
     }
   } finally {
-    disposeStageBridge?.();
+    activeGraph?.scheduler?.dispose?.();
+    releaseHost();
     setProjectModuleCompiler(null);
     setEmbeddedCompiler(null);
   }
