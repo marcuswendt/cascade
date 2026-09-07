@@ -1,4 +1,5 @@
 import { Node } from './Node.js';
+import type { ParameterCarryOverReport, ParameterDeclaration } from './Node.js';
 import { Annotation } from './annotations/Annotation.js';
 import { ImageAnnotation } from './annotations/Image.js';
 import { TextAnnotation } from './annotations/Text.js';
@@ -54,6 +55,28 @@ function createPortId(elementId: string, portType: 'input' | 'output', index: nu
 }
 
 export type ExecutionState = 'idle' | 'running' | 'paused' | 'stopped';
+
+/** A parameter as the incoming definition declares it. Re-exported name kept
+ *  deliberately short: this is what a Definition panel already has in hand. */
+export type RetargetParameterDeclaration = ParameterDeclaration;
+
+/**
+ * The outcome of Graph.retargetDefinition — flat, JSON-serialisable, and
+ * enough on its own to render an honest summary:
+ *
+ *   "kept 4 · 1 new · 3 dropped: weight, dot_scale, seed"
+ *
+ * `ok` is false only when the retarget itself could not happen (no such node);
+ * `error` then says why. `deferred` means the new definition's parameter list
+ * was not supplied, so nothing could be reconciled yet — the arrays are empty
+ * and the real report arrives on the next successful cook, via
+ * Node.onParametersRetargeted or node.lastCarryOverReport.
+ */
+export interface RetargetResult extends ParameterCarryOverReport {
+  ok: boolean;
+  deferred: boolean;
+  error?: string;
+}
 
 /**
  * Type representing annotation data structure used in UI
@@ -405,8 +428,12 @@ export class Graph {
    * supplies `execute`. The compiled module is captured once when a node is
    * loaded, so swapping the path alone would leave the old code running.
    *
-   * Ports are untouched on purpose: both callers move identical code, so the
-   * ports the next cook declares are the ones already there.
+   * Ports and parameters are untouched on purpose: both callers move IDENTICAL
+   * code, so the ports and settings the next cook declares are the ones already
+   * there, and reconciling them would only be a chance to be wrong.
+   *
+   * Switching to a different VERSION of a definition is a different move — use
+   * retargetDefinition, which reconciles and reports.
    */
   retargetModule(
     nodeId: string,
@@ -414,8 +441,54 @@ export class Graph {
     source: 'embedded' | 'project',
     code?: string,
   ): boolean {
+    return this.retargetDefinition(nodeId, modulePath, source, code, {
+      preserveParameters: false,
+    }).ok;
+  }
+
+  /**
+   * Point a node at a different definition and carry its settings across.
+   *
+   * The general form of retargetModule. One code path: the module swap is
+   * identical, and what differs is whether a reconciliation is asked for.
+   * retargetModule is the case where it is not — identical code drops nothing,
+   * so its report would be empty anyway, and skipping it keeps a working path
+   * working. Everything else goes through the reconciler.
+   *
+   * Policy (see ParameterCarryOverReport in Node.ts):
+   *   - a parameter surviving by NAME and TYPE keeps its value, and its
+   *     expression with it
+   *   - one the new definition adds takes its declared default
+   *   - one the new definition no longer has is dropped AND REPORTED, with the
+   *     value it held, so a caller can offer it back
+   *   - same name, different type is a conflict: the new type wins with its
+   *     default and the conflict is reported. No coercion is attempted
+   *
+   * Pass `options.parameters` when the new definition's declarations are known
+   * (a Definition panel has them) and the result is complete on return. Without
+   * them the result is `deferred: true` — a module's parameters are only known
+   * once its code declares them, which happens on the next cook.
+   */
+  retargetDefinition(
+    nodeId: string,
+    modulePath: string,
+    source: 'embedded' | 'project',
+    code?: string,
+    options: {
+      parameters?: RetargetParameterDeclaration[];
+      /** Default true. False reproduces retargetModule's untouched behaviour. */
+      preserveParameters?: boolean;
+    } = {},
+  ): RetargetResult {
+    const blank = (): ParameterCarryOverReport => ({ kept: [], defaulted: [], dropped: [], retyped: [] });
+
     const node = this.getNode(nodeId);
-    if (!node) return false;
+    if (!node) {
+      return { ok: false, deferred: false, ...blank(), error: `no node with id ${nodeId}` };
+    }
+
+    const preserve = options.preserveParameters !== false;
+    if (preserve) node.beginParameterCarryOver();
 
     (node as any).modulePath = modulePath;
     (node as any).sourceType = source;
@@ -425,10 +498,26 @@ export class Graph {
       ? loadProjectModule(modulePath)
       : loadEmbeddedModule(code ?? node.code);
     node.setFunction((n: unknown, g: unknown) => modulePromise.then((m) => m.execute(n, g)));
-    modulePromise.catch((error) => console.warn('Failed to compile ' + modulePath + ':', error));
+    modulePromise.catch((error) => {
+      // The retarget did not happen, so nothing may be reported as dropped.
+      node.abandonParameterCarryOver();
+      console.warn('Failed to compile ' + modulePath + ':', error);
+    });
 
     node.markDirty();
-    return true;
+
+    if (preserve && options.parameters) {
+      const report = node.applyParameterDeclarations(options.parameters) ?? blank();
+      return { ok: true, deferred: false, ...report };
+    }
+
+    return { ok: true, deferred: preserve, ...blank() };
+  }
+
+  /** The report from a deferred retarget, once its cook has run. Null until
+   *  then, and null for a node that was never retargeted. */
+  getRetargetReport(nodeId: string): ParameterCarryOverReport | null {
+    return this.getNode(nodeId)?.lastCarryOverReport ?? null;
   }
 
   removeNode(nodeId: string) {

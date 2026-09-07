@@ -2,6 +2,7 @@ import type { InputPort, OutputPort, PortOptions, PortType, Prop, NodeParameter,
 import type { Graph } from './Graph.js';
 import { typeToPackagePath, isStandardLibraryNode } from '../utils/nodeTypeUtils.js';
 import { normalizeColor, isColorValue } from '../utils/colorUtils.js';
+import { normalizeType } from '../types/coreTypes.js';
 import { expressionEngine } from '../engine/expressions/index.js';
 
 export type CookState = 'clean' | 'stale' | 'queued' | 'cooking' | 'error';
@@ -25,9 +26,113 @@ function inferParamType(value: unknown): DataType {
   return 'any';
 }
 
+/**
+ * ============ Parameter carry-over (retargeting) ============
+ *
+ * Switching a node to a different VERSION of a definition is not the same move
+ * as pointing it at the same code in a new place. The code differs, so its
+ * parameters may have been added, removed, renamed or retyped, and the values
+ * someone typed into the old one have to be reconciled against the new
+ * declaration rather than assumed to still fit.
+ *
+ * The mechanism is the one deserialization already uses: values are seeded onto
+ * the node BEFORE its code declares anything, and `param()` / `addParm()` keep
+ * a seeded value instead of resetting it to the code default. Carry-over adds
+ * the bookkeeping that a report needs — which values were kept, which are new,
+ * which no longer exist — because a setting that vanishes silently is the one
+ * failure this whole feature exists to prevent.
+ */
+
+/** One setting as it stood before a retarget. */
+export interface CarriedParameter {
+  name: string;
+  /** `parameters` are the node's own values; `props` is the older control
+   *  system, and the one expressions attach to. Both are carried. */
+  kind: 'parameter' | 'prop';
+  /** Normalized type, or 'any' when the old definition never declared one. */
+  type: string;
+  value: unknown;
+  expression?: string;
+}
+
+/**
+ * What a retarget did to a node's settings.
+ *
+ * Deliberately flat, JSON-serialisable and free of Node references so a panel
+ * can render it, a test can assert on it and a log can keep it:
+ *
+ *   kept      — name and type matched, the value (and its expression) carried over
+ *   defaulted — declared by the new definition only, so it took its default
+ *   dropped   — existed before, gone from the new definition. Never discarded
+ *               silently: the value is included so a caller can offer it back
+ *   retyped   — same name, different type. The new type wins with its default,
+ *               and the conflict is reported rather than coerced
+ */
+export interface ParameterCarryOverReport {
+  kept: string[];
+  defaulted: string[];
+  dropped: Array<{ name: string; value: unknown; expression?: string }>;
+  retyped: Array<{ name: string; from: string; to: string }>;
+}
+
+/** A parameter as the incoming definition declares it, for the synchronous path. */
+export interface ParameterDeclaration {
+  name: string;
+  type?: string;
+  defaultValue?: unknown;
+  kind?: 'parameter' | 'prop';
+}
+
+/** Props carry UI control types ('slider', 'textarea'), parameters carry data
+ *  types ('float', 'string'). Mapping the control vocabulary onto the data one
+ *  is what stops a slider and a float reading as a type conflict. */
+const PROP_CONTROL_TO_DATA_TYPE: Record<string, string> = {
+  number: 'float',
+  slider: 'float',
+  range: 'float',
+  float: 'float',
+  int: 'int',
+  text: 'string',
+  textarea: 'string',
+  string: 'string',
+  select: 'string',
+  boolean: 'bool',
+  bool: 'bool',
+  vector: 'vec3',
+};
+
+/** 'any' means the type was never declared, not that it is a wildcard value. */
+function carryType(type: string | undefined): string {
+  if (!type) return 'any';
+  return normalizeType(PROP_CONTROL_TO_DATA_TYPE[type] ?? type);
+}
+
+/** Strict: equal after alias normalization, or one side undeclared. No
+ *  coercion — an int that became a float is a conflict, reported as one, and
+ *  the caller decides whether to put the old value back. */
+/** Numeric types carry over between themselves. `inferParamType` reads
+ *  `param('weight', 1)` as `int` purely because `Number.isInteger(1)` is true,
+ *  so a v2 that writes `param('weight', 1.5)` would otherwise reset a value the
+ *  author had tuned — losing it to an inference artefact rather than to any
+ *  decision anyone made. That is the silent-loss case this whole reconciliation
+ *  exists to prevent, so the numeric family is treated as one type here.
+ *
+ *  Everything else stays strict, and nothing is coerced: a string that becomes a
+ *  float is still a conflict, reported and defaulted. */
+const NUMERIC_CARRY = new Set(['int', 'float']);
+
+function carryTypesMatch(before: string, after: string): boolean {
+  if (before === 'any' || after === 'any') return true;
+  if (NUMERIC_CARRY.has(before) && NUMERIC_CARRY.has(after)) return true;
+  return before === after;
+}
+
 export class Node {
   // Static callback for UI reactivity (set by editor, not required for headless)
   static onPropParamsChanged?: (nodeId: string) => void;
+  /** Fired when a DEFERRED retarget finishes reconciling on the next cook, so
+   *  a panel learns what was dropped without polling. */
+  static onParametersRetargeted?: (nodeId: string, report: ParameterCarryOverReport) => void;
 
   id: string;
   type: string;
@@ -54,6 +159,15 @@ export class Node {
    *  older image-node control system. */
   parameters: NodeParameter[] = [];
   protected parametersUsedDuringSetup: Set<string> = new Set();
+
+  /** Non-null between a retarget and the cook that resolves it. */
+  private carryOver: {
+    carried: Map<string, CarriedParameter>;
+    resolved: Set<string>;
+    report: ParameterCarryOverReport;
+  } | null = null;
+  /** The last completed reconciliation, for a panel that arrives after the fact. */
+  lastCarryOverReport: ParameterCarryOverReport | null = null;
 
   variadic: boolean = false;
   protected variadicDefault: any = null;
@@ -291,6 +405,7 @@ export class Node {
    */
   addParm<T>(name: string, config: Prop<T>): void {
     this.props[name] = config as Prop;
+    this.reconcileProp(name);
     // Dynamic nodes redeclare their shape inside execute(). That declaration
     // is part of the current cook, not a new authored change; rescheduling it
     // would create an endless generation loop.
@@ -545,6 +660,7 @@ export class Node {
       Object.assign(parameter.options, options);
     }
     this.parametersUsedDuringSetup.add(name);
+    this.reconcileParameter(parameter as NodeParameter, defaultValue, options);
 
     // A promoted parameter reads from its pin whenever something is connected,
     // and falls back to its own value when nothing is.
@@ -593,6 +709,189 @@ export class Node {
     if (!parameter) return;
     parameter.value = value;
     this.markDirty();
+  }
+
+  // ============ Parameter carry-over ============
+
+  /**
+   * Snapshot every current setting and start reconciling against whatever the
+   * next definition declares. Idempotent per retarget; the snapshot stays until
+   * a cook completes, so a definition that fails to compile loses nothing.
+   */
+  beginParameterCarryOver(): void {
+    const carried = new Map<string, CarriedParameter>();
+
+    for (const parameter of this.parameters) {
+      carried.set(`parameter:${parameter.name}`, {
+        name: parameter.name,
+        kind: 'parameter',
+        type: carryType(parameter.dataType),
+        value: parameter.value,
+        expression: this.props[parameter.name]?.expression,
+      });
+    }
+    for (const [name, prop] of Object.entries(this.props)) {
+      if (carried.has(`parameter:${name}`)) continue;
+      carried.set(`prop:${name}`, {
+        name,
+        kind: 'prop',
+        type: carryType(prop.type),
+        value: prop.value,
+        expression: prop.expression,
+      });
+    }
+
+    this.carryOver = {
+      carried,
+      resolved: new Set(),
+      report: { kept: [], defaulted: [], dropped: [], retyped: [] },
+    };
+    this.parametersUsedDuringSetup.clear();
+  }
+
+  /** Give up on reconciling — the retarget itself failed. Values are left
+   *  exactly as they were and nothing is reported as dropped. */
+  abandonParameterCarryOver(): void {
+    this.carryOver = null;
+  }
+
+  hasPendingParameterCarryOver(): boolean {
+    return this.carryOver !== null;
+  }
+
+  /**
+   * Reconcile against a declaration list the caller already has, without
+   * waiting for a cook. Runs the declarations through the ordinary `param()` /
+   * `addParm()` path so the node ends up in the same state either way — this
+   * is the same pre-seeding deserialization does, only reported.
+   */
+  applyParameterDeclarations(declarations: ParameterDeclaration[]): ParameterCarryOverReport | null {
+    if (!this.carryOver) return null;
+    for (const declaration of declarations) {
+      if (!declaration?.name) continue;
+      if (declaration.kind === 'prop') {
+        this.addParm(declaration.name, {
+          value: declaration.defaultValue,
+          type: declaration.type as any,
+        } as Prop);
+      } else {
+        this.param(declaration.name, declaration.defaultValue, {
+          ...(declaration.type ? { type: declaration.type as DataType } : {}),
+        });
+      }
+    }
+    return this.finishParameterCarryOver();
+  }
+
+  /**
+   * Close the reconciliation: anything the new definition never declared is
+   * dropped from the node and reported with the value it held.
+   */
+  finishParameterCarryOver(): ParameterCarryOverReport | null {
+    const carry = this.carryOver;
+    if (!carry) return null;
+
+    for (const entry of carry.carried.values()) {
+      carry.report.dropped.push({
+        name: entry.name,
+        value: entry.value,
+        ...(entry.expression ? { expression: entry.expression } : {}),
+      });
+
+      const index = this.parameters.findIndex(p => p.name === entry.name);
+      if (index >= 0) {
+        // A dropped parameter that had been promoted also owns an input pin,
+        // and a pin whose parameter is gone would leave dangling wires.
+        if (this.parameters[index].promoted) this.setParameterPromoted(entry.name, false);
+        const current = this.parameters.findIndex(p => p.name === entry.name);
+        if (current >= 0) this.parameters.splice(current, 1);
+      }
+      if (!carry.resolved.has(`prop:${entry.name}`)) delete this.props[entry.name];
+    }
+
+    this.carryOver = null;
+    this.lastCarryOverReport = carry.report;
+    if (carry.report.dropped.length > 0) {
+      this.props = { ...this.props };
+      this.updateTimeDependent();
+      Node.onPropParamsChanged?.(this.id);
+    }
+    return carry.report;
+  }
+
+  /** Called from param() for every declaration the new definition makes. */
+  private reconcileParameter(parameter: NodeParameter, defaultValue: unknown, options: ParamOptions): void {
+    const carry = this.carryOver;
+    if (!carry) return;
+
+    const key = `parameter:${parameter.name}`;
+    if (carry.resolved.has(key)) return;
+    carry.resolved.add(key);
+
+    // The new definition's type wins outright, declared or inferred.
+    const declared = (options.type ?? inferParamType(defaultValue)) as DataType;
+    parameter.dataType = declared;
+    const declaredType = carryType(declared);
+
+    const crossKey = `prop:${parameter.name}`;
+    const carried = carry.carried.get(key) ?? carry.carried.get(crossKey);
+    if (!carried) {
+      parameter.value = defaultValue as any;
+      carry.report.defaulted.push(parameter.name);
+      return;
+    }
+    carry.carried.delete(key);
+    carry.carried.delete(crossKey);
+
+    if (carryTypesMatch(carried.type, declaredType)) {
+      parameter.value = carried.value as any;
+      if (carried.expression) {
+        this.props[parameter.name] = {
+          ...(this.props[parameter.name] ?? {}),
+          value: carried.value,
+          expression: carried.expression,
+        } as Prop;
+        carry.resolved.add(crossKey);
+        this.updateTimeDependent();
+      }
+      carry.report.kept.push(parameter.name);
+    } else {
+      parameter.value = defaultValue as any;
+      carry.report.retyped.push({ name: parameter.name, from: carried.type, to: declaredType });
+    }
+  }
+
+  /** Called from addParm() for every prop the new definition declares. */
+  private reconcileProp(name: string): void {
+    const carry = this.carryOver;
+    if (!carry) return;
+
+    const key = `prop:${name}`;
+    if (carry.resolved.has(key)) return;
+    carry.resolved.add(key);
+
+    const prop = this.props[name];
+    const declaredType = carryType(prop?.type);
+    const crossKey = `parameter:${name}`;
+    const carried = carry.carried.get(key) ?? carry.carried.get(crossKey);
+    if (!carried) {
+      carry.report.defaulted.push(name);
+      return;
+    }
+    carry.carried.delete(key);
+    carry.carried.delete(crossKey);
+
+    if (carryTypesMatch(carried.type, declaredType)) {
+      this.props[name] = {
+        ...prop,
+        value: carried.value,
+        ...(carried.expression ? { expression: carried.expression } : {}),
+      } as Prop;
+      if (carried.expression) this.updateTimeDependent();
+      carry.report.kept.push(name);
+    } else {
+      carry.report.retyped.push({ name, from: carried.type, to: declaredType });
+    }
   }
 
   // ============ Variadic Inputs ============
@@ -1122,6 +1421,10 @@ export class Node {
         this.error = null;
         this.hasExecuted = true;
         this.lastInputHash = this.calculateInputHash();
+        // A deferred retarget only learns what the new definition declares by
+        // watching it declare it, so the reconciliation closes here.
+        const carryReport = this.finishParameterCarryOver();
+        if (carryReport) Node.onParametersRetargeted?.(this.id, carryReport);
         this.setCookState('clean');
       } else {
         this.setCookState('stale');
