@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cascade</title>
+<meta name="description" content="A node-graph runtime and visual Studio for generative design. FIELD.IO's studio instrument.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --ground: #faf9f7;
+    --ink: #17181a;
+    --ink-soft: #5c6066;
+    --rule: #e2dfda;
+    --code-ground: #f2f0ec;
+    --accent: #1a5fd0;
+    --warn-ground: #fdf6e3;
+    --warn-rule: #e8d9a8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #131416;
+      --ink: #ececec;
+      --ink-soft: #9aa0a6;
+      --rule: #2a2c30;
+      --code-ground: #1c1e21;
+      --accent: #7aa8f5;
+      --warn-ground: #221e14;
+      --warn-rule: #4a3f22;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font: 16px/1.65 ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 46rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+  header { margin-bottom: 3.5rem; }
+  h1 {
+    font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em;
+    margin: 0 0 0.4rem;
+  }
+  .tagline { color: var(--ink-soft); margin: 0; max-width: 34rem; }
+  h2 {
+    font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--ink-soft);
+    margin: 3rem 0 0.9rem; padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  p { margin: 0 0 1rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre {
+    background: var(--code-ground);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 0.85rem 1rem;
+    margin: 0 0 1rem;
+    overflow-x: auto;
+    font: 13.5px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code { background: var(--code-ground); padding: 0.1em 0.35em; border-radius: 3px; }
+  .step { display: flex; gap: 1rem; margin-bottom: 1.6rem; }
+  .step-n {
+    flex: 0 0 1.5rem; height: 1.5rem; margin-top: 0.1rem;
+    border: 1px solid var(--rule); border-radius: 50%;
+    display: grid; place-items: center;
+    font: 600 0.75rem/1 ui-monospace, monospace; color: var(--ink-soft);
+  }
+  .step-body { flex: 1; min-width: 0; }
+  .step-body > :last-child { margin-bottom: 0; }
+  .note {
+    background: var(--warn-ground);
+    border: 1px solid var(--warn-rule);
+    border-radius: 5px;
+    padding: 0.85rem 1rem;
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
+  }
+  .note > :last-child { margin-bottom: 0; }
+  ul { margin: 0 0 1rem; padding-left: 1.3rem; }
+  li { margin-bottom: 0.4rem; }
+  footer {
+    margin-top: 4rem; padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    color: var(--ink-soft); font-size: 0.875rem;
+  }
+  footer p { margin-bottom: 0.5rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Cascade</h1>
+    <p class="tagline">A node-graph runtime with a visual Studio, for generative design. Built at FIELD.IO and used for our own work.</p>
+  </header>
+
+  <h2>Before you start</h2>
+  <p>You need <strong>Node 22.13 or newer</strong>. Check with <code>node --version</code>; if it is older, or missing, install it from <a href="https://nodejs.org">nodejs.org</a> or with <code>brew install node</code>.</p>
+  <p>macOS and Linux are what we run. Studio itself is a web app and works in any current browser.</p>
+
+  <h2>Getting started</h2>
+
+  <div class="step">
+    <div class="step-n">1</div>
+    <div class="step-body">
+      <p>Install the CLI.</p>
+      <pre>npm install -g @field/cascade</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-n">2</div>
+    <div class="step-body">
+      <p>Make a sketch. This creates <code>~/Documents/Cascade/my-sketch</code> and opens Studio in your browser.</p>
+      <pre>cascade new my-sketch</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-n">3</div>
+    <div class="step-body">
+      <p>Install the sketch's own dependencies. <strong>Do not skip this.</strong></p>
+      <pre>cd ~/Documents/Cascade/my-sketch
+npm install</pre>
+      <div class="note">
+        <p>A global CLI is not enough on its own. Any node that touches files, images, a shell command or a Python stage imports from <code>cascade/…</code>, and that resolves from the sketch's own <code>node_modules</code>. Without this step those nodes fail at run time with <code>Cannot find package 'cascade'</code>, while simpler graphs keep working — which makes it a confusing thing to debug later.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-n">4</div>
+    <div class="step-body">
+      <p>Reopen it any time, from the sketch folder or by name.</p>
+      <pre>cascade .
+cascade my-sketch</pre>
+    </div>
+  </div>
+
+  <h2>Working in Studio</h2>
+  <p>Studio is dockable: a graph canvas, an inspector, a viewer, a code editor, logs, and panels a project defines itself. Tab adds a node, and the graph is a plain <code>.cascade</code> file you can commit and diff.</p>
+  <p>A sketch owns its own nodes as ordinary TypeScript under <code>nodes/&lt;Name&gt;/index.ts</code>, so anything you can write in a file you can wire into a graph. Read the <code>AGENTS.md</code> in your new sketch first — it is short, and written for both you and whatever coding agent you point at the folder.</p>
+
+  <h2>Useful commands</h2>
+  <pre>cascade new &lt;name&gt;            create a sketch and open it
+cascade .                     open the sketch in this folder
+cascade node &lt;Name&gt;           scaffold a typed custom node
+cascade run &lt;graph.cascade&gt;   execute a graph headlessly, no browser
+cascade check &lt;graph.cascade&gt;  static check of types and structure
+cascade projects &lt;dir&gt;        move where sketches live
+cascade --help                all of it</pre>
+
+  <h2>A few things worth knowing</h2>
+  <ul>
+    <li>Some sketches need more than Node. Anything doing heavy image work has a Python stage and its own <code>requirements</code> file — check the sketch's README before assuming it is broken.</li>
+    <li>Studio serves on localhost by default. <code>--host</code> exposes it on your network for a browser on another machine, and that is for a trusted network only. <strong>Never put Studio on the public internet</strong>; it compiles and runs code from the project folder by design.</li>
+    <li>Credentials live in <code>~/.cascade/credentials.yaml</code>, per machine, never in a graph.</li>
+  </ul>
+
+  <h2>Going deeper</h2>
+  <ul>
+    <li><code>doc/PROJECT_AUTHORING.md</code> — how a project is laid out, and how to write nodes properly.</li>
+    <li><code>ARCHITECTURE.md</code> — contracts, runtime, hosts, and why the dependencies point one way.</li>
+    <li><code>doc/Cascade Product Overview.md</code> — what Cascade owns and what a project owns.</li>
+  </ul>
+
+  <footer>
+    <p><strong>This is our studio's instrument, not a product.</strong> It is MIT licensed and openly installable because that is cheaper than the alternative, but there is no roadmap and no support promise, and it changes without warning. If something is broken, tell Marcus.</p>
+    <p><a href="https://github.com/marcuswendt/cascade">github.com/marcuswendt/cascade</a> &middot; <a href="https://www.npmjs.com/package/@field/cascade">npm</a> &middot; MIT</p>
+  </footer>
+</main>
+</body>
+</html>
