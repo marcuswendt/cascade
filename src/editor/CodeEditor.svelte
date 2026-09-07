@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
+  import { moduleDirectory, rewriteRelativeImports } from './moduleImports';
   import { monaco } from './monaco';
   import ts from 'typescript';
   import type { Node } from '@/nodes/Node';
@@ -626,14 +627,19 @@ export function execute(node, graph) {
       counter += 1;
     }
 
-    const created = resolver.createEmbeddedModule(modulePath, code, 'user');
-    if (!activeGraph.retargetModule(node.id, created.modulePath, 'embedded', code)) {
+    // The code is about to be compiled from the project root instead of from
+    // nodes/<name>/, so its relative imports have to move with it or the very
+    // next cook fails to resolve them.
+    const embeddedCode = rewriteRelativeImports(code, moduleDirectory(name), '');
+
+    const created = resolver.createEmbeddedModule(modulePath, embeddedCode, 'user');
+    if (!activeGraph.retargetModule(node.id, created.modulePath, 'embedded', embeddedCode)) {
       reportActionError('could not point the node at the embedded copy');
       return;
     }
     projectSource = null;
     updateSourceInfo();
-    showCode(code);
+    showCode(embeddedCode);
   }
 
   /** Embedded code lives inside the .cascade document, which makes it
@@ -644,7 +650,11 @@ export function execute(node, graph) {
     const name = modulePath.replace(/^local\./, '').replace(/[^A-Za-z0-9_-]/g, '');
     if (!name) { reportActionError('cannot derive a folder name from ' + modulePath); return; }
 
-    const code = editor?.getValue() ?? node.code ?? '';
+    const editorCode = editor?.getValue() ?? node.code ?? '';
+    // Mirror of the embed case, and wrong for longer: embedded code is compiled
+    // from the project root, and it is about to live in nodes/<name>/ where a
+    // root-relative specifier points at nothing.
+    const code = rewriteRelativeImports(editorCode, '', moduleDirectory(name));
     try {
       const scaffold = await fetch('/api/nodes', {
         method: 'POST',
