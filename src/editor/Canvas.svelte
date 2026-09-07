@@ -16,6 +16,11 @@
   import { recordSnapshotImmediate } from './stores/historyStore';
   import { setSelectedNodeIds } from './stores/selectionStore';
   import { readCascadeClipboard, writeCascadeClipboard } from './clipboard';
+  import NodeContextMenu from './NodeContextMenu.svelte';
+  import { countLabel, type NodeContextMenuItem } from './nodeContextMenu';
+  // Direct module, not the './dockview' barrel: the barrel also exports
+  // DockviewContainer, which renders GraphPanel, which renders this file.
+  import { dockviewStore } from './dockview/dockview-store.svelte';
   
   const dispatch = createEventDispatcher();
   
@@ -1885,8 +1890,12 @@ node.onReady = () => {
   }
   
   async function handleNodeMouseDown(nodeId: string, e: MouseEvent) {
-    // Don't start drag if clicking on a port or if middle mouse button
-    if ((e.target as HTMLElement).closest('.port') || e.button === 1) {
+    // Don't start drag if clicking on a port, or on the middle or right
+    // button. Right-click was previously let through, and since mousedown
+    // fires before contextmenu it recorded a history entry and put the node
+    // into a drag every time the context menu was opened — and with Alt held
+    // it took the duplicate-on-drag path.
+    if ((e.target as HTMLElement).closest('.port') || e.button === 1 || e.button === 2) {
       return;
     }
 
@@ -3508,20 +3517,163 @@ node.onReady = () => {
     }
   }
 
+  /**
+   * Duplicate the selected nodes 50px down-right and select the copies.
+   *
+   * Lifted out of the ⌘D handler so the right-click menu runs the same code
+   * rather than a second implementation that drifts from it. Annotations are
+   * not duplicated here — ⌘D never did either.
+   */
+  function duplicateSelectedNodes() {
+    if (selectedNodes.length === 0) return;
+
+    recordHistory();
+    const nodesToDuplicate = selectedNodes.map(id => graph.getNode(id)).filter(Boolean) as Node[];
+    const newNodes: Node[] = [];
+
+    nodesToDuplicate.forEach(node => {
+      const newNode = graph.addNode(node.type, {
+        x: node.position.x + 50,
+        y: node.position.y + 50
+      });
+      newNode.code = node.code;
+      // Generate unique ID based on the original node's ID
+      newNode.id = graph.generateUniqueNodeId(node.id);
+      newNode.comment = node.comment;
+      newNode.bypass = node.bypass;
+      // Set parent to current network level
+      if (currentNetwork) {
+        graph.reparentElement(newNode, currentNetwork);
+      }
+      newNodes.push(newNode);
+    });
+
+    graph.nodes = [...graph.nodes];
+    if (newNodes.length > 0) {
+      selectedNodes = newNodes.map(n => n.id);
+      selectedNode = newNodes[0];
+      dispatch('nodeSelect', { node: newNodes[0] });
+    }
+  }
+
+  /* ---------------------------------------------------------------------- *
+   * Node right-click menu
+   * ---------------------------------------------------------------------- */
+
+  /** Null when closed. Coordinates are viewport-relative (clientX/clientY). */
+  let nodeMenu: { x: number; y: number; items: NodeContextMenuItem[] } | null = null;
+
+  function closeNodeMenu() {
+    nodeMenu = null;
+  }
+
+  /**
+   * The menu is anchored to a node's screen position, so any pan or zoom moves
+   * the node out from under it. Closing is the honest response; re-placing it
+   * would need the node's new position mid-gesture.
+   *
+   * Compared against a snapshot taken when the menu opened, because a plain
+   * `$: if (nodeMenu && internalTransform)` also re-runs on the assignment
+   * that opens the menu — and so closed it in the same tick.
+   */
+  let nodeMenuTransformKey = '';
+  $: transformKey = `${internalTransform.x},${internalTransform.y},${internalTransform.zoom}`;
+  $: if (nodeMenu && transformKey !== nodeMenuTransformKey) closeNodeMenu();
+
+  /**
+   * Surface a node's code.
+   *
+   * PARENT CONTRACT — this dispatches a **cancelable** `viewsource` event:
+   *
+   *   on:viewsource={(e) => { e.preventDefault(); myOwnViewer(e.detail.nodeId); }}
+   *   detail: { nodeId: string; node: Node }
+   *
+   * If no listener calls `preventDefault()`, Canvas falls back to opening the
+   * dockview code panel itself (`dockviewStore.openCodeEditor`), which is the
+   * same panel double-click used to open. So the menu item works unwired, and
+   * a parent that wants to route it elsewhere can take it over without this
+   * file changing.
+   *
+   * Worth knowing: `GraphPanel.handleNodeEdit` gates double-click-to-edit
+   * behind `ENABLE_CODE_EDITOR` (currently false, "node code is written by
+   * Claude Code now"), so opening the panel from here is the only way in at
+   * the moment. `CodeEditor` is read-only for `stdlib` nodes and editable for
+   * project/embedded ones — this menu does not change that, and if editing
+   * from the canvas is meant to stay off, that gate belongs inside CodePanel
+   * rather than at one call site.
+   */
+  function viewNodeSource(node: Node) {
+    const handled = !dispatch('viewsource', { nodeId: node.id, node }, { cancelable: true });
+    if (handled) return;
+    dockviewStore.openCodeEditor(node.id, node.type || node.id);
+  }
+
+  /**
+   * Right-clicking a node inside a multi-selection acts on the whole
+   * selection; right-clicking outside it selects that node first, which is
+   * what every other canvas editor does and what stops a stray right-click
+   * from deleting the wrong three nodes.
+   */
+  function openNodeMenu(e: MouseEvent, node: Node) {
+    if (!selectedNodes.includes(node.id)) {
+      selectedNodes = [node.id];
+      selectedAnnotations = [];
+      selectedNode = node;
+      dispatch('nodeSelect', { node });
+    }
+
+    const target = countLabel(selectedNodes.length, 'node');
+
+    nodeMenuTransformKey = transformKey;
+    nodeMenu = {
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        {
+          id: 'view-source',
+          // Source is per node, so this stays singular even in a selection.
+          label: 'View source',
+          run: () => viewNodeSource(node),
+        },
+        { id: 'copy', label: `Copy ${target}`, run: () => { void handleCopy(); } },
+        { id: 'duplicate', label: `Duplicate ${target}`, run: duplicateSelectedNodes },
+        {
+          id: 'delete',
+          label: `Delete ${target}`,
+          separatorBefore: true,
+          danger: true,
+          run: deleteSelected,
+        },
+      ],
+    };
+  }
+
   function handleContextMenu(e: MouseEvent) {
     // Prevent default context menu
     e.preventDefault();
-    
+
     // Don't open panel if Ctrl/Cmd is pressed (might be Ctrl+Click)
     if (e.ctrlKey || e.metaKey) {
       return;
     }
-    
-    // Don't open panel if right-clicking on a node or annotation
-    if ((e.target as HTMLElement).closest('.node, .annotation')) {
+
+    // Right-click on a node opens the node menu instead of the add-node panel.
+    const nodeEl = (e.target as HTMLElement).closest('.node');
+    if (nodeEl) {
+      const nodeId = (nodeEl as HTMLElement).dataset.nodeId;
+      const node = nodeId ? graph.getNode(nodeId) : null;
+      if (node) {
+        openNodeMenu(e, node);
+      }
       return;
     }
-    
+
+    // Annotations have no menu yet — swallow the click rather than opening the
+    // add-node panel over the annotation the user aimed at.
+    if ((e.target as HTMLElement).closest('.annotation')) {
+      return;
+    }
+
     // Open node panel at mouse position
     dispatch('openNodePanel', { x: e.clientX, y: e.clientY });
   }
@@ -4138,35 +4290,7 @@ node.onReady = () => {
     // ⌘D - Duplicate selected nodes
     if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
       e.preventDefault();
-      if (selectedNodes.length > 0) {
-        recordHistory();
-        const nodesToDuplicate = selectedNodes.map(id => graph.getNode(id)).filter(Boolean) as Node[];
-        const newNodes: Node[] = [];
-
-        nodesToDuplicate.forEach(node => {
-          const newNode = graph.addNode(node.type, {
-            x: node.position.x + 50,
-            y: node.position.y + 50
-          });
-          newNode.code = node.code;
-          // Generate unique ID based on the original node's ID
-          newNode.id = graph.generateUniqueNodeId(node.id);
-          newNode.comment = node.comment;
-          newNode.bypass = node.bypass;
-          // Set parent to current network level
-          if (currentNetwork) {
-            graph.reparentElement(newNode, currentNetwork);
-          }
-          newNodes.push(newNode);
-        });
-
-        graph.nodes = [...graph.nodes];
-        if (newNodes.length > 0) {
-          selectedNodes = newNodes.map(n => n.id);
-          selectedNode = newNodes[0];
-          dispatch('nodeSelect', { node: newNodes[0] });
-        }
-      }
+      duplicateSelectedNodes();
     }
 
     // Subnet Navigation Shortcuts
@@ -4530,6 +4654,20 @@ node.onReady = () => {
   
   <!-- Code Editor is now handled by WindowManager tabs -->
 </div>
+
+<!--
+  Node right-click menu. Position-fixed, so it lives outside the transformed
+  canvas content and its coordinates stay in viewport space.
+-->
+{#if nodeMenu}
+  <NodeContextMenu
+    x={nodeMenu.x}
+    y={nodeMenu.y}
+    items={nodeMenu.items}
+    on:close={closeNodeMenu}
+  />
+{/if}
+
 
 <style>
   .canvas {
