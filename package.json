@@ -68,6 +68,14 @@
       "types": "./dist/shell.d.ts",
       "default": "./dist/shell.js"
     },
+    "./io": {
+      "types": "./dist/io.d.ts",
+      "default": "./dist/io.js"
+    },
+    "./net": {
+      "types": "./dist/net.d.ts",
+      "default": "./dist/net.js"
+    },
     "./stage": {
       "types": "./dist/stage.d.ts",
       "default": "./dist/stage.js"

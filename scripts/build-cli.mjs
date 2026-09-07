@@ -1,5 +1,6 @@
 import { build } from 'esbuild';
 import { chmodSync, cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const outputDirectory = resolve('dist', 'cli');
@@ -50,6 +51,47 @@ await build({
   packages: 'external',
   sourcemap: true
 });
+
+// `cascade/io` and `cascade/net` are the two shims a project uses most, and
+// neither was in the package exports — so the compile plugin resolved them
+// happily while the project's own `tsc` reported "Cannot find module
+// 'cascade/io'". A node that runs but does not typecheck is a bad trade, and
+// `npm run check` in a sketch is the thing that catches real mistakes.
+//
+// Declarations are generated from the source rather than hand-written like
+// shell's and stage's, because a hand-written declaration for nineteen exports
+// drifts the first time somebody adds one.
+execFileSync(
+  process.execPath,
+  [
+    resolve('node_modules', 'typescript', 'bin', 'tsc'),
+    '--ignoreConfig',
+    'server/src/runtime/io.ts',
+    'server/src/runtime/net.ts',
+    '--declaration',
+    '--emitDeclarationOnly',
+    '--outDir', resolve('dist'),
+    '--target', 'es2022',
+    '--module', 'esnext',
+    '--moduleResolution', 'bundler',
+    '--skipLibCheck',
+    '--lib', 'es2022,dom'
+  ],
+  { stdio: 'inherit' }
+);
+
+for (const shim of ['io', 'net']) {
+  await build({
+    entryPoints: [`server/src/runtime/${shim}.ts`],
+    outfile: resolve('dist', `${shim}.js`),
+    bundle: true,
+    platform: 'browser',
+    target: 'es2022',
+    format: 'esm',
+    packages: 'external',
+    sourcemap: true
+  });
+}
 
 await build({
   entryPoints: ['server/src/runtime/shell.ts'],
