@@ -61,7 +61,7 @@ Custom server applications and browser frontends use `cascade/runtime` directly 
 
 The repository has exactly two internal npm workspaces: `@cascade/contracts` and `@cascade/runtime`. The root `cascade` package is the only published package and the only owner of the executable.
 
-Public subpaths are `cascade/contracts`, `cascade/contracts/schema`, `cascade/runtime`, `cascade/runtime/node`, `cascade/runtime/browser`, and the compatibility `cascade/shell`.
+Public subpaths are `cascade/contracts`, `cascade/contracts/schema`, `cascade/runtime`, `cascade/runtime/node`, `cascade/runtime/browser`, `cascade/runtime/expressions`, `cascade/runtime/animation`, `cascade/io`, `cascade/net`, `cascade/stage`, and the compatibility `cascade/shell`.
 
 Studio-only project extensions use the type-only `cascade/studio/panel` contract. They are compiled and loaded only by Studio; the neutral runtime and headless hosts never discover or import them.
 

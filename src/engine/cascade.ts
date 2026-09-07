@@ -5,6 +5,8 @@
  * Inspired by Houdini's hou module.
  */
 
+import type { FrameClock } from '@cascade/runtime/animation';
+import { TimeState } from '@cascade/runtime/expressions';
 import type { Node } from '../nodes/Node.js';
 import type { Graph } from '../nodes/Graph.js';
 import { expressionEngine } from './expressions/index.js';
@@ -15,8 +17,12 @@ import { expressionEngine } from './expressions/index.js';
 class CascadeContext {
   private _graph: Graph | null = null;
   private _pwd: Node | null = null;
-  private _frame: number = 1;
-  private _fps: number = 30;
+  /**
+   * Time state. Frames are stored as real numbers: `frame()` reports the
+   * integer frame ($F) and `fframe()` the fractional one ($FF), so sub-frame
+   * time exists rather than being floored away at the door.
+   */
+  private _time = new TimeState();
   private _selectedNodes: Set<string> = new Set();
 
   // Callback for selection changes (set by editor)
@@ -150,48 +156,71 @@ class CascadeContext {
   // ============ Time/Playback ============
 
   /**
-   * Get current frame number
+   * Get current frame number (integer) — $F
    */
   frame(): number {
-    return this._frame;
+    return this._time.frame;
   }
 
   /**
-   * Get current time in seconds
+   * Get current frame as a fractional value — $FF
+   */
+  fframe(): number {
+    return this._time.frameFraction;
+  }
+
+  /**
+   * Get current time in seconds — $T
    */
   time(): number {
-    return this._frame / this._fps;
+    return this._time.time;
   }
 
   /**
-   * Get frames per second
+   * Get frames per second — $FPS
    */
   fps(): number {
-    return this._fps;
+    return this._time.fps;
   }
 
   /**
-   * Set current frame
+   * Set current frame. Fractional frames are preserved; `frame()` still
+   * reports the floored integer frame.
    */
   setFrame(frame: number): void {
-    this._frame = Math.max(1, Math.floor(frame));
-    expressionEngine.setFrame(this._frame);
+    this._time.setFrame(frame);
+    expressionEngine.setFrame(this._time.frameFraction);
   }
 
   /**
-   * Set current time (converts to frame)
+   * Set current time in seconds, keeping the sub-frame remainder
    */
   setTime(time: number): void {
-    this._frame = Math.max(1, Math.floor(time * this._fps));
-    expressionEngine.setFrame(this._frame);
+    this._time.setTime(time);
+    expressionEngine.setFrame(this._time.frameFraction);
   }
 
   /**
    * Set FPS
    */
   setFps(fps: number): void {
-    this._fps = Math.max(1, fps);
-    expressionEngine.setFps(this._fps);
+    this._time.setFps(fps);
+    expressionEngine.setFps(this._time.fps);
+  }
+
+  /**
+   * The clock a frame-range loop drives. Nothing here reads a wall clock —
+   * the caller owns time, which is what keeps a cook deterministic.
+   */
+  clock(): FrameClock {
+    return {
+      setFrame: (frame: number) => this.setFrame(frame),
+      markTimeDependentDirty: () => this.markTimeDependentDirty(),
+      getFrame: () => this.frame(),
+      getFrameFraction: () => this.fframe(),
+      getTime: () => this.time(),
+      getFps: () => this.fps()
+    };
   }
 
   // ============ Channel Shortcuts ============
@@ -247,13 +276,14 @@ class CascadeContext {
   }
 
   /**
-   * Advance to next frame and mark time-dependent nodes dirty
-   * Convenience method for animation loops
+   * Advance the frame and mark time-dependent nodes dirty.
+   * Convenience method for animation loops; `step` may be fractional.
+   * Returns the new fractional frame.
    */
-  nextFrame(): number {
-    this.setFrame(this._frame + 1);
+  nextFrame(step: number = 1): number {
+    this.setFrame(this.fframe() + step);
     this.markTimeDependentDirty();
-    return this._frame;
+    return this.fframe();
   }
 
   // ============ Internal Helpers ============

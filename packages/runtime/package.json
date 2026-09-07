@@ -9,6 +9,14 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./expressions": {
+      "types": "./dist/expressions/index.d.ts",
+      "default": "./dist/expressions/index.js"
+    },
+    "./animation": {
+      "types": "./dist/animation/index.d.ts",
+      "default": "./dist/animation/index.js"
+    },
     "./node": {
       "types": "./dist/node.d.ts",
       "default": "./dist/node.js"

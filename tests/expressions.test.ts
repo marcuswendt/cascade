@@ -32,9 +32,17 @@ describe('Expression Engine', () => {
     });
 
     it('should calculate time from frame and fps', () => {
-      engine.setFrame(30);
+      // $T = ($FF - 1) / $FPS, Houdini's definition: zero on the first frame,
+      // so one second in is frame 31 rather than frame 30.
+      engine.setFrame(31);
       engine.setFps(30);
       expect(engine.time).toBeCloseTo(1.0);
+    });
+
+    it('is zero on the first frame', () => {
+      engine.setFrame(1);
+      engine.setFps(30);
+      expect(engine.time).toBe(0);
     });
 
     it('should update frame', () => {
@@ -99,7 +107,7 @@ describe('Expression Engine', () => {
     });
 
     it('should have access to time variable', () => {
-      engine.setFrame(30);
+      engine.setFrame(31);
       engine.setFps(30);
       expect(evalExpr('time', node)).toBeCloseTo(1.0);
     });
@@ -339,7 +347,9 @@ describe('Expression Engine', () => {
     });
 
     it('should handle compound expressions', () => {
-      engine.setFrame(30);
+      // A full cycle of sin(t·2π) lands back at zero after exactly one second,
+      // which is frame 31 when time starts at zero on frame 1.
+      engine.setFrame(31);
       engine.setFps(30);
       const result = evalExpr('Math.sin(time * Math.PI * 2)', node) as number;
       expect(result).toBeCloseTo(0, 5);

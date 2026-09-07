@@ -211,9 +211,16 @@ describe('CascadeContext', () => {
     });
 
     describe('time()', () => {
-      it('should calculate time from frame and fps', () => {
-        // Default: frame 1, fps 30 -> time = 1/30
-        expect(context.time()).toBeCloseTo(1 / 30, 5);
+      it('is zero on the first frame, as Houdini defines $T', () => {
+        // $T = ($FF - 1) / $FPS, so the first frame is t = 0 rather than 1/fps.
+        // Otherwise sin($T) starts part-way through its cycle and no animation
+        // ever has a frame at time zero.
+        expect(context.time()).toBe(0);
+      });
+
+      it('advances one second per fps frames', () => {
+        context.setFrame(31);
+        expect(context.time()).toBeCloseTo(1.0, 5);
       });
     });
 
@@ -237,21 +244,22 @@ describe('CascadeContext', () => {
       });
 
       it('should update time accordingly', () => {
-        context.setFrame(30);
-        // time = 30/30 = 1.0s
-        expect(context.time()).toBe(1.0);
+        context.setFrame(31);
+        // ($FF - 1) / fps = 30/30 = 1.0s
+        expect(context.time()).toBeCloseTo(1.0, 5);
       });
     });
 
     describe('setTime()', () => {
       it('should convert time to frame', () => {
-        context.setTime(1.0); // 1 second at 30fps = frame 30
-        expect(context.frame()).toBe(30);
+        context.setTime(1.0); // 1 second at 30fps, counting from frame 1
+        expect(context.frame()).toBe(31);
       });
 
       it('should floor to nearest frame', () => {
-        context.setTime(0.5); // 0.5s at 30fps = 15
-        expect(context.frame()).toBe(15);
+        // 0.5s at 30fps is 15 frames *after the first*, so frame 16.
+        context.setTime(0.5);
+        expect(context.frame()).toBe(16);
       });
 
       it('should enforce minimum frame of 1', () => {
@@ -275,9 +283,9 @@ describe('CascadeContext', () => {
       });
 
       it('should affect time calculation', () => {
-        context.setFrame(60);
+        context.setFrame(61);
         context.setFps(60);
-        expect(context.time()).toBe(1.0); // 60/60 = 1s
+        expect(context.time()).toBeCloseTo(1.0, 5); // 60/60 = 1s
       });
     });
 

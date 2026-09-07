@@ -25,3 +25,11 @@ export type { ExpressionContext, CompiledExpression } from './expressions/index.
 
 // Cascade global API
 export { cascade, CascadeContext } from './cascade.js';
+
+// Frame-range evaluation
+export { evaluateFrameRange } from './animation/index.js';
+export type {
+  EvaluateFrameRangeOptions,
+  FrameInfo,
+  FrameRangeResult
+} from './animation/index.js';

@@ -60,6 +60,14 @@
       "types": "./dist/runtime/browser.d.ts",
       "default": "./dist/runtime/browser.js"
     },
+    "./runtime/expressions": {
+      "types": "./dist/runtime/expressions/index.d.ts",
+      "default": "./dist/runtime/expressions/index.js"
+    },
+    "./runtime/animation": {
+      "types": "./dist/runtime/animation/index.d.ts",
+      "default": "./dist/runtime/animation/index.js"
+    },
     "./runtime/definition/extract": {
       "types": "./dist/runtime/definition/extract.d.ts",
       "default": "./dist/runtime/definition/extract.js"
