@@ -10,6 +10,7 @@
   import { bumpGraphStructure } from './editor/stores/graphStructure';
   import { watchNodeSources } from './engine/nodeSourceWatch';
   import { watchBuild } from './editor/buildWatch';
+  import { launchHint, missingProjectModules } from './editor/projectMismatch';
   import { layoutTopDown, edgesFromConnections } from '@/utils/autoLayout';
   import CookStatusStrip from './editor/CookStatusStrip.svelte';
   import type { CookStatus } from '@/nodes/CookScheduler';
@@ -119,6 +120,8 @@
   let projectGraphFile: string | null = null;
   let versionHistoryOpen = false;
   let buildIsStale = false;
+  /** Set when a loaded graph needs project nodes this server cannot compile. */
+  let projectMismatch: { missing: string[]; root: string } | null = null;
   let missingProjectCredentials: string[] = [];
   let projectManifestName = '';
   let colorPaletteOpen = false;
@@ -438,6 +441,9 @@
       projectGraphFile = null;
       hasUnsavedChanges = false;
       updateWindowTitle();
+      // The common way to hit this: opening one project's graph in another
+      // project's Studio.
+      await checkProjectMismatch(json);
 
         // Cook the graph in dependency order. Two reasons this is no longer a
         // parallel map: `n.code` is empty for project-source nodes (their module is
@@ -706,6 +712,34 @@
   }
 
   /**
+   * Warn when a graph has been opened in the wrong server.
+   *
+   * A Cascade server serves one project root, so another project's `project.*`
+   * nodes cannot be compiled here and each one fails on its own — which reads
+   * as a graph full of broken nodes rather than as the single fact that it is
+   * in the wrong Studio. Asking the server what it has, and comparing, states
+   * the cause once.
+   */
+  async function checkProjectMismatch(document: unknown): Promise<void> {
+    projectMismatch = null;
+    try {
+      const [nodesResponse, graphResponse] = await Promise.all([
+        fetch('/api/nodes'),
+        fetch('/api/graph'),
+      ]);
+      if (!nodesResponse.ok) return;
+      const available: string[] = (await nodesResponse.json())?.modules ?? [];
+      const missing = missingProjectModules(document, available);
+      if (!missing.length) return;
+      const root = graphResponse.ok ? ((await graphResponse.json())?.root ?? '') : '';
+      projectMismatch = { missing, root };
+    } catch {
+      // No server, or one too old to have /api/nodes. Nothing the reader can
+      // act on, so stay quiet rather than guess.
+    }
+  }
+
+  /**
    * Load a past version into the editor. Deliberately NOT a git operation:
    * the old graph becomes the current unsaved document, so nothing on disk
    * changes until Marcus saves, and saving it writes the next version on top
@@ -872,6 +906,7 @@
         projectGraphFile = nextProjectGraphFile;
         hasUnsavedChanges = false;
         updateWindowTitle();
+        await checkProjectMismatch(json);
         if (projectGraphFile) {
           try {
             const { loadProjectSettings } = await import('./editor/projectSettingsApi');
@@ -1265,6 +1300,19 @@
       <button on:click={() => location.reload()}>Reload</button>
     </div>
   {/if}
+  {#if projectMismatch}
+    <div class="project-mismatch" role="alert">
+      <span>
+        This graph needs project nodes this server does not have
+        ({projectMismatch.missing.slice(0, 3).map((id) => id.slice('project.'.length)).join(', ')}{projectMismatch.missing.length > 3
+          ? `, and ${projectMismatch.missing.length - 3} more`
+          : ''}), so they cannot cook here. This server serves
+        {projectMismatch.root || 'another project'}. Launch the graph's own project from the CLI:
+      </span>
+      <code>{launchHint('')}</code>
+      <button on:click={() => (projectMismatch = null)}>Dismiss</button>
+    </div>
+  {/if}
   {#if !presentationMode}
     <MenuBar
       documentName={displayName}
@@ -1437,6 +1485,40 @@
 
   .build-stale button:hover {
     background: var(--banner-warn-hover);
+  }
+
+  /* Same slot as the stale-build notice, and the same reasoning: a condition
+     the whole document is subject to belongs above the document, not in a toast
+     that has gone by the time the graph finishes cooking. */
+  .project-mismatch {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 6px 12px;
+    background: var(--banner-alert-bg);
+    border-bottom: 1px solid var(--border-strong);
+    color: var(--banner-alert-text);
+    font-size: 12px;
+  }
+
+  .project-mismatch code {
+    background: var(--shade-strong);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    user-select: all;
+  }
+
+  .project-mismatch button {
+    background: none;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    color: inherit;
+    font-size: 12px;
+    padding: 2px 10px;
+    cursor: pointer;
+    margin-left: auto;
   }
 
   .credential-warning { background: var(--banner-alert-bg); color: var(--banner-alert-text); padding: 7px 12px; font-size: 12px; display: flex; gap: 8px; align-items: center; }
