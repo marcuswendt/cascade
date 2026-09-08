@@ -361,7 +361,7 @@ describe('/api/agent reconnect', () => {
       '',
     ].join('\n'));
     fs.chmodSync(script, 0o755);
-    fs.writeFileSync(path.join(root, 'cascade.json'), JSON.stringify({ commands: { claude: script }, agents: { claude: { args: [] } } }));
+    fs.writeFileSync(path.join(root, 'cascade.json'), JSON.stringify({ commands: { claude: script }, agent: { claude: { args: [] } } }));
 
     const project = new ProjectRoot(root);
     const port = nextPort++;
