@@ -7,6 +7,7 @@
   import { Transport } from './timeline/transport';
   import { collectTracks, moveKey, type ChannelTrack } from './timeline/channels';
   import { timelineFocus } from '../stores/timelineFocus';
+  import { setCurrentFrame } from '../stores/frameStore';
   import { frameAt, frameToX, frameTicks, hitTestKey, type TimelineView } from './timeline/timeline-math';
 
   export let panelId: string;
@@ -51,7 +52,9 @@
   let pendingFrame: number | null = null;
 
   async function cookAt(target: number): Promise<void> {
-    cascade.setFrame(target);
+    // Through the store, so every panel showing a time-dependent value knows
+    // the frame moved — not just this one.
+    setCurrentFrame(target);
     cascade.markTimeDependentDirty();
     if (cooking) {
       pendingFrame = target;

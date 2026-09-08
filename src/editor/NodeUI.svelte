@@ -425,13 +425,16 @@
             <Icon name={nodeIcon} size={12} strokeWidth={2} />
           </span>
 
-          {#if runsOn}
-            {@const locusLabel = runsOn === 'server' ? 'S' : runsOn === 'browser' ? 'B' : 'P'}
+          <!-- Portable carries no badge, per Marcus 2026-09-08. It is the
+               unremarkable case — a node that runs either side tells you
+               nothing you need while reading a graph, and a marker on almost
+               every node is noise rather than information. S and B stay,
+               because those are the ones with a consequence. -->
+          {#if runsOn === 'server' || runsOn === 'browser'}
+            {@const locusLabel = runsOn === 'server' ? 'S' : 'B'}
             {@const locusTitle = runsOn === 'server'
               ? 'Runs on the server'
-              : runsOn === 'browser'
-                ? 'Runs in the browser'
-                : 'Portable: browser or server implementation'}
+              : 'Runs in the browser'}
             <span
               class="locus-badge locus-{runsOn}"
               title={locusTitle}

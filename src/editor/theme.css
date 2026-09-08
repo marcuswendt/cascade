@@ -42,7 +42,10 @@
    * .cascade-group-folded in DockviewContainer.svelte. Keep it in step with
    * FOLDED_SIZE in dockview/fold.ts, which sizes the group itself; this only
    * sizes the chrome inside it. */
-  --panel-tab-height: 20px;
+  /* 22px: 20 read as too tight in use, so a touch more breathing room at
+     Marcus's request, 2026-09-08. Still 71% of the 31px it replaced, so the
+     space it was meant to win is nearly all still won. */
+  --panel-tab-height: 22px;
   --panel-tab-height-folded: 8px;
   --panel-tab-font-size: 11px;
   --panel-tab-padding-x: 8px;

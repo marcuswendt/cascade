@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Prop } from '@/types/node.types';
+  import { currentFrame } from '../stores/frameStore';
   import type { Node } from '@/nodes/Node';
   import type { Graph } from '@/nodes/Graph';
   import { Sigma, AlertCircle, X } from '@lucide/svelte';
@@ -79,7 +80,7 @@
    * typed — the resolved one is what `evalParm` returns, and pushing it into
    * `value` would overwrite what the document records.
    */
-  function resolvedValue(_prop: Prop, key: string): any {
+  function resolvedValue(_prop: Prop, key: string, _frame?: number): any {
     try {
       const resolved = node?.evalParm?.(key);
       return resolved === undefined ? _prop.value : resolved;
@@ -88,8 +89,13 @@
     }
   }
 
+  // `$currentFrame` is in here as a dependency, not as an argument: the badge
+  // shows a value that depends on time, so it has to recompute when the frame
+  // moves. Without it the statement's dependencies were prop and propKey alone,
+  // so `$T * 0.5` showed the value it had at frame 1 — zero — for every
+  // position of the playhead.
   $: evaluatedDisplay = hasExpression && !expressionError
-    ? formatEvaluatedValue(resolvedValue(prop, propKey))
+    ? formatEvaluatedValue(resolvedValue(prop, propKey, $currentFrame))
     : null;
 
   // Expression functions for autocomplete
