@@ -7,14 +7,24 @@
  * The document is outside the repo, so these are skipped when it is absent.
  * The node's real `execute()` cannot run here — it draws with OffscreenCanvas
  * and imports the project's own modules — so the parameter declarations are
- * replayed verbatim from `nodes/field-io-gradient-logo/index.ts`, which is the
- * layer under test anyway: what a sketch reads out of `node.param(...).value`
- * inside a cook.
+ * replayed below, and the layer under test is what a sketch reads out of
+ * `node.param(...).value` inside a cook: the stored value, the expression and
+ * the keyframe channel resolving in the right order.
+ *
+ * That replay is the *legacy* declaration shape, and since the sketch was
+ * converted to definition-v1 on 2026-09-08 it is no longer a copy of what the
+ * module writes. It is kept deliberately: the parameter layer it exercises is
+ * still what the class-based nodes use, and these are the only tests that run
+ * it against real stored values rather than a fixture. The thing that must not
+ * drift is the *document*, which is why the assertions below read the file and
+ * the definition rather than trusting the replay.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { extractNodeDefinition } from '../packages/runtime/src/definition/extract.js';
 import { expressionEngine } from '@/engine/expressions/index';
 import { Graph } from '@/nodes/Graph';
 import type { Node } from '@/nodes/Node';
@@ -50,10 +60,38 @@ describe.skipIf(!present)('field-logo/index.cascade', () => {
     expect(declareGradientLogo(node).scale).toBe(1.0);
   });
 
-  it('keeps a promoted parameter promoted through the declaration', () => {
-    const node = loaded().getNode('logo-1024')!;
-    declareGradientLogo(node);
-    expect(node.parameters.find(p => p.name === 'angle')!.promoted).toBe(true);
+  it('keeps logo-1024\'s angle driven by another node', () => {
+    // This asserted `promoted === true` until the sketch converted to
+    // definition-v1, and it went red without anything being lost. "A prop
+    // promoted to a pin" and "a declared input" are two spellings of one
+    // capability, and v1 only has the second — `parameterOptions` sets
+    // `promotable: false` and the v1 context reads a prop from the parameter,
+    // never from a connected port.
+    //
+    // So the assertion is the behaviour rather than the flag: `sine-1` drives
+    // this angle, and it is declared in a way that permits that. Both halves
+    // are needed — a connection to a prop would load and silently never
+    // arrive, which is the failure this protects against.
+    const document = JSON.parse(fs.readFileSync(DOCUMENT, 'utf8'));
+    expect(document.connections).toContainEqual([['sine-1', 0, 'value'], ['logo-1024', 0, 'angle']]);
+
+    const source = fs.readFileSync(path.join(path.dirname(DOCUMENT), 'nodes/field-io-gradient-logo/index.ts'), 'utf8');
+    const extracted = extractNodeDefinition(source, 'index.ts', ts);
+    expect(extracted.ok).toBe(true);
+    if (!extracted.ok) return;
+    expect(extracted.definition.inputs?.angle).toMatchObject({ kind: 'data', type: 'float' });
+    expect(extracted.definition.props ?? {}).not.toHaveProperty('angle');
+  });
+
+  it('stores a size only where it differs from the default', () => {
+    // 1024 is the definition's own default, so `logo-1024` carrying no props
+    // is correct rather than a dropped value — worth pinning, because "a node
+    // with an empty props object" is exactly what the `params` fault looked
+    // like from the outside.
+    const document = JSON.parse(fs.readFileSync(DOCUMENT, 'utf8'));
+    const node = (id: string) => document.nodes.find((entry: any) => entry.id === id);
+    expect(node('logo-1024').props ?? {}).not.toHaveProperty('size');
+    expect(node('logo-128').props).toMatchObject({ size: 128 });
   });
 
   it('carries an expression on angle into the value the cook reads', () => {
