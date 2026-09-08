@@ -133,7 +133,17 @@ export function allowedAuthorities(options: ServerSecurityOptions, origins: Read
   } else if (!isWildcardHost(options.host)) {
     authorities.add(authority(options.host, options.port));
   }
-  for (const host of options.trustedHosts) authorities.add(trustedAuthority(host, options.port));
+  for (const host of options.trustedHosts) {
+    const value = trustedAuthority(host, options.port);
+    authorities.add(value);
+    // A browser omits a scheme's default port from `Host`, so a proxy on 443
+    // sends the name bare and `name:443` would never match. Measured: putting
+    // a sketch on 443 answered 403 on every call, and 443 is the first port
+    // anybody reaches for because it gives the tidiest URL. Both forms are
+    // accepted rather than documenting a restriction nobody will read.
+    const bare = value.replace(/:(?:80|443)$/, '');
+    if (bare !== value) authorities.add(bare);
+  }
   return authorities;
 }
 

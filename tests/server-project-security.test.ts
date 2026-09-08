@@ -172,6 +172,52 @@ describe('project API security boundary', () => {
     expect(await rawStatus(`${base}/api/graph`, { Host: `127.0.0.1:${port}` })).toBe(200);
   });
 
+  it('accepts a browser Origin over https through a proxy', async () => {
+    /**
+     * The defect that would have met Marcus within minutes of using the new
+     * HTTPS URLs. `defaultOrigins` was built `http://` only, so behind a TLS
+     * proxy a browser sending `Origin: https://name:port` passed the Host
+     * check and was **refused by the Origin check** — 403 on every POST and
+     * PUT, while GETs without an Origin header sailed through. A Studio that
+     * loads, renders, and silently cannot save.
+     *
+     * Measured before fixing: `httpsOrigin: 403`, `httpOrigin: 200` on the
+     * same server. Curl proved nothing here because curl sends no Origin,
+     * which is exactly why the proxy verification came back green.
+     */
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-https-origin-'));
+    roots.push(root);
+    fs.writeFileSync(path.join(root, 'index.cascade'), '{}');
+    const port = await freePort();
+    const server = startServer(new ProjectRoot(root), {
+      port, host: '127.0.0.1', trustedHosts: ['kuro.hydra-diatonic.ts.net:8445'],
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const base = `http://127.0.0.1:${port}`;
+    const proxied = 'kuro.hydra-diatonic.ts.net:8445';
+
+    expect(await rawStatus(`${base}/api/graph`, { Host: proxied, Origin: `https://${proxied}` })).toBe(200);
+    expect(await rawStatus(`${base}/api/graph`, { Host: proxied, Origin: `http://${proxied}` })).toBe(200);
+    // Still refused: an origin nobody declared, and the null origin.
+    expect(await rawStatus(`${base}/api/graph`, { Host: proxied, Origin: 'https://elsewhere:8445' })).toBe(403);
+    expect(await rawStatus(`${base}/api/graph`, { Host: proxied, Origin: 'null' })).toBe(403);
+  });
+
+  it('matches a default-port trusted host against the bare name a browser sends', () => {
+    // A browser omits 443 from `Host` on an https URL, so `name:443` could
+    // never match — and 443 is the first port anybody reaches for, because it
+    // gives the tidiest URL. Putting a sketch there answered 403 on every
+    // call, which looks exactly like the host bug fixed earlier tonight.
+    const authorities = allowedAuthorities(
+      { host: '127.0.0.1', port: 3030, trustedHosts: ['kuro.hydra-diatonic.ts.net:443'] } as never,
+      new Set<string>(),
+    );
+
+    expect(authorities.has('kuro.hydra-diatonic.ts.net')).toBe(true);
+    expect(authorities.has('kuro.hydra-diatonic.ts.net:443')).toBe(true);
+  });
+
   it('honours a port written into a trusted host, which is the proxy case', () => {
     /**
      * Behind a reverse proxy the public port is not the bind port. Measured

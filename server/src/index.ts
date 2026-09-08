@@ -45,7 +45,27 @@ export function startServer(project: ProjectRoot, opts: StartServerOptions = {})
   const trustedHosts = Object.freeze([...(opts.trustedHosts ?? [])]);
   const defaultOrigins = [
     ...(isLoopbackHost(HOST) ? [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`] : []),
-    ...trustedHosts.map((host) => `http://${trustedAuthority(host, PORT)}`),
+    // Both schemes for a trusted host, because the server cannot know whether
+    // something is terminating TLS in front of it.
+    //
+    // This was `http://` only, and behind a TLS proxy a browser sends
+    // `Origin: https://name:port` — so the Host check passed and the **Origin
+    // check refused it**, which 403s every POST and PUT while GETs without an
+    // Origin header sail through. That is a Studio that loads, renders and
+    // then silently cannot save. Measured before fixing: `httpsOrigin: 403`,
+    // `httpOrigin: 200` on the same server.
+    //
+    // Not a widening: the Host allowlist already decides which authorities are
+    // acceptable, and this only says the same authority may arrive over either
+    // scheme.
+    ...trustedHosts.flatMap((host) => {
+      const value = trustedAuthority(host, PORT);
+      const bare = value.replace(/:(?:80|443)$/, '');
+      return [...new Set([value, bare])].flatMap((authority) => [
+        `http://${authority}`,
+        `https://${authority}`,
+      ]);
+    }),
   ];
   const security: ServerSecurityOptions = Object.freeze({
     host: HOST,
