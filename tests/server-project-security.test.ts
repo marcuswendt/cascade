@@ -138,6 +138,39 @@ describe('project API security boundary', () => {
     ]);
   });
 
+  it('honours a port written into a trusted host, which is the proxy case', () => {
+    /**
+     * Behind a reverse proxy the public port is not the bind port. Measured
+     * with `tailscale serve` on 2026-09-08: a request to
+     * `https://kuro.hydra-diatonic.ts.net:8444` reaches a loopback backend with
+     * `Host: kuro.hydra-diatonic.ts.net:8444` **verbatim, port included**, and
+     * `remoteAddress: 127.0.0.1`.
+     *
+     * So an allowlist built from the bind port would still 403 and the fix
+     * would look like it had not worked. This is the case nothing exercised.
+     */
+    const authorities = allowedAuthorities(
+      { host: '127.0.0.1', port: 3030, trustedHosts: ['kuro.hydra-diatonic.ts.net:8444'] } as never,
+      new Set<string>(),
+    );
+
+    expect(authorities.has('kuro.hydra-diatonic.ts.net:8444')).toBe(true);
+    // Loopback stays reachable, so a local browser and the proxy both work.
+    expect(authorities.has('127.0.0.1:3030')).toBe(true);
+    expect(authorities.has('localhost:3030')).toBe(true);
+    // And the bind port is not silently attached to the trusted name.
+    expect(authorities.has('kuro.hydra-diatonic.ts.net:3030')).toBe(false);
+  });
+
+  it('falls back to the server port when a trusted host names none', () => {
+    const authorities = allowedAuthorities(
+      { host: 'kuro', port: 3030, trustedHosts: ['kuro.hydra-diatonic.ts.net'] } as never,
+      new Set<string>(),
+    );
+
+    expect([...authorities].sort()).toEqual(['kuro.hydra-diatonic.ts.net:3030', 'kuro:3030']);
+  });
+
   it('never admits a wildcard bind address as a hostname', () => {
     // `0.0.0.0` means every interface, not a name a browser sends — so it must
     // not become an allowed `Host`, which is what the case below already

@@ -5,7 +5,7 @@ import { loadConfig, saveConfig, configPath } from './config.js';
 import { startServer } from './index.js';
 import { ProjectRoot } from './project.js';
 import { createNode, createProject } from './projectTemplate.js';
-import { authority, isLoopbackHost } from './security.js';
+import { authority, isLoopbackHost, trustedAuthority } from './security.js';
 
 export interface StudioCliArgs {
   readonly positional: string[];
@@ -34,7 +34,7 @@ export function parseStudioArgs(args: readonly string[]): StudioCliArgs {
       if (!value || value.startsWith('--')) throw new Error(`${name} requires a value`);
       if (name === '--host') host = value;
       else if (name === '--trusted-host') {
-        authority(value, 1);
+        trustedAuthority(value, 1);
         trustedHosts.push(value);
       } else {
         port = Number(value);
@@ -48,8 +48,19 @@ export function parseStudioArgs(args: readonly string[]): StudioCliArgs {
     positional.push(argument);
   }
 
-  if (trustedHosts.length > 0 && (!host || isLoopbackHost(host))) {
-    throw new Error('--trusted-host requires an explicit non-loopback --host bind address');
+  // A loopback bind with a trusted host is the reverse-proxy case, and it used
+  // to be refused — which made HTTPS unreachable: `tailscale serve` terminates
+  // TLS and proxies to loopback, so the browser never reaches the bind address
+  // and the old requirement could not be satisfied by any configuration. Three
+  // constraints excluded each other and there was no way through.
+  //
+  // It is safe for the reason the refusal was trying to protect: a loopback
+  // bind means **the only possible peer is a local process**. Measured through
+  // `tailscale serve` on 2026-09-08 — the backend sees
+  // `remoteAddress: 127.0.0.1` and the original `Host` verbatim, so nothing
+  // needs to be inferred from a forwarded header and no trust is widened.
+  if (trustedHosts.length > 0 && !host) {
+    throw new Error('--trusted-host requires an explicit --host bind address, loopback or otherwise');
   }
   if (host && !isLoopbackHost(host)) {
     if (host === '0.0.0.0' || host === '::' || host === '[::]') {
@@ -111,7 +122,7 @@ export async function runStudioCli(args: readonly string[]): Promise<void> {
     const address = server.address();
     const port = typeof address === 'object' && address ? address.port : 3030;
     const browserHost = trustedHosts[0] ?? (host && !isLoopbackHost(host) ? host : 'localhost');
-    const url = `http://${authority(browserHost, port)}`;
+    const url = `http://${trustedAuthority(browserHost, port)}`;
     if (!noOpen) {
       const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
       execFile(opener, [url], (error) => {

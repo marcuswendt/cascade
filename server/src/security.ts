@@ -133,7 +133,7 @@ export function allowedAuthorities(options: ServerSecurityOptions, origins: Read
   } else if (!isWildcardHost(options.host)) {
     authorities.add(authority(options.host, options.port));
   }
-  for (const host of options.trustedHosts) authorities.add(authority(host, options.port));
+  for (const host of options.trustedHosts) authorities.add(trustedAuthority(host, options.port));
   return authorities;
 }
 
@@ -141,6 +141,37 @@ export function allowedAuthorities(options: ServerSecurityOptions, origins: Read
 export function isWildcardHost(host: string): boolean {
   const normalized = host.trim().toLowerCase().replace(/^\[|\]$/g, '');
   return normalized === '0.0.0.0' || normalized === '::' || normalized === '*';
+}
+
+/**
+ * A trusted host's authority, honouring a port written into the value.
+ *
+ * Behind a reverse proxy the public port is not the bind port: measured with
+ * `tailscale serve` on 2026-09-08, a request to
+ * `https://kuro.hydra-diatonic.ts.net:8444` reaches a loopback backend with
+ * **`Host: kuro.hydra-diatonic.ts.net:8444` verbatim, port included.** So an
+ * allowlist built from the *bind* port would still refuse it, and the fix for
+ * the 403 would look like it had not worked.
+ *
+ * `--trusted-host name:port` therefore names the authority a browser will
+ * actually send. Without a port it falls back to the server's own, which is
+ * the direct-access case and stays the common one.
+ */
+export function trustedAuthority(value: string, defaultPort: number): string {
+  const trimmed = value.trim().toLowerCase();
+  const bracketed = /^\[([^\]]+)\]:(\d+)$/.exec(trimmed);
+  if (bracketed) return authority(`[${bracketed[1]}]`, checkedPort(bracketed[2]));
+  const hostAndPort = /^([^:]+):(\d+)$/.exec(trimmed);
+  if (hostAndPort) return authority(hostAndPort[1], checkedPort(hostAndPort[2]));
+  return authority(trimmed, defaultPort);
+}
+
+function checkedPort(raw: string): number {
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`Invalid trusted host port: ${raw}`);
+  }
+  return port;
 }
 
 export function authority(host: string, port: number): string {
