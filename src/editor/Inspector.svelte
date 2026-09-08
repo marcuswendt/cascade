@@ -285,7 +285,14 @@
   /** A Svelte action rather than an `on:click` in the markup: a `<label>` with
    *  a mouse handler trips two a11y lints, and the accessible path here is the
    *  diamond button beside it. Alt-click and right-click are shortcuts on top,
-   *  not the only way in. */
+   *  not the only way in.
+   *
+   *  It also makes the label a drag source. The payload is the parameter's
+   *  expression address — `NODE/parm`, the same string `ch()` takes — so
+   *  dragging a label into the agent console or another parameter field
+   *  carries the exact path rather than a name you then have to spell
+   *  correctly. Dragging and clicking do not collide: a drag needs movement,
+   *  and a click without it still reaches `onClick`. */
   function parameterGestures(element: HTMLElement, key: string) {
     /**
      * The macOS collision, resolved rather than sidestepped.
@@ -335,6 +342,39 @@
       destroy() {
         element.removeEventListener('click', onClick);
         element.removeEventListener('contextmenu', onContextMenu);
+      },
+    };
+  }
+
+  /**
+   * The parameter's name as a drag source, carrying its expression address —
+   * `NODE/parm`, the same string `ch()` takes — so a path can be dragged into
+   * the agent console or another parameter instead of typed out correctly.
+   *
+   * Separate from `parameterGestures` on purpose. That action sits on the whole
+   * row at one of its three render sites, and a draggable row would swallow the
+   * press-and-move that drags a slider. The name is the only part of the row
+   * that is not itself a control.
+   */
+  function parameterDragSource(element: HTMLElement, key: string) {
+    const onDragStart = (event: DragEvent) => {
+      if (!event.dataTransfer || !node) return;
+      // Stop the graph canvas reading this as the start of a node move.
+      event.stopPropagation();
+      // The node's live id rather than one captured when the action ran:
+      // renaming a node with the Inspector open would otherwise hand out a
+      // path that resolves to nothing.
+      event.dataTransfer.setData('text/plain', `${node.id}/${key}`);
+      event.dataTransfer.effectAllowed = 'copy';
+    };
+    // The attribute rather than the property: jsdom does not implement the
+    // `draggable` setter, so the property form cannot be tested while the
+    // attribute behaves identically in a browser.
+    element.setAttribute('draggable', 'true');
+    element.addEventListener('dragstart', onDragStart);
+    return {
+      destroy() {
+        element.removeEventListener('dragstart', onDragStart);
       },
     };
   }
@@ -1224,7 +1264,7 @@
                 {@const isVector = controlType === 'vec2' || controlType === 'vec3' || controlType === 'vec2i' || controlType === 'vec3i' || controlType === 'vector'}
                 <div class="prop-group" class:prop-group-row={isVector}>
                   {#if displayName !== null}
-                    <label class="prop-label" for={inputId} use:parameterGestures={key}>
+                    <label class="prop-label" for={inputId} use:parameterGestures={key} use:parameterDragSource={key}>
                       {displayName}
                     </label>
                     {#if isKeyable(prop.value)}
@@ -1360,7 +1400,7 @@
               {@const isVector = controlType === 'vec2' || controlType === 'vec3' || controlType === 'vec2i' || controlType === 'vec3i' || controlType === 'vector'}
               <div class="prop-group" class:prop-group-row={isVector}>
                 {#if displayName !== null}
-                  <label class="prop-label" for={inputId} use:parameterGestures={key}>
+                  <label class="prop-label" for={inputId} use:parameterGestures={key} use:parameterDragSource={key}>
                     {displayName}
                   </label>
                   {#if isKeyable(prop.value)}
@@ -1559,6 +1599,7 @@
                              reads the same wherever it is rendered. -->
                         <span
                           class="parameter-name"
+                          use:parameterDragSource={parameter.name}
                           title={`${parameter.options?.label ?? parameter.name} · ${normalizeType(parameter.dataType)}`}
                         >{parameter.options?.label ?? parameter.name}</span>
                         {#key `${parameter.name}-${keyTick}`}
@@ -1739,6 +1780,14 @@
     font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
+    /* The only affordance the drag gets. The title stays `name · type` to
+       match PortEditor, which a test pins, so the cursor is what tells you the
+       name is draggable. */
+    cursor: grab;
+  }
+
+  .prop-label {
+    cursor: grab;
   }
 
   /* Deliberately quiet: promotion is occasional, and a button shouting on every

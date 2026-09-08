@@ -73,6 +73,79 @@
   let transcriptEl: HTMLDivElement | null = null;
   let inputEl: HTMLTextAreaElement | null = null;
   let dropActive = false;
+  let consoleEl: HTMLDivElement | null = null;
+
+  /**
+   * Text zoom, on the standard keys. A transcript is the one panel you read
+   * rather than operate, and the graph-legible size is not the reading size.
+   *
+   * The scale is a multiplier on the panel's own font size, not the browser's
+   * page zoom: page zoom would resize the graph and every other panel with it,
+   * which is the opposite of what a per-panel control is for. Persisted,
+   * because a size you have to reset on every reload is not a setting.
+   */
+  const ZOOM_KEY = 'cascade.agentPanel.zoom';
+  const ZOOM_STEPS = [0.75, 0.85, 1, 1.15, 1.3, 1.5, 1.75, 2];
+  const ZOOM_DEFAULT = 1;
+  let zoom = readZoom();
+
+  function readZoom(): number {
+    // A stored value is not trusted: localStorage survives across versions and
+    // a bad number here would make the panel unreadable with no way back.
+    try {
+      const raw = Number(localStorage.getItem(ZOOM_KEY));
+      return ZOOM_STEPS.includes(raw) ? raw : ZOOM_DEFAULT;
+    } catch {
+      return ZOOM_DEFAULT;
+    }
+  }
+
+  function setZoom(next: number): void {
+    zoom = next;
+    try {
+      localStorage.setItem(ZOOM_KEY, String(next));
+    } catch {
+      // Private windows throw on write. A zoom that does not persist is still
+      // a working zoom.
+    }
+  }
+
+  function stepZoom(direction: 1 | -1): void {
+    const at = ZOOM_STEPS.indexOf(zoom);
+    const from = at === -1 ? ZOOM_STEPS.indexOf(ZOOM_DEFAULT) : at;
+    const to = Math.min(ZOOM_STEPS.length - 1, Math.max(0, from + direction));
+    if (to !== from) setZoom(ZOOM_STEPS[to]);
+  }
+
+  /**
+   * Bound on the window but gated on the pointer or the focus being in this
+   * panel. Both halves are needed and neither alone is enough: a listener on
+   * the panel element only ever fires for keys bubbling out of the prompt box,
+   * so it would not work while you were simply reading the transcript, and an
+   * ungated window listener would take the browser's own zoom keys away from
+   * the whole of Studio for the sake of one panel.
+   *
+   * `-` and `=` are read from `event.key` alongside the shifted `_` and `+`,
+   * because which one arrives depends on the keyboard layout, and a shortcut
+   * that works on one layout and not another is worse than none.
+   */
+  function onZoomKeydown(event: KeyboardEvent): void {
+    if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+    if (!consoleEl) return;
+    const engaged =
+      consoleEl.matches(':hover') || consoleEl.contains(document.activeElement);
+    if (!engaged) return;
+    if (event.key === '0') {
+      event.preventDefault();
+      setZoom(ZOOM_DEFAULT);
+    } else if (event.key === '+' || event.key === '=') {
+      event.preventDefault();
+      stepZoom(1);
+    } else if (event.key === '-' || event.key === '_') {
+      event.preventDefault();
+      stepZoom(-1);
+    }
+  }
 
   $: selected = availability.find(entry => entry.alias === agent) ?? null;
   /** Busy is "this panel sent the prompt"; live is "an agent is running for
@@ -333,7 +406,12 @@
   }
 
   function onKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    // Cmd-Enter is the one that matches the arrow button and works from
+    // anywhere in a long prompt. Plain Enter still sends, and Shift-Enter
+    // still breaks a line, because both were already true and neither is
+    // worth taking away.
+    if (event.key !== 'Enter') return;
+    if (event.metaKey || event.ctrlKey || !event.shiftKey) {
       event.preventDefault();
       void send();
     }
@@ -386,9 +464,13 @@
   });
 </script>
 
+<svelte:window on:keydown={onZoomKeydown} />
+
 <div
   class="console"
   class:drop-active={dropActive}
+  bind:this={consoleEl}
+  style="--agent-zoom: {zoom}"
   on:dragover={onDragOver}
   on:dragleave={() => (dropActive = false)}
   on:drop={onDrop}
@@ -401,8 +483,18 @@
         <option value={alias}>{alias}</option>
       {/each}
     </select>
-    <span class="sketch" title={sketch ?? 'no project file'}>{sketch ?? 'no project file'}</span>
+    {#if !sketch}
+      <span class="sketch" title="Open the sketch through the cascade CLI">no project file</span>
+    {/if}
     <span class="spacer"></span>
+    {#if zoom !== ZOOM_DEFAULT}
+      <button
+        type="button"
+        class="zoom"
+        on:click={() => setZoom(ZOOM_DEFAULT)}
+        title="Text size — click to reset (⌘0)"
+      >{Math.round(zoom * 100)}%</button>
+    {/if}
     {#if working}
       <span class="running" title="An agent is running for this sketch">running</span>
       <button type="button" on:click={stop}>Stop</button>
@@ -428,7 +520,7 @@
         {#if !sketch}
           No project file is open, so there is nothing for an agent to edit.
         {:else}
-          No {agent} session is running for {sketch}. Say what the sketch should become. Drag a node in for its path.
+          Say what the sketch should become. Drag in a node or a parameter for its exact path.
         {/if}
       </div>
     {/if}
@@ -453,7 +545,14 @@
       placeholder={working ? `${agent} is working…` : 'Prompt the sketch'}
       disabled={working}
     ></textarea>
-    <button type="button" class="send" on:click={send} disabled={working || !prompt.trim() || !launchable}>Send</button>
+    <button
+      type="button"
+      class="send"
+      on:click={send}
+      disabled={working || !prompt.trim() || !launchable}
+      title="Send (⌘↵)"
+      aria-label="Send prompt"
+    >→</button>
   </div>
 </div>
 
@@ -490,10 +589,30 @@
     background: var(--surface-control);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 3px;
+    border-radius: 4px;
     font: inherit;
-    padding: 2px 6px;
+    /* Sized to the input's own height rather than to the glyph, so the arrow
+       stays square as the text zooms and the box grows. */
+    width: 30px;
+    height: 30px;
+    flex: none;
+    font-size: 15px;
+    line-height: 1;
+    padding: 0;
     cursor: pointer;
+  }
+
+  .zoom {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font: inherit;
+    padding: 0 4px;
+    cursor: pointer;
+  }
+
+  .zoom:hover {
+    color: var(--text-primary);
   }
 
   .bar button:hover,
@@ -545,6 +664,12 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    /* The zoom lands on the text you read and type, and deliberately not on
+       the bar: a toolbar that grew with the type size would push the
+       transcript around every time you changed it, which is the opposite of
+       what reading larger is for. */
+    font-size: calc(12px * var(--agent-zoom, 1));
+    line-height: 1.45;
   }
 
   .hint {
@@ -607,9 +732,9 @@
 
   .composer {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     align-items: flex-end;
-    padding: 6px;
+    padding: 10px;
     border-top: 1px solid var(--border-divider);
     background: var(--surface-panel-alt);
   }
@@ -622,9 +747,11 @@
     background: var(--surface-input);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 3px;
-    font: inherit;
-    padding: 4px 6px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: calc(12px * var(--agent-zoom, 1));
+    line-height: 1.45;
+    padding: 8px 10px;
   }
 
   .composer textarea:focus {
