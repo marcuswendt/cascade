@@ -13,6 +13,7 @@ import {
 } from '@cascade/runtime/animation';
 import type { Channel, Interpolation, Keyframe, SerializedChannel } from '@cascade/runtime/animation';
 import { resolvePropBinding } from '@cascade/runtime/params';
+import { asError } from '../utils/thrownError.js';
 
 export type { Channel as ParamChannel, Interpolation, Keyframe };
 
@@ -1815,17 +1816,26 @@ export class Node {
 
       // Update cook info on success
       this.updateCookInfo(startTime, startMemory);
-    } catch (err: any) {
+    } catch (thrown: unknown) {
+      // Normalised at the throw site rather than at each reader. A
+      // `GPUPipelineError` or `DOMException` carries its message on the
+      // prototype and has no enumerable own properties, so the raw value
+      // serialised to `{}` and `Error executing node volume: {}` is what
+      // Marcus actually saw. Assigning it to a field typed `Error` then hid
+      // the same gap from everything downstream.
+      const err = asError(thrown);
       if (generation === this.cookGeneration) {
-        this.error = err as Error;
+        this.error = err;
         this.setCookState('error');
       } else {
         this.setCookState('stale');
       }
       // Still update cook info on error
       this.updateCookInfo(startTime, startMemory);
-      if (!err.message?.includes('timeout')) {
-        console.error(`Error executing node ${this.id}:`, err);
+      if (!err.message.includes('timeout')) {
+        // The message, not the object: a log panel or console forwarder that
+        // serialises the second argument is exactly what lost it before.
+        console.error(`Error executing node ${this.id}: ${err.message}`, err);
       }
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
