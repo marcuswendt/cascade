@@ -204,6 +204,18 @@ describe('Graph', () => {
       expect(graph.connections.length).toBeLessThanOrEqual(2);
     });
 
+    it('returns the existing connection for a duplicate variadic edge', () => {
+      nodeB.inputs[0].variadic = true;
+
+      const first = graph.connect(nodeA.outputs[0], nodeB.inputs[0]);
+      const duplicate = graph.connect(nodeA.outputs[0], nodeB.inputs[0]);
+
+      expect(duplicate).toBe(first);
+      expect(graph.connections).toEqual([first]);
+      expect(nodeA.outputs[0].connections).toEqual([first]);
+      expect(nodeB.inputs[0].connections).toEqual([first]);
+    });
+
     it('should prevent cycle creation', () => {
       graph.connect(nodeA.outputs[0], nodeB.inputs[0]);
 

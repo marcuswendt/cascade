@@ -13,7 +13,12 @@ await build({
   outfile: resolve(outputDirectory, 'index.js'),
   bundle: true,
   packages: 'external',
-  alias: { '@cascade/contracts': resolve('packages', 'contracts', 'src', 'index.ts') },
+  alias: {
+    '@cascade/contracts': resolve('packages', 'contracts', 'src', 'index.ts'),
+    '@cascade/runtime/animation': resolve('packages', 'runtime', 'src', 'animation', 'index.ts'),
+    '@cascade/runtime/definition/extract': resolve('packages', 'runtime', 'src', 'definition', 'extract.ts'),
+    '@cascade/runtime/expressions': resolve('packages', 'runtime', 'src', 'expressions', 'index.ts'),
+  },
   platform: 'node',
   target: 'node20',
   format: 'esm',
@@ -26,9 +31,9 @@ writeFileSync(resolve('dist', 'shell.d.ts'), `export {
   type ShellProcessErrorKind,
   type ShellRunOptions,
   type ShellRunResult,
-} from 'cascade/contracts';
-export declare function run(command: string, args?: readonly string[], options?: import('cascade/contracts').ShellRunOptions): Promise<import('cascade/contracts').ShellRunResult>;
-export declare function runJson<T = unknown>(command: string, args?: readonly string[], options?: import('cascade/contracts').ShellRunOptions): Promise<T>;
+} from '@field/cascade/contracts';
+export declare function run(command: string, args?: readonly string[], options?: import('@field/cascade/contracts').ShellRunOptions): Promise<import('@field/cascade/contracts').ShellRunResult>;
+export declare function runJson<T = unknown>(command: string, args?: readonly string[], options?: import('@field/cascade/contracts').ShellRunOptions): Promise<T>;
 `);
 writeFileSync(resolve('dist', 'stage.d.ts'), `export interface StageBridge {
   (stage: string, args: Record<string, unknown>): Promise<unknown>;

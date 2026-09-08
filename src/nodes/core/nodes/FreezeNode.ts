@@ -8,6 +8,12 @@
 import { Node } from '../../Node.js';
 import type { Graph } from '../../Graph.js';
 import type { InputPort, OutputPort } from '@/types/node.types';
+import { createSurface } from '../../image/surface.js';
+import { hasPixels } from '@/nodes/image/ImageBuffer';
+
+function previewWanted(): boolean {
+	return typeof document !== 'undefined';
+}
 
 export const nodeMetadata = {
 	type: 'Freeze',
@@ -89,23 +95,14 @@ export class FreezeNode extends Node {
 			return value;
 		}
 
-		// Handle canvas - create a copy
-		if (value instanceof HTMLCanvasElement) {
-			const canvas = document.createElement('canvas');
-			canvas.width = value.width;
-			canvas.height = value.height;
-			const ctx = canvas.getContext('2d');
-			ctx?.drawImage(value, 0, 0);
-			return canvas;
-		}
-
-		// Handle image elements
-		if (value instanceof HTMLImageElement) {
-			const canvas = document.createElement('canvas');
-			canvas.width = value.naturalWidth || value.width;
-			canvas.height = value.naturalHeight || value.height;
-			const ctx = canvas.getContext('2d');
-			ctx?.drawImage(value, 0, 0);
+		// Use structural detection so headless image and canvas objects work too.
+		if (hasPixels(value)) {
+			const source = value as { width: number; height: number; naturalWidth?: number; naturalHeight?: number };
+			const width = source.naturalWidth || source.width;
+			const height = source.naturalHeight || source.height;
+			const canvas = createSurface(width, height);
+			const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | null;
+			ctx?.drawImage(value as CanvasImageSource, 0, 0);
 			return canvas;
 		}
 
@@ -134,11 +131,8 @@ export class FreezeNode extends Node {
 			// Output the frozen value
 			this.output.setValue(this.frozenValue);
 
-			// Show preview if it's a visual type
-			if (
-				this.frozenValue instanceof HTMLCanvasElement ||
-				this.frozenValue instanceof HTMLImageElement
-			) {
+			// Headless runs retain the value without allocating a preview.
+			if (previewWanted() && hasPixels(this.frozenValue)) {
 				this.preview = this.frozenValue as HTMLCanvasElement | HTMLImageElement;
 			}
 		} else {
@@ -146,11 +140,8 @@ export class FreezeNode extends Node {
 			this.output.setValue(this.input.value);
 
 			// Show input preview if visual
-			if (
-				this.input.value instanceof HTMLCanvasElement ||
-				this.input.value instanceof HTMLImageElement
-			) {
-				this.preview = this.input.value;
+			if (previewWanted() && hasPixels(this.input.value)) {
+				this.preview = this.input.value as HTMLCanvasElement | HTMLImageElement;
 			} else {
 				this.preview = null;
 			}

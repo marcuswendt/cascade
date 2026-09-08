@@ -7,10 +7,15 @@
 
 import { Node } from '@/nodes/Node';
 import type { Graph } from '@/nodes/Graph';
-import { ImageBuffer } from './ImageBuffer';
+import { ImageBuffer, hasPixels, type ImageSourceLike } from './ImageBuffer';
+import { surfaceAvailable } from './surface.js';
 
-// Accept ImageBuffer, canvas, or image as input (for backwards compatibility)
-export type ImageInput = ImageBuffer | HTMLCanvasElement | HTMLImageElement | null;
+// Accept buffers and browser/headless drawable objects for compatibility.
+export type ImageInput = ImageBuffer | ImageSourceLike | null;
+
+function previewWanted(): boolean {
+  return typeof document !== 'undefined' && surfaceAvailable();
+}
 
 // Resolution modes for output
 export type ResolutionMode = 'input' | 'input1' | 'input2' | 'largest' | 'smallest' | 'custom';
@@ -64,7 +69,7 @@ export abstract class ImageNodeBase extends Node {
       return input;
     }
 
-    if (input instanceof HTMLCanvasElement || input instanceof HTMLImageElement) {
+    if (hasPixels(input)) {
       return ImageBuffer.fromCanvas(input);
     }
 
@@ -81,14 +86,11 @@ export abstract class ImageNodeBase extends Node {
       return { width: input.width, height: input.height };
     }
 
-    if (input instanceof HTMLCanvasElement) {
-      return { width: input.width, height: input.height };
-    }
-
-    if (input instanceof HTMLImageElement) {
+    if (hasPixels(input)) {
+      const natural = input as { naturalWidth?: number; naturalHeight?: number };
       return {
-        width: input.naturalWidth || input.width,
-        height: input.naturalHeight || input.height
+        width: natural.naturalWidth || input.width,
+        height: natural.naturalHeight || input.height
       };
     }
 
@@ -344,10 +346,9 @@ export abstract class ImageNodeBase extends Node {
     this.updatePreviewThrottled();
   }
 
-  /**
-   * Throttled preview update - avoids excessive canvas conversions
-   */
+  /** Throttled Studio-only preview update. */
   private updatePreviewThrottled(): void {
+    if (!previewWanted()) return;
     const now = performance.now();
     const elapsed = now - this._lastPreviewTime;
 
@@ -365,7 +366,7 @@ export abstract class ImageNodeBase extends Node {
       setTimeout(() => {
         this._previewPending = false;
         this._lastPreviewTime = performance.now();
-        if (this._previewBuffer) {
+        if (this._previewBuffer && previewWanted()) {
           this.preview = this._previewBuffer.toCanvas();
         }
       }, remaining);

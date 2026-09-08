@@ -5,7 +5,7 @@
  * is efficient, especially with the O(1) connection map optimizations.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Graph } from '@/nodes/Graph';
 import { Node } from '@/nodes/Node';
 import type { InputPort, OutputPort } from '@/types/node.types';
@@ -163,6 +163,30 @@ describe('Connection Performance', () => {
 
     expect(elapsed).toBeLessThan(THRESHOLDS.CONNECT_500);
     expect(connCount).toBe(500);
+  });
+
+  it('does not rescan unrelated connections while building a sparse graph', () => {
+    vi.spyOn(graph.scheduler, 'schedule').mockImplementation(() => {});
+    const nodes: SimpleNode[] = [];
+    for (let i = 0; i < 201; i++) {
+      const node = createSimpleNode(`node${i}`, graph);
+      graph.addElement(node);
+      nodes.push(node);
+    }
+
+    let inspectedConnections = 0;
+    const find = graph.connections.find.bind(graph.connections);
+    graph.connections.find = ((predicate, thisArg) => find((connection, index, connections) => {
+      inspectedConnections++;
+      return predicate.call(thisArg, connection, index, connections);
+    })) as typeof graph.connections.find;
+
+    for (let i = 0; i < 200; i++) {
+      graph.connect(nodes[i].outputPort, nodes[i + 1].inputPort);
+    }
+
+    expect(graph.connections).toHaveLength(200);
+    expect(inspectedConnections).toBeLessThan(400);
   });
 
   it('should disconnect in random order efficiently (tests O(1) lookup)', async () => {

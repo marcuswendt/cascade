@@ -220,6 +220,49 @@ node.defineProp('radius', {
     expect(node.code).toBe(code);
   });
 
+  it('restores bypass after compiling a bypassed node', async () => {
+    node.setBypass(true);
+    const code = `node.out('result');`;
+    const compiled = compileNodeCode(code);
+
+    const result = await executeNodeCode(node, graph, compiled.fn!, code);
+
+    expect(result.success).toBe(true);
+    expect(node.bypass).toBe(true);
+    expect(node.outputs.find(port => port.name === 'result')).toBeDefined();
+  });
+
+  it('preserves parameter values while refreshing the node definition', async () => {
+    node.defineProp('radius', { value: 12 });
+    const code = `node.defineProp('radius', { value: 5 });`;
+    const compiled = compileNodeCode(code);
+
+    const result = await executeNodeCode(node, graph, compiled.fn!, code);
+
+    expect(result.success).toBe(true);
+    expect(node.props.radius.value).toBe(12);
+  });
+
+  it('keeps compiling when lifecycle cleanup or readiness hooks fail', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    node.onDestroy = () => { throw new Error('destroy failed'); };
+    const code = `
+node.out('result');
+node.onReady = () => { throw new Error('ready failed'); };
+`;
+    const compiled = compileNodeCode(code);
+
+    const result = await executeNodeCode(node, graph, compiled.fn!, code);
+
+    expect(result).toEqual({ success: true, error: null });
+    expect(warning).toHaveBeenCalledTimes(2);
+    expect(warning.mock.calls.map((call) => call[0])).toEqual([
+      'Error in node.onDestroy:',
+      'Error in node.onReady:',
+    ]);
+    warning.mockRestore();
+  });
+
   it('should handle runtime exceptions gracefully', async () => {
     const code = `
 throw new Error('Runtime error!');
@@ -284,6 +327,16 @@ node.out('y');
     // The error is captured
     expect(node.error).toBeDefined();
     expect(node.error?.message).toContain('deliberate error');
+  });
+
+  it('replaces a stale node error when compilation fails', async () => {
+    node.error = new Error('stale runtime error');
+
+    const result = await compileAndExecute(node, graph, 'const =');
+
+    expect(result.success).toBe(false);
+    expect(result.error).not.toContain('stale runtime error');
+    expect(node.error?.message).toBe(result.error);
   });
 
   it('should handle runtime exceptions in code', async () => {

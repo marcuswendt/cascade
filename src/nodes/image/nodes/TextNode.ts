@@ -9,6 +9,7 @@ import { ImageNodeBase, ImageBuffer } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { OutputPort } from '@/types/node.types';
 import { colorToCss, normalizeColor } from '@/utils/colorUtils';
+import { createSurface } from '../surface.js';
 
 export class TextNode extends ImageNodeBase {
   private output!: OutputPort<ImageBuffer>;
@@ -192,11 +193,9 @@ export class TextNode extends ImageNodeBase {
     const lineHeight = this.props.lineHeight.value as number;
     const opacity = this.props.opacity.value as number;
 
-    // Create canvas for rendering
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
+    // Use the current host's Canvas 2D surface.
+    const canvas = createSurface(width, height);
+    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | null;
     if (!ctx) {
       this.setOutput(this.output, ImageBuffer.rgba(width, height));
       return;

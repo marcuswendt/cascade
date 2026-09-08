@@ -29,8 +29,21 @@ describe('project templates', () => {
     // on npm belongs to an unrelated package, so a scaffolded project asking
     // for it by name would install a stranger's code. The dependency has to be
     // an alias onto the published scope, keeping `cascade/...` imports intact.
-    expect(manifest.devDependencies).toMatchObject({ cascade: 'npm:@field/cascade@^0.2.0', typescript: '^6.0.0' });
+    //
+    // Pinning the range as a literal here was the *same* mistake one layer
+    // along: the template said `^0.2.0` while the CLI moved to 0.3.0, so a
+    // freshly scaffolded project would have installed the previous release.
+    // A literal expectation cannot catch that, because updating the test to
+    // match is the easy way to make it pass. So the assertion is the property
+    // that actually matters — **the range a scaffold asks for must include the
+    // version that scaffolded it** — checked against this package's real
+    // version rather than a copy of it.
+    expect(manifest.devDependencies.typescript).toBe('^6.0.0');
     expect(manifest.devDependencies.cascade).toMatch(/^npm:@field\/cascade@/);
+
+    const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version as string;
+    const [major, minor] = version.split('.');
+    expect(manifest.devDependencies.cascade).toBe(`npm:@field/cascade@^${major}.${minor}.0`);
     expect(JSON.parse(fs.readFileSync(path.join(directory, 'tsconfig.json'), 'utf8')).compilerOptions).toMatchObject({
       module: 'ESNext',
       moduleResolution: 'Bundler',

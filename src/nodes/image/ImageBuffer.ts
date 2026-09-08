@@ -5,11 +5,55 @@
  * - Each channel is a separate contiguous array
  * - Supports 1 channel (grayscale), 3 channels (RGB), or 4 channels (RGBA)
  * - Float32 allows HDR values and avoids clamping during intermediate operations
- * - Lazy canvas conversion - only creates HTMLCanvasElement when needed for display
+ * - Lazy surface conversion - only allocates a canvas when one is needed
  */
+
+import {
+  createSurface,
+  type RenderDrawable,
+  type RenderSurface,
+} from './surface.js';
 
 export type ColorSpace = 'linear' | 'srgb';
 export type ChannelLayout = 'gray' | 'rgb' | 'rgba';
+
+export type ImageSourceLike = RenderSurface | RenderDrawable;
+
+/** Identify browser or headless canvases without referencing DOM constructors. */
+export function isSurface(value: unknown): value is RenderSurface {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as RenderSurface).getContext === 'function'
+  );
+}
+
+/** Identify canvases and decoded images without accepting arbitrary sized data. */
+export function hasPixels(value: unknown): value is ImageSourceLike {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as {
+    width?: unknown;
+    height?: unknown;
+    getContext?: unknown;
+    src?: unknown;
+    close?: unknown;
+  };
+  if (typeof candidate.width !== 'number' || typeof candidate.height !== 'number') return false;
+  return (
+    typeof candidate.getContext === 'function' ||
+    'src' in candidate ||
+    typeof candidate.close === 'function'
+  );
+}
+
+/** The natural size of a decoded image or a canvas, whichever it is. */
+function sourceSize(source: ImageSourceLike): { width: number; height: number } {
+  const natural = source as { naturalWidth?: number; naturalHeight?: number };
+  return {
+    width: natural.naturalWidth || source.width,
+    height: natural.naturalHeight || source.height,
+  };
+}
 
 function pixelCount(width: number, height: number): number {
   const count = width * height;
@@ -32,7 +76,7 @@ export class ImageBuffer {
   readonly colorSpace: ColorSpace;
 
   // Cached data for display - invalidated when data changes
-  private _canvas: HTMLCanvasElement | null = null;
+  private _canvas: RenderSurface | null = null;
   private _imageData: ImageData | null = null;
   private _dirty: boolean = true;
   // Instance memory tracking
@@ -106,30 +150,20 @@ export class ImageBuffer {
     ]);
   }
 
-  /**
-   * Create from an HTMLCanvasElement or HTMLImageElement
-   */
-  static fromCanvas(source: HTMLCanvasElement | HTMLImageElement): ImageBuffer {
-    let width: number, height: number;
-    let canvas: HTMLCanvasElement;
-
-    if (source instanceof HTMLImageElement) {
-      width = source.naturalWidth || source.width;
-      height = source.naturalHeight || source.height;
-      canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(source, 0, 0);
-    } else {
-      width = source.width;
-      height = source.height;
-      canvas = source;
+  /** Create from a browser or headless canvas/decoded image. */
+  static fromCanvas(source: ImageSourceLike): ImageBuffer {
+    if (isSurface(source)) {
+      const ctx = source.getContext('2d') as CanvasRenderingContext2D | null;
+      if (!ctx) throw new Error('cascade: canvas has no 2D context');
+      return ImageBuffer.fromImageData(ctx.getImageData(0, 0, source.width, source.height));
     }
 
-    const ctx = canvas.getContext('2d')!;
-    const imageData = ctx.getImageData(0, 0, width, height);
-    return ImageBuffer.fromImageData(imageData);
+    const { width, height } = sourceSize(source);
+    const surface = createSurface(width, height);
+    const ctx = surface.getContext('2d') as CanvasRenderingContext2D | null;
+    if (!ctx) throw new Error('cascade: canvas has no 2D context');
+    ctx.drawImage(source as CanvasImageSource, 0, 0);
+    return ImageBuffer.fromImageData(ctx.getImageData(0, 0, width, height));
   }
 
   /**
@@ -409,25 +443,27 @@ export class ImageBuffer {
     return imageData;
   }
 
-  /**
-   * Convert to HTMLCanvasElement (cached)
-   */
-  toCanvas(): HTMLCanvasElement {
+  /** Convert to the current host's cached drawing surface. */
+  toSurface(): RenderSurface {
     if (this._canvas && !this._dirty) {
       return this._canvas;
     }
 
     if (!this._canvas) {
-      this._canvas = document.createElement('canvas');
-      this._canvas.width = this.width;
-      this._canvas.height = this.height;
+      this._canvas = createSurface(this.width, this.height);
     }
 
-    const ctx = this._canvas.getContext('2d')!;
+    const ctx = this._canvas.getContext('2d') as CanvasRenderingContext2D | null;
+    if (!ctx) throw new Error('cascade: canvas has no 2D context');
     ctx.putImageData(this.toImageData(), 0, 0);
     this._dirty = false;
 
     return this._canvas;
+  }
+
+  /** Browser-facing alias retained for compatibility with Studio preview code. */
+  toCanvas(): HTMLCanvasElement {
+    return this.toSurface() as unknown as HTMLCanvasElement;
   }
 
   // ============ Utility ============

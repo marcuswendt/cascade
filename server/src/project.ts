@@ -18,11 +18,50 @@ import fssync from 'fs';
 import path from 'path';
 import { resolveWithinRoot, PathSafetyError } from './pathSafety.js';
 import { ShellService } from './shell/service.js';
-import ts from 'typescript';
+import * as ts from 'typescript';
 import { extractNodeDefinition } from '@cascade/runtime/definition/extract';
 import type { NodeDefinition } from '@cascade/contracts';
 
 export { PathSafetyError };
+
+// OffscreenCanvas and related drawing APIs are portable because the headless
+// host installs them. These identifiers require an actual browser page.
+const BROWSER_ONLY_IDENTIFIERS = new Set([
+  'document',
+  'window',
+  'navigator',
+  'localStorage',
+  'sessionStorage',
+  'HTMLCanvasElement',
+  'HTMLImageElement',
+  'HTMLElement',
+  'WebGLRenderingContext',
+  'WebGL2RenderingContext',
+  'requestAnimationFrame',
+]);
+
+function usesBrowserOnlyApi(source: string, fileName: string): boolean {
+  const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isIdentifier(node) && BROWSER_ONLY_IDENTIFIERS.has(node.text)) {
+      const parent = node.parent;
+      const isPropertyName =
+        (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
+        (ts.isPropertyAssignment(parent) && parent.name === node) ||
+        (ts.isPropertyDeclaration(parent) && parent.name === node) ||
+        (ts.isMethodDeclaration(parent) && parent.name === node);
+      if (!isPropertyName) {
+        found = true;
+        return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return found;
+}
 
 export interface ProjectPanelMeta {
   readonly name: string;
@@ -194,6 +233,8 @@ export class ProjectRoot {
    *
    * Both kinds are peers: they exchange images as project-relative paths, which
    * the browser reads back through /api/media.
+   * Undeclared legacy modules infer a host only from explicit host APIs;
+   * otherwise they remain portable. A literal runsOn declaration always wins.
    */
   async moduleRunsOn(moduleName: string): Promise<'portable' | 'server' | 'browser'> {
     let source: string;
@@ -218,7 +259,8 @@ export class ProjectRoot {
     // `runStage<{ path: string }>(...)` is the idiomatic call and the old
     // pattern could not see past the type argument, so a Python-backed node
     // written the normal way fell through to 'browser'.
-    return /\/api\/exec|runStage\s*(?:<[^>]*>)?\s*\(/.test(source) || importsShell ? 'server' : 'browser';
+    if (/\/api\/exec|runStage\s*(?:<[^>]*>)?\s*\(/.test(source) || importsShell) return 'server';
+    return usesBrowserOnlyApi(source, `nodes/${moduleName}/index.ts`) ? 'browser' : 'portable';
   }
 
   /**

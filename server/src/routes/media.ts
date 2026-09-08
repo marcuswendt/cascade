@@ -24,7 +24,40 @@ import crypto from 'crypto';
 import fs from 'fs';
 import fssync from 'fs';
 import path from 'path';
-import sharp from 'sharp';
+import type sharpNamespace from 'sharp';
+
+/**
+ * Loaded on first use, not at import time.
+ *
+ * `sharp` ships its platform binaries as its own optional dependencies, so an
+ * install that skips optional packages — or a platform sharp has no prebuild
+ * for — leaves the JS present and the binary missing. A top-level import then
+ * throws while the module graph is still loading, which killed the whole CLI
+ * before it printed anything: `cascade run` died on a thumbnailing dependency
+ * it was never going to call.
+ *
+ * Deferring it confines that failure to the one route that needs it, where it
+ * can be reported as a 501 naming the missing package instead of taking the
+ * process down.
+ */
+let sharpModule: typeof sharpNamespace | null = null;
+let sharpError: string | null = null;
+
+async function loadSharp(): Promise<typeof sharpNamespace> {
+  if (sharpModule) return sharpModule;
+  if (sharpError) throw new Error(sharpError);
+  try {
+    sharpModule = (await import('sharp')).default;
+    return sharpModule;
+  } catch (err) {
+    // Cached, because a missing native binary does not become present on a
+    // retry and every request would otherwise pay the failed load again.
+    sharpError = `Image transformation needs the "sharp" package, which failed to load: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
+    throw new Error(sharpError);
+  }
+}
 import type { ProjectRoot } from '../project.js';
 import { PathSafetyError } from '../pathSafety.js';
 
@@ -246,6 +279,7 @@ export function createMediaRouter(project: ProjectRoot): Router {
         const { pixels, min, max } = fieldToGrey(array);
         res.setHeader('X-Field-Shape', `${array.height}x${array.width}`);
         res.setHeader('X-Field-Range', `${min}:${max}`);
+        const sharp = await loadSharp();
         let pipeline = sharp(pixels, {
           raw: { width: array.width, height: array.height, channels: 1 },
         });
@@ -293,6 +327,7 @@ export function createMediaRouter(project: ProjectRoot): Router {
     try {
       // failOn: 'none' so a slightly malformed render still previews rather
       // than showing nothing at all.
+      const sharp = await loadSharp();
       let pipeline = sharp(full, { failOn: 'none' }).rotate();
       if (width) {
         // withoutEnlargement: asking for a width above the original returns the

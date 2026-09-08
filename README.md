@@ -16,6 +16,25 @@ Created by Marcus Wendt at [FIELD.IO](https://www.field.io).
 
 Cascade separates the generative algorithm from the platform. Custom nodes describe stages of a pipeline; the runtime schedules and validates them; hosts supply environment-specific capabilities; Studio is only one possible frontend.
 
+## Install
+
+Cascade needs Node.js 22.13 or newer.
+
+```bash
+npm install -g @field/cascade
+cascade --version
+```
+
+That installs the `cascade` command: `cascade new` scaffolds a project, `cascade <directory>` opens it in Studio, and `cascade run` renders a graph headlessly.
+
+Offline image rendering uses Skia through `@napi-rs/canvas`, an optional dependency of about 26 MB. It installs by default; if you skipped optional dependencies, add it yourself:
+
+```bash
+npm install -g @napi-rs/canvas
+```
+
+Inside a project, `cascade` is aliased to this package, so a node importing `cascade/contracts` or `cascade/runtime` resolves here rather than to the unrelated `cascade` package on npm.
+
 ## Develop Cascade
 
 Cascade development requires Node.js 22.13 or newer. The repository uses

@@ -663,10 +663,10 @@ export class Graph {
       type: fromPort.portType
     };
     
-    // Check for duplicates before adding
-    const existing = this.connections.find(c => 
-      c.from.nodeId === connection.from.nodeId &&
-      c.from.portId === connection.from.portId &&
+    // Only this output can own a duplicate of the same edge. Searching its
+    // local fan-out keeps sparse graph construction proportional to the graph
+    // instead of rescanning every unrelated connection for each new edge.
+    const existing = fromPort.connections.find((c: Connection) =>
       c.to.nodeId === connection.to.nodeId &&
       c.to.portId === connection.to.portId
     );

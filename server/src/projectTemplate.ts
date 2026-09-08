@@ -1,6 +1,33 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+/**
+ * The range a scaffolded project asks for, derived from the CLI's own version
+ * rather than written down.
+ *
+ * It was hardcoded, and it went stale exactly the way the *name* half of this
+ * dependency once did: the CLI moved to 0.3.0 while the template still said
+ * `^0.2.0`, so every project the new CLI scaffolded would have installed the
+ * previous release and then failed in ways nobody would trace back to here.
+ * A caret range on the CLI's own minor cannot drift, because there is nothing
+ * left to forget to update.
+ *
+ * The fallback exists because a `package.json` that cannot be read is not a
+ * reason to scaffold nothing — but `*` is deliberately loud rather than a
+ * plausible-looking pin that might be wrong.
+ */
+function cascadeVersionRange(): string {
+  try {
+    const pkg = JSON.parse(
+      fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
+    ) as { version?: string };
+    const match = /^(\d+)\.(\d+)\./.exec(pkg.version ?? '');
+    return match ? `^${match[1]}.${match[2]}.0` : '*';
+  } catch {
+    return '*';
+  }
+}
+
 const PROJECT_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const NODE_NAME = /^[A-Z][A-Za-z0-9]{0,63}$/;
 
@@ -40,7 +67,10 @@ export function createProject(projectsRoot: string, name: string): string {
     // the bare name belongs to somebody else on npm — and a scaffolded project
     // asking for `cascade` would silently install that stranger's package.
     // The alias keeps every `cascade/contracts` import in a project working.
-    devDependencies: { cascade: 'npm:@field/cascade@^0.2.0', typescript: '^6.0.0' },
+    devDependencies: {
+      cascade: `npm:@field/cascade@${cascadeVersionRange()}`,
+      typescript: '^6.0.0',
+    },
   });
   writeJson(path.join(directory, 'tsconfig.json'), {
     compilerOptions: {
@@ -136,7 +166,7 @@ Project nodes live at \`nodes/<name>/index.ts\`, one folder per module, referenc
 import { saveImage, cachePath } from 'cascade/io';
 
 export const icon = 'Circle';        // a Lucide icon name
-export const runsOn = 'browser';     // 'browser' | 'server' | 'portable'
+export const runsOn = 'portable';    // 'portable' | 'browser' | 'server'
 
 export async function execute(node: any) {
   const size = node.param('size', 1024, { min: 16, max: 4096, step: 16, type: 'int' }).value;
@@ -155,7 +185,9 @@ Ports and parameters are declared *inside* \`execute\` — it runs once to disco
 
 **Web technology first** — Canvas 2D, WebGL, WebGPU — per \`DESIGN.md\` in the Cascade repo. Reach for a Python stage only for work that genuinely cannot run in a browser, such as an exotic ML library. A Python stage costs a process spawn and a round trip per cook, which is invisible on one still frame and fatal to dragging a parameter.
 
-An \`OffscreenCanvas\` plus \`saveImage(canvas, cachePath(node.id, '.png'))\` is the normal shape.
+An \`OffscreenCanvas\` plus \`saveImage(canvas, cachePath(node.id, '.png'))\` is the normal portable shape; the headless host supplies the Canvas APIs needed by \`cascade run\`.
+
+Use \`browser\` only for code that genuinely needs the page, such as the DOM or WebGL. Prefer \`new OffscreenCanvas(width, height)\` to \`document.createElement('canvas')\` when both hosts can run the same node.
 
 ## Finding out what exists
 

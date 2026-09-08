@@ -9,7 +9,7 @@
   "nodes": [
     {
       "id": "Color1",
-      "module": "cascade.lens.Color",
+      "module": "cascade.image.Color",
       "position": [0, 0],
       "source": "stdlib",
       "props": {

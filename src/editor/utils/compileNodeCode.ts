@@ -151,7 +151,9 @@ export async function compileAndExecute(
   const compiled = compileNodeCode(sourceCode);
 
   if (compiled.error || !compiled.fn) {
-    return { success: false, error: compiled.error || 'Compilation failed' };
+    const message = compiled.error || 'Compilation failed';
+    node.error = new Error(message);
+    return { success: false, error: message };
   }
 
   return executeNodeCode(node, graph, compiled.fn, sourceCode);

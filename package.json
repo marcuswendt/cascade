@@ -1,6 +1,6 @@
 {
   "name": "@field/cascade",
-  "version": "0.2.22",
+  "version": "0.3.0",
   "description": "Visual programming for generative art",
   "license": "MIT",
   "author": "FIELD.IO <marcus@field.io>",
@@ -25,6 +25,8 @@
   },
   "files": [
     "dist",
+    "!dist/**/*.map",
+    "CHANGELOG.md",
     "AGENTS.md",
     "ARCHITECTURE.md",
     "DESIGN.md",

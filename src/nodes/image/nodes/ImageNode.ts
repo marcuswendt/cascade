@@ -3,11 +3,13 @@
  * Converts to ImageBuffer for the processing pipeline
  */
 
-import { ImageNodeBase, ImageBuffer, type ImageInput } from '../ImageNodeBase';
+import { ImageNodeBase, ImageBuffer } from '../ImageNodeBase';
 import type { Graph } from '@/nodes/Graph';
 import type { InputPort, OutputPort } from '@/types/node.types';
+import { decodeImage } from '../surface.js';
+import type { ImageSourceLike } from '../ImageBuffer';
 
-type ImageInputValue = HTMLCanvasElement | HTMLImageElement | ImageBuffer | string | null;
+type ImageInputValue = ImageSourceLike | ImageBuffer | string | null;
 
 export class ImageNode extends ImageNodeBase {
   private imageInput!: InputPort<ImageInputValue>;
@@ -95,32 +97,17 @@ export class ImageNode extends ImageNodeBase {
   protected async render(): Promise<void> {
     let sourceBuffer: ImageBuffer | null = null;
 
-    // First check input port
+    // The shared decoder awaits both browser and headless image loads.
     if (this.imageInput.value) {
       if (this.imageInput.value instanceof ImageBuffer) {
         sourceBuffer = this.imageInput.value;
-      } else if (this.imageInput.value instanceof HTMLImageElement ||
-                 this.imageInput.value instanceof HTMLCanvasElement) {
-        sourceBuffer = ImageBuffer.fromCanvas(this.imageInput.value);
       } else if (typeof this.imageInput.value === 'string') {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        await new Promise<void>((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = reject;
-          img.src = this.imageInput.value as string;
-        });
-        sourceBuffer = ImageBuffer.fromCanvas(img);
+        sourceBuffer = ImageBuffer.fromCanvas(await decodeImage(this.imageInput.value));
+      } else {
+        sourceBuffer = ImageBuffer.fromCanvas(this.imageInput.value);
       }
     } else if (this.props.file.value) {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = reject;
-        img.src = this.props.file.value;
-      });
-      sourceBuffer = ImageBuffer.fromCanvas(img);
+      sourceBuffer = ImageBuffer.fromCanvas(await decodeImage(this.props.file.value as string));
     }
 
     if (!sourceBuffer) {

@@ -171,4 +171,22 @@ describe('ShellService', () => {
     fs.writeFileSync(path.join(dir, 'index.ts'), `export const runsOn = 'portable';\nexport function execute() {}`);
     await expect(p.moduleRunsOn('portable-crop')).resolves.toBe('portable');
   });
+
+  it.each([
+    { name: 'pure code', source: `export function execute() { return 42; }`, expected: 'portable' },
+    { name: 'headless canvas', source: `export function execute() { return new OffscreenCanvas(8, 8); }`, expected: 'portable' },
+    { name: 'DOM access', source: `export function execute() { return document.createElement('canvas'); }`, expected: 'browser' },
+    { name: 'DOM access in a template expression', source: "export function execute() { return `${document.title}`; }", expected: 'browser' },
+    { name: 'comment mention', source: `// document is deliberately not used\nexport function execute() { return 42; }`, expected: 'portable' },
+    { name: 'string mention', source: `export function execute() { return 'document.createElement'; }`, expected: 'portable' },
+    { name: 'regular expression mention', source: `export function execute() { return /document/.test('value'); }`, expected: 'portable' },
+  ] as const)('infers $name modules as $expected', async ({ name, source, expected }) => {
+    const p = project({});
+    const moduleName = `inferred-${expected}-${name.replaceAll(' ', '-')}`;
+    const dir = path.join(p.root, 'nodes', moduleName);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.ts'), source);
+
+    await expect(p.moduleRunsOn(moduleName)).resolves.toBe(expected);
+  });
 });
