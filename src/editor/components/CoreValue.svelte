@@ -21,6 +21,10 @@
   export let port: any = null;
   export let node: any = null;
   export let onChange: ((value: any) => void) | null = null;
+  /** The cook this value came from. A file-backed image is rewritten at the
+   *  same path on every cook, so the path alone cannot bust the browser's
+   *  cache — the version can. */
+  export let version = 0;
 
   const GEOMETRY_TYPES = new Set(['geometry', 'points', 'lines', 'polyline', 'mesh', 'rects']);
 
@@ -56,7 +60,7 @@
     return effectiveType === 'int' ? Math.round(clamped) : clamped;
   }
   $: image = effectiveType === 'image' ? coerceImageRef(value) : null;
-  $: imageSrc = image ? mediaUrl(image.path, { width: mode === 'view' ? 1800 : 320 }) : '';
+  $: imageSrc = image ? mediaUrl(image.path, { width: mode === 'view' ? 1800 : 320, version }) : '';
   $: color = normalizeColorTuple(value);
 
   function commit(next: any) {

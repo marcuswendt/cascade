@@ -115,6 +115,30 @@
     if (next !== portsFingerprint) {
       portsFingerprint = next;
       portsVersion += 1;
+      refreshMountedImage();
+    }
+  }
+
+  /**
+   * A cook has happened, and the file behind the mounted image may have been
+   * rewritten at the SAME path — which is what every Python-backed node does.
+   *
+   * Nothing downstream of here can notice that on its own: the render key in
+   * getContentKey() is the port value, and the guard in renderImage() is the
+   * path, so both read "unchanged" and no re-render is attempted. The cook
+   * count is the only evidence, and this is where it is already being read.
+   *
+   * Re-requesting in place rather than re-rendering is deliberate. Rebuilding
+   * the <img> is the black flash the render guard exists to prevent, and it is
+   * also what made the render key loop when it last carried a cook count.
+   * Pointing the same element at new bytes costs one request and no layout.
+   */
+  function refreshMountedImage() {
+    const mounted = container?.querySelector('img[data-cascade-src]') as HTMLImageElement | null;
+    if (!mounted || mounted.dataset.cascadeSrc !== mountedSourceFor()) return;
+    const refresh = (mounted as unknown as Record<string, unknown>)[REFRESH_KEY];
+    if (typeof refresh === 'function' && mounted.dataset.cascadeVersion !== String(portsVersion)) {
+      (refresh as (version: number) => void)(portsVersion);
     }
   }
 
@@ -316,15 +340,25 @@
     return findImagePath(displayNode);
   }
 
+  /** Reload the bytes behind an already-mounted image at a new cook version.
+   *  Attached to the element by buildZoomableImage; read by renderImage. */
+  const REFRESH_KEY = '__cascadeRefreshVersion';
+
   function buildZoomableImage(wrapper: HTMLElement, source: string, version?: number) {
     wrapper.style.position = 'relative';
     wrapper.style.overflow = 'hidden';
     wrapper.style.cursor = 'grab';
 
+    // Mutable, because the same element is re-pointed at later cooks of the
+    // same file rather than being rebuilt. A captured parameter would leave
+    // the zoom refetch and the "original" link on the first cook's bytes.
+    let currentVersion = version;
+
     const img = document.createElement('img');
     img.alt = source;
     img.draggable = false;
     img.dataset.cascadeSrc = source;
+    img.dataset.cascadeVersion = String(version ?? 0);
     // Hidden until the first fit. Without this the browser paints the image at
     // its intrinsic size for a frame before the layout is applied, which on a
     // 1400px render is a full-size flash — and because the viewer rebuilds on
@@ -404,7 +438,7 @@
       const needed = Math.min(natural.width, Math.ceil(natural.width * scale * 1.2));
       if (natural.width && needed > loadedWidth * 1.25) {
         loadedWidth = needed;
-        img.src = mediaUrl(source, { width: needed, version });
+        img.src = mediaUrl(source, { width: needed, version: currentVersion });
       }
     }
 
@@ -572,6 +606,21 @@
     original.addEventListener('mousedown', (e) => e.stopPropagation());
     bar.appendChild(original);
 
+    /**
+     * Point this element at a later cook of the same file.
+     *
+     * Re-requesting rather than rebuilding is deliberate: the rebuild is what
+     * the anti-strobe guard in renderImage exists to avoid, and it also throws
+     * away the zoom. The <img> keeps its element, its position and its natural
+     * size, and only the bytes behind it change.
+     */
+    (img as unknown as Record<string, unknown>)[REFRESH_KEY] = (next: number) => {
+      currentVersion = next;
+      img.dataset.cascadeVersion = String(next);
+      img.src = mediaUrl(source, { width: loadedWidth || displayWidth(), version: next });
+      original.href = mediaUrl(source, { raw: true, version: next });
+    };
+
     img.addEventListener('load', () => {
       if (natural.width) return;
       natural = { width: img.naturalWidth, height: img.naturalHeight };
@@ -625,6 +674,15 @@
     const mounted = container.querySelector('img[data-cascade-src]') as HTMLImageElement | null;
     const wanted = mountedSourceFor();
     if (mounted && wanted && mounted.dataset.cascadeSrc === wanted) {
+      /**
+       * The path is not the image's identity — the cook is. A Python-backed
+       * node rewrites the SAME file on every cook, so this guard matched, took
+       * the early return, and the version fix further down was never reached:
+       * moving a parameter re-rendered the file on disk and changed nothing on
+       * screen. Same path but a newer cook means new bytes, so re-request them
+       * in place; same path and the same cook still costs nothing.
+       */
+      refreshMountedImage();
       return;
     }
 
@@ -978,7 +1036,7 @@
   {#if currentViewer === 'typed' && activeOutput}
     <div class="typed-viewer">
       {#key `${activeOutput.id}-${typedVersion}`}
-        <CoreValue type={activeOutputType} value={activeOutput.value} port={activeOutput} node={displayNode} mode="view" readOnly />
+        <CoreValue type={activeOutputType} value={activeOutput.value} port={activeOutput} node={displayNode} mode="view" version={portsVersion} readOnly />
       {/key}
     </div>
   {/if}
