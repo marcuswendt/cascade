@@ -1,4 +1,4 @@
-import type { InputPort, OutputPort, PortOptions, PortType, Prop, NodeParameter, ParamOptions, DataType } from '../types/node.types.js';
+import type { InputPort, OutputPort, PortOptions, PortType, Prop, PropControlType, NodeParameter, ParamOptions, DataType } from '../types/node.types.js';
 import type { Graph } from './Graph.js';
 import { typeToPackagePath, isStandardLibraryNode } from '../utils/nodeTypeUtils.js';
 import { normalizeColor, isColorValue } from '../utils/colorUtils.js';
@@ -54,6 +54,44 @@ function inferParamType(value: unknown): DataType {
     if (value.length === 4) return 'vec4';
   }
   return 'any';
+}
+
+/**
+ * ============ One binding layer ============
+ *
+ * `param()` and `props` were two parameter stores, and every binding — an
+ * expression, a keyframe channel, `parm()`, `evalParm()` — was attached to the
+ * one the sketches do not use. Measured 2026-09-08: `param('scale', 1)` put
+ * 'scale' in `parameters`, left `props` empty, and `parm('scale')` returned
+ * null, so no parameter in any sketch could carry an expression or a key.
+ *
+ * The fix is not to teach `parameters` about bindings as well. There is now ONE
+ * store: a parameter's value lives in the prop of the same name, and the
+ * `NodeParameter.value` a node reads is a *view* onto it — resolved through the
+ * channel and the expression, exactly as `evalParm` resolves a prop. So
+ * `node.param('angle', 0).value` inside `execute()` already reflects a key or
+ * an expression, with no change to any sketch.
+ *
+ * What the metadata split still buys: `parameters` keeps the declaration (type,
+ * default, options, `promoted`), props keeps the value and its bindings. The
+ * backing prop is marked `fromParameter` so the Inspector renders it once, in
+ * the Parameters section, and the serializer writes it once, in `params`.
+ */
+
+/** The control a parameter's declared data type should render as, so one row of
+ *  UI can be driven from either store. */
+function paramControlType(dataType: DataType | undefined): PropControlType | undefined {
+  switch (normalizeType(dataType ?? 'any')) {
+    case 'int': return 'int';
+    case 'float': return 'number';
+    case 'bool': return 'boolean';
+    case 'string': return 'text';
+    case 'color': return 'color';
+    case 'vec2': return 'vec2';
+    case 'vec3': return 'vec3';
+    case 'vec4': return 'vec4';
+    default: return undefined;
+  }
 }
 
 /**
@@ -761,7 +799,11 @@ export class Node {
    */
   evaluateAllExpressions(): void {
     for (const [name, prop] of Object.entries(this.props)) {
-      if (prop.expression) {
+      // A prop that backs a parameter is skipped: `parameter.value` resolves
+      // the expression on every read, so there is nothing to push, and writing
+      // the evaluated number into `value` would overwrite the raw one the
+      // author typed — which is also what the file records.
+      if (prop.expression && !prop.fromParameter) {
         const evaluated = this.evaluateExpression(name);
         // Update the value with evaluated result (for downstream nodes)
         if (evaluated !== undefined) {
@@ -815,6 +857,10 @@ export class Node {
     }
     this.parametersUsedDuringSetup.add(name);
     this.reconcileParameter(parameter as NodeParameter, defaultValue, options);
+    // Idempotent, and it has to be: `param()` is re-declared inside execute()
+    // on every cook of a dynamic node, so this must never reset a value
+    // someone set, an expression they wrote or a channel they keyed.
+    this.bindParameterProp(parameter as NodeParameter, name, options);
 
     // A promoted parameter reads from its pin whenever something is connected,
     // and falls back to its own value when nothing is.
@@ -831,6 +877,81 @@ export class Node {
     }
 
     return parameter;
+  }
+
+  /**
+   * Give a parameter the prop that holds its value, and make `parameter.value`
+   * a view onto it.
+   *
+   * Called from `param()` on every declaration, so everything here is
+   * idempotent: an existing prop keeps its value, expression and channel, and
+   * only the declaration metadata is refreshed. The prop object is mutated
+   * rather than replaced for the same reason the Inspector does not re-key a
+   * row on commit — replacing it mid-drag destroys the control in use.
+   */
+  private bindParameterProp(parameter: NodeParameter, name: string, options: ParamOptions): void {
+    const descriptor = Object.getOwnPropertyDescriptor(parameter, 'value');
+    // A parameter restored from a document (Graph.fromJSON seeds `params`
+    // before the node's code runs) arrives with a plain value. That value is
+    // the authored one and seeds the prop.
+    const seeded = descriptor && !descriptor.get ? descriptor.value : undefined;
+
+    let prop = this.props[name];
+    if (!prop) {
+      prop = { value: seeded !== undefined ? seeded : parameter.defaultValue } as Prop;
+      this.props[name] = prop;
+      this.props = { ...this.props };
+    }
+
+    prop.fromParameter = name;
+    // Hidden from the props section, not from the panel: the Parameters
+    // section renders it, and showing it in both is how the two stores read as
+    // duplicate rows.
+    prop.hidden = true;
+    const control = paramControlType(parameter.dataType);
+    if (control) prop.type = control;
+    const params: NonNullable<Prop['params']> = { ...(prop.params ?? {}) };
+    if (options.min !== undefined) params.min = options.min;
+    if (options.max !== undefined) params.max = options.max;
+    if (options.step !== undefined) params.step = options.step;
+    if (normalizeType(parameter.dataType ?? 'any') === 'int') params.integer = true;
+    prop.params = params;
+
+    if (descriptor?.get) return;
+    Object.defineProperty(parameter, 'value', {
+      // Resolved, not raw: a channel wins, then an expression, then the stored
+      // value — the same order `evalParm` uses, because it IS `evalParm`. This
+      // is what carries a key or `$T * 0.25` into a sketch's `execute()`
+      // without the sketch knowing anything about either.
+      get: () => this.evalParm(name),
+      set: (next: unknown) => this.writeParameterValue(name, next),
+      enumerable: true,
+      configurable: true,
+    });
+  }
+
+  /** Write a parameter's stored value. The prop object is replaced so a panel
+   *  reading it sees the change; no cook is scheduled here — the callers that
+   *  should (setParameter, updateProp) do it themselves. */
+  private writeParameterValue(name: string, value: unknown): void {
+    const prop = this.props[name];
+    if (!prop) return;
+    this.props[name] = { ...prop, value: Array.isArray(value) ? [...value] : value };
+    this.props = { ...this.props };
+  }
+
+  /**
+   * A parameter's stored value, before any channel or expression resolves it.
+   *
+   * `parameter.value` is deliberately the resolved one, so anything that has
+   * to record or re-key what the author actually set — serialisation, the
+   * alt-click gesture — must ask for the raw one instead. Writing the sampled
+   * value back to disk would freeze an animated parameter at whatever frame
+   * the save happened on.
+   */
+  rawParameterValue(name: string): unknown {
+    if (this.props[name]) return this.props[name].value;
+    return this.parameters.find(parameter => parameter.name === name)?.value;
   }
 
   /** Turn a parameter into an input pin, or back. */
@@ -880,7 +1001,9 @@ export class Node {
         name: parameter.name,
         kind: 'parameter',
         type: carryType(parameter.dataType),
-        value: parameter.value,
+        // Raw, not resolved: a retarget carries what the author set, and
+        // `parameter.value` now resolves a channel or an expression.
+        value: this.rawParameterValue(parameter.name),
         expression: this.props[parameter.name]?.expression,
         channel: this.props[parameter.name]?.channel,
       });

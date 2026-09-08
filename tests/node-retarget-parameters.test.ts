@@ -142,20 +142,26 @@ describe('Retargeting a node while keeping its parameter settings', () => {
       });
 
       expect(result.kept).toEqual(['radius']);
-      expect(node.parameters.find(p => p.name === 'radius')?.value).toBe(8);
+      // The RAW value carried. `parameter.value` is now a view that resolves
+      // the expression — that unification is the whole point of the binding
+      // layer — so the value the author set is read with rawParameterValue().
+      expect(node.rawParameterValue('radius')).toBe(8);
       expect(node.props['radius'].expression).toBe("ch('../timer1/value') * 2");
     });
 
     it('reports a dropped parameter that carried an expression, expression included', () => {
       const node = nodeWithOldDefinition(graph);
       node.param('radius', 1.5, { type: 'float' });
-      node.props['radius'] = { value: 3, expression: '$T * 2' };
+      // Assigning the backing prop IS setting the parameter now — one store —
+      // so 3 is the value the parameter held when the retarget happened, and 3
+      // is what the report has to hand back.
+      node.props['radius'] = { value: 3, expression: '$T * 2', fromParameter: 'radius' };
 
       const result = graph.retargetDefinition('node1', 'local.DotsV2', 'embedded', 'export function execute() {}', {
         parameters: [{ name: 'spacing', type: 'int', defaultValue: 4 }],
       });
 
-      expect(result.dropped).toEqual([{ name: 'radius', value: 1.5, expression: '$T * 2' }]);
+      expect(result.dropped).toEqual([{ name: 'radius', value: 3, expression: '$T * 2' }]);
       expect(node.props['radius']).toBeUndefined();
     });
 

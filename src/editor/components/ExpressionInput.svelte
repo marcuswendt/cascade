@@ -71,7 +71,26 @@
     return String(value);
   }
 
-  $: evaluatedDisplay = hasExpression && !expressionError ? formatEvaluatedValue(prop.value) : null;
+  /**
+   * What the expression currently comes to.
+   *
+   * Asked of the node rather than read from `prop.value`, because for a prop
+   * that backs a `param()` declaration `value` is the RAW value the author
+   * typed — the resolved one is what `evalParm` returns, and pushing it into
+   * `value` would overwrite what the document records.
+   */
+  function resolvedValue(_prop: Prop, key: string): any {
+    try {
+      const resolved = node?.evalParm?.(key);
+      return resolved === undefined ? _prop.value : resolved;
+    } catch {
+      return _prop.value;
+    }
+  }
+
+  $: evaluatedDisplay = hasExpression && !expressionError
+    ? formatEvaluatedValue(resolvedValue(prop, propKey))
+    : null;
 
   // Expression functions for autocomplete
   const expressionFunctions = [
@@ -585,6 +604,13 @@
     gap: 4px;
     width: 100%;
     position: relative;
+  }
+
+  /* The control keeps the row; the sigma is a 10px afterthought beside it.
+     Without this a slotted block control collapses to its content width. */
+  .value-view > :global(:first-child) {
+    flex: 1;
+    min-width: 0;
   }
 
   .value-view.expression-active {

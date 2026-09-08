@@ -4,6 +4,20 @@
   export let prop: Prop;
   export let id: string;
   export let onValueChange: (value: number) => void;
+  /**
+   * Typing something that is not a number.
+   *
+   * The field used to be `type="number"` with an `isNaN` guard, so `$T * 0.25`
+   * could not even be entered — the characters were refused by the input and
+   * the guard would have rejected them anyway. That is the gesture Marcus
+   * reaches for first, and Houdini's primary one: the value field IS the
+   * expression field. So the field is text with a numeric input mode, and text
+   * that does not parse as a number is handed to this callback to become an
+   * expression rather than being thrown away.
+   *
+   * Optional: without it the old behaviour stands and unparseable text reverts.
+   */
+  export let onExpressionChange: ((expression: string) => void) | null = null;
 
   $: value = typeof prop.value === 'number' ? prop.value : 0;
   $: min = typeof prop.params?.min === 'number' ? prop.params.min : undefined;
@@ -16,32 +30,87 @@
   // Display value for number input - formatted based on integer setting
   $: displayValue = isInteger ? Math.round(value) : value;
 
-  function handleSliderInput(e: Event) {
-    const newValue = parseFloat((e.target as HTMLInputElement).value);
-    const finalValue = isInteger ? Math.round(newValue) : newValue;
-    onValueChange(finalValue);
+  /** What the field is showing. Held locally because the field is now text: a
+   *  half-typed "1." or "-" is a legitimate intermediate state, and rewriting
+   *  it from the value on every keystroke is what makes such a field unusable. */
+  let text = String(displayValue);
+  let focused = false;
+  // Follow the value while the field is not being typed into.
+  $: if (!focused) text = String(displayValue);
+
+  /** A COMPLETE number. `parseFloat` accepts "1.2abc" and "1." and would
+   *  commit halfway through typing an expression; this does not. */
+  const NUMBER = /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/;
+
+  function clamp(next: number): number {
+    let clamped = next;
+    if (min !== undefined && clamped < min) clamped = min;
+    if (max !== undefined && clamped > max) clamped = max;
+    return isInteger ? Math.round(clamped) : clamped;
   }
 
-  function handleNumberInput(e: Event) {
-    const input = e.target as HTMLInputElement;
-    let newValue = parseFloat(input.value);
-
-    if (isNaN(newValue)) {
-      input.value = String(value);
-      return;
-    }
-
-    if (min !== undefined && newValue < min) newValue = min;
-    if (max !== undefined && newValue > max) newValue = max;
-
+  function handleSliderInput(e: Event) {
+    const newValue = parseFloat((e.target as HTMLInputElement).value);
+    if (Number.isNaN(newValue)) return;
     onValueChange(isInteger ? Math.round(newValue) : newValue);
   }
 
-  function handleBlur(e: Event) {
-    const input = e.target as HTMLInputElement;
-    if (input.value === '' || isNaN(parseFloat(input.value))) {
-      input.value = String(value);
+  /** Committed live, but only while the text is a whole number — so nudging
+   *  still updates as you type and `$T` does not fire a commit per character. */
+  function handleTextInput(e: Event) {
+    text = (e.target as HTMLInputElement).value;
+    const trimmed = text.trim();
+    if (NUMBER.test(trimmed)) onValueChange(clamp(Number(trimmed)));
+  }
+
+  /** Enter or blur: a number commits, anything else becomes an expression. */
+  function commit(): void {
+    const trimmed = text.trim();
+    if (NUMBER.test(trimmed)) {
+      onValueChange(clamp(Number(trimmed)));
+      return;
     }
+    if (trimmed && onExpressionChange) {
+      onExpressionChange(trimmed);
+      return;
+    }
+    text = String(displayValue);
+  }
+
+  /** Arrow keys still nudge. They came free with `type="number"` and would
+   *  have been lost with it — a field that gains expressions and loses nudging
+   *  is a bad trade. Shift for ten steps, as everywhere else. */
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const trimmed = text.trim();
+      if (trimmed && !NUMBER.test(trimmed)) return;
+      e.preventDefault();
+      const base = NUMBER.test(trimmed) ? Number(trimmed) : value;
+      const amount = (typeof step === 'number' ? step : 1) * (e.shiftKey ? 10 : 1);
+      const next = clamp(base + (e.key === 'ArrowUp' ? amount : -amount));
+      // Floating-point step arithmetic prints 0.30000000000000004 otherwise.
+      const rounded = isInteger ? next : Number(next.toFixed(6));
+      text = String(rounded);
+      onValueChange(rounded);
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commit();
+      (e.target as HTMLInputElement).blur();
+    } else if (e.key === 'Escape') {
+      text = String(displayValue);
+      (e.target as HTMLInputElement).blur();
+    }
+  }
+
+  function handleFocus() {
+    focused = true;
+  }
+
+  function handleBlur() {
+    focused = false;
+    commit();
   }
 </script>
 
@@ -59,31 +128,33 @@
         disabled={disabled}
         on:input={handleSliderInput}
       />
-      {#key displayValue}
-        <input
-          type="number"
-          class="number-input"
-          min={min}
-          max={max}
-          step={step}
-          value={displayValue}
-          disabled={disabled}
-          on:input={handleNumberInput}
-          on:blur={handleBlur}
-        />
-      {/key}
+      <input
+        type="text"
+        inputmode="decimal"
+        spellcheck="false"
+        autocomplete="off"
+        class="number-input"
+        value={text}
+        disabled={disabled}
+        on:input={handleTextInput}
+        on:keydown={handleKeydown}
+        on:focus={handleFocus}
+        on:blur={handleBlur}
+      />
     </div>
   {:else}
     <input
-      type="number"
+      type="text"
+      inputmode="decimal"
+      spellcheck="false"
+      autocomplete="off"
       id={id}
       class="number-input-full"
-      min={min}
-      max={max}
-      step={step}
-      value={displayValue}
+      value={text}
       disabled={disabled}
-      on:input={handleNumberInput}
+      on:input={handleTextInput}
+      on:keydown={handleKeydown}
+      on:focus={handleFocus}
       on:blur={handleBlur}
     />
   {/if}

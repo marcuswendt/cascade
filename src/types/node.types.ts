@@ -224,6 +224,13 @@ export interface Prop<T = any> {
   folder?: string;
   group?: string;
 
+  /** Set to the parameter's name when this prop is the backing store of a
+   *  `param()` declaration — see Node.param(). One binding layer serves both
+   *  stores, and this is what tells them apart: a backing prop is hidden from
+   *  the props section (the Parameters section renders it) and is not written
+   *  to the document twice. */
+  fromParameter?: string;
+
   // Expression support (for path-based parameter references)
   expression?: string;           // TypeScript expression (e.g., "ch('../timer1/value') * 2")
   expressionError?: string;      // Validation error message if expression is invalid

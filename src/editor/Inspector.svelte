@@ -16,13 +16,14 @@
   import FolderGroup from './components/FolderGroup.svelte';
   import ColorRampEditor from './components/ColorRampEditor.svelte';
   import ExpressionInput from './components/ExpressionInput.svelte';
-  import { isKeyable, keyState, toggleKeyAtPlayhead } from './keyframeGesture';
+  import { deleteKeyAtPlayhead, isKeyable, keyState, setKeyAtPlayhead, toggleKeyAtPlayhead } from './keyframeGesture';
   import { requestTimelineFocus } from './stores/timelineFocus';
   import { dockviewStore } from './dockview/dockview-store.svelte';
   import { Diamond } from '@lucide/svelte';
   import { propUpdateCounters } from './stores/propUpdateStore';
   import { normalizeColor, colorToHex } from '@/utils/colorUtils';
   import { setStudioParameter } from './StudioParameterController';
+  import { normalizeType } from '@/types/coreTypes';
 
   export let node: Node | null = null;
   export let annotation: CanvasAnnotation | null = null;
@@ -286,14 +287,46 @@
    *  diamond button beside it. Alt-click and right-click are shortcuts on top,
    *  not the only way in. */
   function parameterGestures(element: HTMLElement, key: string) {
+    /**
+     * The macOS collision, resolved rather than sidestepped.
+     *
+     * Ctrl-click raises a `contextmenu` event as well as (sometimes) a
+     * `click`, and this element already binds `contextmenu` to the channel
+     * editor. So the branch is on the modifier, not on the event: ctrl means
+     * delete in either handler, and a genuine right-click — right button, or
+     * two-finger trackpad, neither of which sets ctrlKey — opens the editor.
+     *
+     * `stamp` is what keeps one physical gesture to one action. Whichever
+     * event arrives first owns it; the other sees its own timestamp inside the
+     * window and stands down. Both timestamps share one time origin, so this
+     * is a comparison rather than a guess.
+     */
+    let stamp = -1;
+    const ctrlDelete = (event: MouseEvent) => {
+      if (event.timeStamp - stamp < 500) return;
+      stamp = event.timeStamp;
+      deleteKeyframe(key);
+    };
     const onClick = (event: MouseEvent) => {
+      if (event.ctrlKey) {
+        event.preventDefault();
+        ctrlDelete(event);
+        return;
+      }
       if (!event.altKey) return;
       event.preventDefault();
-      keyParameter(key);
+      // Set, never toggle. While scrubbing you cannot see whether a key sits
+      // exactly on this frame, so a toggle would sometimes delete for a reason
+      // invisible to you; the diamond stays the affordance that does both.
+      keyParameter(key, 'set');
     };
     const onContextMenu = (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
+      if (event.ctrlKey) {
+        ctrlDelete(event);
+        return;
+      }
       openChannelEditor(key);
     };
     element.addEventListener('click', onClick);
@@ -306,13 +339,44 @@
     };
   }
 
-  function keyParameter(key: string) {
+  function keyParameter(key: string, mode: 'set' | 'toggle' = 'toggle') {
     if (!node) return;
-    const result = toggleKeyAtPlayhead(node, key);
+    const result = mode === 'set' ? setKeyAtPlayhead(node, key) : toggleKeyAtPlayhead(node, key);
     if (result === 'unavailable') return;
     keyTick += 1;
     propsUpdateCounter += 1;
     node.markDirty();
+  }
+
+  /** Ctrl-click. Deleting nothing is not an error, and not a re-render either. */
+  function deleteKeyframe(key: string) {
+    if (!node) return;
+    if (deleteKeyAtPlayhead(node, key) !== 'removed') return;
+    keyTick += 1;
+    propsUpdateCounter += 1;
+    node.markDirty();
+  }
+
+  /**
+   * A parameter's backing prop — the same store since the two parameter
+   * systems were unified, which is what lets one row of UI offer a keyframe or
+   * an expression on a `param()` declaration.
+   */
+  function backingProp(name: string): Prop | null {
+    const prop = node?.props?.[name];
+    return prop ? (prop as Prop) : null;
+  }
+
+  /** Typing something unparseable into a parameter's value field. Houdini's
+   *  primary gesture, and the one that worked nowhere before today. */
+  function setParameterExpression(key: string, expression: string) {
+    const parm = node?.parm(key);
+    if (!parm) return;
+    maybeRecordHistory();
+    parm.setExpression(expression);
+    node?.markDirty();
+    keyTick += 1;
+    propsUpdateCounter += 1;
   }
 
   function handlePropChange([key, prop]: [string, Prop], value: any) {
@@ -1462,7 +1526,9 @@
           {#if openSections.params}
             {#key node.id}
               {#each parameters as parameter (parameter.name)}
-                <div class="parameter">
+                {@const bound = backingProp(parameter.name)}
+                {@const numeric = !!bound && (bound.type === 'number' || bound.type === 'int')}
+                <div class="parameter" use:parameterGestures={parameter.name}>
                   {#if parameter.options?.action}
                     <div class="parameter-action-value">
                       <button class="parameter-action" on:click={() => handleParameterAction(parameter)}>
@@ -1480,6 +1546,69 @@
                         direction="output"
                       />
                     </div>
+                  {:else if numeric && bound}
+                    <!-- A numeric parameter gets the same row a prop does:
+                         a keyed marker, the sigma, and a value field you can
+                         type an expression into. It is deliberately NOT the
+                         PortEditor path — that renders through CoreValue,
+                         whose number field cannot hold `$T * 0.25`. -->
+                    <div class="parameter-bound">
+                      <div class="parameter-head">
+                        <!-- Same `name · type` title PortEditor gives the
+                             rows that still go through it, so a parameter
+                             reads the same wherever it is rendered. -->
+                        <span
+                          class="parameter-name"
+                          title={`${parameter.options?.label ?? parameter.name} · ${normalizeType(parameter.dataType)}`}
+                        >{parameter.options?.label ?? parameter.name}</span>
+                        {#key `${parameter.name}-${keyTick}`}
+                          <button
+                            class="key-toggle {node ? keyState(node, parameter.name) : 'none'}"
+                            on:click|stopPropagation={() => keyParameter(parameter.name)}
+                            title="Key at the current frame (alt-click the row to set, ctrl-click to delete, right-click for the channel)"
+                          >
+                            <Diamond size={9} />
+                          </button>
+                        {/key}
+                      </div>
+                      {#key `${parameter.name}-${bound.expression ?? ''}-${keyTick}`}
+                        <ExpressionInput
+                          prop={bound}
+                          propKey={parameter.name}
+                          {node}
+                          onValueChange={(value) => handleParamChange(parameter, value)}
+                        >
+                          <NumberInput
+                            prop={bound}
+                            id={`param-${node.id}-${parameter.name}`}
+                            onValueChange={(value) => handleParamChange(parameter, value)}
+                            onExpressionChange={(expression) => setParameterExpression(parameter.name, expression)}
+                          />
+                        </ExpressionInput>
+                      {/key}
+                    </div>
+                  {:else if bound}
+                    {#key `${parameter.name}-${bound.expression ?? ''}-${keyTick}`}
+                      <ExpressionInput
+                        prop={bound}
+                        propKey={parameter.name}
+                        {node}
+                        onValueChange={(value) => handleParamChange(parameter, value)}
+                      >
+                        <PortEditor
+                          port={{
+                            name: parameter.options?.label ?? parameter.name,
+                            dataType: parameter.dataType,
+                            value: parameter.value,
+                            connections: [],
+                            options: parameter.options ?? {},
+                          }}
+                          {node}
+                          direction="input"
+                          onChange={(value) => handleParamChange(parameter, value)}
+                        />
+                      </ExpressionInput>
+                    {/key}
                   {:else}
                     <PortEditor
                       port={{
@@ -1590,6 +1719,26 @@
 
   .parameter-action-value {
     min-width: 0;
+  }
+
+  .parameter-bound {
+    min-width: 0;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border-faint);
+  }
+
+  .parameter-head {
+    display: flex;
+    align-items: center;
+    margin-bottom: 5px;
+  }
+
+  .parameter-name {
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* Deliberately quiet: promotion is occasional, and a button shouting on every

@@ -18,7 +18,8 @@ import type {
   EmbeddedModule,
   ExternalModule,
   ProjectConfig,
-  NodeSource
+  NodeSource,
+  NodeParameter
 } from '../types/node.types.js';
 import { packagePathToType, isStandardLibraryNode, getNodeClass, getNodeDisplayName } from '../utils/nodeTypeUtils.js';
 import { loadProjectModule, loadEmbeddedModule } from '../engine/nodeModuleLoader.js';
@@ -1315,11 +1316,17 @@ export class Graph {
      * default, plus anything promoted to a pin, so a file records decisions
      * rather than restating every default a module already has.
      */
+    // The RAW value throughout: `parameter.value` resolves a keyframe channel
+    // or an expression, so writing it would freeze an animated parameter at
+    // whatever frame the save happened on.
+    const rawParameterValue = (p: NodeParameter) => node.rawParameterValue(p.name);
     const changedParameters = (node.parameters ?? [])
-      .filter(p => p.promoted || JSON.stringify(p.value) !== JSON.stringify(p.defaultValue));
+      .filter(p => p.promoted || JSON.stringify(rawParameterValue(p)) !== JSON.stringify(p.defaultValue));
     const parameters = changedParameters
       .filter(p => p.documentField !== 'props')
-      .map(p => (p.promoted ? { name: p.name, value: p.value, promoted: true } : { name: p.name, value: p.value }));
+      .map(p => (p.promoted
+        ? { name: p.name, value: rawParameterValue(p), promoted: true }
+        : { name: p.name, value: rawParameterValue(p) }));
     if (parameters.length > 0) {
       result.params = parameters;
     }
@@ -1351,6 +1358,15 @@ export class Graph {
 
     // Serialize props (value and expression if present)
     const props = Object.entries(node.props).reduce((acc, [key, prop]) => {
+      // A prop that only backs a `param()` declaration is already written
+      // above, in `params`. Writing it here as well would restate every
+      // default in the file and leave a stray duplicate row in any older build
+      // that opened it. It earns a props entry only when it carries a binding
+      // — an expression or a channel — which is the one thing `params` cannot
+      // express.
+      const keyed = (prop.channel?.keys?.length ?? 0) > 0;
+      if (prop.fromParameter && !prop.expression && !keyed) return acc;
+
       let value = prop.value;
       if (prop.type === 'color' && isColorValue(value)) {
         const normalized = normalizeColor(value as any);
