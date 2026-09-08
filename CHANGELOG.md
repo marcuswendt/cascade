@@ -12,6 +12,8 @@ Notable changes to Cascade. Newest first.
 
 ### Authoring, continued
 
+- **A prop can declare a default expression**, so a node arrives already moving — `sine-oscillator` and `ripple` shipped a static `0` once converted, where their dynamic versions baked in `$T`. It is a *default*: a document that saved a plain number keeps it and does not start animating on load. Applied once per prop, so a deleted expression is not reinstated when a retarget re-runs setup, and visible in the Inspector rather than a hidden fallback.
+
 - **A vector prop can declare `min`, `max` and `step`.** All six vector types were typed `never` for those three fields, so the standing "one `vec2`, not two floats" convention silently cost the Inspector its clamp and its drag granularity every time it was followed. One range across all components; matrices stay excluded.
 - **A module with no file is named, with the paths it was looked for.** `prepare()` synthesises a definition from the ports the document saved for any unresolvable module, which keeps legacy nodes loadable and also let a typo validate clean. A warning, because such a node can never run through the deterministic runtime anyway.
 - **The stray-`params` warning covers inputs as well as props** — the case the conversions produce most, since a parameter another node drives must be an input.
