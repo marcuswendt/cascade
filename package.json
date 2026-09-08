@@ -108,6 +108,7 @@
     "check:packages": "npm run check --workspace @cascade/contracts && npm run build --workspace @cascade/contracts && npm run check --workspace @cascade/runtime",
     "test:packages": "npm run test --workspace @cascade/contracts && npm run test --workspace @cascade/runtime",
     "build:cli": "npm run build:packages && node scripts/build-cli.mjs && npm run build:node-reference",
+    "build:server": "npm --prefix server run build",
     "prepack": "npm run build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
