@@ -998,7 +998,7 @@ class Graph implements LoadedCascadeGraph {
         push(
           "runtime/stray-params",
           node.id,
-          `${node.moduleId} stores ${node.strayParams.join(", ")} under "params", which this runtime does not read — move ${node.strayParams.length === 1 ? "it" : "them"} to "props" or the ${node.strayParams.length === 1 ? "value is" : "values are"} silently the default`,
+          `${node.moduleId} stores ${node.strayParams.join(", ")} under "params", which this runtime does not read — move ${node.strayParams.length === 1 ? "it" : "them"} to "props" or "inputs", whichever the definition declares, or the ${node.strayParams.length === 1 ? "value is" : "values are"} silently the default`,
         );
       const remote = this.isRemote(node);
       const locationWorks =
@@ -1393,27 +1393,38 @@ function materialize(
 /**
  * The names a document stored under `params` that this runtime will not read.
  *
- * Nothing above consults `params`: the loop that fills `props` iterates the
- * definition and then the document's `props`, so a value left in `params` is
- * dropped without a word and the prop keeps its default. That is not a
- * hypothetical — on `cascade-logo` it put a seed back to 7 and two rasterizers
- * back to 1024, so three nodes wrote one file and the drawing changed, with
- * every command still reporting success.
+ * Nothing above consults `params`: the loops that fill `inputs` and `props`
+ * read the definition and then the document's own `inputs` and `props`, so a
+ * value left in `params` is dropped without a word and the parameter keeps its
+ * default. That is not a hypothetical — on `cascade-logo` it put a seed back to
+ * 7 and two rasterizers back to 1024, so three nodes wrote one file and the
+ * drawing changed, with every command still reporting success.
  *
- * Only names the definition actually declares as props are reported. A
- * leftover key naming nothing is a different fault and would make this warning
- * fire on documents where no value was lost.
+ * **Inputs count, not just props.** The first version of this checked props
+ * alone and so was blind to exactly the case the conversions produce most: a
+ * parameter another node drives has to be declared as an `inputs` entry,
+ * because a v1 prop cannot be promoted to a pin. `field-logo`'s `angle` is one,
+ * and a negative control over the pre-migration document named five nodes and
+ * missed that one.
+ *
+ * Only names the definition actually declares are reported. A leftover key
+ * naming nothing is a different fault, and reporting it would make this fire on
+ * documents where no value was lost.
  */
 function strayParams(
   authored: CascadeDocumentNode,
   registration: DefinitionNodeRegistration,
 ): readonly string[] {
-  const declared = registration.definition.props ?? {};
+  const definition = registration.definition;
+  const declared = new Set([
+    ...Object.keys(definition.props ?? {}),
+    ...Object.keys(definition.inputs ?? {}),
+  ]);
   const names = Array.isArray(authored.params)
     ? authored.params.map((saved) => saved?.name)
     : Object.keys(authored.params ?? {});
   return names.filter(
-    (name): name is string => typeof name === "string" && name in declared,
+    (name): name is string => typeof name === "string" && declared.has(name),
   );
 }
 

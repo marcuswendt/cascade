@@ -54,6 +54,32 @@ function executeIdentity(context: NodeExecutionContext<typeof identityDefinition
   context.outputs.id.set(context.nodeId);
 }
 
+// A ranged vector prop, which `NumericMetadata` typed as `never` until
+// 2026-09-08. This declaration failing to compile is the regression test — the
+// assertions below only check that the range then reaches the parameter.
+const rangedVectorDefinition = {
+  apiVersion: 1,
+  runsOn: 'portable',
+  props: {
+    offset: { type: 'vec2', default: [0, 0], min: -1, max: 1, step: 0.005 },
+    size: { type: 'vec2i', default: [1024, 1024], min: 16, max: 4096, step: 64 },
+  },
+  outputs: {
+    offset: { kind: 'data', type: 'vec2' },
+  },
+} as const satisfies NodeDefinition;
+
+function executeRangedVector(context: NodeExecutionContext<typeof rangedVectorDefinition>) {
+  context.outputs.offset.set(context.props.offset);
+}
+
+const rangedVectorRegistration = {
+  kind: 'definition-v1',
+  moduleId: 'cascade.test.RangedVector',
+  definition: rangedVectorDefinition,
+  loadExecute: async () => executeRangedVector,
+} satisfies DefinitionNodeRegistration<typeof rangedVectorDefinition>;
+
 const identityRegistration = {
   kind: 'definition-v1',
   moduleId: 'cascade.test.Identity',
@@ -66,7 +92,7 @@ describe('definition-v1 nodes in Studio', () => {
 
   beforeAll(async () => {
     await initializeNodeLibraries();
-    registerDefinitionNodes([interactionRegistration, identityRegistration]);
+    registerDefinitionNodes([interactionRegistration, identityRegistration, rangedVectorRegistration]);
   });
 
   it('lists the runtime geometry library in the node picker', () => {
@@ -334,6 +360,42 @@ describe('definition-v1 nodes in Studio', () => {
     });
 
     expect(graph.preflight()).toEqual([]);
+    await graph.dispose();
+    await runtime.dispose();
+  });
+  it('carries a vector prop\'s range through to the parameter', async () => {
+    // Marcus's rule is one `vec2` rather than two floats, and two floats could
+    // carry a range where the vec2 could not — so following the convention
+    // silently cost the Inspector its clamp and its drag step.
+    const graph = new Graph();
+    const node = graph.addNode('cascade.test.RangedVector', { x: 0, y: 0 });
+
+    expect(node.parameters.find(parameter => parameter.name === 'offset')?.options)
+      .toMatchObject({ min: -1, max: 1, step: 0.005 });
+    expect(node.parameters.find(parameter => parameter.name === 'size')?.options)
+      .toMatchObject({ min: 16, max: 4096, step: 64 });
+  });
+
+  it('reports a value stranded under params on an input, not just on a prop', async () => {
+    // The first version of this warning checked props alone, which missed the
+    // case the conversions produce most: a parameter another node drives must
+    // be an `inputs` entry, because a v1 prop cannot be promoted to a pin.
+    const runtime = createRuntime({ host: createNodeRuntimeHost({}) });
+    const graph = await runtime.load({
+      version: '0.2',
+      nodes: [{
+        id: 'circle',
+        module: 'cascade.geo.Circle',
+        params: [{ name: 'divisions', value: 5 }],
+      }],
+      connections: [],
+    });
+
+    expect(graph.preflight()).toEqual([expect.objectContaining({
+      code: 'runtime/stray-params',
+      path: 'circle',
+    })]);
+    expect(graph.preflight()[0].message).toContain('divisions');
     await graph.dispose();
     await runtime.dispose();
   });

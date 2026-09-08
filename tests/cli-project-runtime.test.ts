@@ -34,6 +34,35 @@ export function execute(context) {
 `;
 
 describe('deterministic CLI runtime', () => {
+  it('names the path it looked for when a module has no file', async () => {
+    // `prepare` falls back to a definition synthesised from the ports the
+    // document saved, which is what keeps a legacy node loadable — and is also
+    // what let a typo validate clean. The path is in the message because
+    // `project.Multply` only reads as a typo once you see it went looking for
+    // nodes/Multply/index.ts.
+    const fixture = project(validSource);
+    const typo = { ...fixture.document, nodes: [{ id: 'multiply', module: 'project.Multply' }] };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await validateProjectGraph(fixture.file, typo);
+
+    const printed = warn.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(printed).toContain('One node names a module with no file');
+    expect(printed).toContain('project/module-not-found');
+    expect(printed).toContain(path.join('nodes', 'Multply', 'index.ts'));
+    warn.mockRestore();
+  });
+
+  it('says nothing about a module it did resolve', async () => {
+    const fixture = project(validSource);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await validateProjectGraph(fixture.file, fixture.document);
+
+    expect(warn.mock.calls.map((call) => String(call[0])).join('\n')).not.toContain('module-not-found');
+    warn.mockRestore();
+  });
+
   it('validates definitions and graph structure without evaluating modules', async () => {
     const fixture = project(validSource);
     await validateProjectGraph(fixture.file, fixture.document);

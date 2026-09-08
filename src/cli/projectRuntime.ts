@@ -28,6 +28,11 @@ interface ProjectNode {
 interface PreparedGraph {
   registrations: DefinitionNodeRegistration[];
   deterministic: Set<string>;
+  /**
+   * Modules named by the document with no file behind them, and the paths
+   * looked for. See `unresolvedModule`.
+   */
+  unresolved: Diagnostic[];
 }
 
 /**
@@ -165,8 +170,28 @@ function environmentOwning(capability: string): string {
   return owners.length ? owners.join('/') : 'unknown';
 }
 
+/**
+ * Print the modules with no file behind them, before any command's own
+ * branching swallows the question.
+ *
+ * It has to be here rather than beside the preflight warnings, because those
+ * are never reached on the graphs that need this most: `check` throws on a
+ * dynamic module and `validate` hands a dynamic document to a different
+ * validator, so an unconverted sketch leaves by a door that never printed
+ * anything.
+ */
+function reportUnresolved(prepared: PreparedGraph): void {
+  if (!prepared.unresolved.length) return;
+  const count = prepared.unresolved.length;
+  console.warn([
+    `${count === 1 ? 'One node names a module' : `${count} nodes name modules`} with no file:`,
+    ...prepared.unresolved.map(line),
+  ].join('\n'));
+}
+
 export async function validateProjectGraph(file: string, document: any): Promise<void> {
   const prepared = await prepare(file, document, false);
+  reportUnresolved(prepared);
   const nodes = document.nodes as ProjectNode[];
   if (nodes.some((node) => !prepared.deterministic.has(moduleId(node)))) {
     validateDynamicDocument(document);
@@ -177,6 +202,7 @@ export async function validateProjectGraph(file: string, document: any): Promise
 
 export async function checkProjectGraph(file: string, document: any): Promise<void> {
   const prepared = await prepare(file, document, false);
+  reportUnresolved(prepared);
   const nodes = document.nodes as ProjectNode[];
   const dynamic = [...new Set(nodes
     .map(moduleId)
@@ -193,6 +219,7 @@ export async function runDeterministicProjectGraph(
   entryNode?: string,
 ): Promise<boolean> {
   const prepared = await prepare(file, document, true);
+  reportUnresolved(prepared);
   const nodes = Array.isArray(document?.nodes) ? document.nodes as ProjectNode[] : [];
   const deterministicCount = nodes.filter((node) => prepared.deterministic.has(moduleId(node))).length;
   if (!nodes.length || deterministicCount === 0) return false;
@@ -373,6 +400,7 @@ async function prepare(file: string, document: any, compileExecutors: boolean): 
   const registrations: DefinitionNodeRegistration[] = [];
   const deterministic = new Set<string>();
   const seen = new Set<string>();
+  const unresolved: Diagnostic[] = [];
 
   for (const node of document.nodes as ProjectNode[]) {
     const id = moduleId(node);
@@ -382,8 +410,10 @@ async function prepare(file: string, document: any, compileExecutors: boolean): 
       deterministic.add(id);
       continue;
     }
-    const moduleFile = await projectModuleFile(projectRoot, node, id);
+    const resolved = await projectModuleFile(projectRoot, node, id);
+    const moduleFile = resolved.file;
     if (!moduleFile) {
+      unresolved.push(unresolvedModule(id, node, resolved.tried, projectRoot));
       registrations.push(savedRegistration(id, node));
       continue;
     }
@@ -413,19 +443,71 @@ async function prepare(file: string, document: any, compileExecutors: boolean): 
         : async () => { throw new Error('Static validation never loads execute'); },
     });
   }
-  return { registrations, deterministic };
+  return { registrations, deterministic, unresolved };
 }
 
-async function projectModuleFile(root: string, node: ProjectNode, id: string): Promise<string | null> {
+/**
+ * Where a project module lives, and — when it does not — every path that was
+ * looked for.
+ *
+ * The paths are returned rather than discarded because `project.Multply` is
+ * only obviously a typo once you can see it went looking for
+ * `nodes/Multply/index.ts`. Reported by `unresolvedModule`; requested by the
+ * session converting the sketches, which is the one that reads these.
+ */
+async function projectModuleFile(
+  root: string,
+  node: ProjectNode,
+  id: string,
+): Promise<{ file: string | null; tried: string[] }> {
+  const tried: string[] = [];
   const source = node.source;
   if (source && typeof source === 'object' && (source as any).type === 'project' && typeof (source as any).file === 'string') {
     const candidate = path.resolve(root, (source as any).file);
-    if (within(root, candidate) && await exists(candidate)) return candidate;
+    if (within(root, candidate)) {
+      tried.push(candidate);
+      if (await exists(candidate)) return { file: candidate, tried };
+    }
   }
-  if (!id.startsWith('project.')) return null;
+  if (!id.startsWith('project.')) return { file: null, tried };
   const name = id.slice('project.'.length);
   const candidate = path.resolve(root, 'nodes', name, 'index.ts');
-  return within(root, candidate) && await exists(candidate) ? candidate : null;
+  if (!within(root, candidate)) return { file: null, tried };
+  tried.push(candidate);
+  return { file: (await exists(candidate)) ? candidate : null, tried };
+}
+
+/**
+ * A node naming a module with no file, reported rather than swallowed.
+ *
+ * `prepare` falls back to a definition synthesised from the ports the document
+ * itself saved, which is what keeps a legacy node loadable — and it is also
+ * what let `cascade.geo.Circel` validate clean. The fallback stays; the silence
+ * does not.
+ *
+ * It is a warning and not an error, on the ground that decides it: a node with
+ * no module file can never run through the deterministic runtime anyway. Its
+ * `loadExecute` throws by design and a mixed graph is refused outright, so
+ * saying so is never a false alarm — it is only sometimes unwelcome. An
+ * unconverted sketch gets one line per unconverted node, which is the
+ * conversion checklist rather than noise, and it goes away by itself when the
+ * dynamic path does.
+ *
+ * The alternative was an error plus an explicit list of legacy modules in
+ * `cascade.json`. That makes a typo impossible, at the price of configuration
+ * that exists only until the cutover finishes.
+ */
+function unresolvedModule(id: string, node: ProjectNode, tried: readonly string[], root: string): Diagnostic {
+  const relative = tried.map((candidate) => path.relative(root, candidate) || candidate);
+  const where = relative.length
+    ? `looked for ${relative.join(' and ')}`
+    : `no project file is possible for this module id — a project module is named "project.<dir>" or carries a source file`;
+  return {
+    phase: 'prepare',
+    code: 'project/module-not-found',
+    path: node.id,
+    message: `${id} has no module file — ${where}. Loading the ports the document saved instead, which cannot run: a typo and an unconverted legacy node look identical from here`,
+  };
 }
 
 async function compileExecute(projectRoot: string, moduleFile: string) {
