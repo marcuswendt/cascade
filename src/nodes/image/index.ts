@@ -9,20 +9,11 @@
  * - Image filters (Blur, NormalMap)
  */
 
-import { registerNodeClasses, registerNodeSource, type NodeClass } from '@/utils/nodeTypeUtils';
+import { registerNodeClasses, registerNodeSource } from '@/utils/nodeTypeUtils';
 
-// Import node classes
-import { ColorNode } from './nodes/ColorNode';
-import { ImageNode } from './nodes/ImageNode';
-import { CompositeNode } from './nodes/CompositeNode';
-import { CheckersNode } from './nodes/CheckersNode';
-import { ResizeNode } from './nodes/ResizeNode';
-import { NormalMapNode } from './nodes/NormalMapNode';
-import { RampNode } from './nodes/RampNode';
-import { NoiseNode } from './nodes/NoiseNode';
-import { BlurNode } from './nodes/BlurNode';
-import { TextNode } from './nodes/TextNode';
-import { TransformNode } from './nodes/TransformNode';
+// The class map lives beside this file rather than in it, so that a Node host
+// can import the classes without the ?raw source text below.
+import { imageNodeClasses } from './classes';
 
 // Import source code for nodes (using Vite's ?raw imports)
 import ColorNodeSource from './nodes/ColorNode.ts?raw';
@@ -37,20 +28,7 @@ import BlurNodeSource from './nodes/BlurNode.ts?raw';
 import TextNodeSource from './nodes/TextNode.ts?raw';
 import TransformNodeSource from './nodes/TransformNode.ts?raw';
 
-// Node class registry: type -> class constructor
-export const imageNodeClasses: Record<string, NodeClass> = {
-  'Color': ColorNode,
-  'Image': ImageNode,
-  'Composite': CompositeNode,
-  'Checkers': CheckersNode,
-  'Resize': ResizeNode,
-  'NormalMap': NormalMapNode,
-  'Ramp': RampNode,
-  'Noise': NoiseNode,
-  'Blur': BlurNode,
-  'Text': TextNode,
-  'Transform': TransformNode,
-};
+export { imageNodeClasses } from './classes';
 
 // Register nodes with the central registry
 registerNodeClasses('image', imageNodeClasses);

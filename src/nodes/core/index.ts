@@ -7,19 +7,11 @@
  * - Network nodes: Subnet, Input, Output
  */
 
-import { registerNodeClasses, registerNodeSource, type NodeClass } from '@/utils/nodeTypeUtils';
+import { registerNodeClasses, registerNodeSource } from '@/utils/nodeTypeUtils';
 
-// Import node classes and metadata
-import { SwitchNode, nodeMetadata as switchMetadata } from './nodes/SwitchNode.js';
-import { MergeNode, nodeMetadata as mergeMetadata } from './nodes/MergeNode.js';
-import { SubnetNode, nodeMetadata as subnetMetadata } from './nodes/SubnetNode.js';
-import { InputNode, nodeMetadata as inputMetadata } from './nodes/InputNode.js';
-import { OutputNode, nodeMetadata as outputMetadata } from './nodes/OutputNode.js';
-import { RandomNode, nodeMetadata as randomMetadata } from './nodes/RandomNode.js';
-import { RemapNode, nodeMetadata as remapMetadata } from './nodes/RemapNode.js';
-import { SelectNode, nodeMetadata as selectMetadata } from './nodes/SelectNode.js';
-import { NullNode, nodeMetadata as nullMetadata } from './nodes/NullNode.js';
-import { FreezeNode, nodeMetadata as freezeMetadata } from './nodes/FreezeNode.js';
+// The class map and metadata live beside this file rather than in it, so that a
+// Node host can import the classes without the ?raw source text below.
+import { coreNodeClasses } from './classes.js';
 
 // Import source code for nodes (using Vite's ?raw imports)
 import SwitchNodeSource from './nodes/SwitchNode.ts?raw';
@@ -33,33 +25,7 @@ import SelectNodeSource from './nodes/SelectNode.ts?raw';
 import NullNodeSource from './nodes/NullNode.ts?raw';
 import FreezeNodeSource from './nodes/FreezeNode.ts?raw';
 
-// Collect all node metadata
-export const nodeMetadataList = [
-  switchMetadata,
-  mergeMetadata,
-  subnetMetadata,
-  inputMetadata,
-  outputMetadata,
-  randomMetadata,
-  remapMetadata,
-  selectMetadata,
-  nullMetadata,
-  freezeMetadata
-];
-
-// Node class registry: type -> class constructor
-export const coreNodeClasses: Record<string, NodeClass> = {
-  'Switch': SwitchNode,
-  'Merge': MergeNode,
-  'Subnet': SubnetNode,
-  'Input': InputNode,
-  'Output': OutputNode,
-  'Random': RandomNode,
-  'Remap': RemapNode,
-  'Select': SelectNode,
-  'Null': NullNode,
-  'Freeze': FreezeNode,
-};
+export { nodeMetadataList, coreNodeClasses } from './classes.js';
 
 // Register nodes with the central registry
 registerNodeClasses('core', coreNodeClasses);

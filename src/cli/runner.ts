@@ -14,6 +14,13 @@ import { installStageBridge } from '../../server/src/runtime/stage.js';
 import { installProjectIo } from './headlessIo.js';
 import { installHeadlessCanvas, MISSING_CANVAS_MESSAGE, type CanvasHost } from './headlessCanvas.js';
 import { cookUntilSettled, parseFrameSpec, renderFrameRange } from './frames.js';
+import { registerStandardNodes } from '../nodes/registerStandardNodes.js';
+
+// The class-based standard library, registered before any graph is read. Studio
+// does this through `initializeNodeLibraries()`, which a Node process cannot
+// import — see `registerStandardNodes` for why — so this was simply missing,
+// and every `cascade.image.*` node failed at load as an unknown type.
+registerStandardNodes();
 
 export interface RunOptions {
   file: string;

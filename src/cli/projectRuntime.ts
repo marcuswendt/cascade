@@ -11,6 +11,7 @@ import { extractNodeDefinition } from '../../packages/runtime/src/definition/ext
 import { validateNodeModuleArchitecture } from '../../packages/runtime/src/definition/architecture.js';
 import type { DefinitionNodeRegistration } from '../../packages/runtime/src/types.js';
 import { ProjectRoot } from '../../server/src/project.js';
+import { createNodeAssetCapability } from './nodeAssets.js';
 
 interface ProjectNode {
   id: string;
@@ -79,6 +80,11 @@ export async function runDeterministicProjectGraph(
     host: createNodeRuntimeHost({
       modules: resolver(prepared.registrations),
       shell: project.shell as never,
+      // `assets` is the browser's alone until it is given here, and
+      // `cascade.geo.SvgExport` declares it — so an export graph passed both
+      // `validate` and `check` and then refused to run. See ./nodeAssets.ts
+      // for where the file lands and why.
+      assets: createNodeAssetCapability(project),
     }),
     nodes: prepared.registrations,
   });
