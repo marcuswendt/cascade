@@ -16,6 +16,10 @@
   import FolderGroup from './components/FolderGroup.svelte';
   import ColorRampEditor from './components/ColorRampEditor.svelte';
   import ExpressionInput from './components/ExpressionInput.svelte';
+  import { isKeyable, keyState, toggleKeyAtPlayhead } from './keyframeGesture';
+  import { requestTimelineFocus } from './stores/timelineFocus';
+  import { dockviewStore } from './dockview/dockview-store.svelte';
+  import { Diamond } from '@lucide/svelte';
   import { propUpdateCounters } from './stores/propUpdateStore';
   import { normalizeColor, colorToHex } from '@/utils/colorUtils';
   import { setStudioParameter } from './StudioParameterController';
@@ -260,6 +264,55 @@
     if (graph) graph.elements = [...graph.elements];
     sectionVersion += 1;
     portsVersion += 1;
+  }
+
+  /** Alt-click a parameter, or click its diamond, to key it at the playhead.
+   *  Houdini's gesture. `keyTick` exists only to make Svelte re-render the
+   *  marker: keying mutates node.props in place, which it cannot observe —
+   *  the same trap that made expressions look broken earlier today. */
+  let keyTick = 0;
+
+  /** Right-click a parameter: open the Timeline on that parameter's channel.
+   *  Houdini's second gesture, and the reason the marker alone is not enough —
+   *  once something is keyed you need somewhere to look at the keys. */
+  function openChannelEditor(key: string) {
+    if (!node) return;
+    requestTimelineFocus(node.id, key);
+    dockviewStore.focusOrOpenPanel('timeline-main', 'timeline', 'Timeline', 'graph-main', 'below');
+  }
+
+  /** A Svelte action rather than an `on:click` in the markup: a `<label>` with
+   *  a mouse handler trips two a11y lints, and the accessible path here is the
+   *  diamond button beside it. Alt-click and right-click are shortcuts on top,
+   *  not the only way in. */
+  function parameterGestures(element: HTMLElement, key: string) {
+    const onClick = (event: MouseEvent) => {
+      if (!event.altKey) return;
+      event.preventDefault();
+      keyParameter(key);
+    };
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openChannelEditor(key);
+    };
+    element.addEventListener('click', onClick);
+    element.addEventListener('contextmenu', onContextMenu);
+    return {
+      destroy() {
+        element.removeEventListener('click', onClick);
+        element.removeEventListener('contextmenu', onContextMenu);
+      },
+    };
+  }
+
+  function keyParameter(key: string) {
+    if (!node) return;
+    const result = toggleKeyAtPlayhead(node, key);
+    if (result === 'unavailable') return;
+    keyTick += 1;
+    propsUpdateCounter += 1;
+    node.markDirty();
   }
 
   function handlePropChange([key, prop]: [string, Prop], value: any) {
@@ -1107,9 +1160,20 @@
                 {@const isVector = controlType === 'vec2' || controlType === 'vec3' || controlType === 'vec2i' || controlType === 'vec3i' || controlType === 'vector'}
                 <div class="prop-group" class:prop-group-row={isVector}>
                   {#if displayName !== null}
-                    <label class="prop-label" for={inputId}>
+                    <label class="prop-label" for={inputId} use:parameterGestures={key}>
                       {displayName}
                     </label>
+                    {#if isKeyable(prop.value)}
+                      {#key `${key}-${keyTick}`}
+                        <button
+                          class="key-toggle {node ? keyState(node, key) : 'none'}"
+                          on:click|stopPropagation={() => keyParameter(key)}
+                          title="Key at the current frame (or alt-click the label)"
+                        >
+                          <Diamond size={9} />
+                        </button>
+                      {/key}
+                    {/if}
                   {/if}
                   
                   {#if controlType === 'number' || controlType === 'slider' || controlType === 'int'}
@@ -1232,9 +1296,20 @@
               {@const isVector = controlType === 'vec2' || controlType === 'vec3' || controlType === 'vec2i' || controlType === 'vec3i' || controlType === 'vector'}
               <div class="prop-group" class:prop-group-row={isVector}>
                 {#if displayName !== null}
-                  <label class="prop-label" for={inputId}>
+                  <label class="prop-label" for={inputId} use:parameterGestures={key}>
                     {displayName}
                   </label>
+                  {#if isKeyable(prop.value)}
+                    {#key `${key}-${keyTick}`}
+                      <button
+                        class="key-toggle {node ? keyState(node, key) : 'none'}"
+                        on:click|stopPropagation={() => keyParameter(key)}
+                        title="Key at the current frame (or alt-click the label)"
+                      >
+                        <Diamond size={9} />
+                      </button>
+                    {/key}
+                  {/if}
                 {/if}
                 
                 {#if controlType === 'number' || controlType === 'slider' || controlType === 'int'}
@@ -1996,6 +2071,45 @@
     gap: 6px;
   }
   
+  /* The keyed marker. Faint when a parameter has no channel so the row is not
+     cluttered by an affordance you rarely want, solid when a key sits on the
+     playhead — the state you need at a glance while scrubbing. Houdini colours
+     the parameter itself; a marker beside the label is the same information
+     without fighting the value for attention. */
+  .key-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    margin-left: 4px;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--text-faintest);
+    opacity: 0.35;
+    cursor: pointer;
+    vertical-align: middle;
+    transition: opacity 0.15s ease, color 0.15s ease;
+  }
+
+  .key-toggle:hover {
+    opacity: 1;
+    color: var(--text-secondary);
+  }
+
+  .key-toggle.keyed {
+    opacity: 1;
+    color: var(--accent-primary, var(--text-secondary));
+  }
+
+  .key-toggle.keyed-here {
+    opacity: 1;
+    color: var(--accent-primary, var(--text-bright));
+    background: color-mix(in oklab, var(--accent-primary, var(--text-bright)) 22%, transparent);
+  }
+
   .prop-label {
     display: block;
     font-size: 11px;

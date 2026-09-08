@@ -6,6 +6,7 @@
   import { cascade } from '@/engine/cascade';
   import { Transport } from './timeline/transport';
   import { collectTracks, moveKey, type ChannelTrack } from './timeline/channels';
+  import { timelineFocus } from '../stores/timelineFocus';
   import { frameAt, frameToX, frameTicks, hitTestKey, type TimelineView } from './timeline/timeline-math';
 
   export let panelId: string;
@@ -168,6 +169,34 @@
 
   $: graph, refreshTracks();
 
+  /**
+   * Right-clicking a parameter in the Inspector asks for its channel. Honour it
+   * by refreshing first — the track very likely does not exist yet, because the
+   * usual reason to ask is that you have just keyed the parameter and the
+   * poll has not come round. Then select its nearest key so the frame and value
+   * readout has something in it, rather than opening on an empty selection and
+   * looking like nothing happened.
+   */
+  $: if ($timelineFocus) honourFocusRequest($timelineFocus.nodeId, $timelineFocus.param);
+
+  function honourFocusRequest(nodeId: string, param: string): void {
+    refreshTracks();
+    const track = tracks.find(t => t.nodeId === nodeId && t.param === param);
+    if (!track?.keys.length) {
+      // Nothing keyed yet. Leave the panel open and say so rather than
+      // silently selecting nothing.
+      selected = null;
+      focusNotice = `${nodeId}.${param} has no keys yet — alt-click the parameter to set one.`;
+      return;
+    }
+    focusNotice = null;
+    const nearest = track.keys.reduce((best, key) =>
+      Math.abs(key.frame - frame) < Math.abs(best.frame - frame) ? key : best);
+    selected = { nodeId, param, frame: nearest.frame, value: nearest.value };
+  }
+
+  let focusNotice: string | null = null;
+
   function trackKeyFrames(track: ChannelTrack): number[] {
     return track.keys.map(key => key.frame);
   }
@@ -279,6 +308,9 @@
     {/if}
     {#if moveUnsupported}
       <span class="note warn">Channel API cannot move keys yet</span>
+    {/if}
+    {#if focusNotice}
+      <span class="note">{focusNotice}</span>
     {/if}
   </div>
 
