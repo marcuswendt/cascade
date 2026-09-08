@@ -35,6 +35,7 @@
     type AgentEvent,
   } from '../agentConsole';
   import { studioDocument } from '../studioDocumentBridge';
+  import { ownsKeyboard } from '../panelScope';
 
   export let panelId: string;
   export let panelParams: CascadePanelParams;
@@ -118,23 +119,29 @@
   }
 
   /**
-   * Bound on the window but gated on the pointer or the focus being in this
-   * panel. Both halves are needed and neither alone is enough: a listener on
+   * Bound on the window, gated on this panel owning the keyboard. A listener on
    * the panel element only ever fires for keys bubbling out of the prompt box,
-   * so it would not work while you were simply reading the transcript, and an
-   * ungated window listener would take the browser's own zoom keys away from
-   * the whole of Studio for the sake of one panel.
+   * so it would not work while you were simply reading the transcript.
+   *
+   * Bare `+ - 0` as well as the cmd forms, matching the graph canvas, which is
+   * what "the standard keys" means here. The bare forms stand down while you
+   * are typing — a prompt box that could not accept a `+` would be a poor
+   * trade for a shortcut — and the cmd forms work either way.
    *
    * `-` and `=` are read from `event.key` alongside the shifted `_` and `+`,
    * because which one arrives depends on the keyboard layout, and a shortcut
    * that works on one layout and not another is worse than none.
    */
   function onZoomKeydown(event: KeyboardEvent): void {
-    if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
-    if (!consoleEl) return;
-    const engaged =
-      consoleEl.matches(':hover') || consoleEl.contains(document.activeElement);
-    if (!engaged) return;
+    if (event.altKey) return;
+    const command = event.metaKey || event.ctrlKey;
+    if (!consoleEl || !ownsKeyboard('agent')) return;
+    // `event.target` rather than `document.activeElement`: they agree here, and
+    // the target is what actually receives the character.
+    const typing =
+      event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement;
+    if (!command && typing) return;
+
     if (event.key === '0') {
       event.preventDefault();
       setZoom(ZOOM_DEFAULT);
@@ -468,6 +475,7 @@
 
 <div
   class="console"
+  data-panel-scope="agent"
   class:drop-active={dropActive}
   bind:this={consoleEl}
   style="--agent-zoom: {zoom}"

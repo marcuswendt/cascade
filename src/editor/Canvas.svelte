@@ -7,6 +7,7 @@
   import NodeUI from './NodeUI.svelte';
   import { StudioGraphController } from './StudioGraphController';
   import { graphStructure } from './stores/graphStructure';
+  import { ownsKeyboard } from './panelScope';
   import type { Node } from '@/nodes/Node';
   import type { Connection } from '@/types/node.types';
   import { packagePathToType, getNodeClass } from '@/utils/nodeTypeUtils';
@@ -4192,7 +4193,14 @@ export function execute(node, graph) {
     // Canvas keyboard shortcuts
     // + / - - Zoom in/out. Bare keys, with the ⌘ forms kept as aliases, so the
     // graph and the Viewer panel answer to the same shortcuts.
-    if (!isTyping && (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd')) {
+    //
+    // Scoped to whichever panel has the pointer or the focus. This listener is
+    // on `window`, so without the guard the graph zoomed while you were
+    // pointing at the agent console — and once that panel took the same keys,
+    // one keystroke moved both. Only the zoom is scoped; the rest of the
+    // shortcuts below are unchanged.
+    const graphOwnsKeys = ownsKeyboard('graph');
+    if (graphOwnsKeys && !isTyping && (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd')) {
       e.preventDefault();
       const oldZoom = internalTransform.zoom;
       const newZoom = Math.min(2, oldZoom + 0.1);
@@ -4207,7 +4215,7 @@ export function execute(node, graph) {
       internalTransform.zoom = newZoom;
       internalTransform = { ...internalTransform };
     }
-    if (!isTyping && (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract')) {
+    if (graphOwnsKeys && !isTyping && (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract')) {
       e.preventDefault();
       const oldZoom = internalTransform.zoom;
       const newZoom = Math.max(0.1, oldZoom - 0.1);
@@ -4421,6 +4429,7 @@ export function execute(node, graph) {
 <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
 <div 
   class="canvas"
+  data-panel-scope="graph"
   role="application"
   aria-label="Graph canvas"
   tabindex="0"
