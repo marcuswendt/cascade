@@ -206,6 +206,22 @@ export const definition = {
 } as const satisfies NodeDefinition;
 ```
 
+#### Prefer the vector types
+
+Anything with an x and a y is **one** `vec2`, not two floats. `vec3` and `vec4` likewise, with `vec2i`, `vec3i` and `vec4i` for integer counts and pixel sizes. Positions, offsets, sizes, scales, resolutions and colours with alpha are single ports.
+
+```ts
+// Two props that are really one value
+props: { offset_x: { type: 'float', default: 0 }, offset_y: { type: 'float', default: 0 } }
+
+// One prop the type system understands
+props: { offset: { type: 'vec2', default: [0, 0] } }
+```
+
+The reason is not tidiness. Two floats cannot connect to a `vec2` output, take two Inspector rows instead of one control, need two keyframes to animate one movement, and allow a graph to carry an x without its y. The type system knows what a `vec2` is; nothing tells it that `offset_x` and `offset_y` belong together.
+
+Keep them separate only when the components differ in kind or in range — a `width` and a `depth` that mean different things are two props, not a `vec2`.
+
 ### dynamic
 
 A dynamic module declares its interface imperatively, inside `execute`, which runs once to discover the interface and again on every cook. There is no `definition` export; `runsOn` and `icon` are plain exports.

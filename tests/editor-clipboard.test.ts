@@ -11,7 +11,11 @@ describe('Cascade clipboard', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
     Object.defineProperty(document, 'execCommand', { configurable: true, value: vi.fn(() => false) });
 
-    await expect(writeCascadeClipboard('{"type":"cascade/cut"}')).resolves.toBeUndefined();
+    // The write reports false, because the *system* clipboard genuinely did not
+    // get it — `execCommand` returned false here. The session copy surviving
+    // anyway is the point of the test, and the two facts are now separable
+    // rather than both hidden behind a void return.
+    await expect(writeCascadeClipboard('{"type":"cascade/cut"}')).resolves.toBe(false);
     await expect(readCascadeClipboard()).resolves.toBe('{"type":"cascade/cut"}');
   });
 

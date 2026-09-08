@@ -136,6 +136,14 @@ These modules are reserved and need no file under `nodes/`. Do not override a
 Time and randomness reach a parameter as an expression or a keyframe channel,
 which is why a node reading the clock itself is still wrong.
 
+Anything with an x and a y is **one** `vec2`, not two floats — likewise `vec3`
+and `vec4`, and `vec2i`/`vec3i`/`vec4i` for integer counts and pixel sizes.
+Positions, offsets, sizes, scales and resolutions are single ports. Two floats
+that are really one vector cannot connect to a `vec2` output, cost two
+Inspector rows and two keyframes, and let a graph carry an x without its y. The
+type system knows what a `vec2` is; nothing tells it that `offset_x` and
+`offset_y` are related. Split them only when the components differ in kind.
+
 ## Animation, expressions, and parameters
 
 - **`Node.evalParm` in `src/nodes/Node.ts` is the only place a parameter's bindings resolve**, in the order channel, expression, value. Never read `prop.value` to obtain an animated parameter, and never add a second resolution path: an expression badge and a viewer disagreeing about the same frame is exactly what one produced.

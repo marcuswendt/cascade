@@ -193,6 +193,22 @@ export function execute(context: NodeExecutionContext<typeof definition>) {
 
 The declaration is the point: ports, types, props and the execution locus are read from the literal without running anything, which is what \`cascade check\` inspects and what the Definition panel shows. \`execute\` then does computation only — it never declares a port.
 
+### Use the vector types
+
+Anything with an x and a y is **one** \`vec2\`, not two floats. Same for \`vec3\` and \`vec4\`, with \`vec2i\`, \`vec3i\` and \`vec4i\` for integer counts and pixel sizes. A position, an offset, a size, a scale, a colour with alpha, a resolution — all single vector ports.
+
+\`\`\`ts
+// Wrong
+props: { offset_x: { type: 'float', default: 0 }, offset_y: { type: 'float', default: 0 } }
+
+// Right
+props: { offset: { type: 'vec2', default: [0, 0] } }
+\`\`\`
+
+Not a style preference. Two floats that are really one vector cannot be connected to a \`vec2\` output, get two rows in the Inspector instead of one control, need two keyframes to animate one movement, and let a graph carry an x without its y. The type system knows what a \`vec2\` is; it cannot know that \`offset_x\` and \`offset_y\` belong together.
+
+Split them only when the components genuinely differ in kind or in range — a \`width\` and a \`depth\` that are separately meaningful are two props, not a \`vec2\`.
+
 Both hosts cook this style. **Studio** builds the node's ports from the literal and calls \`execute\` with a real \`NodeExecutionContext\`; **\`cascade run\`** runs it through the deterministic runtime. Studio reads the definition from the compiled module, so a definition edit shows up on the next save like any other change.
 
 The older **dynamic** style — \`export async function execute(node, graph)\` declaring its ports imperatively inside itself with \`node.in\`, \`node.param\` and \`node.out\` — still cooks in Studio and under \`cascade run\`, so an existing node keeps working. It is not the style to write something new in: nothing can read what a dynamic node takes or returns until it has cooked, so \`cascade check\` cannot check it and the Definition panel has nothing to show. If you are editing one heavily, convert it.
