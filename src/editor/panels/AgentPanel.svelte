@@ -534,7 +534,6 @@
       >{Math.round(zoom * 100)}%</button>
     {/if}
     {#if working}
-      <span class="running" title="An agent is running for this sketch">running</span>
       <button type="button" on:click={stop}>Stop</button>
     {:else}
       <button type="button" on:click={newSession} title="Forget the conversation for this sketch">Reset</button>
@@ -580,7 +579,7 @@
       on:input={autoGrow}
       rows="2"
       spellcheck="false"
-      placeholder={working ? `${agent} is working…` : 'Prompt the sketch'}
+      placeholder="Prompt the sketch"
       disabled={working}
     ></textarea>
     <button
@@ -590,7 +589,7 @@
       disabled={working || !prompt.trim() || !launchable}
       title="Send (⌘↵)"
       aria-label="Send prompt"
-    >→</button>
+    >↑</button>
   </div>
 </div>
 
@@ -666,10 +665,6 @@
   .send:disabled {
     color: var(--text-disabled);
     cursor: default;
-  }
-
-  .running {
-    color: var(--accent);
   }
 
   .sketch {
