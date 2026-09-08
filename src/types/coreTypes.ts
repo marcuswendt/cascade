@@ -122,36 +122,53 @@ export function canConnect(fromType: string, toType: string): boolean {
 // ------------------------------------------------------------------- colours
 
 /**
- * One colour per family, not per type. A reader should be able to tell a vector
- * from an image at a glance without learning twelve hues, and the port label
- * carries the precision.
+ * One colour per family, not per type.
+ *
+ * A reader should be able to tell a vector from an image at a glance without
+ * learning twelve hues, and the port label carries the precision.
+ *
+ * These are token references, not hex. The values live in `theme.css`, once per
+ * theme, because the palette was chosen against a black canvas and the same
+ * saturated tones are nearly invisible on a light ground — `#FFD700` sits at
+ * 1.3:1 on white. A colour written here would be one the theme cannot reach.
+ *
+ * The consequence for callers: these strings are `var(...)`, so they are only
+ * valid where CSS resolves them — an inline `style`, not an SVG presentation
+ * attribute, and never `ctx.fillStyle`. See Canvas.svelte's connection paths,
+ * which set `style="stroke: ..."` for exactly this reason.
  */
 export const TYPE_COLORS: Record<string, string> = {
-  float: '#4A9EFF',
-  int: '#4A9EFF',
-  bool: '#F472B6',
-  string: '#A78BFA',
+  float: 'var(--type-number)',
+  int: 'var(--type-number)',
+  bool: 'var(--type-bool)',
+  string: 'var(--type-string)',
 
-  vec2: '#38BDF8', vec3: '#38BDF8', vec4: '#38BDF8',
-  vec2i: '#38BDF8', vec3i: '#38BDF8', vec4i: '#38BDF8',
+  vec2: 'var(--type-vector)', vec3: 'var(--type-vector)', vec4: 'var(--type-vector)',
+  vec2i: 'var(--type-vector)', vec3i: 'var(--type-vector)', vec4i: 'var(--type-vector)',
 
-  mat2: '#818CF8', mat3: '#818CF8', mat4: '#818CF8',
+  mat2: 'var(--type-matrix)', mat3: 'var(--type-matrix)', mat4: 'var(--type-matrix)',
 
-  image: '#FFD700',
-  texture: '#FB7185',
-  asset: '#FFD700',
+  image: 'var(--type-image)',
+  texture: 'var(--type-texture)',
+  asset: 'var(--type-image)',
 
-  points: '#4ADE80', lines: '#4ADE80', polyline: '#4ADE80',
-  mesh: '#22C55E', rects: '#4ADE80', curves: '#4ADE80',
+  points: 'var(--type-geometry)', lines: 'var(--type-geometry)', polyline: 'var(--type-geometry)',
+  mesh: 'var(--type-mesh)', rects: 'var(--type-geometry)', curves: 'var(--type-geometry)',
 
-  color: '#EC4899',
-  array: '#F87171',
-  object: '#FB923C',
-  any: '#9CA3AF',
+  color: 'var(--type-color)',
+  array: 'var(--type-array)',
+  object: 'var(--type-object)',
+  any: 'var(--type-any)',
 };
 
-/** Project types get a colour derived from their namespace, so every
- *  `archive.*` port reads as one family without core knowing about it. */
+/**
+ * Project types get a colour derived from their namespace, so every
+ * `archive.*` port reads as one family without core knowing about it.
+ *
+ * Only the hue is computed. How saturated and how light it lands is the
+ * theme's business, so those two come from tokens — otherwise every project
+ * type would keep its dark-canvas lightness on a white one.
+ */
 export function typeColor(type: string | undefined): string {
   if (!type) return TYPE_COLORS.any;
   if (TYPE_COLORS[type]) return TYPE_COLORS[type];
@@ -159,7 +176,7 @@ export function typeColor(type: string | undefined): string {
   if (!namespace) return TYPE_COLORS.any;
   let hash = 0;
   for (let i = 0; i < namespace.length; i++) hash = (hash * 31 + namespace.charCodeAt(i)) >>> 0;
-  return `hsl(${hash % 360}, 65%, 62%)`;
+  return `hsl(${hash % 360}, var(--type-derived-saturation), var(--type-derived-lightness))`;
 }
 
 // -------------------------------------------------------------------- images

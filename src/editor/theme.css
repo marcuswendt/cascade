@@ -25,6 +25,40 @@
      blue reads as a hole punched in the graph. See NodeUI's .body.tinted. */
   --node-tint-strength: 100%;
   color-scheme: dark;
+  /* Port and wire colours, one per type family.
+   *
+   * A reader should tell a vector from an image at a glance without learning
+   * twelve hues, so the hue names a family and the port label carries the
+   * precision. They live here rather than in `coreTypes.ts` because the dark
+   * values were picked against a black canvas: on a light ground the same
+   * saturated tones are nearly invisible, gold worst of all.
+   *
+   * `--type-trigger` inverts like `--tint-*` does. A trigger wire is the one
+   * that reads as "no type", which is white on dark and near-black on light.
+   *
+   * `--type-derived-*` are for project types, whose hue is computed from the
+   * namespace so every `archive.*` port reads as one family without core
+   * knowing they exist. Only the hue is computed; how saturated and how light
+   * it lands is the theme's business, which is why these are tokens and not
+   * numbers in the function.
+   */
+  --type-number: #4A9EFF;
+  --type-bool: #F472B6;
+  --type-string: #A78BFA;
+  --type-vector: #38BDF8;
+  --type-matrix: #818CF8;
+  --type-image: #FFD700;
+  --type-texture: #FB7185;
+  --type-geometry: #4ADE80;
+  --type-mesh: #22C55E;
+  --type-color: #EC4899;
+  --type-array: #F87171;
+  --type-object: #FB923C;
+  --type-any: #9CA3AF;
+  --type-trigger: #FFFFFF;
+  --wire-inactive: #4B5563;
+  --type-derived-saturation: 65%;
+  --type-derived-lightness: 62%;
 
   /* Panel chrome metrics.
    *
@@ -202,6 +236,27 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) {
     color-scheme: light;
+    /* Port and wire colours. Same hues, taken down to hold against a light
+     * ground — measured rather than guessed, each at 3:1 or better on white,
+     * except the inactive wire, which is meant to be faint. Gold needed the
+     * most: #FFD700 sits at 1.3:1 on white and is simply not there. */
+    --type-number: #176FD3;
+    --type-bool: #D0257E;
+    --type-string: #5F39D0;
+    --type-vector: #1D82AF;
+    --type-matrix: #545FC9;
+    --type-image: #A48B04;
+    --type-texture: #D92640;
+    --type-geometry: #248949;
+    --type-mesh: #196B37;
+    --type-color: #DD2C84;
+    --type-array: #D42B2B;
+    --type-object: #C9620D;
+    --type-any: #6D7787;
+    --type-trigger: #111111;
+    --wire-inactive: #B4BAC4;
+    --type-derived-saturation: 58%;
+    --type-derived-lightness: 40%;
     --node-tint-strength: 26%;
 
     /* Surfaces */
@@ -351,6 +406,40 @@
 :root[data-theme='dark'] {
   --node-tint-strength: 100%;
   color-scheme: dark;
+  /* Port and wire colours, one per type family.
+   *
+   * A reader should tell a vector from an image at a glance without learning
+   * twelve hues, so the hue names a family and the port label carries the
+   * precision. They live here rather than in `coreTypes.ts` because the dark
+   * values were picked against a black canvas: on a light ground the same
+   * saturated tones are nearly invisible, gold worst of all.
+   *
+   * `--type-trigger` inverts like `--tint-*` does. A trigger wire is the one
+   * that reads as "no type", which is white on dark and near-black on light.
+   *
+   * `--type-derived-*` are for project types, whose hue is computed from the
+   * namespace so every `archive.*` port reads as one family without core
+   * knowing they exist. Only the hue is computed; how saturated and how light
+   * it lands is the theme's business, which is why these are tokens and not
+   * numbers in the function.
+   */
+  --type-number: #4A9EFF;
+  --type-bool: #F472B6;
+  --type-string: #A78BFA;
+  --type-vector: #38BDF8;
+  --type-matrix: #818CF8;
+  --type-image: #FFD700;
+  --type-texture: #FB7185;
+  --type-geometry: #4ADE80;
+  --type-mesh: #22C55E;
+  --type-color: #EC4899;
+  --type-array: #F87171;
+  --type-object: #FB923C;
+  --type-any: #9CA3AF;
+  --type-trigger: #FFFFFF;
+  --wire-inactive: #4B5563;
+  --type-derived-saturation: 65%;
+  --type-derived-lightness: 62%;
 
   /* Surfaces */
   --surface-void: #0a0a0a;
@@ -498,6 +587,27 @@
 :root[data-theme='light'] {
   --node-tint-strength: 26%;
   color-scheme: light;
+  /* Port and wire colours. Same hues, taken down to hold against a light
+   * ground — measured rather than guessed, each at 3:1 or better on white,
+   * except the inactive wire, which is meant to be faint. Gold needed the
+   * most: #FFD700 sits at 1.3:1 on white and is simply not there. */
+  --type-number: #176FD3;
+  --type-bool: #D0257E;
+  --type-string: #5F39D0;
+  --type-vector: #1D82AF;
+  --type-matrix: #545FC9;
+  --type-image: #A48B04;
+  --type-texture: #D92640;
+  --type-geometry: #248949;
+  --type-mesh: #196B37;
+  --type-color: #DD2C84;
+  --type-array: #D42B2B;
+  --type-object: #C9620D;
+  --type-any: #6D7787;
+  --type-trigger: #111111;
+  --wire-inactive: #B4BAC4;
+  --type-derived-saturation: 58%;
+  --type-derived-lightness: 40%;
 
   /* Surfaces */
   --surface-void: #eef0f2;

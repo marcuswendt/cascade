@@ -3,28 +3,31 @@ import { ImageBuffer } from '@/nodes/image/ImageBuffer';
 import { TYPE_COLORS, typeColor, isImageRef } from '@/types/coreTypes';
 
 /**
- * Color palette for data types
- * - number = blue
- * - image/asset = yellow
- * - geometry = green
- * - arrays = red
- * - objects = orange
- * - trigger = white
- * - inactive = grey
+ * The type families under the names the older untyped code asks for.
+ *
+ * This used to be a second hardcoded palette beside `TYPE_COLORS`, with
+ * different values for the same idea — `number` was `#4A9EFF` here and `float`
+ * was `#4A9EFF` there, and nothing kept them in step. Two vocabularies for one
+ * concept is the fault this codebase keeps paying for, so there is now one:
+ * these are aliases onto the same theme tokens.
+ *
+ * `trigger` and `inactive` have no entry in `TYPE_COLORS` because they are not
+ * types. A trigger carries no value, and an inactive wire is a state of a
+ * connection.
  */
 export const DATA_TYPE_COLORS: Record<string, string> = {
-  number: '#4A9EFF',      // Blue for numbers
-  image: '#FFD700',       // Yellow/gold for images
-  asset: '#FFD700',       // Yellow for assets (same as images)
-  geometry: '#4ADE80',    // Green for geometry
-  array: '#F87171',       // Red for arrays
-  object: '#FB923C',      // Orange for objects
-  string: '#A78BFA',      // Purple for strings
-  boolean: '#F472B6',     // Pink for booleans
-  color: '#EC4899',       // Magenta for color values
-  trigger: '#FFFFFF',     // White for triggers
-  any: '#9CA3AF',         // Gray for any/unknown
-  inactive: '#4B5563',    // Dark gray for inactive connections
+  number: TYPE_COLORS.float,
+  image: TYPE_COLORS.image,
+  asset: TYPE_COLORS.asset,
+  geometry: TYPE_COLORS.points,
+  array: TYPE_COLORS.array,
+  object: TYPE_COLORS.object,
+  string: TYPE_COLORS.string,
+  boolean: TYPE_COLORS.bool,
+  color: TYPE_COLORS.color,
+  any: TYPE_COLORS.any,
+  trigger: 'var(--type-trigger)',
+  inactive: 'var(--wire-inactive)',
 };
 
 /**

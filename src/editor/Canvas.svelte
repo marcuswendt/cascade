@@ -4541,7 +4541,7 @@ export function execute(node, graph) {
         {@const fromAnnotation = (fromElement as any)?.isAnnotation ? fromElement : null}
         {@const fromPort = fromNode?.outputs.find(p => p.id === conn.from.portId) || fromAnnotation?.outputs?.find(p => p.id === conn.from.portId)}
         {@const isActive = !(toNode as any)?.isInputActive || (toNode as any).isInputActive(conn.to.portId)}
-        {@const connectionColor = isActive ? (fromPort ? getPortColor(fromPort) : '#888') : DATA_TYPE_COLORS.inactive}
+        {@const connectionColor = isActive ? (fromPort ? getPortColor(fromPort) : DATA_TYPE_COLORS.any) : DATA_TYPE_COLORS.inactive}
         {@const isHighlighted = isConnectionHighlighted(conn, selectedNodes, hoveredConnection?.connectionId)}
         {@const midY = (fromPos.y + toPos.y) / 2}
         {@const curveOffset = Math.abs(toPos.y - fromPos.y) * 0.5}
@@ -4556,11 +4556,18 @@ export function execute(node, graph) {
           class="connection-hit-area"
           style="cursor: {(hoveredConnection?.connectionId === conn.id && ctrlPressed) ? 'pointer' : 'default'};"
         />
-        <!-- Visible connection path -->
+        <!-- Visible connection path. The colour is a declaration rather than a
+             `stroke` attribute, because a port colour is now a `var(--type-*)`.
+             Measured in Chrome 147: a presentation attribute DOES resolve
+             `var()` there — a bogus name falls back to `none`, a real one
+             paints — so this is not a Chrome bug being worked around. It is
+             that a declaration is the form CSS actually specifies for custom
+             properties, and the attribute form is browser behaviour nobody
+             promised. Same for the preview wire below. -->
         <path
           d="M {fromPos.x} {fromPos.y} C {fromPos.x} {fromPos.y + curveOffset} {toPos.x} {toPos.y - curveOffset} {toPos.x} {toPos.y}"
           fill="none"
-          stroke={connectionColor}
+          style="stroke: {connectionColor};"
           stroke-width="2"
           stroke-opacity={isHighlighted ? 1 : DIMMED_WIRE_OPACITY}
           stroke-dasharray={isProcessing ? "8 6" : (isTrigger ? "3 3" : "none")}
@@ -4597,7 +4604,7 @@ export function execute(node, graph) {
       {@const fromPort = from.portType === 'output' 
         ? (fromNode?.outputs.find(p => p.id === from.portId) || fromAnnotation?.outputs?.find(p => p.id === from.portId))
         : fromNode?.inputs.find(p => p.id === from.portId)}
-      {@const previewColor = fromPort ? getPortColor(fromPort) : '#888'}
+      {@const previewColor = fromPort ? getPortColor(fromPort) : DATA_TYPE_COLORS.any}
       {@const curveOffset = Math.abs(mousePosition.y - connectingPosition.y) * 0.5}
       {@const isTrigger = from.portType === 'output' && (() => {
         if (!fromNode) return false;
@@ -4607,7 +4614,7 @@ export function execute(node, graph) {
       <path
         d="M {connectingPosition.x} {connectingPosition.y} C {connectingPosition.x} {connectingPosition.y + curveOffset} {mousePosition.x} {mousePosition.y - curveOffset} {mousePosition.x} {mousePosition.y}"
         fill="none"
-        stroke={previewColor}
+        style="stroke: {previewColor};"
         stroke-width="2"
         stroke-dasharray={isTrigger ? "3 3" : "4 4"}
         class="connection-preview"
