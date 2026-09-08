@@ -204,7 +204,7 @@ Not a style preference. Two floats that are really one vector cannot be connecte
 
 Split only when the components differ in kind. Vector props support \`min\`, \`max\`, and \`step\`, with one range across their components.
 
-Both hosts cook this style. **Studio** builds the node's ports from the literal and calls \`execute\` with a real \`NodeExecutionContext\`; **\`cascade run\`** runs it through the deterministic runtime. Studio reads the definition from the compiled module, so a definition edit shows up on the next save like any other change.
+Studio and a compatible CLI host cook this style. **Studio** builds ports from the compiled definition and calls \`execute\` with a real \`NodeExecutionContext\`; **\`cascade run\`** uses the deterministic runtime when the node's execution locus and capabilities are supported. A browser-only declaration still prevents a Node-host run.
 
 The **dynamic** style — \`execute(node, graph)\` declaring ports with \`node.in\`, \`node.param\`, and \`node.out\` — remains supported by Studio and the CLI compatibility engine. It cannot provide the same static checks. Studio may mix both styles; the CLI rejects mixed graphs. Convert deliberately with saved-value and output comparisons.
 

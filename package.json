@@ -27,6 +27,7 @@
     "dist",
     "!dist/**/*.map",
     "CHANGELOG.md",
+    "CONTRIBUTING.md",
     "AGENTS.md",
     "ARCHITECTURE.md",
     "DESIGN.md",

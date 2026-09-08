@@ -1,6 +1,6 @@
 # Cascade agent guide
 
-Cascade is a reusable generative-design graph runtime with an optional Studio UI. Keep authored algorithms independent from the editor so the same graph can run in Studio, on a server, or in a UI-free browser host.
+Cascade is a reusable generative-design graph runtime with an optional Studio UI. Keep authored algorithms independent from the editor so a graph can run in Studio, on a server, or in a UI-free browser host when its declared execution locus and capabilities are supported.
 
 ## Start here
 
