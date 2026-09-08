@@ -138,6 +138,40 @@ describe('project API security boundary', () => {
     ]);
   });
 
+  it('starts with a trusted host that carries a port', async () => {
+    /**
+     * The call site I missed. `allowedAuthorities` was updated and
+     * `startServer`'s own origin construction was not, so a trusted host with
+     * a port threw **before the server bound**:
+     * `Invalid trusted host: kuro.hydra-diatonic.ts.net:8444`.
+     *
+     * `authority()` refuses a colon outside IPv6, which is right for its
+     * contract — it takes host and port separately. `trustedAuthority` is the
+     * one that parses `name:port`. Two consumers of one rule, one updated,
+     * which is the shape of half of today.
+     *
+     * The unit test above covers the rule; this covers the server actually
+     * starting, which is what a user hits first.
+     */
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-proxy-boot-'));
+    roots.push(root);
+    fs.writeFileSync(path.join(root, 'index.cascade'), '{}');
+    const port = await freePort();
+    const server = startServer(new ProjectRoot(root), {
+      port,
+      host: '127.0.0.1',
+      trustedHosts: ['kuro.hydra-diatonic.ts.net:8444'],
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+
+    const base = `http://127.0.0.1:${port}`;
+    // The proxy's authority is accepted even though the bind port differs.
+    expect(await rawStatus(`${base}/api/graph`, { Host: `kuro.hydra-diatonic.ts.net:8444` })).toBe(200);
+    // And loopback still works, so a local browser is not locked out.
+    expect(await rawStatus(`${base}/api/graph`, { Host: `127.0.0.1:${port}` })).toBe(200);
+  });
+
   it('honours a port written into a trusted host, which is the proxy case', () => {
     /**
      * Behind a reverse proxy the public port is not the bind port. Measured

@@ -13,7 +13,7 @@ import { createAgentRouter } from './routes/agent.js';
 import { createGraphWatchRouter } from './routes/graphWatch.js';
 import { createProjectSettingsRouter } from './routes/projectSettings.js';
 import { createNetRouter } from './routes/net.js';
-import { authority, createProjectRequestBoundary, isLoopbackHost, type ServerSecurityOptions } from './security.js';
+import { createProjectRequestBoundary, isLoopbackHost, trustedAuthority, type ServerSecurityOptions } from './security.js';
 import { createMediaRouter } from './routes/media.js';
 import { ProjectRoot } from './project.js';
 import { buildId } from './build.js';
@@ -45,7 +45,7 @@ export function startServer(project: ProjectRoot, opts: StartServerOptions = {})
   const trustedHosts = Object.freeze([...(opts.trustedHosts ?? [])]);
   const defaultOrigins = [
     ...(isLoopbackHost(HOST) ? [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`] : []),
-    ...trustedHosts.map((host) => `http://${authority(host, PORT)}`),
+    ...trustedHosts.map((host) => `http://${trustedAuthority(host, PORT)}`),
   ];
   const security: ServerSecurityOptions = Object.freeze({
     host: HOST,
@@ -139,7 +139,7 @@ export function startServer(project: ProjectRoot, opts: StartServerOptions = {})
   server.listen(PORT, HOST, () => {
     console.log(`🚀 Cascade running on http://${HOST}:${PORT}`);
     console.log(`📁 Project: ${project.root}${project.isGitRepo ? ' (git)' : ' (not a git repo yet)'}`);
-    if (trustedHosts.length > 0) console.log(`🔐 Trusted Studio URL: http://${authority(trustedHosts[0], PORT)} (all reachable VPN/interface peers are trusted)`);
+    if (trustedHosts.length > 0) console.log(`🔐 Trusted Studio URL: http://${trustedAuthority(trustedHosts[0], PORT)} (all reachable VPN/interface peers are trusted)`);
   });
 
   return server;
