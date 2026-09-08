@@ -32,6 +32,10 @@ Two features carry the minor bump: an **animation system** and an **agent consol
 ### Portability
 
 - Image nodes ask the host for a drawing surface instead of reaching for `document`, so the same node renders in the browser and headless. `runsOn` defaults to `portable` for an undeclared module rather than `browser`.
+- **`cascade run` executes the standard node library.** It never registered the class-based nodes, so every `cascade.image.*` threw `Unknown Cascade node type` and a graph built in Studio would not render headlessly. The registration lived beside Vite `?raw` imports, which do not resolve under Node.
+- **`cascade.geo.SvgExport` can write from the CLI.** It declares the `assets` capability, which only the browser supplied — so `validate` and `check` both passed on a graph that then refused to run. The Node host provides it through the existing `cascade/io` policy, so writes stay confined to `.cascade-cache/`.
+
+Still true: `validate` and `check` pass on a graph whose capabilities the host cannot supply. That blindness is why the above shipped.
 
 ### Packaging
 
