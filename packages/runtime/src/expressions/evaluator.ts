@@ -11,7 +11,7 @@
  * gives the same output.
  */
 
-import { clamp, fit, fit01, lerp, noise, padzero, random, smooth } from "./math.js";
+import { clamp, fit, fit01, lerp, MATH_SCOPE, noise, padzero, random, smooth } from "./math.js";
 import { hasTimeReference, preprocessExpression } from "./preprocess.js";
 import type { ExpressionScope, Node as NodeShape } from "./scope.js";
 import { TimeState } from "./time.js";
@@ -158,6 +158,10 @@ export class ExpressionEvaluator<TNode extends NodeShape = NodeShape> {
       noise,
       random,
       padzero,
+
+      // Bare maths — `sin($FF * 0.5)` rather than `Math.sin(...)`. Spread
+      // before `Math` so nothing here can shadow the namespace itself.
+      ...MATH_SCOPE,
 
       Math
     };
