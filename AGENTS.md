@@ -6,6 +6,8 @@ Cascade is a reusable generative-design graph runtime with an optional Studio UI
 
 - `DESIGN.md` — product and architecture source of truth.
 - `ARCHITECTURE.md` — repository boundaries and dependency direction.
+- `CHANGELOG.md` — what each release changed, newest first. Read it before assuming how a recent feature works.
+- `doc/NODE_REFERENCE.md` — every built-in node with its declared ports, generated from the definitions. Read it instead of searching `src/nodes/` for what a node does; regenerate with `npm run build:node-reference` rather than editing it.
 - `packages/contracts/` — public types, deterministic node definitions, capabilities, and schemas.
 - `packages/runtime/` — environment-neutral loading, validation, scheduling, and headless APIs.
 - `src/editor/` — Svelte Studio only; never put runtime behavior here.
@@ -21,6 +23,7 @@ A Cascade project is an ordinary directory or Git repository:
 my-project/
 ├── cascade.json          # optional host policy and project settings
 ├── index.cascade         # default graph; more .cascade files are allowed
+├── AGENTS.md             # written by `cascade new`; authoritative for that project
 ├── nodes/
 │   └── Multiply/
 │       └── index.ts      # project.Multiply
@@ -32,7 +35,7 @@ my-project/
 └── tsconfig.json
 ```
 
-Use `cascade new <name>` to create a project. Run `cascade .` from its root to open Studio, `cascade validate <graph.cascade>` for validation, `cascade check <graph.cascade>` for static definition/type checks, `cascade inspect <graph.cascade>` for a JSON summary, and `cascade run <graph.cascade>` for headless execution.
+Use `cascade new <name>` to create a project and `cascade node <Name>` to scaffold a custom node in one. Run `cascade .` from a project root to open Studio, `cascade validate <graph.cascade>` for validation, `cascade check <graph.cascade>` for static definition/type checks, `cascade inspect <graph.cascade>` for a JSON summary, `cascade run <graph.cascade>` for headless execution, and `cascade run <graph.cascade> --frames 1-100` for an offline image sequence. `cascade projects` shows or sets the default projects directory.
 
 ## Launch Studio
 
@@ -70,7 +73,9 @@ Project panels are trusted Studio extensions, not graph/runtime modules. Put the
 
 ## Create a deterministic node
 
-Prefer a statically inspectable definition over legacy setup-time calls:
+Two node styles exist and both are current. A **definition-v1** module exports a literal `definition` and a typed `execute(context)`; it is statically inspectable, it is what `cascade check` requires, and it runs through the deterministic runtime. A **dynamic** module exports `execute(node, graph)` and declares its ports and parameters imperatively inside it; that is what Studio's compatibility engine cooks, and what `cascade run --frames` renders. Prefer definition-v1 for anything new inside this repository, and do not call dynamic modules "legacy" — the naming was retired in 0.3.0 because it described a migration that has not happened for project nodes in Studio.
+
+A definition-v1 module looks like this:
 
 ```ts
 import type { NodeDefinition, NodeExecutionContext } from 'cascade/contracts';
@@ -128,6 +133,29 @@ is +Y up; the flip into SVG's frame lives in `SvgExport` alone.
 
 These modules are reserved and need no file under `nodes/`. Do not override a
 `cascade.core.*` module or use ambient random/time state in a portable node.
+Time and randomness reach a parameter as an expression or a keyframe channel,
+which is why a node reading the clock itself is still wrong.
+
+## Animation, expressions, and parameters
+
+- **`Node.evalParm` in `src/nodes/Node.ts` is the only place a parameter's bindings resolve**, in the order channel, expression, value. Never read `prop.value` to obtain an animated parameter, and never add a second resolution path: an expression badge and a viewer disagreeing about the same frame is exactly what one produced.
+- **A parameter is one store.** `param()` declares the parameter; the value, the expression and the channel live in the prop of the same name. `NodeParameter.value` reads *resolved*; `rawParameterValue()` reads what the author typed, and is what serialization and cache keys must use. `param()` is re-declared on every cook of a dynamic node, so it must stay idempotent — it may never reset a value, an expression, or a channel.
+- **Mechanisms belong to the runtime, composition to the host.** `packages/runtime/src/expressions` owns preprocessing, scope and the maths library; `packages/runtime/src/animation` owns the channel model, sampling, interpolation, serialization and frame-range walking. Both depend only on contracts. Do not implement interpolation, a frame clock, or a second `$T` anywhere else.
+- **The serialized shape is owned by contracts** (`packages/contracts/src/animation.ts`): a channel is `{ keys: [{ frame, value, interpolation? }] }` inside the node's `props`, with `interpolation` omitted when it is the `smooth` default. There is no timeline section in the document, and adding one would need reconciling on every rename, delete and embed.
+- Bare trigonometry is **radians**, deliberately unlike Houdini; `sind`/`cosd`/`tand`/`radians()`/`degrees()` exist for formulae carried over. Only `ch()`, `chs()` and `chv()` are scanned for dependencies, so a new way to reach another parameter also needs a dependency pattern or it will not recook.
+- The deterministic runtime has no parameter animation. `cascade run --frames` refuses a definition-v1 graph rather than rendering frame 1 repeatedly. Extending animation to that runtime is a migration step; do not add a compatibility branch to Studio for it.
+- Studio's timeline panel holds its own frame range, loop and playhead. Only fps reaches the engine clock. Nothing about playback is saved with the document.
+
+## Agent sessions
+
+`server/src/agent` is a project host service at the same layer as shell and Python, under the same policy. Read the file headers there before changing it; they carry the reasoning.
+
+- A run is keyed by agent alias and document, and **owned by the server**. The request that starts it is only the first reader, and a closed socket detaches a reader. Never tie a run's lifetime to a request: a browser reload sending SIGTERM to an agent mid-edit is the fault this design exists to prevent.
+- The server drains the child's stdout whether or not anyone is attached. An unread pipe strands the agent.
+- The transcript is a bounded ring with absolute sequence numbers. A reader attaches with `since`, gets one `attached` event carrying `running`, `replayed` and `dropped`, then the replay and the live stream with nothing awaited in between. Report `dropped` rather than hiding it; a transcript that silently loses its middle reads as an agent that did something inexplicable.
+- Executables resolve server-side from the `commands` allowlist in `cascade.json` — the shell service's allowlist, deliberately the same one. A path from the browser is never accepted, and `agent.<alias>.args` supplies fixed flags. The routes need the capability token and are absent when sensitive capabilities are not allowed, so transport is NDJSON over POST rather than SSE.
+- Cancellation signals the process group, because agents spawn children.
+- Freshness is a watcher, not a poll: `server/src/graphWatch.ts` publishes `.cascade` changes over SSE and `src/editor/graphDocumentWatch.ts` fingerprints the document with volatile metadata stripped, so Studio's own save does not return as an external change. A reload is declined while there are unsaved edits rather than picking a winner.
 
 ## Navigate and edit graphs
 
@@ -156,13 +184,17 @@ the TypeScript 7 preview until it is stable and the repository gates pass.
 3. Prefer deletion or an existing utility over another wrapper.
 4. Run the focused test, then `npm run check`, `npm run test:run`, `npm --prefix server run build`, `npm run build`, and `npm run build:cli` when the affected surface warrants it. Keep the CLI build last because Vite refreshes `dist/`.
 5. For package/public API changes, also test the packed tarball from an empty temporary project.
+6. When a built-in definition or a node library registry changes, regenerate the node reference with `npm run build:node-reference` and commit the result. `build:cli` runs it too, so a full build will produce the diff whether or not you meant to. Nothing tests that the committed file is current, so a stale one ships silently — and it is the first thing a project's agent reads.
 
 Do not add dependencies without a concrete need. Do not create extra packages unless they need independent publication or versioning.
 
 ## Versioning
 
-Cascade `0.2.0` is the 2026 architecture rework. The current release is
-`0.2.22`. Increment the root package and CLI patch version for every committed
-feature or release change (`0.2.22`, `0.2.22`, …), keeping `package.json`, the
-lockfile, and CLI output aligned. Internal private workspaces do not receive
-independent versions unless they become separately published packages.
+Cascade `0.2.0` is the 2026 architecture rework. The current release is `0.3.0`,
+which added the animation system and the agent console; `CHANGELOG.md` records
+what changed and is the file to update before a release commit. Increment the
+root package and CLI patch version for every committed feature or release
+change, keeping `package.json`, the lockfile, and CLI output aligned. A minor
+bump is for a feature large enough to need its own `CHANGELOG.md` section.
+Internal private workspaces do not receive independent versions unless they
+become separately published packages.

@@ -37,6 +37,7 @@ The portable project shape is:
 my-artwork/
 ├── cascade.json
 ├── index.cascade
+├── AGENTS.md            # written by `cascade new`, for agents working in the project
 ├── nodes/
 ├── panels/              # optional Studio-only extensions
 ├── assets/
@@ -153,6 +154,19 @@ The proxy accepts HTTPS only, refuses undeclared hosts, strips caller-supplied a
 
 ## Add a custom node
 
+Before writing one, check whether you need one. A parameter can hold an expression, so anything time-based is usually a parameter rather than a node. See [Animate a parameter](#animate-a-parameter). A node earns its place when it produces geometry or pixels, or when several parameters share a computation. The built-in library is listed in `NODE_REFERENCE.md`, generated from the definitions themselves; read that before searching for what a node does.
+
+There are two styles, and which one a project uses is not a matter of taste. It decides which host can cook it:
+
+| | Cooked by | Checked by |
+| --- | --- | --- |
+| **definition-v1**: a literal `definition` plus `execute(context)` | the deterministic runtime, through `cascade run` | `cascade check`, which requires this style |
+| **dynamic**: `execute(node, graph)` declaring its own ports and parameters | Studio's compatibility engine, and `cascade run` including `--frames` | `cascade validate` and a cook |
+
+A graph cannot mix them; the CLI refuses a mixed document rather than half-running it. The `AGENTS.md` that `cascade new` writes into a project states which style that project expects, and it is the file to believe over this one for a specific project.
+
+### definition-v1
+
 Create `nodes/Multiply/index.ts`. The directory name defines the module ID `project.Multiply`.
 
 ```ts
@@ -177,7 +191,46 @@ export function execute(context: NodeExecutionContext<typeof definition>) {
 }
 ```
 
-The definition is the complete static interface. Cascade and code agents can inspect it without importing the module, build the node UI, validate graph connections, and type-check `execute`. Do not create ports, props, or types inside `execute`.
+The definition is the complete static interface. Cascade and code agents can inspect it without importing the module, build the node UI, validate graph connections, and type-check `execute`. In this style `execute` computes and nothing else: it does not create ports, props, or types.
+
+Parameters are declared as `props`, beside `inputs` and `outputs`, and each takes a `type` and a `default` plus optional `label`, `description`, `min`, `max`, `step`, `control`, `options`, and `accept`:
+
+```ts
+export const definition = {
+  apiVersion: 1,
+  label: 'Blend',
+  runsOn: 'portable',
+  inputs: { value: { kind: 'data', type: 'float', default: 0 } },
+  props: { blend: { type: 'float', default: 0.5, min: 0, max: 1, label: 'Blend' } },
+  outputs: { result: { kind: 'data', type: 'float' } }
+} as const satisfies NodeDefinition;
+```
+
+### dynamic
+
+A dynamic module declares its interface imperatively, inside `execute`, which runs once to discover the interface and again on every cook. There is no `definition` export; `runsOn` and `icon` are plain exports.
+
+```ts
+import { saveImage, cachePath } from 'cascade/io';
+
+export const icon = 'Circle';        // a Lucide icon name
+export const runsOn = 'portable';    // 'portable' | 'browser' | 'server'
+
+export async function execute(node: any) {
+  const size = node.param('size', 1024, { min: 16, max: 4096, step: 16, type: 'int' }).value;
+  const input = node.in('value', 0, { type: 'float' }).value;
+  const out = node.out('image', 'param', { type: 'image' });
+
+  const canvas = new OffscreenCanvas(size, size);
+  // ... draw ...
+  const path = await saveImage(canvas, cachePath(node.id, '.png'));
+  out.setValue({ path, size: [size, size], channels: 'rgb', depth: 'u8', space: 'srgb' });
+}
+```
+
+`param()` is a method on the node the engine hands to `execute`, not an import. It is re-declared on every cook, so it never resets a value, an expression, or a keyframe someone set: reading `.value` gives the *resolved* value for the current frame, whichever of the three bindings is in force. Top-level statements outside `execute` do not run, because the loader imports a real ES module and needs the `execute` export.
+
+Prefer `new OffscreenCanvas(width, height)` to `document.createElement('canvas')` when both hosts could run the node, and keep `runsOn: 'browser'` for code that genuinely needs the page. Web technology comes first, meaning Canvas 2D, WebGL and WebGPU. A Python stage is for work that cannot run in a browser at all, such as an exotic ML library. A Python stage costs a process spawn and a round trip per cook, which is invisible on one still frame and fatal to dragging a parameter or playing an animation.
 
 Choose the narrowest execution locus:
 
@@ -231,8 +284,65 @@ Keep implementation nodes behind that boundary so a server or custom frontend
 does not depend on internal IDs. A child Input/Output node's index defines the
 matching `input_N`/`output_N` port on its parent Subnet.
 
-Portable nodes must not read ambient time or randomness. Pass frame/time through
-root inputs and use seeded Random when a procedural stage needs variation.
+Portable nodes must not read ambient time or randomness. Time reaches a node as
+an expression or a keyframe on a parameter, or through a root input; variation
+comes from seeded `Random`.
+
+`NODE_REFERENCE.md` carries the full declarations for these and for the
+`cascade.geo.*` set, generated from the definitions, so the table above is a
+summary rather than the source.
+
+## Animate a parameter
+
+A parameter holds up to three things, and they resolve in one order: a **keyframe channel** first, then an **expression**, then the stored **value**. A channel therefore overrides an expression without erasing it: empty the channel and the expression comes back.
+
+Expressions use Houdini's variables:
+
+| | |
+| --- | --- |
+| `$F` | frame, integer |
+| `$FF` | frame, fractional |
+| `$T` | seconds, zero on the first frame — `($FF - 1) / $FPS` |
+| `$FPS` | rate |
+| `ch("NODE/parm")`, `ch("./parm")` | read another parameter; `chs()` for a string, `chv()` for a vector |
+
+The maths library is in scope bare, so `sin(x)` rather than `Math.sin(x)`, with `PI`, `TAU` and `E`. Note that **angles are radians**; `sind`, `cosd`, `tand`, `radians()` and `degrees()` are there for formulae carried over from Houdini. `fit`, `fit01`, `clamp`, `lerp`, `smooth`, `noise`, `random`, `padzero`, `opexist` and `opinput` are available too.
+
+So "oscillate the angle" is `sin($T) * 40` in the `angle` parameter. There is no oscillator node and none is needed. Only `ch()`, `chs()` and `chv()` create a dependency, so a parameter that reads another one recooks when it changes.
+
+Keyframes are set on a parameter in the Inspector: **alt-click** sets a key at the playhead, **ctrl-click** deletes the key on the current frame, **right-click** opens the Timeline focused on that channel, and the diamond beside the parameter toggles a key for anyone not using a modifier. Interpolation belongs to the key on the left of a segment and is `constant`, `linear`, or `smooth`. Smooth is the default: a Hermite curve with automatic tangents, flat at the first and last key. Outside the keyed range the channel holds its end values.
+
+In the document, a channel sits in the node's `props` next to the value and the expression, and `interpolation` is omitted where it is the `smooth` default:
+
+```json
+"props": {
+  "angle": {
+    "value": 12,
+    "expression": "sin($T) * 40",
+    "channel": { "keys": [{ "frame": 1, "value": 0, "interpolation": "linear" }, { "frame": 48, "value": 360 }] }
+  }
+}
+```
+
+`params` holds plain values; a binding needs the object form under `props`. Playback settings, the frame range and loop, belong to the Timeline panel and are not saved with the document.
+
+## Run a coding agent in the project
+
+Studio can run a coding agent in the project directory, editing the same `nodes/` and `.cascade` files the open graph came from. The document is saved before the prompt is sent, and a watcher reloads the graph in place when the agent rewrites it, so nothing needs a page reload. Studio declines that reload while there are unsaved edits rather than choosing a winner.
+
+The project decides what may be launched, in `cascade.json`, using the same `commands` allowlist as shell aliases. A scaffolded project ships without one, so nothing is launchable until it is added:
+
+```json
+{
+  "name": "My Artwork",
+  "commands": { "claude": "claude" },
+  "agent": { "claude": { "args": ["--permission-mode", "acceptEdits"] } }
+}
+```
+
+An alias maps to an absolute path, a `~`-relative path, or a bare name on `PATH`; project-relative paths are refused. `agent.<alias>.args` adds fixed flags. `claude` defaults to `--permission-mode acceptEdits`, and an explicit empty array launches it bare. The routes are only available on loopback or in an explicitly enabled trusted-host session.
+
+The run belongs to the server rather than the browser: closing the tab leaves the agent working, and reopening the panel replays the buffered transcript and rejoins the stream. Node and parameter names are drag sources carrying their expression address, `TRANSFORM` for a node and `TRANSFORM/tx` for its parameter, so a path can be dragged into the console instead of retyped.
 
 ## Integrate external services and AI
 
@@ -344,6 +454,22 @@ cascade inspect index.cascade
 cascade run index.cascade
 ```
 
+`cascade check` reads definition-v1 modules statically; `cascade validate` checks the document, hierarchy and connections. Neither renders anything, so a green read proves the graph loads and not that it draws. Check a change by running it.
+
+Render frames offline with the same command:
+
+```bash
+cascade run index.cascade --frames 1-100
+cascade run index.cascade --frames 1-100x2 --fps 25 --out frames
+cascade run index.cascade --frames 42 --entry-node logo-1024
+```
+
+`--frames` takes a range, a stepped range, or a single frame, and refuses a range it cannot parse rather than repairing it. Files are written as `<out>/<node id>.<frame>.<ext>`, zero-padded to at least four digits, into `renders/` unless `--out` says otherwise. One rule whether the graph has one output or three. Every image output with nothing connected downstream is saved, or the outputs of `--entry-node` when one is named. Cascade stops at the image sequence; a directory of numbered frames is what an encoder takes.
+
+Offline, drawing goes through Skia: the optional `@napi-rs/canvas` supplies `OffscreenCanvas`, `Image`, `Path2D` and the rest as globals in the Node process, deliberately not `document`, because that is how a node tells which host it is in. This is why a node that draws on an `OffscreenCanvas` needs no second implementation for headless runs, and why the built-in `cascade.image.*` nodes render under `cascade run` as well as in Studio. A graph that draws nothing runs without the renderer installed.
+
+`--frames` renders dynamic graphs. A definition-v1 graph runs through the deterministic runtime, which owns its own clock and has no parameter animation, and the flag is refused rather than silently rendering the first frame repeatedly.
+
 Applications can use `createRuntime()` from `cascade/runtime` directly. Register node modules and host capabilities, load the graph, mutate inputs or presets, run or trigger it, read outputs, then dispose it. This path loads no Svelte or Studio code and works in a backend service or a custom browser application.
 
 Server and browser hosts are deliberately explicit. A graph that uses Python or shell stages belongs on the server or behind an application-defined bridge; the runtime does not silently move computation between environments.
@@ -353,8 +479,8 @@ Server and browser hosts are deliberately explicit. A graph that uses Python or 
 Before committing a custom node or graph:
 
 1. Type-check the project with its normal TypeScript command.
-2. Run `cascade validate <graph>` and `cascade check <graph>` to check the document plus static definitions, types, hierarchy, and connections without rendering.
-3. Run the graph headlessly when its capabilities are available.
+2. Run `cascade validate <graph>`, and `cascade check <graph>` for a definition-v1 project, to check the document plus static definitions, types, hierarchy, and connections without rendering.
+3. Run the graph headlessly when its capabilities are available. This is the step that catches a document that loads, reports its nodes, and draws nothing. The characteristic failure here is silent, so a static pass alone proves little.
 4. Open Studio only for visual inspection or authoring that benefits from the graph UI.
 
-Treat warnings about legacy dynamic nodes as migration work. New nodes should always use deterministic definitions.
+Dynamic modules are not deprecated and 0.3.0 stopped calling them legacy: the two styles are cooked by different hosts, and a project's own `AGENTS.md` says which one it expects. Convert a node when you need what the other style gives, static inspection and `cascade check` on one side or Studio cooking and `--frames` on the other, rather than on a schedule.

@@ -3,9 +3,9 @@
 ## Source of truth
 
 - Status: Active
-- Last refreshed: 2026-08-29
-- Primary product surfaces: reusable graph runtime, optional Studio workbench, headless Node/browser hosts, Inspector, Viewer, node ports, project-defined workbenches
-- Evidence reviewed: `VISION.md`, `ARCHITECTURE.md`, `spec/CASCADE_SUBNET_AND_SHELL_SPEC.md`, `src/types/coreTypes.ts`, `src/editor/Inspector.svelte`, `src/editor/Viewer.svelte`, `src/editor/components/PortEditor.svelte`, `src/editor/components/typeRenderers.ts`, and the approved plans under `.omx/plans/`
+- Last refreshed: 2026-09-08 (0.3.0)
+- Primary product surfaces: reusable graph runtime, optional Studio workbench, headless Node/browser hosts, Inspector, Viewer, Timeline, agent console, node ports, project-defined workbenches
+- Evidence reviewed: `VISION.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `spec/CASCADE_SUBNET_AND_SHELL_SPEC.md`, `src/types/coreTypes.ts`, `src/editor/Inspector.svelte`, `src/editor/Viewer.svelte`, `src/editor/panels/TimelinePanel.svelte`, `src/editor/panels/AgentPanel.svelte`, `src/editor/components/PortEditor.svelte`, `src/editor/components/typeRenderers.ts`, `packages/runtime/src/expressions/`, `packages/runtime/src/animation/`, `server/src/agent/`, and the approved plans under `.omx/plans/`
 
 ## Brand
 
@@ -28,7 +28,7 @@
 ## Information architecture
 
 - Primary navigation: canvas selection determines Inspector and Viewer context
-- Core screens: Graph, Inspector, Viewer, Logs/diagnostics
+- Core screens: Graph, Inspector, Viewer, Timeline, Definition, Agent console, Logs/diagnostics
 - Content hierarchy: value preview first, type and shape metadata second, expandable raw structure last
 
 ## Design principles
@@ -40,6 +40,10 @@
 - Project types extend by registration, not central switch statements.
 - The graph runtime is a product surface independent from Studio. Headless hosts consume it now; Studio's compatibility graph has one scheduler/controller boundary but still requires a deliberate built-in and structural-command migration before it consumes the neutral runtime directly.
 - Node metadata is deterministic. A literal exported definition declares ports, properties, types, execution locus, and capabilities; `execute` performs computation only.
+- A parameter is one store with three bindings. A value, an expression, and a keyframe channel live on the same parameter and resolve in one place in a fixed order: channel, then expression, then value. Two stores is what 0.3.0 removed — `param()` wrote to one and every binding read the other, so no parameter a sketch actually declared could carry an expression or a key, and nothing errored. A stronger binding hides a weaker one rather than destroying it, so emptying a channel returns the expression that was already there.
+- Time is an expression, not a node. A parameter holding `sin($T) * 40` is the whole of an oscillator, which is why there is no oscillator node and why portable nodes still must not read ambient time or randomness themselves. The variables and the function names are Houdini's, because the people this is for already have them in their hands; the one deliberate divergence is that bare trigonometry is in radians, with `sind`/`cosd`/`tand` provided for formulae carried across.
+- An agent run belongs to the server, not to the browser looking at it. Closing a tab detaches a reader; the transcript is buffered with sequence numbers so reopening replays what was missed and says how much it dropped. The alternative — a run owned by an HTTP request — kills the agent mid-edit on a reload, which is what 0.3.0 fixed.
+- Rendering offline stops at a numbered image sequence. Handing frames to an encoder is a separate decision with its own dependency, and a directory of frames is the input every encoder already takes.
 - Hosts provide explicit capabilities. File, Python, media, WebGL, and shell access are never ambient runtime assumptions. Provider-specific AI abstractions belong to projects or embedding hosts, not Cascade core.
 - Neutral-runtime graph loads are atomic. Compatibility Studio collapse/extract are a known migration gap and must move behind transactional structural commands before that guarantee applies to every editor operation.
 - Tradeoff: geometry editors favor transparent structured editing and previews over specialized CAD interactions in this pass.
@@ -48,7 +52,7 @@
 
 - `@cascade/contracts` is the dependency-free source of truth for graph documents, core and namespaced types, deterministic node definitions, diagnostics, run results, capabilities, and schemas.
 - `@cascade/runtime` is the deterministic environment-neutral graph loader, validator, scheduler, serializer, trigger engine, and hierarchy implementation. It depends only on contracts; dynamic compatibility remains in Studio/CLI during migration.
-- The root `cascade` package is the sole published distribution and CLI owner. It exposes `cascade/contracts`, `cascade/contracts/schema`, `cascade/runtime`, `cascade/runtime/node`, `cascade/runtime/browser`, `cascade/runtime/expressions`, `cascade/runtime/animation`, `cascade/io`, `cascade/net`, `cascade/stage`, and the compatibility `cascade/shell` entry point.
+- The root `cascade` package is the sole published distribution and CLI owner. It exposes `cascade/contracts`, `cascade/contracts/schema`, `cascade/runtime`, `cascade/runtime/node`, `cascade/runtime/browser`, `cascade/runtime/expressions`, `cascade/runtime/animation`, `cascade/runtime/definition/extract`, `cascade/io`, `cascade/net`, `cascade/stage`, and the compatibility `cascade/shell` entry point.
 - Node and browser hosts inject only the capabilities they support. Browser-only WebGL and server-only file, Python, and shell capabilities make portability constraints explicit before execution.
 - The Studio owns canvas/view classes and a single `StudioGraphController`; its compatibility `Graph`/`Node` engine is still being reduced. Custom frontends and backend services use the neutral runtime directly and do not load editor code.
 - **Web technology is the default renderer, and Python is the exception.** Canvas 2D, WebGL and WebGPU first; reach for a Python stage only for work that genuinely cannot be pushed to the browser — exotic ML libraries and the like. Marcus's ruling, 2026-09-07: *"Cascade should prefer web tech canvas/webgpu to keep things smooth and fast. only use Python for exotic ML libraries and similar things that can't be easily pushed to the browser."* The reason is interaction rather than taste: a Python stage costs a process spawn and a round trip per cook, which is invisible on one still frame and fatal to dragging a parameter or playing an animation. It also tends to be more faithful, not less — a gradient drawn with `createRadialGradient` is the same primitive the source artwork carries, where a per-pixel reimplementation is a guess about what that primitive means.

@@ -11,8 +11,12 @@ Created by Marcus Wendt at [FIELD.IO](https://www.field.io).
 - The same runtime in Studio, a Node service, or a UI-free browser application.
 - Project-native `.cascade` files, assets, presets, and Git-backed version history.
 - Nested subnets with persistent hierarchy.
+- Expressions on parameters, with Houdini's variables and functions: `$F`, `$FF`, `$T`, `$FPS`, and `ch()` to read another parameter.
+- Keyframe channels on parameters, edited through a timeline panel with transport, playhead, scrubbing, and a dope sheet.
+- Offline rendering with `cascade run`, including `--frames 1-100` for a numbered image sequence, rasterised through Skia rather than a browser.
+- A coding-agent console per project, running in the project directory, with a watcher that picks up the files it rewrites without a reload.
 - Explicit browser and server capabilities for WebGL, files, media, Python, and allowlisted shell commands.
-- A Svelte Studio with an infinite canvas, Inspector, Viewer, and project workbench.
+- A Svelte Studio with an infinite canvas, Inspector, Viewer, timeline, and project workbench.
 
 Cascade separates the generative algorithm from the platform. Custom nodes describe stages of a pipeline; the runtime schedules and validates them; hosts supply environment-specific capabilities; Studio is only one possible frontend.
 
@@ -83,6 +87,7 @@ A project is an ordinary directory or Git repository:
 my-artwork/
 ├── cascade.json          # optional host policy and settings
 ├── index.cascade         # default graph
+├── AGENTS.md             # written by `cascade new`: what an agent working here needs
 ├── nodes/
 │   └── Multiply/
 │       └── index.ts      # project.Multiply
@@ -101,6 +106,75 @@ cascade run index.cascade
 See [Project authoring](doc/PROJECT_AUTHORING.md) for project layout, nodes, `.cascade` files, capabilities, and headless embedding.
 
 Projects may also provide trusted, dockable Studio panels as plain TypeScript modules under `panels/`. These extensions remain outside graph documents and are never loaded by headless execution.
+
+## Animation
+
+A parameter can hold three things, and they resolve in one place in this order: a **keyframe channel** first, then an **expression**, then the raw **value**. A channel therefore takes over from an expression without erasing it: the expression stays on the parameter, inert, and comes back when the channel is emptied.
+
+Expressions use Houdini's vocabulary, because that is the vocabulary the people using this already have:
+
+| | |
+| --- | --- |
+| `$F` | frame, integer |
+| `$FF` | frame, fractional |
+| `$T` | seconds, zero on frame 1, as `($FF - 1) / $FPS` |
+| `$FPS` | frame rate |
+| `ch("NODE/parm")`, `ch("./parm")` | read another parameter; `chs()` for a string, `chv()` for a vector |
+
+The maths library is in scope bare, so it is `sin(x)` rather than `Math.sin(x)`: `sin cos tan asin acos atan atan2 sinh cosh tanh sqrt cbrt pow exp log log2 log10 hypot abs sign floor ceil round trunc min max` and the constants `PI`, `TAU`, `E`. **Angles are radians**, unlike Houdini, and `sind`, `cosd`, `tand`, `radians()` and `degrees()` are there for formulae carried over from it. Also available: `fit`, `fit01`, `clamp`, `lerp`, `smooth`, `noise`, `random`, `padzero`, `opexist` and `opinput`.
+
+So the answer to anything time-based is usually an expression rather than a node. `sin($T) * 40` in a rotation parameter is the whole of an oscillator, and there is no oscillator node.
+
+Keyframes are edited with Houdini's gestures on a parameter in the Inspector: **alt-click** sets a key at the playhead, **ctrl-click** deletes the key on the current frame, and **right-click** opens the Timeline focused on that channel. The diamond beside the parameter is the same thing for anyone not using a modifier, and it toggles. Interpolation is per key, applying to the segment to its right: `constant`, `linear`, or `smooth` (the default, a Hermite curve with automatic tangents, flat at the first and last key). Outside the keyed range a channel holds its end values rather than extrapolating.
+
+Channels serialize into the node's `props`, beside the value and the expression:
+
+```json
+"props": {
+  "angle": {
+    "value": 12,
+    "channel": { "keys": [{ "frame": 1, "value": 0, "interpolation": "linear" }, { "frame": 48, "value": 360 }] }
+  }
+}
+```
+
+The Timeline panel supplies transport, a playhead, scrubbing, and a dope sheet. Playback is wall-clock driven and drops frames rather than falling behind. The frame range and loop setting are panel state and are not saved with the document.
+
+Rendering a sequence offline needs no browser:
+
+```bash
+cascade run index.cascade --frames 1-100
+cascade run index.cascade --frames 1-100x2 --fps 25 --out frames
+cascade run index.cascade --frames 42 --entry-node logo-1024
+```
+
+Frames are written as `<out>/<node id>.<frame>.<ext>`, zero-padded to at least four digits, into `renders/` unless `--out` says otherwise. One rule regardless of how many outputs the graph has, because a graph writing the same mark at three sizes from one cook is the normal case. Every image output with nothing downstream of it is saved, or the outputs of `--entry-node` when one is named. Cascade stops at the sequence; a directory of numbered frames is what every encoder already takes.
+
+Drawing offline goes through Skia rather than a browser. The optional `@napi-rs/canvas` supplies `OffscreenCanvas`, `Image`, `Path2D` and the rest as globals in the Node process, deliberately not `document`, since that is how a node detects its host. So a node that draws on an `OffscreenCanvas` needs no separate headless implementation, and the built-in `cascade.image.*` library rasterises through Skia in Node too, so a graph built from it renders headlessly with no browser involved. A run without the renderer installed still works for graphs that draw nothing, and says what is missing if a cook fails in a canvas-shaped way.
+
+`--frames` renders dynamic graphs. A definition-v1 graph runs through the deterministic runtime, which owns its own clock and has no parameter animation, and `cascade run` refuses the flag rather than rendering frame 1 a hundred times.
+
+## The agent console
+
+Studio has a panel that runs a coding agent inside the project directory, so the agent edits the same `nodes/` and `.cascade` files the graph is loaded from. The document is saved before the prompt is sent, and a watcher on the project's `.cascade` files reloads the graph in place when the agent rewrites it — no page reload, and Studio declines the reload rather than discarding unsaved edits.
+
+Nothing is launchable until the project says what may be launched. The agent command comes from the same `commands` allowlist `cascade/shell` uses, in the project's `cascade.json`, and a scaffolded project ships without one:
+
+```json
+{
+  "name": "My Artwork",
+  "commands": { "claude": "claude" },
+  "agent": { "claude": { "args": ["--permission-mode", "acceptEdits"] } }
+}
+```
+
+`commands` maps an alias to an executable: an absolute path, a `~`-relative path, or a bare name found on `PATH`. Paths supplied by the browser are never accepted. `agent.<alias>.args` adds fixed flags for that agent; `claude` defaults to `--permission-mode acceptEdits`, and an explicit empty array launches it bare.
+
+A run belongs to the server rather than to the HTTP request that started it. Closing the browser detaches a reader and leaves the agent working; reopening the panel replays the buffered transcript and rejoins the live stream. The buffer is bounded (2,000 events or 4 MB, oldest evicted), a run has a fifteen-minute timeout, and cancelling terminates the agent's whole process group because agents spawn children. One run at a time per document; a second prompt is refused rather than queued.
+
+The console is a sensitive route. It is available on loopback or in an explicitly enabled trusted-host session, requires a process-lifetime capability token, and the agent process is started with `shell: false` and without the environment variables that would let it reach a chat channel.
+
+Node and parameter names in the graph and Inspector are drag sources carrying the expression address that names them, `TRANSFORM` for a node and `TRANSFORM/tx` for one of its parameters, so a path can be dragged into the console instead of retyped.
 
 ## Deterministic custom nodes
 
@@ -145,7 +219,7 @@ host's executor, so the graph stays portable and contains no backend selector.
 This is the intended pattern for media transforms such as crop or resize; use
 shared parity tests to keep their outputs and metadata aligned.
 
-Existing dynamic nodes continue through Cascade's current Studio/CLI compatibility engine while projects migrate. The headless runtime accepts deterministic definitions only; malformed definitions never fall back to dynamic execution.
+There is a second node style, and it is not deprecated. A **dynamic** module exports `execute(node, graph)` and declares its ports and parameters imperatively inside it, as `node.param('size', 1024, { min: 16, max: 4096 })`, running once for discovery and again on every cook. Studio's compatibility engine cooks dynamic modules, and `cascade run --frames` renders them. The deterministic runtime cooks definition-v1 modules, which are what `cascade check` inspects statically; a malformed definition never falls back to dynamic execution, and a graph cannot mix the two styles. A project's own `AGENTS.md`, written by `cascade new`, states which style that project expects.
 
 Provider integrations are project code, not Cascade infrastructure. A project
 can call a remote service from a Studio/browser node, invoke Python or an
@@ -181,7 +255,7 @@ embedded application a stable public boundary instead of requiring it to know
 internal node IDs.
 
 The runtime natively provides `Subnet`, `Input`, `Output`, `Switch`, `Merge`,
-`Select`, seeded `Random`, and scalar `Remap`. These reserved core modules need
+`Select`, `Null`, seeded `Random`, and scalar `Remap`. These reserved core modules need
 no project registration and run identically in Node and browser hosts. The
 runtime also supports inspection, presets, triggers, targeted or full runs,
 cancellation, event subscriptions, output retrieval, and disposal. Hosts
@@ -199,11 +273,12 @@ second set of node algorithms.
 ```text
 packages/contracts/  dependency-free public types and schemas
 packages/runtime/    environment-neutral graph runtime and adapters
-src/editor/          optional Svelte Studio
-src/nodes/           current built-in and legacy node implementation
+src/editor/          optional Svelte Studio, including the timeline and agent panels
+src/nodes/           current class-based built-in node libraries (core, geo, image)
 src/engine/          current compatibility services
-server/              project-scoped Node host and transports
-scripts/             package build and release verification tooling
+src/cli/             the `cascade` command: new, validate, check, inspect, run, Studio
+server/              project-scoped Node host and transports, including the agent session host
+scripts/             package build, node-reference generation, and release verification tooling
 tests/               behavior, workflow, security, and performance tests
 spec/                accepted feature specifications
 doc/                 authoring guides and implementation plans
@@ -239,8 +314,10 @@ trusted-host session; an untrusted remote bind does not expose them.
 
 ## More documentation
 
+- [Changelog](CHANGELOG.md)
 - [Agent guide](AGENTS.md)
 - [Project authoring](doc/PROJECT_AUTHORING.md)
+- [Node reference](doc/NODE_REFERENCE.md) — every built-in node and its declared ports, generated from the definitions
 - [Design source of truth](DESIGN.md)
 - [Architecture](ARCHITECTURE.md)
 - [Subnet and shell specification](spec/CASCADE_SUBNET_AND_SHELL_SPEC.md)

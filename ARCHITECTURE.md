@@ -21,7 +21,7 @@ Contracts contain no DOM, Svelte, Express, filesystem, process, or implementatio
 The runtime is environment-neutral. It works in Node and browsers without importing either platform’s APIs, and it never imports Studio. Registration is sealed after the first graph load. Each graph permits one active run and has explicit lifecycle states.
 
 The reserved `cascade.core.*` registry is owned here. `Subnet`, `Input`,
-`Output`, `Switch`, `Merge`, `Select`, seeded `Random`, and `Remap` resolve
+`Output`, `Switch`, `Merge`, `Select`, `Null`, seeded `Random`, and `Remap` resolve
 without a project module loader. Named, typed root Input/Output nodes form an
 explicit headless graph interface; typed child Input/Output nodes form a subnet interface.
 Randomness is a pure function of an authored seed, never ambient process state.
@@ -61,7 +61,7 @@ Custom server applications and browser frontends use `cascade/runtime` directly 
 
 The repository has exactly two internal npm workspaces: `@cascade/contracts` and `@cascade/runtime`. The root `cascade` package is the only published package and the only owner of the executable.
 
-Public subpaths are `cascade/contracts`, `cascade/contracts/schema`, `cascade/runtime`, `cascade/runtime/node`, `cascade/runtime/browser`, `cascade/runtime/expressions`, `cascade/runtime/animation`, `cascade/io`, `cascade/net`, `cascade/stage`, and the compatibility `cascade/shell`.
+Public subpaths are `cascade/contracts`, `cascade/contracts/schema`, `cascade/runtime`, `cascade/runtime/node`, `cascade/runtime/browser`, `cascade/runtime/expressions`, `cascade/runtime/animation`, `cascade/runtime/definition/extract`, `cascade/io`, `cascade/net`, `cascade/stage`, and the compatibility `cascade/shell`.
 
 Studio-only project extensions use the type-only `cascade/studio/panel` contract. They are compiled and loaded only by Studio; the neutral runtime and headless hosts never discover or import them.
 
@@ -113,6 +113,28 @@ Data runs follow graph dependencies. Explicit triggers use a FIFO queue, authore
 
 Execution failures resolve to a failed `RunResult`; API misuse and invalid preflight reject. Cancellation propagates through capability calls. Inspection and output values are immutable snapshots; browser-only live resources remain host-owned handles.
 
+## Animation
+
+A parameter carries up to three bindings: a raw value, an expression, and a keyframe channel. They resolve in exactly one place, `Node.evalParm` in the compatibility engine (`src/nodes/Node.ts`), in the order channel, expression, value. A channel that samples takes precedence and leaves the expression stored but inert, so emptying the channel restores it. Nothing else in Studio may read a prop's `value` directly to obtain an animated parameter; a second resolution path is how an expression badge and a viewer disagree about the same frame.
+
+The mechanisms are runtime-owned and the composition is not. `packages/runtime/src/expressions` owns preprocessing (`$F`, `$FF`, `$T`, `$FPS` rewritten to plain identifiers), the evaluation scope, and the maths library; `packages/runtime/src/animation` owns the channel model, sampling, interpolation, serialization, and frame-range walking. Both depend only on contracts, so `cascade run` and Studio animate a dynamic graph through the same code rather than two implementations of Hermite interpolation.
+
+`packages/contracts/src/animation.ts` owns the serialized shape. A channel lives inside the node's `props`, not in a separate timeline object, because a parameter's animation belongs to the parameter; a document with a timeline section would need reconciling every time a node was renamed, deleted, or embedded.
+
+The deterministic runtime has no parameter animation. A definition-v1 graph owns its own clock, so `cascade run --frames` refuses it explicitly rather than producing a hundred copies of frame 1. Extending animation to the deterministic runtime is a migration step, not a compatibility branch to add in Studio.
+
+## Agent sessions
+
+`server/src/agent` is a project-scoped host service, at the same layer as the shell and Python services and under the same policy. `session.ts` owns run lifecycle, `eventBuffer.ts` the bounded transcript, `allowlist.ts` the executable resolution.
+
+A run is keyed by agent alias and document, and it is owned by the server rather than by the HTTP request that started it. The request that sends a prompt is registered as the first *reader*; a closed socket detaches that reader and nothing else, and the server keeps draining the child's stdout whether anyone is listening or not, because an unread pipe is what strands an agent. Terminating a run is only ever explicit, and it signals the process group rather than the process, because agents spawn children.
+
+The transcript is a ring buffer with absolute monotonic sequence numbers, bounded by both event count and bytes. A reader attaches with a `since` sequence and receives one `attached` event carrying `running`, `replayed`, and `dropped`, then the replay, then the live stream, with nothing awaited in between so a concurrent event cannot land in the gap. Reporting `dropped` matters more than the buffer size: a transcript that silently loses its middle reads as an agent that did something inexplicable.
+
+Executables come from the same `commands` allowlist in `cascade.json` that the shell service uses, resolved server-side; a path from the browser is never accepted. Transport is NDJSON over POST rather than SSE, because `EventSource` cannot carry the capability-token header these routes require, and the whole router is absent unless the session allows sensitive capabilities.
+
+Document freshness is a watcher, not a poll of the agent. `server/src/graphWatch.ts` watches the project root non-recursively for `.cascade` files and publishes over SSE; `src/editor/graphDocumentWatch.ts` fingerprints the document with volatile metadata stripped so Studio's own save does not return as an external change. Studio reloads the graph in place through the normal candidate/commit path, and declines while there are unsaved edits rather than choosing which side wins.
+
 ## Security
 
 Project node modules are trusted code. Capabilities describe support and portability; they are not a sandbox.
@@ -129,6 +151,12 @@ rejection, process-tree cancellation, redacted audits, and capability-token
 routes. Sensitive routes are enabled on loopback or through explicit exact
 trusted-host configuration; an untrusted remote bind exposes no capability
 bootstrap.
+
+Agent runs are launched under the same policy: the same `commands` allowlist,
+`shell: false`, a project-confined working directory, and its own capability
+token. The child environment additionally drops the variables that would let a
+launched agent reach a chat channel, so an agent started from Studio cannot
+inherit another agent's transport.
 
 ## Compatibility and migration
 

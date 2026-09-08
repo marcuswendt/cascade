@@ -158,6 +158,8 @@ So "oscillate the angle" is \`sin($T) * 40\` in the \`angle\` prop. **There is n
 
 \`fit\`, \`fit01\`, \`clamp\`, \`lerp\`, \`smooth\`, \`noise\` and \`random\` are all available inside an expression.
 
+The maths library is exposed bare, so write \`sin(x)\` rather than \`Math.sin(x)\`. Angles are in **radians**, unlike Houdini; \`sind\`, \`cosd\`, \`tand\`, \`radians()\` and \`degrees()\` are there for a formula carried across, and \`PI\`, \`TAU\` and \`E\` are in scope.
+
 ## Writing a node
 
 Project nodes live at \`nodes/<name>/index.ts\`, one folder per module, referenced as \`project.<name>\`. Write them in the **dynamic** style:
@@ -194,7 +196,7 @@ Use \`browser\` only for code that genuinely needs the page, such as the DOM or 
 - \`node_modules/cascade/doc/PROJECT_AUTHORING.md\` — project layout and the node contract.
 - \`node_modules/cascade/ARCHITECTURE.md\` — what each package owns.
 - \`GET /api/nodes\` on the running server — the project's own modules, with their \`runsOn\` and icons.
-- \`node_modules/cascade/packages/runtime/src/builtins/\` — the built-in node definitions.
+- \`node_modules/cascade/dist/runtime/builtins/\` — the built-in node definitions, as the shipped type declarations. (\`packages/\` is not in the published \`files\` list, so an installed copy has no source tree.)
 - The **Definition panel** in Studio shows, for any selected node, where it is defined and what it declares.
 
 ## Two things that will waste your time
