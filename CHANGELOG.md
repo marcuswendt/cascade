@@ -10,6 +10,17 @@ Notable changes to Cascade. Newest first.
 - **A stored value left under `params` is now reported instead of lost.** The deterministic runtime reads `props` and nothing else, so a document converted to definition-v1 without moving its values reverted every one of them to its default and reported success. `preflight()` names them (`runtime/stray-params`), and `cascade check` prints them under their own heading. It is a warning, not an error — such a graph runs perfectly well on its defaults, which is exactly the problem.
 - **One rule for what stops a run.** `PREFLIGHT_WARNING_CODES` lives in the runtime and is read by both the run path and the CLI's `classifyPreflight`, replacing a copy that existed only in the CLI. A duplicated preflight rule is what previously let `validate` and `check` pass graphs `run` then rejected.
 
+### Authoring, continued
+
+- **A vector prop can declare `min`, `max` and `step`.** All six vector types were typed `never` for those three fields, so the standing "one `vec2`, not two floats" convention silently cost the Inspector its clamp and its drag granularity every time it was followed. One range across all components; matrices stay excluded.
+- **A module with no file is named, with the paths it was looked for.** `prepare()` synthesises a definition from the ports the document saved for any unresolvable module, which keeps legacy nodes loadable and also let a typo validate clean. A warning, because such a node can never run through the deterministic runtime anyway.
+- **The stray-`params` warning covers inputs as well as props** — the case the conversions produce most, since a parameter another node drives must be an input.
+
+### Interface
+
+- **Port and wire colours resolve through per-theme tokens.** The palette was thirteen hex values chosen against a black canvas; in light mode gold sat at 1.3:1 against white. Also collapses `DATA_TYPE_COLORS`, which was a second palette with different values for the same families.
+- **A parameter's label reaches its control.** `SelectInput` declared an `id` and never applied it, so every select-shaped parameter's `<label for>` pointed at no element.
+
 ### Build
 
 - **The CLI build resolves `@cascade/runtime/params`.** `src/nodes/Node.ts` imports `resolvePropBinding` from it, the browser build resolved it through `vite.config.ts`, and the CLI build had no alias — so the CLI, which is what the sketches actually run, was the broken half.
