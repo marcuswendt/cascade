@@ -36,6 +36,10 @@ function subtract(a: Vec3, b: Vec3): Vec3 {
   return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 }
 
+function dot(a: Vec3, b: Vec3): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
 /** The camera's own axes in world space. */
 export interface CameraBasis {
   /** Where the camera is. */
@@ -53,9 +57,17 @@ export interface CameraBasis {
  *
  * Returned as degrees in XYZ order so it can be written straight into
  * `camera.rotate` — which is what makes look-at an override of the transform
- * rather than a second, parallel way to orient a camera. Roll is always zero:
- * an up vector fixes two axes and the third follows, so there is nothing left
- * to choose.
+ * rather than a second, parallel way to orient a camera.
+ *
+ * **`up` chooses the roll, and only the roll.** Yaw and pitch are fixed the
+ * moment a direction is given; all an up vector can still decide is the
+ * rotation about that direction. The default `[0, 1, 0]` is Houdini's own
+ * `upvector` default and gives roll zero for any horizontal up, which is why
+ * every ordinary orbit never needs to think about it.
+ *
+ * Written first with `roll = 0` and the parameter ignored, which was wrong in
+ * the way this codebase keeps finding: the node exposes `up` as an input, so a
+ * value set there did nothing at all and nothing said so.
  */
 export function lookAtRotation(from: Vec3, to: Vec3, up: Vec3 = [0, 1, 0]): Vec3 {
   const forward = normalize(subtract(to, from));
@@ -68,12 +80,52 @@ export function lookAtRotation(from: Vec3, to: Vec3, up: Vec3 = [0, 1, 0]): Vec3
   // Looking down -Z at rest, so a forward of (0, 0, -1) must give a yaw of 0.
   const yaw = Math.atan2(-forward[0], -forward[2]);
 
-  // Roll is the up vector's only say, and with a horizontal up there is none.
-  const roll = 0;
-  void up;
-
-  return [pitch / DEG, yaw / DEG, roll];
+  return [pitch / DEG, yaw / DEG, rollTowards(forward, pitch, yaw, up) / DEG];
 }
+
+/**
+ * The rotation about `forward` that takes the world-up-locked up vector onto
+ * the requested one.
+ *
+ * Only the component of `up` perpendicular to `forward` can be honoured — the
+ * parallel component is asking the camera to look along its own up, which is
+ * not a rotation. So it is projected out, and an up parallel to forward leaves
+ * nothing to aim at and returns zero rather than a NaN.
+ */
+function rollTowards(forward: Vec3, pitch: number, yaw: number, up: Vec3): number {
+  const desired = normalize([
+    up[0] - forward[0] * dot(up, forward),
+    up[1] - forward[1] * dot(up, forward),
+    up[2] - forward[2] * dot(up, forward),
+  ]);
+  if (desired[0] === 0 && desired[1] === 0 && desired[2] === 0) return 0;
+
+  // The up this camera has with no roll, taken from the basis rather than
+  // rebuilt, so the two cannot drift apart.
+  const locked = cameraBasis({
+    ...CAMERA_ROTATION_ONLY,
+    rotate: [pitch / DEG, yaw / DEG, 0],
+  }).up;
+
+  // `cross(desired, locked)` rather than the other way round: a positive
+  // `rotate.z` carries the camera's up toward its own -X, so the angle that
+  // takes `locked` onto `desired` runs the opposite way.
+  return Math.atan2(dot(cross(desired, locked), forward), dot(locked, desired));
+}
+
+/** Only `rotate` is read by `cameraBasis`, so the rest is filler rather than a
+ *  claim about any real camera. */
+const CAMERA_ROTATION_ONLY = {
+  translate: [0, 0, 0],
+  focal: 50,
+  aperture: 41.4214,
+  near: 0.001,
+  far: 10000,
+  resolution: [1, 1],
+  aspect: 1,
+  projection: "perspective",
+  orthowidth: 2,
+} as const satisfies Omit<Camera, "rotate">;
 
 /** The camera's axes, applying Houdini's XYZ rotation order to a camera that
  *  looks down -Z at rest. */
@@ -86,17 +138,29 @@ export function cameraBasis(camera: Camera): CameraBasis {
   const sz = Math.sin(rz * DEG);
   const cz = Math.cos(rz * DEG);
 
-  // R = Rz * Ry * Rx applied to a column vector, which is Houdini's XYZ order:
-  // the X rotation is applied to the vector first.
-  const m00 = cy * cz;
-  const m01 = cz * sx * sy - cx * sz;
-  const m02 = cx * cz * sy + sx * sz;
-  const m10 = cy * sz;
-  const m11 = cx * cz + sx * sy * sz;
-  const m12 = -cz * sx + cx * sy * sz;
-  const m20 = -sy;
-  const m21 = cy * sx;
-  const m22 = cx * cy;
+  /**
+   * `R = Ry * Rx * Rz` on a column vector: yaw about world +Y, then pitch
+   * about the camera's own right, then roll about its own view direction.
+   *
+   * This is the third order tried and the reason is worth writing down, because
+   * two of them are indistinguishable by almost every test. With `rotate.z` at
+   * zero all three agree exactly — so yaw, pitch, look-at and orthonormality
+   * passed under each, and only the roll separates them. Under `Rz * Ry * Rx`,
+   * written first, `rotate.z` turns the camera about the WORLD z axis, which
+   * looks like a roll for as long as the camera faces -Z and stops being one
+   * the moment it does not. Under `Rx * Ry * Rz` the yaw stops being a yaw
+   * about world up, which is what an orbit needs. This order is the one every
+   * camera rig uses, and it is what banking a camera means.
+   */
+  const m00 = cy * cz + sy * sx * sz;
+  const m01 = -cy * sz + sy * sx * cz;
+  const m02 = sy * cx;
+  const m10 = cx * sz;
+  const m11 = cx * cz;
+  const m12 = -sx;
+  const m20 = -sy * cz + cy * sx * sz;
+  const m21 = sy * sz + cy * sx * cz;
+  const m22 = cy * cx;
 
   const right: Vec3 = [m00, m10, m20];
   const up: Vec3 = [m01, m11, m21];

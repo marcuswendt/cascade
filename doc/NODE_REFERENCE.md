@@ -17,6 +17,42 @@ node and none is needed.
 These are definition-v1: their declarations are literal, so what follows is
 exact rather than a description.
 
+### `cascade.core.Camera`
+
+Camera — A camera, following Houdini's /obj/cam.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `translate` | `vec3` | `[0,0,5]` |  |
+| `rotate` | `vec3` | `[0,0,0]` |  |
+| `focal` | `float` | `50` | 1…300 |
+| `lookat` | `vec3` | `[0,0,0]` |  |
+| `up` | `vec3` | `[0,1,0]` |  |
+| `spin` | `float` | `0` |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `lookAt` | `bool` | `false` |  |
+| `aperture` | `float` | `41.4214` | 1…200 |
+| `resolution` | `vec2i` | `[1280,720]` |  |
+| `aspect` | `float` | `1` | 0.1…10 |
+| `projection` | `string` | `"perspective"` |  |
+| `orthowidth` | `float` | `2` |  |
+| `near` | `float` | `0.001` |  |
+| `far` | `float` | `10000` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `camera` | `camera` |  |  |
+
 ### `cascade.core.Input`
 
 Input — Defines a public graph or subnet input

@@ -1,5 +1,6 @@
 export { CascadeRuntimeError } from "./error.js";
 export * from "./animation/index.js";
+export * from "./camera/index.js";
 export * from "./expressions/index.js";
 export * from "./geometry/index.js";
 export * from "./params/index.js";

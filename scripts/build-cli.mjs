@@ -16,6 +16,7 @@ await build({
   alias: {
     '@cascade/contracts': resolve('packages', 'contracts', 'src', 'index.ts'),
     '@cascade/runtime/animation': resolve('packages', 'runtime', 'src', 'animation', 'index.ts'),
+    '@cascade/runtime/camera': resolve('packages', 'runtime', 'src', 'camera', 'index.ts'),
     '@cascade/runtime/definition/extract': resolve('packages', 'runtime', 'src', 'definition', 'extract.ts'),
     '@cascade/runtime/expressions': resolve('packages', 'runtime', 'src', 'expressions', 'index.ts'),
     '@cascade/runtime/params': resolve('packages', 'runtime', 'src', 'params', 'index.ts'),

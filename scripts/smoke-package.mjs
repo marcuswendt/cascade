@@ -32,9 +32,12 @@ try {
     import * as nodeHost from 'cascade/runtime/node';
     import * as browserHost from 'cascade/runtime/browser';
     import * as extract from 'cascade/runtime/definition/extract';
+    import * as camera from 'cascade/runtime/camera';
     import * as shell from 'cascade/shell';
     import * as stage from 'cascade/stage';
-    for (const [name, value] of Object.entries({ contracts, schema, runtime, nodeHost, browserHost, extract, shell, stage })) {
+    import * as io from 'cascade/io';
+    import * as net from 'cascade/net';
+    for (const [name, value] of Object.entries({ contracts, schema, runtime, nodeHost, browserHost, extract, camera, shell, stage, io, net })) {
       if (!Object.keys(value).length) throw new Error(name + ' has no exports');
     }
   `);
@@ -44,10 +47,16 @@ try {
     import { createRuntime } from 'cascade/runtime';
     import { run } from 'cascade/shell';
     import { runStage, stageAvailable } from 'cascade/stage';
+    import { cameraBasis, horizontalFov, verticalFov, frameAspect, viewMatrix, projectionMatrix, lookAtRotation } from 'cascade/runtime/camera';
     declare const definition: NodeDefinition;
     declare const api: ProjectPanelApi;
     declare const panel: ProjectPanelModule;
     void definition; void api; void panel; void createRuntime; void run; void runStage; void stageAvailable;
+    // Named one by one rather than as a namespace: the failure this catches is
+    // a helper that exists in the source and never reaches the package, and a
+    // namespace import passes whether or not any given name is in it.
+    void cameraBasis; void horizontalFov; void verticalFov; void frameAspect;
+    void viewMatrix; void projectionMatrix; void lookAtRotation;
   `);
 
   execFileSync(process.execPath, ['imports.mjs'], { cwd: consumerRoot, stdio: 'inherit' });
