@@ -258,6 +258,21 @@
     event.dataTransfer.effectAllowed = 'copy';
   }
 
+  /**
+   * Renaming is a DOUBLE click, and a single click on the name selects the node
+   * like a click anywhere else on it.
+   *
+   * It was a single click until 2026-09-08, and the name label sits in the
+   * middle of the node body — so aiming at a node to select it opened the
+   * rename editor instead, and a second stray click committed it. Two nodes in
+   * `cloud-posters` were renamed that way in one browser session. Nothing
+   * warned, because a rename is a legitimate edit; it was only in memory and
+   * discarded on reload, which is worse rather than better — the graph on
+   * screen stopped matching the file with no indication either way.
+   *
+   * `stopPropagation` here is what keeps the node's own `dblclick` from also
+   * opening the code editor.
+   */
   function startEditingName(e: MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
@@ -502,9 +517,9 @@
           tabindex="0"
           draggable="true"
           on:dragstart={handleNameDragStart}
-          on:click={startEditingName}
+          on:dblclick={startEditingName}
           on:keydown={handleNameKeyDownSpan}
-          title="Click to rename · drag into the agent console for its path"
+          title="Double-click to rename · drag into the agent console for its path"
         >
           {node.id}
         </span>

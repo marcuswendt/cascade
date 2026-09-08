@@ -23,6 +23,22 @@
     selectedNode = $sharedContextStore.selectedNode;
   }
 
+  /**
+   * The manual retry.
+   *
+   * The Viewer stopped polling a node whose execute threw on inputs identical
+   * to the ones it failed on (`Node.hasSettledFailure`), which is what closed a
+   * 10 Hz cook loop. An explicit request still retries, so a transient failure
+   * — a fetch that timed out, a GPU device lost — is recoverable; this is the
+   * one place in the UI a person can make that request without having to change
+   * something about the node first.
+   */
+  async function retryCook() {
+    if (!displayNode || !graph) return;
+    displayNode.markDirty();
+    await graph.execute(displayNode);
+  }
+
   // Update panel title when display node changes
   $: {
     if (panelApi?.setTitle) {
@@ -300,6 +316,7 @@
               <div class="issue error">
                 <span class="issue-type">Error</span>
                 <span class="issue-message">{displayNode.error.message}</span>
+                <button class="issue-retry" onclick={retryCook}>Retry cook</button>
               </div>
             {/if}
             {#if displayNode.warning}
@@ -460,6 +477,23 @@
     padding: 8px;
     border-radius: 4px;
     font-size: 11px;
+  }
+
+  .issue-retry {
+    display: block;
+    margin-top: 6px;
+    padding: 2px 8px;
+    font: inherit;
+    font-size: 11px;
+    color: var(--text-bright);
+    background: var(--surface-control);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .issue-retry:hover {
+    background: var(--surface-control-hover);
   }
 
   .issue.error {

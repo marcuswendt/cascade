@@ -275,6 +275,9 @@ export class Node {
   // Execution state
   protected hasExecuted: boolean = false;
   protected lastInputHash: string = '';
+  /** The inputs an execute threw on, or null if the last cook did not throw.
+   *  Read only by `isDirty` — see the comment there for why it exists. */
+  protected failedInputHash: string | null = null;
   cookState: CookState = 'stale';
   private cookGeneration = 0;
   /**
@@ -1722,6 +1725,36 @@ export class Node {
   }
 
   /**
+   * The last cook threw, and nothing has changed since it did.
+   *
+   * Separate from `isDirty` on purpose, and this is the second attempt: folding
+   * it into `isDirty` closed the Viewer's cook loop and broke a contract the
+   * scheduler tests already pinned — `requestOutput` retries a failed node,
+   * which is the transient case (a fetch that timed out, a device lost) and is
+   * right. The two callers are not the same thing wearing different names. An
+   * explicit request means *give me this output now* and should retry; the
+   * Viewer's `requestAnimationFrame` pump is a **poll** that was reaching the
+   * same entry point every 100 ms, and a poll asking again on identical inputs
+   * cannot learn anything.
+   *
+   * So the fix belongs at the poll, and the poll needs a question only the node
+   * can answer. Measured 2026-09-08 by MW-OBSERVATORY-ART against a live sketch:
+   * selecting a failing node produced 93 errors in 10 s — 9.3/sec, median gap
+   * 103.7 ms, identical stack every time — each one a full `scheduler.flush()`
+   * re-running the failing execute and re-fetching its inputs over the network,
+   * for as long as the node stayed selected. `markDirty` is not on that path,
+   * which is why auditing its call sites came back clean, and the Viewer's
+   * overlap guard is why it held 61 fps and never looked like a hang.
+   *
+   * `hasExecuted` is deliberately not consulted: a node that throws on its very
+   * first cook never sets it, and that is the reproduction case.
+   */
+  get hasSettledFailure(): boolean {
+    if (this.cookState !== 'error' || this.failedInputHash === null) return false;
+    return this.calculateInputHash() === this.failedInputHash;
+  }
+
+  /**
    * Mark all downstream nodes as dirty (lazy propagation)
    */
   markDownstreamDirty(): void {
@@ -1805,6 +1838,7 @@ export class Node {
         this.error = null;
         this.hasExecuted = true;
         this.lastInputHash = this.calculateInputHash();
+        this.failedInputHash = null;
         // A deferred retarget only learns what the new definition declares by
         // watching it declare it, so the reconciliation closes here.
         const carryReport = this.finishParameterCarryOver();
@@ -1826,6 +1860,9 @@ export class Node {
       const err = asError(thrown);
       if (generation === this.cookGeneration) {
         this.error = err;
+        // The inputs this failed on, so `isDirty` can tell a genuine change
+        // from the Viewer's poll asking the same question again.
+        this.failedInputHash = this.calculateInputHash();
         this.setCookState('error');
       } else {
         this.setCookState('stale');

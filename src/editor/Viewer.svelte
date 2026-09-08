@@ -902,6 +902,8 @@
   // Trigger lazy evaluation for display node (called on-demand, not polling)
   async function evaluateDisplayNode() {
     if (!displayNode || !displayNode.isDirty) return;
+    // See `checkAndEvaluate` below for why a settled failure is skipped.
+    if (displayNode.hasSettledFailure) return;
 
     await displayNode.requestOutput();
     checkForRender();
@@ -954,8 +956,22 @@
 
   // Check for dirty nodes and trigger evaluation + render
   async function checkAndEvaluate() {
-    // If display node is dirty, evaluate it first
-    if (displayNode && displayNode.isDirty && !isEvaluating) {
+    /**
+     * This runs from a permanent rAF loop throttled to 100 ms, so it is a POLL
+     * and not a request — and a node whose execute threw is dirty forever,
+     * because a throw never reaches `setCookState('clean')`. Without the
+     * `hasSettledFailure` skip, selecting a failing node ran a full
+     * `scheduler.flush()` ten times a second for as long as it stayed selected,
+     * re-running the failing execute and re-fetching its inputs over the
+     * network each time. Measured at 9.3 errors/sec, stopping dead on deselect.
+     *
+     * The skip is only for inputs identical to the ones that failed. A real
+     * change makes the node dirty in the ordinary way and this polls it again,
+     * and an explicit `requestOutput` — the Retry button, or the scheduler's own
+     * callers — still retries, which is what the transient GPU and network
+     * cases need.
+     */
+    if (displayNode && displayNode.isDirty && !displayNode.hasSettledFailure && !isEvaluating) {
       isEvaluating = true;
       try {
         await displayNode.requestOutput();
