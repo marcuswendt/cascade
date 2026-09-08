@@ -32,6 +32,7 @@ import type {
   RunResult,
   RunTarget,
   RuntimeEvent,
+  RuntimeCapabilities,
   RuntimeHost,
 } from "./types.js";
 
@@ -237,6 +238,15 @@ class Graph implements LoadedCascadeGraph {
   }
   get state(): GraphState {
     return this.graphState;
+  }
+  /**
+   * Everything that would stop this host running the graph, without running
+   * it: a node whose environment this host is not, a bridged node that cannot
+   * be bridged, a declared capability this host does not install. Empty means
+   * the graph clears the same gate `run` puts it through.
+   */
+  preflight(): readonly Diagnostic[] {
+    return this.preflightDiagnostics(this.nodes);
   }
   inspect(): GraphInspection {
     const nodes: NodeInspection[] = this.nodes.map((node) => ({
@@ -523,7 +533,7 @@ class Graph implements LoadedCascadeGraph {
           }
         : this.runSelection(target);
       const { reachable, initial } = selection;
-      this.preflight(reachable);
+      this.assertPreflight(reachable);
       if (!signal.aborted)
         await Promise.all(
           reachable
@@ -822,26 +832,47 @@ class Graph implements LoadedCascadeGraph {
       }
     this.emit({ type: "node:complete", runId, nodeId: node.id });
   }
-  private preflight(nodes: readonly RuntimeNode[]): void {
+  /**
+   * Every reason this host cannot run these nodes, collected rather than
+   * thrown. `assertPreflight` is the run path and raises the first of them;
+   * `preflight()` is the static path and hands the whole list to a caller that
+   * is not executing anything.
+   *
+   * There is deliberately one implementation. `validate` and `check` used to
+   * answer "will this graph run?" without ever consulting a host, so a node
+   * declaring a capability nobody installs passed both and then failed here —
+   * the two commands could not see the fault they exist to report. Any second
+   * copy of these rules would drift back into that.
+   */
+  private preflightDiagnostics(
+    nodes: readonly RuntimeNode[],
+  ): readonly Diagnostic[] {
+    const diagnostics: Diagnostic[] = [];
+    const push = (code: string, nodeId: string, message: string) =>
+      diagnostics.push({ phase: "preflight", code, path: nodeId, message });
     for (const node of nodes) {
       const remote = this.isRemote(node);
       const locationWorks =
         node.definition.runsOn === "portable" ||
         node.definition.runsOn === this.host.environment ||
         remote;
-      if (!locationWorks)
-        throw runtimeError(
+      if (!locationWorks) {
+        push(
           "runtime/preflight-environment",
+          node.id,
           `${node.moduleId} requires ${node.definition.runsOn}`,
         );
+        continue;
+      }
       if (remote) {
         const hasTriggers = [
           ...Object.values(node.definition.inputs ?? {}),
           ...Object.values(node.definition.outputs ?? {}),
         ].some((port) => port.kind === "trigger");
         if (hasTriggers)
-          throw runtimeError(
+          push(
             "runtime/preflight-bridge-trigger",
+            node.id,
             `${node.moduleId} cannot send triggers over the server bridge`,
           );
         const hasTexture = [
@@ -849,18 +880,40 @@ class Graph implements LoadedCascadeGraph {
           ...Object.values(node.definition.outputs ?? {}),
         ].some((port) => port.kind === "data" && port.type === "texture");
         if (hasTexture)
-          throw runtimeError(
+          push(
             "runtime/preflight-bridge-texture",
+            node.id,
             `${node.moduleId} cannot send textures over the server bridge`,
           );
       } else
         for (const capability of node.definition.capabilities ?? [])
           if (!this.host.capabilities[capability as NodeCapabilityName])
-            throw runtimeError(
+            push(
               "runtime/missing-capability",
-              `Missing capability ${capability} for ${node.moduleId}`,
+              node.id,
+              `Missing capability ${capability} for ${node.moduleId} (node ${node.id}) — the ${this.host.environment} host ${this.hostProvides()}`,
             );
     }
+    return diagnostics;
+  }
+  /**
+   * What the host actually installed, asked of the host rather than written
+   * down. `serverBridge` is left out: it is how a node runs somewhere else,
+   * not a capability a definition can declare.
+   */
+  private hostProvides(): string {
+    const supplied = (
+      Object.keys(this.host.capabilities) as (keyof RuntimeCapabilities)[]
+    )
+      .filter((name) => name !== "serverBridge" && !!this.host.capabilities[name])
+      .sort();
+    return supplied.length
+      ? `provides ${supplied.join(", ")}`
+      : `provides no capabilities`;
+  }
+  private assertPreflight(nodes: readonly RuntimeNode[]): void {
+    const [first] = this.preflightDiagnostics(nodes);
+    if (first) throw new CascadeRuntimeError(first.code, [first]);
   }
   private isRemote(node: RuntimeNode): boolean {
     return (

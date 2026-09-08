@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { checkProjectGraph, inspectProjectGraph, runDeterministicProjectGraph, validateProjectGraph } from '@/cli/projectRuntime';
+import { checkProjectGraph, classifyPreflight, inspectProjectGraph, runDeterministicProjectGraph, validateProjectGraph } from '@/cli/projectRuntime';
 
 const roots: string[] = [];
 
@@ -121,6 +121,87 @@ describe('deterministic CLI runtime', () => {
     await expect(validateProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
     fixture.document.connections[0][1][0] = 'missing';
     await expect(validateProjectGraph(fixture.file, fixture.document)).rejects.toThrow(/unknown node/);
+  });
+
+  // `validate` and `check` exist to say whether a graph will run, and until
+  // now neither of them asked a host what it could supply. `MediaCapability`
+  // is declared in the contract and implemented by nobody, so this graph
+  // passed both commands and then failed on the first run with
+  // "Missing capability media for project.Thumbnail".
+  it('fails validate and check when a node needs a capability the run host does not install', async () => {
+    const fixture = project(`
+export const definition = {
+  apiVersion: 1,
+  runsOn: 'portable',
+  capabilities: ['media'],
+  inputs: { image: { kind: 'data', type: 'image' } },
+  outputs: { out: { kind: 'data', type: 'image' } }
+} as const;
+export async function execute(context) {
+  const lease = await context.capabilities.media.decodeImage(context.inputs.image, { signal: context.signal });
+  lease.release();
+  context.outputs.out.set(context.inputs.image);
+}
+`);
+    await expect(validateProjectGraph(fixture.file, fixture.document)).rejects.toThrow(/Missing capability media for project\.Multiply \(node multiply\)/);
+    await expect(checkProjectGraph(fixture.file, fixture.document)).rejects.toThrow(/the server host provides assets, shell/);
+    // And the run it was blind to fails for the same reason, which is the point.
+    await expect(runDeterministicProjectGraph(fixture.file, fixture.document)).rejects.toThrow(/Missing capability media/);
+  });
+
+  // The capabilities the CLI host does install must not become errors, or the
+  // checker cries wolf and gets ignored.
+  it('passes a graph whose declared capabilities the run host installs', async () => {
+    const fixture = project(`
+export const definition = {
+  apiVersion: 1,
+  runsOn: 'server',
+  capabilities: ['shell', 'assets'],
+  inputs: { go: { kind: 'data', type: 'float', default: 1 } },
+  outputs: { out: { kind: 'data', type: 'string' } }
+} as const;
+export async function execute(context) {
+  const result = await context.capabilities.shell.run('echo', ['hi']);
+  context.outputs.out.set(result.stdout);
+}
+`);
+    await expect(validateProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
+    await expect(checkProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
+  });
+
+  // A node that says it only runs in the browser is not defective because
+  // somebody validated it from a terminal. Warned about, never failed.
+  it('warns rather than fails when a node targets a host the CLI is not', async () => {
+    const fixture = project(`
+export const definition = {
+  apiVersion: 1,
+  runsOn: 'browser',
+  capabilities: ['webgl'],
+  inputs: { seed: { kind: 'data', type: 'float', default: 1 } },
+  outputs: { out: { kind: 'data', type: 'texture' } }
+} as const;
+export async function execute(context) {
+  const lease = await context.capabilities.webgl.createTexture({}, { signal: context.signal });
+  context.outputs.out.set(lease.value);
+}
+`);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(validateProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
+      await expect(checkProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
+      expect(warn.mock.calls.flat().join('\n')).toMatch(/one node in this graph targets another host/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('sorts an environment mismatch into warnings and everything else into errors', () => {
+    const { errors, warnings } = classifyPreflight([
+      { phase: 'preflight', code: 'runtime/preflight-environment', message: 'x requires browser' },
+      { phase: 'preflight', code: 'runtime/missing-capability', message: 'Missing capability media for x' },
+    ]);
+    expect(warnings.map((item) => item.code)).toEqual(['runtime/preflight-environment']);
+    expect(errors.map((item) => item.code)).toEqual(['runtime/missing-capability']);
   });
 
   it('inspects definitions without evaluating modules', async () => {

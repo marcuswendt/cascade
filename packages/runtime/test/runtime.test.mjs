@@ -148,6 +148,59 @@ test("preflight rejects missing capabilities before loading execute", async () =
   assert.deepEqual(loaded, []);
 });
 
+test("reports the same missing capability statically, without running", async () => {
+  const loaded = [];
+  const node = registration(
+    "project.Python",
+    {
+      apiVersion: 1,
+      runsOn: "server",
+      capabilities: ["python"],
+      outputs: { result: { kind: "data", type: "float" } },
+    },
+    () => {},
+    loaded,
+  );
+  const runtime = createRuntime({
+    host: createNodeRuntimeHost({ modules: { resolve: async () => node } }),
+  });
+  const graph = await runtime.load(
+    document([{ id: "python", module: "project.Python" }]),
+  );
+  const diagnostics = graph.preflight();
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].code, "runtime/missing-capability");
+  assert.equal(diagnostics[0].path, "python");
+  assert.match(diagnostics[0].message, /Missing capability python/);
+  assert.match(diagnostics[0].message, /provides no capabilities/);
+  // The static gate must not be an execution: nothing was loaded.
+  assert.deepEqual(loaded, []);
+});
+
+test("preflight is empty when the host supplies what the nodes declare", async () => {
+  const node = registration(
+    "project.Shell",
+    {
+      apiVersion: 1,
+      runsOn: "server",
+      capabilities: ["shell"],
+      outputs: { result: { kind: "data", type: "float" } },
+    },
+    () => {},
+    [],
+  );
+  const runtime = createRuntime({
+    host: createNodeRuntimeHost({
+      modules: { resolve: async () => node },
+      shell: { run: async () => ({}), runJson: async () => ({}) },
+    }),
+  });
+  const graph = await runtime.load(
+    document([{ id: "shell", module: "project.Shell" }]),
+  );
+  assert.deepEqual(graph.preflight(), []);
+});
+
 test("delivers trigger fan-out in authored FIFO order", async () => {
   const loaded = [];
   const seen = [];

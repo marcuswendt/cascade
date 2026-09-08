@@ -250,6 +250,12 @@ export interface CascadeRuntime {
 }
 export interface LoadedCascadeGraph {
   readonly state: GraphState;
+  /**
+   * Host-aware static gate: the diagnostics `run` would raise before executing
+   * anything, collected instead of thrown. This is what lets a validator see a
+   * missing capability, which is a fault it was previously blind to.
+   */
+  preflight(): readonly Diagnostic[];
   inspect(): GraphInspection;
   setInput(nodeId: string, inputName: string, value: unknown): Promise<void>;
   setGraphInput(name: string, value: unknown): Promise<void>;

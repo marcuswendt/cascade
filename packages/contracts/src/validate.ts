@@ -17,11 +17,22 @@ const NAMESPACED = /^[a-z][a-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/;
 const RESERVED = new Set(["__proto__", "prototype", "constructor"]);
 const CORE = new Set<string>(CORE_TYPES);
 const CONTROLS = new Set(["number", "slider", "range", "int", "boolean", "text", "textarea", "select", "vector", "matrix", "color", "image", "asset"]);
-const ALLOWED: Record<RuntimeEnvironment, readonly NodeCapabilityName[]> = {
+/**
+ * The capabilities a definition may *declare* for each environment. Declaring
+ * one is not the same as a host installing it — `MediaCapability` is declared
+ * here and implemented by nobody — so anything deciding whether a graph can
+ * actually run must ask the host, and use this only to classify which host a
+ * capability belongs to.
+ */
+export const CAPABILITIES_BY_ENVIRONMENT: Record<
+  RuntimeEnvironment,
+  readonly NodeCapabilityName[]
+> = {
   portable: ["assets", "media"],
   browser: ["assets", "media", "webgl"],
   server: ["files", "assets", "media", "python", "shell"],
 };
+const ALLOWED = CAPABILITIES_BY_ENVIRONMENT;
 const fields = (names: string) => new Set(names.split(" "));
 const TOP_FIELDS = fields(
   "apiVersion runsOn container capabilities label description icon inputs outputs props",

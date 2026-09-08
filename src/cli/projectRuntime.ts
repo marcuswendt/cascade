@@ -3,13 +3,13 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { build } from 'esbuild';
-import type { NodeDefinition } from '../../packages/contracts/src/index.js';
+import { CAPABILITIES_BY_ENVIRONMENT, type Diagnostic, type NodeDefinition } from '../../packages/contracts/src/index.js';
 import { createRuntime } from '../../packages/runtime/src/index.js';
 import { builtinNodeRegistration, builtinNodeRegistrations } from '../../packages/runtime/src/builtins/index.js';
 import { createNodeRuntimeHost } from '../../packages/runtime/src/node.js';
 import { extractNodeDefinition } from '../../packages/runtime/src/definition/extract.js';
 import { validateNodeModuleArchitecture } from '../../packages/runtime/src/definition/architecture.js';
-import type { DefinitionNodeRegistration } from '../../packages/runtime/src/types.js';
+import type { DefinitionNodeRegistration, RuntimeHost } from '../../packages/runtime/src/types.js';
 import { ProjectRoot } from '../../server/src/project.js';
 import { createNodeAssetCapability } from './nodeAssets.js';
 
@@ -28,6 +28,130 @@ interface PreparedGraph {
   deterministic: Set<string>;
 }
 
+/**
+ * The one place the CLI's host is built, used by `run`, `validate` and
+ * `check` alike.
+ *
+ * It exists because they used to differ. `run` passed `shell` and `assets`;
+ * the two static commands passed nothing and never asked a host anything —
+ * so a graph whose node declared a capability could pass both and fail on
+ * the first run. A validator that constructs a different host from the runner
+ * is not validating the run.
+ */
+function createProjectHost(file: string, registrations: DefinitionNodeRegistration[]): RuntimeHost {
+  const project = new ProjectRoot(path.dirname(path.resolve(file)));
+  return createNodeRuntimeHost({
+    modules: resolver(registrations),
+    shell: project.shell as never,
+    // `assets` is the browser's alone until it is given here, and
+    // `cascade.geo.SvgExport` declares it — so an export graph passed both
+    // `validate` and `check` and then refused to run. See ./nodeAssets.ts
+    // for where the file lands and why.
+    assets: createNodeAssetCapability(project),
+  });
+}
+
+/**
+ * Loads the graph against the host that would run it and reports what the host
+ * cannot supply. The rules are the runtime's own preflight — the same code
+ * `run` throws from — so the two cannot drift.
+ */
+async function preflightAgainstRunHost(
+  file: string,
+  registrations: DefinitionNodeRegistration[],
+  document: any,
+): Promise<void> {
+  // A graph with no project directory around it cannot be checked against the
+  // host that would run it, because that host is built out of the project. Say
+  // so and fall back to the structural load. Skipping the check silently is
+  // how a checker gets trusted while blind, which is the whole subject here.
+  let host: RuntimeHost;
+  let checkable = true;
+  try {
+    host = createProjectHost(file, registrations);
+  } catch (error) {
+    console.warn(`Capability check skipped: ${error instanceof Error ? error.message : error}`);
+    host = createNodeRuntimeHost({ modules: resolver(registrations) });
+    checkable = false;
+  }
+  const runtime = createRuntime({ host, nodes: registrations });
+  let diagnostics: readonly Diagnostic[] = [];
+  try {
+    const graph = await runtime.load(document);
+    if (checkable) diagnostics = graph.preflight();
+    await graph.dispose();
+  } finally {
+    await runtime.dispose();
+  }
+  if (!diagnostics.length) return;
+  const { errors, warnings } = classifyPreflight(diagnostics);
+  if (warnings.length) {
+    console.warn([
+      `Not checkable here — ${warnings.length === 1 ? 'one node' : `${warnings.length} nodes`} in this graph target${warnings.length === 1 ? 's' : ''} another host:`,
+      ...warnings.map(line),
+      `  The CLI runs the ${host.environment} host, so "cascade run" cannot run this graph. Nothing above says the graph is wrong.`,
+    ].join('\n'));
+  }
+  if (!errors.length) return;
+  throw new Error([
+    `This graph cannot run on the ${host.environment} host that "cascade run" uses:`,
+    ...errors.map(line),
+    ...capabilityAdvice(host, errors),
+  ].join('\n'));
+}
+
+function line(item: Diagnostic): string {
+  return `  ${item.code}${item.path ? ` [${item.path}]` : ''}: ${item.message}`;
+}
+
+/**
+ * False positives are worse than blindness: a validator that cries wolf gets
+ * ignored, and then it is no better than the one that saw nothing. So the line
+ * is drawn at the node's own declaration.
+ *
+ * A node saying `runsOn: 'portable'` or `'server'` claims this host can run
+ * it. If it then needs a capability the host has not installed, the node has
+ * contradicted itself and that is an error.
+ *
+ * A node saying `runsOn: 'browser'` claims nothing about the CLI. It is not
+ * defective because somebody validated it from a terminal, so an environment
+ * mismatch is a warning about the checker's reach, not a fault in the graph.
+ */
+export function classifyPreflight(diagnostics: readonly Diagnostic[]): {
+  readonly errors: readonly Diagnostic[];
+  readonly warnings: readonly Diagnostic[];
+} {
+  return {
+    errors: diagnostics.filter((item) => item.code !== 'runtime/preflight-environment'),
+    warnings: diagnostics.filter((item) => item.code === 'runtime/preflight-environment'),
+  };
+}
+
+/**
+ * One line per capability the host is missing, saying where it would come
+ * from. Which host owns a capability is read from the contract; whether this
+ * host installed it is read from the host. Neither half is written down here,
+ * because a hardcoded availability list is what produced the bug.
+ */
+function capabilityAdvice(host: RuntimeHost, diagnostics: readonly Diagnostic[]): string[] {
+  const missing = [...new Set(diagnostics
+    .filter((item) => item.code === 'runtime/missing-capability')
+    .map((item) => /Missing capability (\w+)/.exec(item.message)?.[1] ?? '')
+    .filter(Boolean))];
+  if (!missing.length) return [];
+  const hostCapabilities = CAPABILITIES_BY_ENVIRONMENT[host.environment] ?? [];
+  return missing.map((name) => hostCapabilities.includes(name as never)
+    ? `  ${name}: declared in @cascade/contracts but not installed by the host — drop it from the definition, or install it where the host is built (createProjectHost, src/cli/projectRuntime.ts).`
+    : `  ${name}: a ${environmentOwning(name)} capability. The CLI runs the ${host.environment} host, so no CLI run can supply it.`);
+}
+
+function environmentOwning(capability: string): string {
+  const owners = Object.entries(CAPABILITIES_BY_ENVIRONMENT)
+    .filter(([, names]) => (names as readonly string[]).includes(capability))
+    .map(([environment]) => environment);
+  return owners.length ? owners.join('/') : 'unknown';
+}
+
 export async function validateProjectGraph(file: string, document: any): Promise<void> {
   const prepared = await prepare(file, document, false);
   const nodes = document.nodes as ProjectNode[];
@@ -35,13 +159,7 @@ export async function validateProjectGraph(file: string, document: any): Promise
     validateDynamicDocument(document);
     return;
   }
-  const runtime = createRuntime({
-    host: createNodeRuntimeHost({ modules: resolver(prepared.registrations) }),
-    nodes: prepared.registrations,
-  });
-  const graph = await runtime.load(document);
-  await graph.dispose();
-  await runtime.dispose();
+  await preflightAgainstRunHost(file, prepared.registrations, document);
 }
 
 export async function checkProjectGraph(file: string, document: any): Promise<void> {
@@ -53,13 +171,7 @@ export async function checkProjectGraph(file: string, document: any): Promise<vo
   if (dynamic.length) {
     throw new Error(`Static check requires definition-v1 modules; dynamic modules: ${dynamic.join(', ')}`);
   }
-  const runtime = createRuntime({
-    host: createNodeRuntimeHost({ modules: resolver(prepared.registrations) }),
-    nodes: prepared.registrations,
-  });
-  const graph = await runtime.load(document);
-  await graph.dispose();
-  await runtime.dispose();
+  await preflightAgainstRunHost(file, prepared.registrations, document);
 }
 
 export async function runDeterministicProjectGraph(
@@ -75,17 +187,8 @@ export async function runDeterministicProjectGraph(
     throw new Error('Mixed deterministic and dynamic graphs are not executable until the bounded legacy adapter is implemented');
   }
 
-  const project = new ProjectRoot(path.dirname(path.resolve(file)));
   const runtime = createRuntime({
-    host: createNodeRuntimeHost({
-      modules: resolver(prepared.registrations),
-      shell: project.shell as never,
-      // `assets` is the browser's alone until it is given here, and
-      // `cascade.geo.SvgExport` declares it — so an export graph passed both
-      // `validate` and `check` and then refused to run. See ./nodeAssets.ts
-      // for where the file lands and why.
-      assets: createNodeAssetCapability(project),
-    }),
+    host: createProjectHost(file, prepared.registrations),
     nodes: prepared.registrations,
   });
   const graph = await runtime.load(document);
