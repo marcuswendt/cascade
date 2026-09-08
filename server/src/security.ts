@@ -104,16 +104,43 @@ export function createBrowserCapabilityBoundary(
   };
 }
 
-function allowedAuthorities(options: ServerSecurityOptions, origins: ReadonlySet<string>): Set<string> {
+/**
+ * The `Host` values this server will answer API requests for.
+ *
+ * **The host it is bound to is always one of them.** It used to be added only
+ * when `trustedHosts` was empty, so naming a trusted host *replaced* the bind
+ * host instead of adding to it — and on 2026-09-08 that took Marcus's Studios
+ * out from under him. They run as `--host KURO --trusted-host
+ * kuro.hydra-diatonic.ts.net`, so the moment the tailnet name was trusted,
+ * `http://kuro:3030` began answering **403 on every API call while still
+ * serving the page**, which reads as a broken app rather than as a host rule.
+ *
+ * Nobody adds a trusted host meaning "and stop trusting the one I am serving
+ * on". Trusted hosts are additive; that is what the name says.
+ *
+ * A wildcard bind address is the exception and stays excluded. `0.0.0.0` and
+ * `::` mean "every interface", not a name a browser will ever send, so
+ * admitting them would allow a `Host` header nobody serves under.
+ *
+ * Exported for testing: binding to a real hostname is not portable in a test,
+ * and the rule is worth checking without a socket.
+ */
+export function allowedAuthorities(options: ServerSecurityOptions, origins: ReadonlySet<string>): Set<string> {
   const authorities = new Set([...origins].map((origin) => new URL(origin).host.toLowerCase()));
   if (isLoopbackHost(options.host)) {
     authorities.add(`127.0.0.1:${options.port}`);
     authorities.add(`localhost:${options.port}`);
-  } else if (options.trustedHosts.length === 0) {
+  } else if (!isWildcardHost(options.host)) {
     authorities.add(authority(options.host, options.port));
   }
   for (const host of options.trustedHosts) authorities.add(authority(host, options.port));
   return authorities;
+}
+
+/** `0.0.0.0` / `::` — a bind wildcard, never a hostname a client sends. */
+export function isWildcardHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  return normalized === '0.0.0.0' || normalized === '::' || normalized === '*';
 }
 
 export function authority(host: string, port: number): string {

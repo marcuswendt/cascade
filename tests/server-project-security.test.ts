@@ -6,6 +6,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { ProjectRoot } from '../server/src/project.js';
 import { startServer } from '../server/src/index.js';
+import { allowedAuthorities } from '../server/src/security.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
@@ -109,6 +110,44 @@ describe('project API security boundary', () => {
 
     const removedAiRoute = await fetch(`${base}/api/ai/claude-cli/status`);
     expect(removedAiRoute.status).toBe(404);
+  });
+
+  it('keeps serving the host it is bound to when a trusted host is added', () => {
+    /**
+     * The regression that took Marcus's Studios out on 2026-09-08.
+     *
+     * They run as `--host KURO --trusted-host kuro.hydra-diatonic.ts.net`, and
+     * naming a trusted host used to *replace* the bind host in the allowlist
+     * rather than add to it. So `http://kuro:3030` answered **403 on every API
+     * call while still serving the page** — which reads as a broken app rather
+     * than a host rule, and cost an evening to attribute. Nobody adds a
+     * trusted host meaning "and stop trusting the one I am serving on".
+     *
+     * Checked against the rule rather than through a socket: binding to a real
+     * hostname is not portable in a test, and this is a question about the
+     * allowlist, not about listening.
+     */
+    const authorities = allowedAuthorities(
+      { host: 'KURO', port: 3030, trustedHosts: ['kuro.hydra-diatonic.ts.net'] } as never,
+      new Set<string>(),
+    );
+
+    expect([...authorities].sort()).toEqual([
+      'kuro.hydra-diatonic.ts.net:3030',
+      'kuro:3030',
+    ]);
+  });
+
+  it('never admits a wildcard bind address as a hostname', () => {
+    // `0.0.0.0` means every interface, not a name a browser sends — so it must
+    // not become an allowed `Host`, which is what the case below already
+    // asserts end to end.
+    const authorities = allowedAuthorities(
+      { host: '0.0.0.0', port: 4000, trustedHosts: ['kuro'] } as never,
+      new Set<string>(),
+    );
+
+    expect([...authorities]).toEqual(['kuro:4000']);
   });
 
   it('allows explicitly trusted hostnames and keeps sensitive capabilities available', async () => {
