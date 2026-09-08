@@ -42,6 +42,52 @@ describe('agent panel chrome', () => {
     expect(body).toMatch(/height:\s*30px/);
   });
 
+  /** Every rule from `.entry.markdown` to the end of the stylesheet. */
+  function markdownBlock(): string {
+    const at = source.indexOf('.entry.markdown {');
+    expect(at, 'no markdown rules').toBeGreaterThan(-1);
+    return source.slice(at, source.lastIndexOf('</style>'));
+  }
+
+  it('sets no font size in px on rendered markdown, so the zoom still reaches it', () => {
+    // The transcript scales with `calc(12px * var(--agent-zoom))`. A px size
+    // anywhere inside would pin that content at one size, and it is exactly
+    // the content people enlarge.
+    expect(markdownBlock()).not.toMatch(/font-size:\s*[\d.]+px/);
+  });
+
+  it('uses theme variables and no literal colours in rendered markdown', () => {
+    // The panel is read light and dark.
+    const block = markdownBlock();
+    expect(block).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(block).not.toMatch(/\brgba?\(/);
+    expect(block).toMatch(/var\(--text-bright\)/);
+    expect(block).toMatch(/var\(--surface-raised\)/);
+  });
+
+  it('scrolls wide code and tables inside their own box', () => {
+    // A docked agent panel is narrow, so a long shell line or a five-column
+    // table is the common case. Widening the panel would push the composer
+    // off screen.
+    expect(ruleBody('.entry.markdown :global(pre) {')).toMatch(/overflow-x:\s*auto/);
+    const table = ruleBody('.entry.markdown :global(table) {');
+    expect(table).toMatch(/overflow-x:\s*auto/);
+    expect(table).toMatch(/max-width:\s*100%/);
+    // The cells are what force the overflow. Measured in Chrome: with
+    // wrapping cells the table shrank to the panel width rather than
+    // scrolling, and `.entry`'s break-word then split a header mid-word.
+    const cells = ruleBody('.entry.markdown :global(th),\n  .entry.markdown :global(td) {');
+    expect(cells).toMatch(/white-space:\s*nowrap/);
+    expect(cells).toMatch(/word-break:\s*normal/);
+  });
+
+  it('drops the literal branch\'s pre-wrap on rendered markdown', () => {
+    // `.entry` sets pre-wrap for the unrendered kinds; on top of block margins
+    // it doubles every blank line.
+    expect(ruleBody('.entry.markdown {')).toMatch(/white-space:\s*normal/);
+    expect(ruleBody('.entry.markdown :global(pre) {')).toMatch(/white-space:\s*pre/);
+  });
+
   it('scales the transcript and the prompt, and not the toolbar', () => {
     // A bar that grew with the type size would shove the transcript around on
     // every zoom step, which is the opposite of what reading larger is for.

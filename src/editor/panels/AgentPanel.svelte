@@ -37,6 +37,7 @@
   import { studioDocument } from '../studioDocumentBridge';
   import { ownsKeyboard } from '../panelScope';
   import { writeCascadeClipboard } from '../clipboard';
+  import { renderMarkdown } from '../utils/renderMarkdown';
 
   export let panelId: string;
   export let panelParams: CascadePanelParams;
@@ -48,6 +49,25 @@
     kind: EntryKind;
     text: string;
   }
+
+  /**
+   * The two kinds that are an agent *talking*, and therefore the only two
+   * rendered as Markdown. `agent` is an assistant text block, `result` is the
+   * final answer; both arrive as the Markdown the model wrote, which is why
+   * the panel used to show its asterisks, pipes and backticks as text.
+   *
+   * Everything else stays literal, and the direction of that choice matters.
+   * `tool` is a line like `· Edit src/nodes/offset_index.ts`, `system` carries
+   * the panel's own notices *and* any stdout that was not JSON, `error` is
+   * stderr, `detail` is a raw stream event, and `you` is what the user typed.
+   * Those are records of what happened, and a record that quietly changes
+   * shape because a file path contained an underscore or a shell command
+   * contained an asterisk is worse than prose nobody formatted — you can read
+   * around unrendered Markdown, but you cannot recover a path the renderer
+   * ate. So the permissive direction is the wrong one to guess in, and this
+   * list is short on purpose.
+   */
+  const MARKDOWN_KINDS: ReadonlySet<EntryKind> = new Set<EntryKind>(['agent', 'result']);
 
   const AGENTS = ['claude', 'codex'];
 
@@ -605,7 +625,11 @@
       </div>
     {/if}
     {#each visibleEntries as entry, index (index)}
-      <div class="entry {entry.kind}">{entry.text}</div>
+      {#if MARKDOWN_KINDS.has(entry.kind)}
+        <div class="entry {entry.kind} markdown">{@html renderMarkdown(entry.text)}</div>
+      {:else}
+        <div class="entry {entry.kind}">{entry.text}</div>
+      {/if}
     {/each}
     {#if detailCount > 0}
       <button class="detail-toggle" on:click={() => (showDetail = !showDetail)}>
@@ -852,5 +876,169 @@
   .composer textarea:focus {
     outline: 1px solid var(--accent);
     outline-offset: -1px;
+  }
+
+  /* Rendered agent prose.
+     Two things every rule here obeys. Nothing sets a font-size in px — the
+     transcript's own `calc(12px * var(--agent-zoom))` has to keep reaching
+     this text, or the zoom keys would stop working on exactly the content
+     people enlarge. And every colour is a theme variable, because the panel
+     is read light and dark.
+     The selectors are `:global()` because `{@html}` output carries none of
+     Svelte's scoping classes, so an unscoped descendant selector is the only
+     thing that can reach it. */
+  .entry.markdown {
+    /* The literal branch wants pre-wrap; rendered blocks bring their own
+       spacing, and pre-wrap on top of it doubles every blank line. */
+    white-space: normal;
+  }
+
+  .entry.markdown > :global(*:first-child) {
+    margin-top: 0;
+  }
+
+  .entry.markdown > :global(*:last-child) {
+    margin-bottom: 0;
+  }
+
+  .entry.markdown :global(p) {
+    margin: 0 0 0.6em;
+  }
+
+  .entry.markdown :global(h1),
+  .entry.markdown :global(h2),
+  .entry.markdown :global(h3),
+  .entry.markdown :global(h4),
+  .entry.markdown :global(h5),
+  .entry.markdown :global(h6) {
+    margin: 0.9em 0 0.35em;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--text-bright);
+  }
+
+  /* A console line is small to begin with, so the browser's default heading
+     scale is far too loud in it. These are relative, so zoom still applies. */
+  .entry.markdown :global(h1) {
+    font-size: 1.3em;
+  }
+
+  .entry.markdown :global(h2) {
+    font-size: 1.18em;
+  }
+
+  .entry.markdown :global(h3) {
+    font-size: 1.08em;
+  }
+
+  .entry.markdown :global(h4),
+  .entry.markdown :global(h5),
+  .entry.markdown :global(h6) {
+    font-size: 1em;
+  }
+
+  .entry.markdown :global(ul),
+  .entry.markdown :global(ol) {
+    margin: 0 0 0.6em;
+    padding-left: 1.4em;
+  }
+
+  .entry.markdown :global(li) {
+    margin: 0.15em 0;
+  }
+
+  .entry.markdown :global(li > p) {
+    margin: 0;
+  }
+
+  .entry.markdown :global(strong) {
+    font-weight: 600;
+    color: var(--text-bright);
+  }
+
+  .entry.markdown :global(blockquote) {
+    margin: 0 0 0.6em;
+    padding-left: 0.8em;
+    border-left: 2px solid var(--border-divider);
+    color: var(--text-tertiary);
+  }
+
+  .entry.markdown :global(hr) {
+    margin: 0.8em 0;
+    border: 0;
+    border-top: 1px solid var(--border-faint);
+  }
+
+  .entry.markdown :global(a) {
+    color: var(--accent);
+  }
+
+  /* No font-family: the whole console is already monospace, so a code span is
+     distinguished by the tint rather than by the face. */
+  .entry.markdown :global(code) {
+    font-size: 0.92em;
+    background: var(--surface-raised);
+    color: var(--text-code);
+    border-radius: 3px;
+    padding: 0.1em 0.3em;
+  }
+
+  /* A long shell command must scroll inside the block rather than widen the
+     panel — this panel is usually docked and narrow, so that is the common
+     case and not the edge one. */
+  .entry.markdown :global(pre) {
+    margin: 0 0 0.6em;
+    padding: 0.5em 0.6em;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-faint);
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .entry.markdown :global(pre code) {
+    background: none;
+    border-radius: 0;
+    padding: 0;
+    white-space: pre;
+  }
+
+  /* Same reason as `pre`: the table carries its own horizontal scrollbar
+     instead of stretching the panel and pushing the composer off screen.
+     `display: block` is what makes it a scroll container at all.
+
+     The cells are `nowrap` because that is what forces the overflow. Measured
+     in Chrome: with wrapping cells the table shrank to the panel width instead
+     of scrolling — 369px of content in a 369px box — and then, because
+     `.entry` sets `word-break: break-word` for the literal kinds, it broke
+     mid-word and a header read "Nod / e". So the cells refuse both: no
+     wrapping, and no mid-word breaks. A long cell is reached by scrolling,
+     which keeps the row structure readable, and that is the point of a table. */
+  .entry.markdown :global(table) {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    margin: 0 0 0.6em;
+    border-collapse: collapse;
+  }
+
+  .entry.markdown :global(th),
+  .entry.markdown :global(td) {
+    border: 1px solid var(--border-faint);
+    padding: 0.25em 0.5em;
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+    word-break: normal;
+  }
+
+  .entry.markdown :global(th) {
+    background: var(--surface-raised);
+    color: var(--text-bright);
+    font-weight: 600;
+  }
+
+  .entry.markdown :global(img) {
+    max-width: 100%;
   }
 </style>
