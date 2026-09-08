@@ -27,6 +27,22 @@ Notable changes to Cascade. Newest first.
 
 - **The CLI build resolves `@cascade/runtime/params`.** `src/nodes/Node.ts` imports `resolvePropBinding` from it, the browser build resolved it through `vite.config.ts`, and the CLI build had no alias — so the CLI, which is what the sketches actually run, was the broken half.
 
+## 0.3.1
+
+### Fixed
+
+- **A stored value equal to its default is no longer dropped on save.** A prop declaring a default expression would start animating on reload if you set it *back* to its default: the save filters out any parameter matching its default, so nothing was written and the expression re-applied to a number you had chosen. Shipped in 0.3.0. Diagnosed and fixed by Marcus's Codex session.
+
+  The lesson is in how it survived three tests. Every proof of "a stored value beats the default expression" used a value obviously *different* from the default — `7` against `2`, `7` against `0`, `0.4` against `0` — because a distant value reads as the stronger test. Only *equal to the default* fails, and the boundary was the case nobody tried. The regression test now saves and reloads, because the fault is in what gets written rather than in what gets read.
+
+- **A browser-only node is refused on the run path again.** A change earlier the same day made the static checker's downgrades apply to execution too, so `cascade run` executed a browser node headlessly and failed on an undefined capability instead of reporting that it needs a browser. The run gate is now separate from static classification: only a stranded `params` value is tolerated.
+
+- **`cascade run` reports stranded `params` values.** Previously only `cascade check` did, so a run went onto the defaults in silence.
+
+### Added
+
+- **A `gpu` capability, stage one of WebGPU support.** One `GPUDevice` per page, shared by every node that declares the capability, with somewhere to keep a compiled pipeline between cooks. No `texture` port yet, so nodes still exchange images and the rendered picture is unchanged — what it removes is each node holding its own device, which is what made two GPU nodes unable to share anything. Design: `PLAN webgpu` in the vault.
+
 ## 0.3.0
 
 Two features carry the minor bump: an **animation system** and an **agent console**. Everything else is either a consequence of those or a fault they exposed.
