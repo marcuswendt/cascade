@@ -31,6 +31,7 @@ import type { Graph } from '../Graph.js';
 import type { Node } from '../Node.js';
 import { attachDefinition } from './DefinitionNode.js';
 import { browserAssetCapability } from './browserCapabilities.js';
+import { createStudioGpuCapability, type StudioGpuHost } from './gpuCapability.js';
 
 /**
  * What a project module may reach for when Studio is the host.
@@ -40,7 +41,20 @@ import { browserAssetCapability } from './browserCapabilities.js';
  * "requires the Studio <name> capability" message rather than a stray
  * undefined, which is the point of declaring them.
  */
-export const studioCapabilities: RuntimeCapabilities = { assets: browserAssetCapability };
+export const studioCapabilities: RuntimeCapabilities = {
+  assets: browserAssetCapability,
+  // Installed only where the browser has WebGPU, and absent rather than
+  // stubbed otherwise. That is what makes the failure a sentence: the preflight
+  // reports `runtime/missing-capability` and the adapter throws "requires the
+  // Studio gpu capability", both naming what is missing. A stub that threw on
+  // first use would name nothing.
+  ...gpuCapabilityIfAvailable(),
+};
+
+function gpuCapabilityIfAvailable(): { gpu?: StudioGpuHost } {
+  const gpu = createStudioGpuCapability();
+  return gpu ? { gpu } : {};
+}
 
 /**
  * Whether an export is a definition-v1 literal, by its own declaration.

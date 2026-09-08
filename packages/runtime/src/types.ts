@@ -19,7 +19,7 @@ import type {
   SerializableValue,
   ShellCapability,
   TextureHandle,
-  WebGLCapability,
+  GpuCapability,
 } from "@cascade/contracts";
 
 export type {
@@ -71,7 +71,7 @@ export interface RuntimeCapabilities {
   readonly assets?: AssetCapability;
   readonly media?: MediaCapability;
   readonly python?: PythonCapability;
-  readonly webgl?: WebGLCapability;
+  readonly gpu?: GpuCapability;
   readonly shell?: ShellCapability;
   readonly serverBridge?: ServerBridgeCapability;
 }
@@ -296,7 +296,7 @@ export interface LoadedCascadeGraph {
   dispose(): Promise<void>;
 }
 export interface NodeRuntimeHostOptions
-  extends Omit<RuntimeCapabilities, "webgl"> {
+  extends Omit<RuntimeCapabilities, "gpu"> {
   readonly modules: RuntimeHost["modules"];
   readonly legacyShell?: LegacyShellBindingFactory &
     Readonly<{ kind: "server-direct" }>;

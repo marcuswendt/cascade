@@ -97,7 +97,7 @@ export const nodeDefinitionSchema = {
   ),
   allOf: [
     environmentCapabilities("portable", ["assets", "media"]),
-    environmentCapabilities("browser", ["assets", "media", "webgl"]),
+    environmentCapabilities("browser", ["assets", "media", "gpu"]),
     environmentCapabilities("server", [
       "files",
       "assets",

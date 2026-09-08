@@ -83,6 +83,10 @@
       "types": "./dist/io.d.ts",
       "default": "./dist/io.js"
     },
+    "./gpu": {
+      "types": "./dist/gpu.d.ts",
+      "default": "./dist/gpu.js"
+    },
     "./net": {
       "types": "./dist/net.d.ts",
       "default": "./dist/net.js"

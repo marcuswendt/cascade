@@ -18,7 +18,7 @@ export type CapabilityForEnvironment<E extends RuntimeEnvironment> =
   E extends "portable"
     ? "assets" | "media"
     : E extends "browser"
-      ? "assets" | "media" | "webgl"
+      ? "assets" | "media" | "gpu"
       : "files" | "assets" | "media" | "python" | "shell";
 export type DataTypeForEnvironment<E extends RuntimeEnvironment> =
   E extends "browser" ? CascadeType : Exclude<CascadeType, "texture">;

@@ -29,7 +29,7 @@ export const CAPABILITIES_BY_ENVIRONMENT: Record<
   readonly NodeCapabilityName[]
 > = {
   portable: ["assets", "media"],
-  browser: ["assets", "media", "webgl"],
+  browser: ["assets", "media", "gpu"],
   server: ["files", "assets", "media", "python", "shell"],
 };
 const ALLOWED = CAPABILITIES_BY_ENVIRONMENT;
