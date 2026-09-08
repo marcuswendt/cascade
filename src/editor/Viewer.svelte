@@ -8,6 +8,7 @@
   import CoreValue from './components/CoreValue.svelte';
   import { inferCascadeType, mediaUrl } from './components/typePresentation';
   import { rasterizeGeometry, type GeometryKind } from '@/utils/geometryRaster';
+  import { geometryRasterKey, valueFingerprint } from './viewerKeys';
 
   export let graph: Graph | undefined;
   export let selectedNode: Node | null = null;
@@ -97,16 +98,6 @@
   $: activeOutputType = activeOutput
     ? (normalizeType(activeOutput.dataType) === 'any' ? inferCascadeType(activeOutput.value) : normalizeType(activeOutput.dataType))
     : 'any';
-
-  function valueFingerprint(value: any): string {
-    if (value === undefined) return 'undefined';
-    if (value === null) return 'null';
-    if (typeof value !== 'object') return `${typeof value}:${String(value).slice(0, 80)}`;
-    const image = coerceImageRef(value);
-    if (image) return `image:${image.path}:${image.size.join('x')}`;
-    if (Array.isArray(value)) return `array:${value.length}`;
-    return `object:${value.width ?? ''}x${value.height ?? ''}:${value.size?.join?.('x') ?? ''}`;
-  }
 
   function refreshPorts() {
     const next = displayNode
@@ -308,14 +299,23 @@
   // Draw whenever the selected output is geometry. Reactive rather than driven
   // from the render path: the render needs the image to already exist to decide
   // it has something to show, so asking for it there is a chicken and egg.
+  // `portsVersion` is read here rather than inside refreshGeometry so the
+  // dependency is a real Svelte one: it advances on every cook of the displayed
+  // node, and a cook is the evidence the geometry may have changed.
   $: if (activeOutput && GEOMETRY_KINDS.has(activeOutputType)) {
-    refreshGeometry(activeOutput, activeOutputType as GeometryKind);
+    refreshGeometry(activeOutput, activeOutputType as GeometryKind, portsVersion);
   }
 
-  async function refreshGeometry(port: any, kind: GeometryKind) {
+  async function refreshGeometry(port: any, kind: GeometryKind, cookVersion: number) {
     // Drawing thousands of marks is not free, so it happens once per value
     // rather than once per render.
-    const key = `${displayNode?.id}:${port?.id}:${kind}:${valueFingerprint(port?.value)}`;
+    const key = geometryRasterKey({
+      nodeId: displayNode?.id,
+      portId: port?.id,
+      kind,
+      value: port?.value,
+      cookVersion,
+    });
     if (key === geometryKey) return;
     geometryKey = key;
     try {
@@ -869,8 +869,11 @@
     } else if (outputPort?.value instanceof HTMLImageElement) {
       return `img:${outputPort.value.src}`;
     } else if (GEOMETRY_KINDS.has(activeOutputType) && outputPort?.value !== undefined) {
-      // Kick off the draw; the key guard makes a repeat call free.
-      refreshGeometry(outputPort, activeOutputType as GeometryKind);
+      // Kick off the draw; the key guard makes a repeat call free. The cook
+      // version has to be passed here too — it is what makes a second cook of
+      // the same object rebuild the raster, and the whole bug was a key that
+      // could not tell two cooks apart.
+      refreshGeometry(outputPort, activeOutputType as GeometryKind, portsVersion);
       return geometryUrl ? `geometry:${geometryKey}` : `data:${outputPort.id}:${valueFingerprint(outputPort.value)}`;
     } else if (outputPort?.value !== undefined) {
       // No cook count here. Evaluating the displayed node is what increments it,
