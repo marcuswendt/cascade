@@ -1,19 +1,29 @@
 let sessionClipboard = '';
 
-export async function writeCascadeClipboard(text: string): Promise<void> {
+/**
+ * Returns whether the text reached the **system** clipboard.
+ *
+ * The distinction matters for anything meant to leave the page. Node copy and
+ * paste is happy with the session copy above — it only needs to survive from
+ * one keystroke to the next inside Studio — but copying a transcript to paste
+ * into a bug report is useless if it only ever reached a variable. Callers who
+ * do not care can keep ignoring the result, which is why this widened rather
+ * than gaining a second function.
+ */
+export async function writeCascadeClipboard(text: string): Promise<boolean> {
   sessionClipboard = text;
 
   const clipboard = globalThis.navigator?.clipboard;
   if (clipboard?.writeText) {
     try {
       await clipboard.writeText(text);
-      return;
+      return true;
     } catch {
       // Hostname-based HTTP is not a secure context, so keep the session copy.
     }
   }
 
-  if (typeof document === 'undefined' || typeof document.execCommand !== 'function') return;
+  if (typeof document === 'undefined' || typeof document.execCommand !== 'function') return false;
 
   const textarea = document.createElement('textarea');
   textarea.value = text;
@@ -22,7 +32,9 @@ export async function writeCascadeClipboard(text: string): Promise<void> {
   document.body.appendChild(textarea);
   textarea.select();
   try {
-    document.execCommand('copy');
+    return document.execCommand('copy');
+  } catch {
+    return false;
   } finally {
     textarea.remove();
   }

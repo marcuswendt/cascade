@@ -36,6 +36,7 @@
   } from '../agentConsole';
   import { studioDocument } from '../studioDocumentBridge';
   import { ownsKeyboard } from '../panelScope';
+  import { writeCascadeClipboard } from '../clipboard';
 
   export let panelId: string;
   export let panelParams: CascadePanelParams;
@@ -476,6 +477,32 @@
     if (!inside) dropActive = false;
   }
 
+  /**
+   * The whole transcript on the clipboard, for pasting into a bug report or
+   * handing to another agent. Every entry, including the stream events the
+   * detail toggle hides — "entire" is the point of the button.
+   *
+   * The write goes through `writeCascadeClipboard`, which already handles the
+   * thing that matters here: these pages are served over plain HTTP on a
+   * hostname, which is not a secure context, so `navigator.clipboard` does not
+   * exist and the `execCommand` path is the one that runs.
+   */
+  let copied = false;
+  let copyTimer: ReturnType<typeof setTimeout> | undefined;
+
+  async function copyTranscript(): Promise<void> {
+    const text = entries.map((entry) => entry.text).join('\n');
+    if (await writeCascadeClipboard(text)) {
+      copied = true;
+      clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => (copied = false), 1200);
+      return;
+    }
+    // A copy button that looks the same whether or not it worked is worse than
+    // none: you find out when you paste.
+    push('error', 'Could not reach the clipboard. Select the transcript and copy it by hand.');
+  }
+
   function insert(text: string): void {
     if (!text) return;
     const at = inputEl?.selectionStart ?? prompt.length;
@@ -495,6 +522,7 @@
   onDestroy(() => {
     controller?.abort();
     attachController?.abort();
+    clearTimeout(copyTimer);
   });
 </script>
 
@@ -533,8 +561,23 @@
         title="Text size — click to reset (⌘0)"
       >{Math.round(zoom * 100)}%</button>
     {/if}
+    {#if entries.length > 0}
+      <button
+        type="button"
+        class="icon"
+        on:click={copyTranscript}
+        title="Copy the whole transcript, including hidden stream events"
+        aria-label="Copy transcript"
+      >{copied ? '✓' : '⧉'}</button>
+    {/if}
     {#if working}
-      <button type="button" on:click={stop}>Stop</button>
+      <button
+        type="button"
+        class="icon stop"
+        on:click={stop}
+        title="Stop the agent"
+        aria-label="Stop the agent"
+      >■</button>
     {:else}
       <button type="button" on:click={newSession} title="Forget the conversation for this sketch">Reset</button>
     {/if}
@@ -642,6 +685,20 @@
     font-size: 15px;
     line-height: 1;
     padding: 0;
+  }
+
+  /* Square, so a glyph button does not inherit the text button's padding and
+     end up a different height from its neighbours. */
+  .bar button.icon {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .bar button.stop {
+    color: var(--accent);
   }
 
   .zoom {
