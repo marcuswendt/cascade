@@ -4,6 +4,7 @@
   import MenuBar from './editor/MenuBar.svelte';
   import NodePanel from './editor/NodePanel.svelte';
   import { dockviewStore } from './editor/dockview/dockview-store.svelte';
+  import { cascade } from '@/engine/cascade';
   import { settingsDialogRequest, clearSettingsDialogRequest } from './editor/stores/uiEventStore';
   import { loadExecutionLocus } from './editor/stores/executionLocus';
   import ColorPalette from './editor/components/ColorPalette.svelte';
@@ -99,6 +100,16 @@
   $: if (graph !== subscribedGraph) {
     unsubscribeCookStatus?.();
     subscribedGraph = graph;
+    // Hand the graph to the engine context, and this is load-bearing rather
+    // than tidy. `cascade.setGraph()` was called in exactly one place in the
+    // whole codebase — the offline frame renderer — so in Studio the context's
+    // graph stayed null, `markTimeDependentDirty()` hit its `if (!this._graph)
+    // return` and marked nothing, and scrubbing the timeline recooked nothing
+    // at all. The expression badge still updated, because it evaluates against
+    // the node directly, which made it look as though evaluation worked and
+    // only the render was stale. It also hands the graph to the expression
+    // engine, so `ch()` paths resolve — they could not have either.
+    if (graph) cascade.setGraph(graph);
     cookStatus = graph?.scheduler.status ?? {
       phase: 'idle',
       total: 0,
