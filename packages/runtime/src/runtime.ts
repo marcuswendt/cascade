@@ -14,6 +14,10 @@ import {
 } from "@cascade/contracts";
 import { CascadeRuntimeError } from "./error.js";
 import { builtinNodeRegistrations } from "./builtins/index.js";
+import { deserializeChannel, isEmptyChannel } from "./animation/channel.js";
+import { PropAnimator, isBoundProp } from "./params/index.js";
+import type { PropBinding } from "./params/index.js";
+import { DEFAULT_FPS, MIN_FRAME } from "./expressions/time.js";
 import type {
   CascadeDocument,
   CascadeDocumentConnection,
@@ -48,7 +52,19 @@ interface RuntimeNode {
   readonly registration: DefinitionNodeRegistration;
   readonly definition: NodeDefinition;
   readonly inputs: Record<string, unknown>;
+  /** Resolved values. A bound prop's entry is rewritten per frame. */
   readonly props: Record<string, unknown>;
+  /**
+   * The props that carry an expression or a keyframe channel, with the stored
+   * value beside the binding.
+   *
+   * Kept rather than flattened, which is the reader defect this fixes:
+   * `materialize` used to take `saved.value` and drop the rest, so a
+   * definition-v1 prop's animation existed in the file, was parsed, and was
+   * then discarded — offline the parameter was whatever number the last save
+   * happened to catch it at.
+   */
+  readonly bindings: Record<string, PropBinding>;
   readonly outputs: Map<string, unknown>;
   execute?: NodeExecute;
 }
@@ -222,6 +238,16 @@ class Graph implements LoadedCascadeGraph {
   >[];
   private readonly graphInputs: ReadonlyMap<string, RuntimeNode>;
   private readonly graphOutputs: ReadonlyMap<string, RuntimeNode>;
+  /**
+   * The graph's animated parameters, and the clock they resolve against.
+   *
+   * The clock is a value the caller sets per run (`run({ frame })`), never one
+   * this graph reads: same graph plus same frame gives the same output, which
+   * is the only reason a headless render can be trusted.
+   */
+  private readonly animator: PropAnimator<RuntimeNode>;
+  private frame = MIN_FRAME;
+  private fps = DEFAULT_FPS;
   constructor(
     private readonly host: RuntimeHost,
     private readonly nodes: readonly RuntimeNode[],
@@ -235,6 +261,38 @@ class Graph implements LoadedCascadeGraph {
     this.authoredAnnotations = Object.freeze(
       annotations.map((annotation) => snapshot(annotation)),
     );
+    this.animator = new PropAnimator<RuntimeNode>({
+      nodes,
+      node: (id) => this.byId.get(id),
+      inputNode: (node, index) => {
+        const feeding = this.connections
+          .filter(
+            (connection) =>
+              connection.kind === "data" &&
+              connection.target.nodeId === node.id,
+          )
+          .sort((a, b) => a.order - b.order);
+        const source = feeding[index]?.source.nodeId;
+        return (source ? this.byId.get(source) : undefined) ?? null;
+      },
+      // A failed expression has already fallen back to the stored value, so it
+      // is a diagnostic rather than a stopped run — but it is never silent: a
+      // parameter that quietly reverts is the hardest fault to see in a
+      // hundred rendered frames.
+      report: (nodeId, propName, error) =>
+        this.reportDiagnostic({
+          phase: "run",
+          code: "runtime/expression-failed",
+          message: `${nodeId}.${propName}: ${error}`,
+          path: `${nodeId}.${propName}`,
+        }),
+    });
+    this.animator.setFps(this.fps);
+    this.animator.setFrame(this.frame);
+    // Resolve once at load, so `inspect()` and a preset applied before any run
+    // both see the parameter at the graph's own first frame rather than the
+    // number that was last saved.
+    this.animator.resolveAll();
   }
   get state(): GraphState {
     return this.graphState;
@@ -359,12 +417,30 @@ class Graph implements LoadedCascadeGraph {
       );
     if (!node.definition.props?.[propName])
       misuse("runtime/invalid-prop", `${nodeId}.${propName} is not a prop`);
-    node.props[propName] = runtimeValue(
+    const resolved = runtimeValue(
       value,
       node.definition.props[propName].type,
       false,
       `${nodeId}.${propName}`,
     );
+    node.props[propName] = resolved;
+    this.rebind(node, propName, resolved);
+  }
+  /**
+   * Keep a bound prop's STORED value in step with a direct write.
+   *
+   * A channel or an expression still wins on the next resolve — setting a
+   * keyed parameter's value does not delete its keys, in Studio or here — but
+   * the value written is the one the parameter falls back to, so dropping it
+   * would make a later `clearChannel` reinstate a number nobody chose.
+   */
+  private rebind(node: RuntimeNode, propName: string, value: unknown): void {
+    const binding = node.bindings[propName];
+    if (binding) node.bindings[propName] = { ...binding, value };
+  }
+  private reportDiagnostic(diagnostic: Diagnostic): void {
+    this.diagnostics.push(diagnostic);
+    this.emit({ type: "diagnostic", diagnostic });
   }
   async applyPreset(preset: CascadePreset): Promise<void> {
     this.requireReady();
@@ -409,9 +485,45 @@ class Graph implements LoadedCascadeGraph {
       }
     }
     for (const [node, name, value] of inputDrafts) node.inputs[name] = value;
-    for (const [node, name, value] of propDrafts) node.props[name] = value;
+    for (const [node, name, value] of propDrafts) {
+      node.props[name] = value;
+      this.rebind(node, name, value);
+    }
+  }
+  /**
+   * The frame this graph is cooking at, and the rate frames are counted in.
+   *
+   * Separate from `run` so a caller can scrub without cooking — and so that
+   * `setFrame` then `inspect()` reports a keyed parameter at that frame, which
+   * is what a panel needs and what `run` alone cannot give it.
+   */
+  setFrame(frame: number): void {
+    if (!Number.isFinite(frame)) return;
+    this.frame = Math.max(MIN_FRAME, frame);
+    this.animator.setFrame(this.frame);
+    this.animator.resolveAll();
+  }
+  setFps(fps: number): void {
+    if (!Number.isFinite(fps)) return;
+    this.fps = Math.max(1, fps);
+    this.animator.setFps(this.fps);
+    this.animator.resolveAll();
+  }
+  getFrame(): number {
+    return this.frame;
+  }
+  getFps(): number {
+    return this.fps;
   }
   run(options: RunOptions = {}): Promise<RunResult> {
+    // The frame belongs to the run, not to the graph's history: a render loop
+    // states which frame it wants and gets exactly that, with no dependence on
+    // what the previous run left behind.
+    if (options.fps !== undefined) this.setFps(options.fps);
+    if (options.frame !== undefined) this.setFrame(options.frame);
+    // Every bound parameter, resolved before any node executes — so a node
+    // still receives a plain number and never reads a clock.
+    else this.animator.resolveAll();
     return this.trackRun(
       options.target ?? { kind: "all" },
       options.signal,
@@ -1194,17 +1306,36 @@ function materialize(
       false,
       `${authored.id}.${name}`,
     );
+  const bindings: Record<string, PropBinding> = {};
   for (const [name, saved] of Object.entries(authored.props ?? {})) {
     const definition = registration.definition.props?.[name];
-    if (definition)
-      props[name] = runtimeValue(
-        saved && typeof saved === "object" && "value" in saved
-          ? (saved as { value: unknown }).value
-          : saved,
-        definition.type,
-        false,
-        `${authored.id}.${name}`,
-      );
+    if (!definition) continue;
+    // `{ value, expression?, channel? }` — the object form declared in
+    // contracts/animation.ts. A bare value is the same prop with nothing more
+    // to say, which is what every older file on disk contains.
+    const object = saved && typeof saved === "object" && "value" in saved
+      ? (saved as { value: unknown; expression?: unknown; channel?: unknown })
+      : null;
+    const value = runtimeValue(
+      object ? object.value : saved,
+      definition.type,
+      false,
+      `${authored.id}.${name}`,
+    );
+    props[name] = value;
+    if (!object) continue;
+    const channel = deserializeChannel(object.channel);
+    const expression = typeof object.expression === "string" && object.expression
+      ? object.expression
+      : undefined;
+    const binding: PropBinding = {
+      value,
+      ...(expression ? { expression } : {}),
+      ...(isEmptyChannel(channel) ? {} : { channel }),
+    };
+    // Only a prop that actually carries something, so `animated` stays a real
+    // question and an unanimated graph pays nothing for this.
+    if (isBoundProp(binding)) bindings[name] = binding;
   }
   return {
     id: authored.id,
@@ -1214,6 +1345,7 @@ function materialize(
     definition: registration.definition,
     inputs,
     props,
+    bindings,
     outputs: new Map(),
   };
 }

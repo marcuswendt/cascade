@@ -1381,8 +1381,25 @@ export class Graph {
       acc[key] = node.serializePropValue(key, value);
       return acc;
     }, {} as Record<string, any>);
+    /**
+     * A definition-v1 prop is a Studio parameter and a public document prop,
+     * so it is written here rather than into `params`.
+     *
+     * Through the same writer and from the RAW value, both of which were bugs
+     * until 2026-09-08: this line was `props[name] = parameter.value`, and
+     * `parameter.value` resolves a channel or an expression. So saving an
+     * animated definition prop wrote the number it happened to be at whatever
+     * frame the save fell on, *and* overwrote the binding the reduce above had
+     * just written correctly. Reopening the file showed a static parameter and
+     * no expression — the exact shape of a channel that saves and does not
+     * load, which has happened here once already.
+     */
     for (const parameter of changedParameters) {
-      if (parameter.documentField === 'props') props[parameter.name] = parameter.value;
+      if (parameter.documentField !== 'props') continue;
+      props[parameter.name] = node.serializePropValue(
+        parameter.name,
+        node.rawParameterValue(parameter.name),
+      );
     }
     if (Object.keys(props).length > 0) {
       result.props = props;
@@ -1659,14 +1676,24 @@ export class Graph {
             node.props[key].value = normalizedValue;
           }
 
-          // Restore expression if present
-          if (expression && !definitionProp) {
+          /**
+           * The bindings, for every prop including a definition-v1 one.
+           *
+           * Both restores used to be gated on `!definitionProp`, which is what
+           * made converting an animated node to definition-v1 destroy its
+           * animation: the expression and the channel were read off disk,
+           * recognised, and then dropped on the floor. A definition prop's
+           * value lives in the prop of the same name (see `bindParameterProp`),
+           * so there is one store to restore them into and the gate was never
+           * buying anything.
+           */
+          if (expression && node.props[key]) {
             node.props[key].expression = expression;
           }
-          // And the keyframe channel, which also has to reinstate the node's
-          // time-dependence — a keyed parameter loaded from disk must be
-          // recooked per frame exactly as one keyed in the session is.
-          if (propData?.channel && !definitionProp) {
+          // The channel restore also reinstates the node's time-dependence — a
+          // keyed parameter loaded from disk must be recooked per frame exactly
+          // as one keyed in the session is.
+          if (propData?.channel && node.props[key]) {
             node.restorePropChannel(key, propData.channel);
           }
         });

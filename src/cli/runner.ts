@@ -5,7 +5,7 @@ import { NodeAssetLoader } from '../engine/NodeAssetLoader.js';
 import { PackageManager } from '../engine/PackageManager.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { checkProjectGraph, inspectProjectGraph, runDeterministicProjectGraph, validateProjectGraph } from './projectRuntime.js';
+import { checkProjectGraph, inspectProjectGraph, renderDeterministicProjectFrames, runDeterministicProjectGraph, validateProjectGraph } from './projectRuntime.js';
 import { setEmbeddedCompiler, setProjectModuleCompiler } from '../engine/nodeModuleLoader.js';
 import { compileEmbedded, compileProjectModule } from '../../server/src/compile.js';
 import { ProjectRoot } from '../../server/src/project.js';
@@ -140,14 +140,22 @@ export async function runGraph(options: RunOptions): Promise<void> {
   };
 
   if (frameSpec) {
-    // A definition-v1 graph runs through the deterministic runtime, which owns
-    // its own clock and is not reachable from here. Say that, rather than
-    // silently rendering frame 1 a hundred times.
-    const summary = await inspectProjectGraph(file, graphData);
-    if (summary.deterministic) {
+    // A definition-v1 graph renders its sequence through the deterministic
+    // runtime, which resolves each bound parameter at the frame the run states.
+    // This used to refuse outright — "--frames renders dynamic graphs" — which
+    // left the preferred node style as the one that could not be animated
+    // offline. Returns null for a dynamic graph, which falls through below.
+    const rendered = await renderDeterministicProjectFrames(file, graphData, {
+      ...frameSpec,
+      ...(fps === undefined ? {} : { fps }),
+      out: out ?? 'renders',
+      ...(entryNode ? { entryNode } : {}),
+      ...(verbose ? { verbose } : {}),
+    });
+    if (rendered) {
       releaseHost();
-      console.error('--frames renders dynamic graphs; this graph is definition-v1 and runs through the deterministic runtime.');
-      process.exit(1);
+      console.log(`Rendered ${rendered.frames.length} frames, ${rendered.files.length} files -> ${out ?? 'renders'}/`);
+      return;
     }
   } else if (await runDeterministicProjectGraph(file, graphData, entryNode)) {
     if (verbose) console.log('Graph execution completed');

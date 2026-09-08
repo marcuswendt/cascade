@@ -134,6 +134,18 @@ export interface RunOptions {
   readonly target?: RunTarget;
   readonly signal?: CascadeAbortSignal;
   readonly runId?: string;
+  /**
+   * The frame to resolve animated parameters at — a keyframe channel is
+   * sampled here and `$F`/`$FF`/`$T` are derived from it. Fractional frames
+   * are kept. Omitted leaves the graph on the frame it is already on.
+   *
+   * A value the caller states rather than a clock the runtime reads: same
+   * graph plus same frame gives the same output, which is what makes an
+   * offline render reproducible.
+   */
+  readonly frame?: number;
+  /** Frames per second, for `$FPS` and for `$T`. Default 30. */
+  readonly fps?: number;
 }
 export interface RunResult {
   readonly runId: string;
@@ -268,6 +280,14 @@ export interface LoadedCascadeGraph {
     options?: Readonly<{ signal?: CascadeAbortSignal; runId?: string }>,
   ): Promise<RunResult>;
   run(options?: RunOptions): Promise<RunResult>;
+  /**
+   * Move the graph's clock without cooking. Animated parameters re-resolve
+   * immediately, so `inspect()` reports them at this frame.
+   */
+  setFrame(frame: number): void;
+  setFps(fps: number): void;
+  getFrame(): number;
+  getFps(): number;
   cancel(reason?: string): void;
   subscribe(listener: (event: RuntimeEvent) => void): () => void;
   getOutput(nodeId: string, outputName: string): unknown;

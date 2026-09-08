@@ -25,6 +25,7 @@ import type { Node } from '../nodes/Node.js';
 import type { ProjectRoot } from '../../server/src/project.js';
 import { cascade } from '../engine/cascade.js';
 import { evaluateFrameRange } from '../engine/animation/frameRange.js';
+import { imagePath, sequenceFileName, sequenceWidth } from './sequence.js';
 
 export interface FrameSpec {
   start: number;
@@ -65,15 +66,6 @@ export function outputPorts(graph: Graph, entryNode?: Node): { node: Node; port:
     }
   }
   return found;
-}
-
-function imagePath(value: unknown): string | null {
-  if (typeof value === 'string') return value || null;
-  if (value && typeof value === 'object') {
-    const candidate = (value as { path?: unknown }).path;
-    if (typeof candidate === 'string' && candidate) return candidate;
-  }
-  return null;
 }
 
 /** Every output value in the graph, as a comparable string. */
@@ -167,7 +159,7 @@ export async function renderFrameRange(options: RenderFrameRangeOptions): Promis
   await fs.mkdir(outDirectory, { recursive: true });
 
   const files: string[] = [];
-  const width = Math.max(4, String(Math.floor(end)).length);
+  const width = sequenceWidth(end);
 
   const result = await evaluateFrameRange({
     start,
@@ -196,9 +188,7 @@ export async function renderFrameRange(options: RenderFrameRangeOptions): Promis
       for (const { node, port } of ports) {
         const source = imagePath(port.value);
         if (!source) continue;
-        const extension = path.extname(source) || '.png';
-        const safeId = node.id.replace(/[^a-zA-Z0-9_-]/g, '_');
-        const name = `${safeId}.${String(Math.floor(frame)).padStart(width, '0')}${extension}`;
+        const name = sequenceFileName(node.id, frame, source, width);
         await fs.copyFile(project.resolveMedia(source), path.join(outDirectory, name));
         files.push(path.posix.join(out, name));
       }

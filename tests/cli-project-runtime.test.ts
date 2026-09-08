@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { checkProjectGraph, classifyPreflight, inspectProjectGraph, runDeterministicProjectGraph, validateProjectGraph } from '@/cli/projectRuntime';
+import { checkProjectGraph, classifyPreflight, inspectProjectGraph, renderDeterministicProjectFrames, runDeterministicProjectGraph, validateProjectGraph } from '@/cli/projectRuntime';
 
 const roots: string[] = [];
 
@@ -210,4 +210,109 @@ export async function execute(context) {
     expect(inspection).toMatchObject({ deterministic: true, connections: 0 });
     expect(inspection.nodes[0]).toMatchObject({ id: 'multiply', module: 'project.Multiply', classification: 'definition-v1' });
   });
+});
+
+/**
+ * `--frames` on a definition-v1 graph.
+ *
+ * It used to refuse: *"--frames renders dynamic graphs; this graph is
+ * definition-v1 and runs through the deterministic runtime."* True, and the
+ * whole problem — the preferred node style was the one that could not be
+ * animated offline. The renders here are decoded, not weighed: five identical
+ * file sizes is exactly what a broken clock produces.
+ */
+describe('rendering a frame sequence from a definition-v1 graph', () => {
+  const rampSource = `
+export const definition = {
+  apiVersion: 1,
+  runsOn: 'portable',
+  capabilities: ['assets'],
+  inputs: {},
+  outputs: { image: { kind: 'data', type: 'image' } },
+  props: { phase: { type: 'float', default: 0 } }
+} as const;
+export async function execute(context) {
+  const level = Math.max(0, Math.min(255, Math.round(context.props.phase)));
+  const header = 'P6\\n2 2\\n255\\n';
+  const pixels = new Uint8Array(2 * 2 * 3).fill(level);
+  const bytes = new Uint8Array(header.length + pixels.length);
+  for (let i = 0; i < header.length; i++) bytes[i] = header.charCodeAt(i);
+  bytes.set(pixels, header.length);
+  const asset = await context.capabilities.assets.write(
+    bytes,
+    { mediaType: 'image/x-portable-pixmap', suggestedName: 'ramp.ppm' },
+    { signal: context.signal },
+  );
+  context.outputs.image.set(asset);
+}
+`;
+
+  function rampProject(props: Record<string, unknown>) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-cli-frames-'));
+    roots.push(root);
+    fs.mkdirSync(path.join(root, 'nodes', 'Ramp'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'nodes', 'Ramp', 'index.ts'), rampSource);
+    const file = path.join(root, 'index.cascade');
+    const document = {
+      version: '0.2',
+      nodes: [{ id: 'ramp', module: 'project.Ramp', props }],
+      connections: [],
+    };
+    fs.writeFileSync(file, JSON.stringify(document));
+    return { root, file, document };
+  }
+
+  /** The one grey level in each frame, read out of the PPM body. */
+  function levels(root: string, out: string): number[] {
+    return fs.readdirSync(path.join(root, out)).sort().map((name) => {
+      const data = fs.readFileSync(path.join(root, out, name));
+      const body = data.subarray(data.indexOf('255\n') + 4);
+      return body[0];
+    });
+  }
+
+  it('walks an expression across the range', async () => {
+    const fixture = rampProject({ phase: { value: 0, expression: '$T * 250' } });
+    const rendered = await renderDeterministicProjectFrames(fixture.file, fixture.document, {
+      start: 1, end: 5, fps: 25, out: 'renders',
+    });
+
+    expect(rendered).not.toBeNull();
+    expect(rendered!.frames).toEqual([1, 2, 3, 4, 5]);
+    expect(rendered!.files).toEqual([
+      'renders/ramp.0001.ppm',
+      'renders/ramp.0002.ppm',
+      'renders/ramp.0003.ppm',
+      'renders/ramp.0004.ppm',
+      'renders/ramp.0005.ppm',
+    ]);
+    // $T is (frame - 1) / fps, so 25fps gives 0, 0.04, 0.08 … times 250.
+    expect(levels(fixture.root, 'renders')).toEqual([0, 10, 20, 30, 40]);
+  }, 30_000);
+
+  it('walks a keyframe channel across the range', async () => {
+    const fixture = rampProject({
+      phase: {
+        value: 0,
+        channel: {
+          keys: [
+            { frame: 1, value: 0, interpolation: 'linear' },
+            { frame: 5, value: 200 },
+          ],
+        },
+      },
+    });
+    const rendered = await renderDeterministicProjectFrames(fixture.file, fixture.document, {
+      start: 1, end: 5, fps: 25, out: 'renders',
+    });
+
+    expect(levels(fixture.root, 'renders')).toEqual([0, 50, 100, 150, 200]);
+  }, 30_000);
+
+  it('leaves a dynamic graph to the other host', async () => {
+    const dynamic = project(validSource.replace(/export const definition[\s\S]*?} as const;/, ''));
+    await expect(renderDeterministicProjectFrames(dynamic.file, dynamic.document, {
+      start: 1, end: 2, out: 'renders',
+    })).resolves.toBeNull();
+  }, 30_000);
 });

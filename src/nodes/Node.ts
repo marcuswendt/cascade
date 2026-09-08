@@ -8,11 +8,11 @@ import {
   deleteKey as channelDeleteKey,
   deserializeChannel,
   isEmptyChannel,
-  sampleChannel,
   serializeChannel,
   setKey as channelSetKey
 } from '@cascade/runtime/animation';
 import type { Channel, Interpolation, Keyframe, SerializedChannel } from '@cascade/runtime/animation';
+import { resolvePropBinding } from '@cascade/runtime/params';
 
 export type { Channel as ParamChannel, Interpolation, Keyframe };
 
@@ -230,6 +230,16 @@ export class Node {
    *  older image-node control system. */
   parameters: NodeParameter[] = [];
   protected parametersUsedDuringSetup: Set<string> = new Set();
+  /**
+   * Props the node's own code declared with `addParm()`, and which its cook may
+   * therefore read as `this.props.name.value`.
+   *
+   * A prop restored from a document is NOT in here until the code that owns it
+   * has run, which for any on-demand-compiled module is after the first cook
+   * has begun. See evaluateAllExpressions for why that distinction has to be
+   * made rather than assumed.
+   */
+  protected propsDeclaredByCode: Set<string> = new Set();
 
   /** Non-null between a retarget and the cook that resolves it. */
   private carryOver: {
@@ -476,6 +486,10 @@ export class Node {
    */
   addParm<T>(name: string, config: Prop<T>): void {
     this.props[name] = config as Prop;
+    // Declared by the node's own code, so its cook may read `.value` directly
+    // — see evaluateAllExpressions, which pushes evaluated values only into
+    // these.
+    this.propsDeclaredByCode.add(name);
     this.reconcileProp(name);
     // Dynamic nodes redeclare their shape inside execute(). That declaration
     // is part of the current cook, not a new authored change; rescheduling it
@@ -727,34 +741,32 @@ export class Node {
   }
 
   /**
-   * The one place a parameter becomes a value.
+   * The one place a parameter becomes a value — in Studio.
    *
-   * Three bindings, in this order: a keyframe channel, an expression, the raw
+   * Three bindings, in one order: a keyframe channel, an expression, the raw
    * value. All of them resolve BEFORE execute, so the node receives a plain
    * number and never reads a clock — determinism is "same graph plus same
    * frame gives the same output", which is still cacheable once the cache key
    * gains a frame.
    *
-   * A parameter can carry both a channel and an expression, and the channel
-   * wins. The expression is kept, inert, and comes back when the channel is
-   * deleted: silently discarding what an author wrote is the worse of the two
-   * failures, and there is nowhere else for it to be shown.
+   * The ORDER itself is no longer written here. It lives in
+   * `@cascade/runtime/params`, because the deterministic runtime resolves the
+   * same three bindings for the same document and a second implementation of
+   * the order would be a second answer to the same question. What stays here
+   * is the Studio-specific half: the clock the channel is sampled against, and
+   * the expression engine with its Inspector-facing error bookkeeping.
    */
   evalParm(name: string): any {
     const prop = this.props[name];
     if (!prop) return undefined;
 
-    if (!isEmptyChannel(prop.channel)) {
-      const sampled = sampleChannel(prop.channel, this.currentFrame());
-      if (sampled !== undefined) return sampled;
-    }
-
-    // If prop has an expression, evaluate it
-    if (prop.expression) {
-      return this.evaluateExpression(name);
-    }
-
-    return prop.value;
+    return resolvePropBinding(prop, {
+      frame: this.currentFrame(),
+      // `evaluateExpression` already stores the message on the prop for the
+      // panel and falls back to the raw value, so it reports no error upward:
+      // the resolver's own fallback would be the same value twice.
+      evaluateExpression: () => ({ value: this.evaluateExpression(name) }),
+    }).value;
   }
 
   /**
@@ -803,7 +815,17 @@ export class Node {
       // the expression on every read, so there is nothing to push, and writing
       // the evaluated number into `value` would overwrite the raw one the
       // author typed — which is also what the file records.
-      if (prop.expression && !prop.fromParameter) {
+      //
+      // And so is a prop the node's own code has not declared. The push exists
+      // for the class-based library, which reads `this.props.radius.value`
+      // directly inside its cook; a prop it never declared cannot be read that
+      // way, so pushing into one can only destroy the authored value. That is
+      // not hypothetical: a module compiled on demand (every `project.*` node,
+      // definition-v1 or dynamic) declares nothing until its first cook, and
+      // this loop runs BEFORE that cook — so the first cook of a v1 node
+      // overwrote `2` with the expression's value at frame 10 and the save
+      // then wrote `10`'s number to disk as the author's own.
+      if (prop.expression && !prop.fromParameter && this.propsDeclaredByCode.has(name)) {
         const evaluated = this.evaluateExpression(name);
         // Update the value with evaluated result (for downstream nodes)
         if (evaluated !== undefined) {

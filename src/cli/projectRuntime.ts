@@ -9,9 +9,11 @@ import { builtinNodeRegistration, builtinNodeRegistrations } from '../../package
 import { createNodeRuntimeHost } from '../../packages/runtime/src/node.js';
 import { extractNodeDefinition } from '../../packages/runtime/src/definition/extract.js';
 import { validateNodeModuleArchitecture } from '../../packages/runtime/src/definition/architecture.js';
-import type { DefinitionNodeRegistration, RuntimeHost } from '../../packages/runtime/src/types.js';
+import { frameRange } from '../../packages/runtime/src/animation/index.js';
+import type { DefinitionNodeRegistration, LoadedCascadeGraph, RuntimeHost } from '../../packages/runtime/src/types.js';
 import { ProjectRoot } from '../../server/src/project.js';
 import { createNodeAssetCapability } from './nodeAssets.js';
+import { imagePath, sequenceFileName, sequenceWidth } from './sequence.js';
 
 interface ProjectNode {
   id: string;
@@ -199,6 +201,134 @@ export async function runDeterministicProjectGraph(
     throw new Error(result.diagnostics.map((item) => item.message).join('\n') || `Graph ${result.status}`);
   }
   return true;
+}
+
+export interface DeterministicFrameRenderOptions {
+  start: number;
+  end: number;
+  step?: number;
+  /** Frame rate to evaluate at, for `$FPS` and `$T`. */
+  fps?: number;
+  /** Sequence directory, project-relative. */
+  out: string;
+  entryNode?: string;
+  verbose?: boolean;
+  signal?: { readonly aborted: boolean };
+}
+
+export interface DeterministicFrameRenderResult {
+  frames: number[];
+  /** Written files, project-relative, in the order they were written. */
+  files: string[];
+  aborted: boolean;
+}
+
+/**
+ * Render a frame sequence from a definition-v1 graph.
+ *
+ * `--frames` used to refuse this outright — *"this graph is definition-v1 and
+ * runs through the deterministic runtime"* — which was true and was also the
+ * whole problem: the preferred node style was the one that could not be
+ * animated offline. It could not because the runtime had no clock and no
+ * answer for a bound parameter, both of which it now has, so the frame is
+ * simply a value each run states.
+ *
+ * Returns null when the graph is not fully deterministic, so the caller falls
+ * through to the dynamic path rather than this deciding for it.
+ *
+ * There is no fixpoint pass here, and there should not be. The deterministic
+ * runtime executes the whole graph on every run in dependency order — it has
+ * no dirty state to be one frame behind with, which is the fault
+ * `cookUntilSettled` exists to prevent on the other host.
+ */
+export async function renderDeterministicProjectFrames(
+  file: string,
+  document: any,
+  options: DeterministicFrameRenderOptions,
+): Promise<DeterministicFrameRenderResult | null> {
+  const prepared = await prepare(file, document, true);
+  const nodes = Array.isArray(document?.nodes) ? document.nodes as ProjectNode[] : [];
+  const deterministicCount = nodes.filter((node) => prepared.deterministic.has(moduleId(node))).length;
+  if (!nodes.length || deterministicCount === 0) return null;
+  if (deterministicCount !== nodes.length) {
+    throw new Error('Mixed deterministic and dynamic graphs are not executable until the bounded legacy adapter is implemented');
+  }
+
+  const project = new ProjectRoot(path.dirname(path.resolve(file)));
+  const runtime = createRuntime({
+    host: createProjectHost(file, prepared.registrations),
+    nodes: prepared.registrations,
+  });
+  const graph = await runtime.load(document);
+
+  const outDirectory = project.resolve(options.out);
+  await fs.mkdir(outDirectory, { recursive: true });
+
+  const width = sequenceWidth(options.end);
+  const frames: number[] = [];
+  const files: string[] = [];
+  let aborted = false;
+
+  try {
+    for (const frame of frameRange(options.start, options.end, options.step ?? 1)) {
+      if (options.signal?.aborted) {
+        aborted = true;
+        break;
+      }
+      const result = await graph.run({
+        frame,
+        ...(options.fps === undefined ? {} : { fps: options.fps }),
+        ...(options.entryNode ? { target: { kind: 'node' as const, nodeId: options.entryNode } } : {}),
+      });
+      if (result.status !== 'completed') {
+        throw new Error(
+          `frame ${frame} ${result.status} — ${result.diagnostics.map((item) => item.message).join('; ') || 'no diagnostics'}`,
+        );
+      }
+
+      const outputs = imageOutputs(graph, options.entryNode);
+      if (!outputs.length) {
+        throw new Error(
+          'No image output to save: the graph has no unconsumed image port. ' +
+          'Name the node to render with --entry-node.',
+        );
+      }
+      for (const { nodeId, value } of outputs) {
+        const source = imagePath(value);
+        if (!source) continue;
+        const name = sequenceFileName(nodeId, frame, source, width);
+        await fs.copyFile(project.resolveMedia(source.replace(/^\.?\//, '')), path.join(outDirectory, name));
+        files.push(path.posix.join(options.out, name));
+      }
+      frames.push(frame);
+      if (options.verbose) console.log(`  frame ${frame}`);
+    }
+  } finally {
+    await graph.dispose();
+    await runtime.dispose();
+  }
+
+  return { frames, files, aborted };
+}
+
+/** The image outputs a frame should be saved from: an explicit entry node's, or
+ *  every image output nothing downstream consumes. The same rule the dynamic
+ *  path uses, read off the runtime's inspection rather than off port objects. */
+function imageOutputs(
+  graph: LoadedCascadeGraph,
+  entryNode?: string,
+): { nodeId: string; value: unknown }[] {
+  const found: { nodeId: string; value: unknown }[] = [];
+  for (const node of graph.inspect().nodes) {
+    if (entryNode && node.id !== entryNode) continue;
+    for (const port of Object.values(node.outputs)) {
+      if (port.type !== 'image') continue;
+      if (!entryNode && port.connected) continue;
+      if (port.value === undefined) continue;
+      found.push({ nodeId: node.id, value: port.value });
+    }
+  }
+  return found;
 }
 
 export async function inspectProjectGraph(file: string, document: any) {
