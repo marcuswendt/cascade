@@ -879,7 +879,12 @@
   
   .node-name {
     font-weight: 500;
-    cursor: text;
+    /* `grab`, not `text`. The name is the node's one drag handle — the body is
+       the move gesture and the ports are the wiring — and a text caret over the
+       only draggable part of a node is an affordance pointing the wrong way.
+       Matches `.prop-label` and `.parameter-name` in the Inspector, which are
+       the same handle for a parameter. Click still renames. */
+    cursor: grab;
     user-select: none;
   }
   

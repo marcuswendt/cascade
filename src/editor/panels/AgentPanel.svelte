@@ -449,6 +449,33 @@
     dropActive = true;
   }
 
+  /**
+   * `dragleave` bubbles, so every boundary between the bar, the transcript and
+   * the composer raised one at the console while the drag was still inside it —
+   * and the naive handler cleared the highlight on each. Measured in Chrome
+   * over a real drag: crossing four children produced four leaves, so the one
+   * affordance saying the console would take the drop blinked out repeatedly on
+   * the way to the prompt. A drop that works but looks refused is the same
+   * report as one that does not work.
+   *
+   * The test is the pointer against the console's own box rather than a
+   * depth counter (which drifts when a child unmounts mid-drag) or
+   * `relatedTarget` (null on dragleave in Chromium).
+   */
+  function onDragLeave(event: DragEvent): void {
+    if (!consoleEl) {
+      dropActive = false;
+      return;
+    }
+    const box = consoleEl.getBoundingClientRect();
+    const inside =
+      event.clientX >= box.left &&
+      event.clientX <= box.right &&
+      event.clientY >= box.top &&
+      event.clientY <= box.bottom;
+    if (!inside) dropActive = false;
+  }
+
   function insert(text: string): void {
     if (!text) return;
     const at = inputEl?.selectionStart ?? prompt.length;
@@ -471,7 +498,10 @@
   });
 </script>
 
-<svelte:window on:keydown={onZoomKeydown} />
+<!-- `dragend` fires at the source wherever a drag ends, including a drag
+     abandoned with Escape, so it is the only reliable place to drop the
+     highlight when no leave ever arrives. -->
+<svelte:window on:keydown={onZoomKeydown} on:dragend={() => (dropActive = false)} />
 
 <div
   class="console"
@@ -480,7 +510,7 @@
   bind:this={consoleEl}
   style="--agent-zoom: {zoom}"
   on:dragover={onDragOver}
-  on:dragleave={() => (dropActive = false)}
+  on:dragleave={onDragLeave}
   on:drop={onDrop}
   role="group"
   aria-label="Agent console"
