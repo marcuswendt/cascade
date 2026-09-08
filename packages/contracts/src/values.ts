@@ -1,3 +1,4 @@
+import type { Camera } from "./camera.js";
 import type { Color } from "./color.js";
 import type {
   Geometry,
@@ -29,6 +30,7 @@ export const CORE_TYPES = [
   "mesh",
   "rects",
   "color",
+  "camera",
   "asset",
   "array",
   "object",
@@ -188,6 +190,8 @@ export type ValueForType<T extends CascadeType> = T extends "float" | "int"
                         ? Mat4
                         : T extends "color"
                           ? Color
+                          : T extends "camera"
+                            ? Camera
                           : T extends "image"
                             ? ImageRef
                             : T extends "texture"

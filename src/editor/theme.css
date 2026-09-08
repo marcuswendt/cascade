@@ -47,6 +47,7 @@
   --type-string: #A78BFA;
   --type-vector: #38BDF8;
   --type-matrix: #818CF8;
+  --type-camera: #2DD4BF;
   --type-image: #FFD700;
   --type-texture: #FB7185;
   --type-geometry: #4ADE80;
@@ -245,6 +246,7 @@
     --type-string: #5F39D0;
     --type-vector: #1D82AF;
     --type-matrix: #545FC9;
+    --type-camera: #0F766E;
     --type-image: #A48B04;
     --type-texture: #D92640;
     --type-geometry: #248949;
@@ -428,6 +430,7 @@
   --type-string: #A78BFA;
   --type-vector: #38BDF8;
   --type-matrix: #818CF8;
+  --type-camera: #2DD4BF;
   --type-image: #FFD700;
   --type-texture: #FB7185;
   --type-geometry: #4ADE80;
@@ -596,6 +599,7 @@
   --type-string: #5F39D0;
   --type-vector: #1D82AF;
   --type-matrix: #545FC9;
+  --type-camera: #0F766E;
   --type-image: #A48B04;
   --type-texture: #D92640;
   --type-geometry: #248949;

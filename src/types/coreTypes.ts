@@ -61,7 +61,7 @@ export const GEOMETRY_TYPES = ['geometry', 'points', 'lines', 'polyline', 'mesh'
 
 /** Colour is kept apart from vec4: it means something different, it wants a
  *  swatch rather than four number fields, and it carries a colour space. */
-export const OTHER_TYPES = ['color', 'asset', 'array', 'object', 'any'] as const;
+export const OTHER_TYPES = ['color', 'camera', 'asset', 'array', 'object', 'any'] as const;
 
 export const CORE_TYPES = CONTRACT_CORE_TYPES;
 
@@ -147,6 +147,10 @@ export const TYPE_COLORS: Record<string, string> = {
   vec2i: 'var(--type-vector)', vec3i: 'var(--type-vector)', vec4i: 'var(--type-vector)',
 
   mat2: 'var(--type-matrix)', mat3: 'var(--type-matrix)', mat4: 'var(--type-matrix)',
+
+  // Its own family rather than a matrix: what travels on the port is a lens and
+  // a transform, and the matrix is one of several things derived from it.
+  camera: 'var(--type-camera)',
 
   image: 'var(--type-image)',
   texture: 'var(--type-texture)',

@@ -1,10 +1,12 @@
 import type { DefinitionNodeRegistration } from "../../types.js";
+import { cameraRegistration } from "./camera.js";
 import { randomRegistration } from "./random.js";
 import { remapRegistration } from "./remap.js";
 import { mergeRegistration, nullRegistration, selectRegistration, switchRegistration } from "./routing.js";
 import { inputRegistration, outputRegistration, subnetRegistration } from "./structural.js";
 
 export {
+  cameraRegistration,
   inputRegistration,
   mergeRegistration,
   nullRegistration,
@@ -26,6 +28,7 @@ export const coreNodeRegistrations: readonly DefinitionNodeRegistration[] = Obje
   selectRegistration,
   randomRegistration,
   remapRegistration,
+  cameraRegistration,
 ]);
 
 const registrationsById = new Map(

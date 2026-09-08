@@ -127,6 +127,7 @@ Use the runtime-native core vocabulary before creating a project wrapper:
 - `cascade.core.Null` passes any value through unchanged so downstream wiring can remain stable while upstream branches are reorganized.
 - `cascade.core.Random` maps explicit integer `seed` and `sample` inputs to a stable float in `[0, 1)`.
 - `cascade.core.Remap` maps scalar ranges and optionally clamps via its `clamp` prop.
+- `cascade.core.Camera` emits the one `camera` type, following Houdini's `/obj/cam`: `translate` and `rotate` (degrees, XYZ) with an optional `lookat`, and a lens given as `focal` and `aperture` in millimetres rather than as a field of view. A camera looks down its own **-Z** with **+Y** up. `resolution` is on the camera because Houdini derives the vertical aperture from the frame shape, and it is one `vec2i` rather than Houdini's `resx`/`resy` because the vec rule below is the more specific one. Every derivation — the basis, the view and projection matrices, the horizontal and vertical angles — lives in `packages/runtime/src/camera`; never derive them a second time in a renderer.
 
 The geometry set is reserved the same way, under `cascade.geo.*`:
 `Rectangle`, `Circle`, `Transform`, `Merge`, `CopyToPoints`, and `SvgExport`.
