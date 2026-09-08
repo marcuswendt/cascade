@@ -67,11 +67,18 @@
     if (!readOnly && onChange) onChange(next);
   }
 
+  /**
+   * A vector's components take the declared range, one range across all of
+   * them. Typing 4 into a component bounded at −1..1 is the same mistake as
+   * typing it into a bounded float, and until the contract admitted a range on
+   * a vector there was nothing here to enforce.
+   */
   function setComponent(index: number, raw: string) {
     const parsed = Number(raw);
     if (!Number.isFinite(parsed)) return;
     const next = Array.isArray(value) ? [...value] : new Array(components).fill(0);
-    next[index] = wantsInteger ? Math.round(parsed) : parsed;
+    const ranged = bounded ? clampNumber(parsed) : parsed;
+    next[index] = wantsInteger ? Math.round(ranged) : ranged;
     commit(next);
   }
 
@@ -164,7 +171,9 @@
           <input
             aria-label={labels[index]}
             type="number"
-            step={wantsInteger ? 1 : 'any'}
+            min={Number.isFinite(bounds.min) ? bounds.min : undefined}
+            max={Number.isFinite(bounds.max) ? bounds.max : undefined}
+            step={port?.options?.step ?? (wantsInteger ? 1 : 'any')}
             disabled={readOnly}
             value={Array.isArray(value) ? value[index] ?? 0 : 0}
             on:change={(event) => setComponent(index, event.currentTarget.value)}

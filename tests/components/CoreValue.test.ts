@@ -46,6 +46,58 @@ describe('CoreValue', () => {
     expect(onChange).toHaveBeenCalledWith('magnific');
   });
 
+  it('applies a declared range to every component of a vector', async () => {
+    // The convention is one `vec2` rather than two floats, and until the
+    // contract admitted a range on a vector that convention cost the control
+    // its clamp: two floats bounded at -1..1 became a vec2 bounded at nothing.
+    const onChange = vi.fn();
+    const { getByLabelText } = render(CoreValue, {
+      props: {
+        type: 'vec2',
+        value: [0, 0],
+        port: { options: { min: -1, max: 1, step: 0.005 } },
+        onChange,
+      },
+    });
+
+    const x = getByLabelText('X') as HTMLInputElement;
+    expect(x.min).toBe('-1');
+    expect(x.max).toBe('1');
+    expect(x.step).toBe('0.005');
+
+    await fireEvent.change(x, { target: { value: '4' } });
+    expect(onChange).toHaveBeenCalledWith([1, 0]);
+  });
+
+  it('rounds an integer vector after clamping it', async () => {
+    const onChange = vi.fn();
+    const { getByLabelText } = render(CoreValue, {
+      props: {
+        type: 'vec2i',
+        value: [0, 0],
+        port: { options: { min: 16, max: 4096, step: 64 } },
+        onChange,
+      },
+    });
+
+    await fireEvent.change(getByLabelText('Y'), { target: { value: '9000.7' } });
+    expect(onChange).toHaveBeenCalledWith([0, 4096]);
+  });
+
+  it('leaves an unbounded vector unclamped', async () => {
+    // A range is a declaration, not a default. Inventing one would imply
+    // limits the node never stated — the same reason a slider needs both ends.
+    const onChange = vi.fn();
+    const { getByLabelText } = render(CoreValue, {
+      props: { type: 'vec2', value: [0, 0], onChange },
+    });
+
+    const x = getByLabelText('X') as HTMLInputElement;
+    expect(x.min).toBe('');
+    await fireEvent.change(x, { target: { value: '9999' } });
+    expect(onChange).toHaveBeenCalledWith([9999, 0]);
+  });
+
   it('edits vector components through the shared editor', async () => {
     const onChange = vi.fn();
     const { getByLabelText } = render(CoreValue, {

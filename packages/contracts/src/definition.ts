@@ -43,7 +43,38 @@ type ControlFor<T extends CascadeType> = T extends "float"
                   : T extends "texture"
                     ? never
                     : "select";
-type NumericMetadata<T extends CascadeType> = T extends "float" | "int"
+/**
+ * `min`, `max` and `step`, for the types whose components are numbers.
+ *
+ * The vectors are included, and were not: they typed all three as `never`, so
+ * the six vector types could not carry a range at all. Nothing exercised it
+ * because no builtin vec prop has one — but Marcus's standing rule is that
+ * anything with an x and a y is one `vec2` rather than two floats, and two
+ * floats *can* carry a range while the `vec2` they became could not. So
+ * following the convention cost the Inspector its clamp and its drag
+ * granularity every time: `field-io-gradient-logo.offset` lost −1..1 step
+ * 0.005, `offset.offset` lost −2..2, `ripple.centre` lost −1..2, and every
+ * remaining vector candidate across the sketches carries a range too.
+ *
+ * One range for all components, not one per component. A per-component tuple
+ * is a real design question — an `x` and a `y` with different limits is a
+ * legitimate thing to want — but it is a second shape for this field and every
+ * reader would have to handle both, so it waits for a case that needs it
+ * rather than being guessed at now.
+ *
+ * Matrices stay excluded. Their control is a grid of components with an
+ * identity button, and a range across a transform's cells is not a thing
+ * anybody has asked for.
+ */
+type NumericMetadata<T extends CascadeType> = T extends
+  | "float"
+  | "int"
+  | "vec2"
+  | "vec3"
+  | "vec4"
+  | "vec2i"
+  | "vec3i"
+  | "vec4i"
   ? { readonly min?: number; readonly max?: number; readonly step?: number }
   : { readonly min?: never; readonly max?: never; readonly step?: never };
 type AcceptMetadata<T extends CascadeType> = T extends "image" | "asset"
