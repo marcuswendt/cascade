@@ -12,14 +12,38 @@ import {
 import type { CascadePanelParams, PanelType } from './types';
 import { createSvelteRenderer, togglePanelLock, panelLockStore, sharedContextStore } from './renderer';
 import { get } from 'svelte/store';
-import { writable } from 'svelte/store';
+import { writable, type Writable } from 'svelte/store';
 import { mount, unmount } from 'svelte';
 import type { ProjectPanelMeta } from '../projectPanels';
 import PanelIcon from '../components/PanelIcon.svelte';
+import {
+  FOLDED_SIZE,
+  adoptOrphanFolds,
+  deserializeFolds,
+  fold as foldRecord,
+  foldAxis,
+  forget as forgetFold,
+  serializeFolds,
+  unfold as unfoldRecord,
+  type FoldMap,
+  type FoldRecord,
+  type ResizeAxis as FoldAxis,
+} from './fold';
 
 const STORAGE_KEY = 'cascade-dockview-layout';
-type ResizeAxis = 'width' | 'height';
-type MinimizedGroup = { size: number; minimum: number; axis: ResizeAxis };
+/**
+ * The fold records live beside the layout rather than inside it.
+ *
+ * dockview's own `toJSON` already persists a folded group's *size* (8px), so
+ * the choice is not whether folding survives a reload — it does, unavoidably —
+ * but whether the size it should come back to survives with it. Not writing
+ * this key is the destructive option: you would reload into a hairline group
+ * with no memory of what it was. See adoptOrphanFolds for the case where the
+ * layout still arrives without them.
+ */
+const FOLD_STORAGE_KEY = 'cascade-dockview-folds';
+type ResizeAxis = FoldAxis;
+type MinimizedGroup = FoldRecord;
 
 export function activePanelId(event: DockviewActivePanelChangeEvent): string | null {
   return event.panel?.id ?? null;
@@ -61,10 +85,27 @@ export function setProjectPanelTypes(panels: ProjectPanelMeta[]): void {
   ]);
 }
 
+/**
+ * Which groups are folded, and what each one unfolds to.
+ *
+ * A plain store rather than a rune, because the two things that read it are the
+ * imperatively-built tab and header-action elements dockview asks us for — they
+ * are outside any Svelte component and cannot see `$state`. One source of
+ * truth: the class on the group element is derived from this, never set beside
+ * it.
+ */
+export const foldedGroups: Writable<FoldMap> = writable(new Map());
+
+export function isGroupFolded(groupId: string): boolean {
+  return get(foldedGroups).has(groupId);
+}
+
 export function mountPanelTypeIcon(target: HTMLElement, type: PanelType): (() => void) | undefined {
   const icon = get(panelTypes).find(panel => panel.type === type)?.icon;
   if (!icon) return;
-  const instance = mount(PanelIcon, { target, props: { icon, size: 14 } });
+  // 12px, not 14: the tab strip is 20px now, and a 14px icon beside an
+  // 11px label reads as the icon being the label.
+  const instance = mount(PanelIcon, { target, props: { icon, size: 12 } });
   return () => { void unmount(instance); };
 }
 
@@ -74,14 +115,19 @@ class DockviewStore {
   private _activePanel = $state<string | null>(null);
   private _panels = $state<Map<string, CascadePanelParams>>(new Map());
   private _isReady = $state(false);
-  private _minimizedGroups = $state<Map<string, MinimizedGroup>>(new Map());
+  /** groupId -> the `.cascade-header-actions` element dockview asked us to
+   *  build for that group. It is the only handle on a group's DOM that does not
+   *  reach past dockview's public types (`IDockviewGroupPanel` deliberately
+   *  does not expose `element`), and `closest('.dv-groupview')` from it gives
+   *  the group root the folded class belongs on. */
+  private _groupChrome = new Map<string, HTMLElement>();
 
   // Getters
   get api() { return this._api; }
   get activePanel() { return this._activePanel; }
   get panels() { return this._panels; }
   get isReady() { return this._isReady; }
-  get minimizedGroups() { return this._minimizedGroups; }
+  get minimizedGroups(): Map<string, MinimizedGroup> { return get(foldedGroups); }
 
   // Callback for when add panel button is clicked (set by container)
   onAddPanelClick: ((groupId: string, position: { x: number; y: number }) => void) | null = null;
@@ -102,30 +148,58 @@ class DockviewStore {
         return createSvelteRenderer(params);
       },
       createRightHeaderActionComponent: (_group): IHeaderActionsRenderer => {
+        const el = document.createElement('div');
+        el.className = 'cascade-header-actions';
+
+        // Fold button. Folded, the whole strip becomes this button (CSS
+        // stretches the actions container across it) — a 8px-tall glyph is not
+        // a target anyone can hit, but a 8px-tall strip several hundred pixels
+        // wide is, so the affordance is the strip rather than the icon.
+        const foldBtn = document.createElement('button');
+        foldBtn.className = 'cascade-fold-btn';
+        const setFoldIcon = (folded: boolean) => {
+          foldBtn.classList.toggle('folded', folded);
+          foldBtn.title = folded ? 'Unfold panel' : 'Fold panel to a strip';
+          foldBtn.setAttribute('aria-label', foldBtn.title);
+          foldBtn.setAttribute('aria-expanded', folded ? 'false' : 'true');
+          foldBtn.innerHTML = folded
+            ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>`
+            : `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+        };
+        setFoldIcon(false);
+        foldBtn.onclick = (e) => {
+          e.stopPropagation();
+          self.toggleMinimizeGroup(_group.id);
+        };
+        el.appendChild(foldBtn);
+
+        // Add panel button
+        const addBtn = document.createElement('button');
+        addBtn.className = 'cascade-add-panel-btn';
+        addBtn.innerHTML = '+';
+        addBtn.title = 'Add panel';
+        addBtn.onclick = (e) => {
+          e.stopPropagation();
+          const rect = addBtn.getBoundingClientRect();
+          const groupId = _group.id;
+          if (self.onAddPanelClick) {
+            self.onAddPanelClick(groupId, { x: rect.left, y: rect.bottom });
+          }
+        };
+        el.appendChild(addBtn);
+
+        let unsubscribeFold: (() => void) | null = null;
+
         return {
-          element: (() => {
-            const el = document.createElement('div');
-            el.className = 'cascade-header-actions';
-
-            // Add panel button
-            const addBtn = document.createElement('button');
-            addBtn.className = 'cascade-add-panel-btn';
-            addBtn.innerHTML = '+';
-            addBtn.title = 'Add panel';
-            addBtn.onclick = (e) => {
-              e.stopPropagation();
-              const rect = addBtn.getBoundingClientRect();
-              const groupId = _group.id;
-              if (self.onAddPanelClick) {
-                self.onAddPanelClick(groupId, { x: rect.left, y: rect.bottom });
-              }
-            };
-            el.appendChild(addBtn);
-
-            return el;
-          })(),
-          init: () => {},
-          dispose: () => {}
+          element: el,
+          init: () => {
+            self.registerGroupChrome(_group.id, el);
+            unsubscribeFold = foldedGroups.subscribe((map) => setFoldIcon(map.has(_group.id)));
+          },
+          dispose: () => {
+            unsubscribeFold?.();
+            self.unregisterGroupChrome(_group.id);
+          }
         };
       },
       createTabComponent: (_options) => {
@@ -341,6 +415,11 @@ class DockviewStore {
     if (!this._api) return;
     const panel = this._api.getPanel(panelId);
     if (panel) {
+      // Focusing a folded panel has to unfold it. Otherwise ⌘5 and View >
+      // Focus Agent do exactly what they claim — the panel becomes active —
+      // and nothing appears, which reads as a dead menu item rather than as a
+      // folded panel.
+      this.unfoldGroupContainingPanel(panelId);
       panel.api.setActive();
     }
   }
@@ -467,41 +546,171 @@ class DockviewStore {
     }
   }
 
+  /** The group's root element, for the folded class. Reached through the
+   *  header-action element we built for it rather than through the group
+   *  object, which does not expose its DOM on the public interface. */
+  private groupElement(groupId: string): HTMLElement | null {
+    const chrome = this._groupChrome.get(groupId);
+    return (chrome?.closest('.dv-groupview') as HTMLElement | null) ?? null;
+  }
+
+  /** Called by the header-action renderer dockview builds per group. */
+  registerGroupChrome(groupId: string, element: HTMLElement): void {
+    this._groupChrome.set(groupId, element);
+    // A group can be rebuilt (a reload, a drag that re-creates it) while
+    // already folded, so the class has to be re-applied from the record.
+    // dockview calls init() before the header is necessarily in the document,
+    // and `closest` finds nothing from a detached node — so if the group root
+    // is not reachable yet, try once more after the current task.
+    const apply = () => this.applyFoldClass(groupId, isGroupFolded(groupId));
+    apply();
+    if (!this.groupElement(groupId)) queueMicrotask(apply);
+  }
+
+  unregisterGroupChrome(groupId: string): void {
+    this._groupChrome.delete(groupId);
+  }
+
+  private applyFoldClass(groupId: string, folded: boolean): void {
+    this.groupElement(groupId)?.classList.toggle('cascade-group-folded', folded);
+  }
+
   /**
-   * Toggle minimize/restore for a group
+   * Fold a group down to a hairline strip, remembering the size it had.
+   *
+   * Idempotent: folding a folded group is a no-op rather than an overwrite,
+   * which matters because two affordances reach this (the header button and a
+   * double-click on the tab title) and the second one must not record 8px as
+   * the size to come back to.
    */
-  toggleMinimizeGroup(groupId: string): void {
+  foldGroup(groupId: string): void {
     if (!this._api) return;
+    if (isGroupFolded(groupId)) return;
 
     const group = this._api.getGroup(groupId);
     if (!group) return;
 
-    const isMinimized = this._minimizedGroups.has(groupId);
-    const savedData = this._minimizedGroups.get(groupId);
-
-    const axis = groupResizeAxis(this._api.toJSON().grid, groupId);
+    // foldAxis, not the older groupResizeAxis beside it — see the note on
+    // layoutGroupSizes in fold.ts. Folding writes a real size to a real group,
+    // so the wrong axis here would shrink the panel in the wrong direction.
+    const axis = foldAxis(this._api.toJSON().grid, groupId);
     if (!axis) return;
 
-    if (isMinimized && savedData) {
-      group.api.setConstraints(savedData.axis === 'width'
-        ? { minimumWidth: savedData.minimum }
-        : { minimumHeight: savedData.minimum });
-      group.api.setSize({ [savedData.axis]: savedData.size });
-      const newMinimized = new Map(this._minimizedGroups);
-      newMinimized.delete(groupId);
-      this._minimizedGroups = newMinimized;
-    } else {
-      const newMinimized = new Map(this._minimizedGroups);
-      newMinimized.set(groupId, {
-        size: group[axis] || 200,
-        minimum: axis === 'width' ? group.minimumWidth : group.minimumHeight,
-        axis,
-      });
-      this._minimizedGroups = newMinimized;
+    foldedGroups.update((map) => foldRecord(map, groupId, {
+      size: group[axis],
+      minimum: axis === 'width' ? group.minimumWidth : group.minimumHeight,
+      axis,
+    }));
 
-      group.api.setConstraints(axis === 'width' ? { minimumWidth: 35 } : { minimumHeight: 35 });
-      group.api.setSize({ [axis]: 35 });
+    group.api.setConstraints(axis === 'width' ? { minimumWidth: FOLDED_SIZE } : { minimumHeight: FOLDED_SIZE });
+    group.api.setSize({ [axis]: FOLDED_SIZE });
+    this.applyFoldClass(groupId, true);
+    this.saveFolds();
+    // Both keys in one go: the layout carries the strip size, the fold key
+    // carries what it comes back to, and a reload between the two halves is
+    // the case adoptOrphanFolds exists to survive. No reason to leave the gap
+    // open for the 30s the auto-save takes.
+    this.saveLayout();
+  }
+
+  /** Restore a folded group to the size it had. No-op if it was not folded. */
+  unfoldGroup(groupId: string): void {
+    if (!this._api) return;
+
+    let restore: MinimizedGroup | null = null;
+    foldedGroups.update((map) => {
+      const result = unfoldRecord(map, groupId);
+      restore = result.restore;
+      return result.map;
+    });
+    if (!restore) return;
+    const record: MinimizedGroup = restore;
+
+    const group = this._api.getGroup(groupId);
+    // The class comes off either way: a fold record whose group has gone is
+    // still a record to clear, and leaving it would fold the next group to
+    // inherit that id.
+    this.applyFoldClass(groupId, false);
+    if (group) {
+      group.api.setConstraints(record.axis === 'width'
+        ? { minimumWidth: record.minimum }
+        : { minimumHeight: record.minimum });
+      group.api.setSize({ [record.axis]: record.size });
     }
+    this.saveFolds();
+    this.saveLayout();
+  }
+
+  /**
+   * Toggle minimize/restore for a group
+   */
+  toggleMinimizeGroup(groupId: string): void {
+    if (isGroupFolded(groupId)) this.unfoldGroup(groupId);
+    else this.foldGroup(groupId);
+  }
+
+  /** Unfold whichever group holds this panel, if it is folded. */
+  private unfoldGroupContainingPanel(panelId: string): void {
+    const groupId = this._api?.getPanel(panelId)?.group?.id;
+    if (groupId && isGroupFolded(groupId)) this.unfoldGroup(groupId);
+  }
+
+  /** The escape hatch: bring every folded group back. */
+  unfoldAllGroups(): void {
+    for (const groupId of [...get(foldedGroups).keys()]) this.unfoldGroup(groupId);
+  }
+
+  private saveFolds(): void {
+    try {
+      const map = get(foldedGroups);
+      if (map.size === 0) localStorage.removeItem(FOLD_STORAGE_KEY);
+      else localStorage.setItem(FOLD_STORAGE_KEY, JSON.stringify(serializeFolds(map)));
+    } catch (error) {
+      console.warn('Failed to save folded groups:', error);
+    }
+  }
+
+  /**
+   * Re-apply the folded groups a layout arrived with.
+   *
+   * Runs after `fromJSON`, since the sizes are already in the layout — what
+   * this restores is the *constraint* (so the strip does not spring back on the
+   * next relayout) and the class (so the strip is visibly a control). Any group
+   * that arrives at strip size without a record is adopted, which is the only
+   * thing standing between a shared `.cascade` document and a panel nobody can
+   * find. See adoptOrphanFolds.
+   */
+  private restoreFolds(layout: SerializedDockview): void {
+    if (!this._api) return;
+    let map: FoldMap = new Map();
+    try {
+      const saved = localStorage.getItem(FOLD_STORAGE_KEY);
+      if (saved) map = deserializeFolds(JSON.parse(saved));
+    } catch (error) {
+      console.warn('Failed to parse folded groups:', error);
+    }
+
+    map = adoptOrphanFolds(layout.grid, map);
+
+    // A record for a group this layout does not contain is dead weight, and
+    // group ids are reused, so it would fold an unrelated panel later.
+    const live = new Set(this._api.groups.map((group) => group.id));
+    for (const groupId of [...map.keys()]) {
+      if (!live.has(groupId)) map = forgetFold(map, groupId);
+    }
+
+    foldedGroups.set(map);
+
+    for (const [groupId, record] of map) {
+      const group = this._api.getGroup(groupId);
+      if (!group) continue;
+      group.api.setConstraints(record.axis === 'width'
+        ? { minimumWidth: FOLDED_SIZE }
+        : { minimumHeight: FOLDED_SIZE });
+      group.api.setSize({ [record.axis]: FOLDED_SIZE });
+      this.applyFoldClass(groupId, true);
+    }
+    this.saveFolds();
   }
 
   /**
@@ -619,6 +828,7 @@ class DockviewStore {
 
     try {
       this._api.fromJSON(layoutToLoad);
+      this.restoreFolds(layoutToLoad);
     } catch (error) {
       console.warn('Failed to load layout:', error);
 
@@ -712,6 +922,11 @@ class DockviewStore {
    */
   resetLayout(): void {
     if (!this._api) return;
+    // Folds go with the layout they described. Keeping them would re-fold
+    // groups in a layout the user just asked to be given back to them, and
+    // Reset Layout is the last recovery step there is.
+    foldedGroups.set(new Map());
+    this.saveFolds();
     this._api.clear();
     this._api.fromJSON(this.getDefaultLayout());
     this.saveLayout();
@@ -889,7 +1104,7 @@ class DockviewStore {
     this._activePanel = null;
     this._isReady = false;
     this._panels = new Map();
-    this._minimizedGroups = new Map();
+    this._groupChrome.clear();
   }
 }
 

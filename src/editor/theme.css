@@ -26,6 +26,33 @@
   --node-tint-strength: 100%;
   color-scheme: dark;
 
+  /* Panel chrome metrics.
+   *
+   * The dockview tab strip used to have no height of its own: dockview's
+   * `--dv-tabs-and-actions-container-height` is only defined by its shipped
+   * `.dockview-theme-*` classes, none of which Studio applies, so the variable
+   * resolved to nothing and the strip was sized by whatever the tallest thing
+   * inside a tab happened to be — 30px where a lock button was present, 28px
+   * where it was not. Pinning it here makes the strip one height everywhere,
+   * and makes that height a number one file owns.
+   *
+   * `--panel-tab-height-folded` is the folded strip. It sits far below any
+   * pointer-target guidance on purpose, because when a group is folded the
+   * whole width of the strip becomes the unfold button — see
+   * .cascade-group-folded in DockviewContainer.svelte. Keep it in step with
+   * FOLDED_SIZE in dockview/fold.ts, which sizes the group itself; this only
+   * sizes the chrome inside it. */
+  --panel-tab-height: 20px;
+  --panel-tab-height-folded: 8px;
+  --panel-tab-font-size: 11px;
+  --panel-tab-padding-x: 8px;
+  /* Visual size of the close / lock / add glyphs, and the pointer target they
+     get from an overflowing ::after. The tab is shorter than the target on
+     purpose: a hit area may spill past its glyph, the strip may not grow. */
+  --panel-tab-glyph-size: 16px;
+  --panel-tab-hit-area: 24px;
+
+
   /* Surfaces */
   --surface-void: #0a0a0a;
   --surface-app: #181818;

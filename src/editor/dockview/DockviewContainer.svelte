@@ -278,20 +278,41 @@
     --dv-inactivegroup-hiddenpanel-tab-color: var(--text-subtle);
     --dv-separator-border: var(--border-divider);
     --dv-paneview-header-border-color: var(--border-divider);
+    /* Studio applies none of dockview's shipped `.dockview-theme-*` classes,
+       so these two were undefined and the tab strip was sized by its tallest
+       child instead — 30px with a lock button, 28px without. Pinned here, from
+       theme.css, so one number owns the strip. */
+    --dv-tabs-and-actions-container-height: var(--panel-tab-height);
+    --dv-tabs-and-actions-container-font-size: var(--panel-tab-font-size);
+  }
+
+  /* The divider is drawn as an inset shadow, not a border, and on the whole
+     strip rather than on the tab list. A 1px border on .dv-tabs-container —
+     which dockview sizes at height: 100% and content-box — added a pixel the
+     strip no longer has to give now that its height is pinned, and it only
+     ever spanned the tabs rather than the group. */
+  .dockview-container :global(.dv-tabs-and-actions-container) {
+    box-shadow: inset 0 -1px 0 var(--border-divider);
   }
 
   .dockview-container :global(.dv-tabs-container) {
     background: var(--surface-raised);
-    border-bottom: 1px solid var(--border-divider);
+    box-sizing: border-box;
   }
 
   .dockview-container :global(.dv-tab) {
     background: var(--surface-control-hover);
     color: var(--text-secondary);
     border: none;
-    padding: 6px 12px;
-    font-size: 12px;
-    min-width: 80px;
+    /* No vertical padding: the strip's own height is what sizes the tab now,
+       and 6px top and bottom is what made it 30px. Horizontal padding and the
+       font came down with it, so a 20px tab still reads as a label rather than
+       as a clipped one. */
+    padding: 0 var(--panel-tab-padding-x);
+    font-size: var(--panel-tab-font-size);
+    line-height: 1;
+    min-width: 64px;
+    height: var(--panel-tab-height);
   }
 
   .dockview-container :global(.dv-tab.dv-active-tab) {
@@ -350,19 +371,38 @@
   }
 
   .dockview-container :global(.cascade-add-panel-btn) {
-    width: 20px;
-    height: 20px;
+    width: var(--panel-tab-glyph-size);
+    height: var(--panel-tab-glyph-size);
     border: none;
     background: transparent;
     color: var(--text-subtle);
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     border-radius: 4px;
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
     transition: background 0.15s, color 0.15s;
+  }
+
+  /* The pointer target, held at 24px while the glyph shrank to 16px. It
+     overflows the button and, vertically, the 20px strip — which is the point:
+     the strip may not grow, but the target it hands the pointer can. Every
+     small control in this header does this, and a shorter tab whose close
+     button has become unclickable is a bug traded for space. */
+  .dockview-container :global(.cascade-add-panel-btn)::after,
+  .dockview-container :global(.cascade-fold-btn)::after,
+  .dockview-container :global(.cascade-tab-close)::after,
+  .dockview-container :global(.cascade-tab-lock)::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--panel-tab-hit-area);
+    height: var(--panel-tab-hit-area);
+    transform: translate(-50%, -50%);
   }
 
   .dockview-container :global(.cascade-add-panel-btn:hover) {
@@ -374,14 +414,19 @@
   .dockview-container :global(.cascade-tab) {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 0 4px;
+    gap: 4px;
+    padding: 0 2px;
     height: 100%;
+    min-width: 0;
   }
 
   .dockview-container :global(.cascade-tab-title) {
     cursor: pointer;
     user-select: none;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     transition: color 0.15s;
   }
 
@@ -397,17 +442,20 @@
   }
 
   .dockview-container :global(.cascade-tab-close) {
-    width: 16px;
-    height: 16px;
+    width: var(--panel-tab-glyph-size);
+    height: var(--panel-tab-glyph-size);
     border: none;
     background: transparent;
     color: var(--text-subtle);
-    font-size: 14px;
+    font-size: 13px;
+    line-height: 1;
     cursor: pointer;
     border-radius: 3px;
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
+    flex-shrink: 0;
     opacity: 0;
     transition: opacity 0.15s, background 0.15s, color 0.15s;
   }
@@ -423,8 +471,9 @@
 
   /* Lock button in tab */
   .dockview-container :global(.cascade-tab-lock) {
-    width: 18px;
-    height: 18px;
+    width: var(--panel-tab-glyph-size);
+    height: var(--panel-tab-glyph-size);
+    position: relative;
     border: none;
     background: transparent;
     color: var(--text-faintest);
@@ -455,6 +504,107 @@
   .dockview-container :global(.cascade-tab-lock.locked:hover) {
     background: var(--surface-active);
     color: var(--accent-hover);
+  }
+
+  /* Fold button — the collapse control in each group's header */
+  .dockview-container :global(.cascade-fold-btn) {
+    width: var(--panel-tab-glyph-size);
+    height: var(--panel-tab-glyph-size);
+    border: none;
+    background: transparent;
+    color: var(--text-subtle);
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .dockview-container :global(.cascade-fold-btn:hover) {
+    background: var(--surface-active);
+    color: var(--text-bright);
+  }
+
+  /* ---- Folded group ----------------------------------------------------
+   *
+   * The group itself is sized to FOLDED_SIZE by dockview/fold.ts; this is only
+   * what the chrome inside that hairline does. Two things have to hold. The
+   * tabs must get out of the way, or a 20px tab strip renders clipped inside an
+   * 8px group and looks broken rather than folded. And the strip must stay
+   * clickable — so the header-actions container is stretched across the whole
+   * width and the fold button fills it, making the entire strip one wide, short
+   * button. 8px is far under any pointer-target floor in one dimension and
+   * hundreds of pixels over it in the other, which is the only way a strip this
+   * thin is honestly hittable. */
+  .dockview-container :global(.dv-groupview.cascade-group-folded) {
+    --dv-tabs-and-actions-container-height: var(--panel-tab-height-folded);
+  }
+
+  .dockview-container :global(.dv-groupview.cascade-group-folded .dv-tabs-and-actions-container) {
+    position: relative;
+    overflow: hidden;
+    box-shadow: none;
+  }
+
+  .dockview-container :global(.dv-groupview.cascade-group-folded .dv-tabs-container),
+  .dockview-container :global(.dv-groupview.cascade-group-folded .dv-scrollable),
+  .dockview-container :global(.dv-groupview.cascade-group-folded .dv-void-container),
+  .dockview-container :global(.dv-groupview.cascade-group-folded .cascade-add-panel-btn) {
+    display: none;
+  }
+
+  .dockview-container :global(.dv-groupview.cascade-group-folded .dv-right-actions-container),
+  .dockview-container :global(.dv-groupview.cascade-group-folded .cascade-header-actions) {
+    position: absolute;
+    inset: 0;
+    padding: 0;
+    display: block;
+  }
+
+  .dockview-container :global(.dv-groupview.cascade-group-folded .cascade-fold-btn) {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    background: var(--surface-raised);
+    color: var(--text-subtle);
+    /* The glyph does not fit in 8px and is not what gets clicked. A centred
+       hairline is what reads as "there is a panel here, folded". */
+    overflow: hidden;
+  }
+
+  .dockview-container :global(.dv-groupview.cascade-group-folded .cascade-fold-btn svg) {
+    display: none;
+  }
+
+  .dockview-container :global(.dv-groupview.cascade-group-folded .cascade-fold-btn)::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 28px;
+    height: 2px;
+    border-radius: 1px;
+    transform: translate(-50%, -50%);
+    background: var(--text-faintest);
+    transition: background 0.15s;
+  }
+
+  /* The hit area is the strip; the overflowing 24px square would otherwise
+     stick out past an 8px group and swallow clicks meant for its neighbour. */
+  .dockview-container :global(.dv-groupview.cascade-group-folded .cascade-fold-btn)::after {
+    content: none;
+  }
+
+  .dockview-container :global(.dv-groupview.cascade-group-folded .cascade-fold-btn:hover) {
+    background: var(--surface-active);
+  }
+
+  .dockview-container :global(.dv-groupview.cascade-group-folded .cascade-fold-btn:hover)::before {
+    background: var(--accent-alt);
+    width: 44px;
   }
 
   /* Add panel dropdown menu */
