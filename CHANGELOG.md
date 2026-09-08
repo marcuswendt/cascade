@@ -2,6 +2,18 @@
 
 Notable changes to Cascade. Newest first.
 
+## Unreleased
+
+### Node authoring
+
+- **A definition-v1 node knows its own id.** `context.nodeId` is the instance's id, which is what lets `cachePath(context.nodeId, '.png')` name a scratch file per instance rather than per module — `field-logo` runs one module three times at three sizes, and a literal path made them overwrite each other. An id is deliberately all a node gets: it names a namespace, not a position, so a v1 node stays a pure function of its own inputs.
+- **A stored value left under `params` is now reported instead of lost.** The deterministic runtime reads `props` and nothing else, so a document converted to definition-v1 without moving its values reverted every one of them to its default and reported success. `preflight()` names them (`runtime/stray-params`), and `cascade check` prints them under their own heading. It is a warning, not an error — such a graph runs perfectly well on its defaults, which is exactly the problem.
+- **One rule for what stops a run.** `PREFLIGHT_WARNING_CODES` lives in the runtime and is read by both the run path and the CLI's `classifyPreflight`, replacing a copy that existed only in the CLI. A duplicated preflight rule is what previously let `validate` and `check` pass graphs `run` then rejected.
+
+### Build
+
+- **The CLI build resolves `@cascade/runtime/params`.** `src/nodes/Node.ts` imports `resolvePropBinding` from it, the browser build resolved it through `vite.config.ts`, and the CLI build had no alias — so the CLI, which is what the sketches actually run, was the broken half.
+
 ## 0.3.0
 
 Two features carry the minor bump: an **animation system** and an **agent console**. Everything else is either a consequence of those or a fault they exposed.
