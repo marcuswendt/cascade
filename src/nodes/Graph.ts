@@ -1689,6 +1689,14 @@ export class Graph {
            */
           if (expression && node.props[key]) {
             node.props[key].expression = expression;
+          } else if (node.props[key]?.expression) {
+            // The document stored a plain value for a prop that arrived with a
+            // declared default expression, and the author's number wins: a
+            // default expression is a default. Without this a saved file would
+            // quietly start animating on load, which is the mirror of the
+            // dropped-`params` fault — whatever was set has to survive.
+            delete node.props[key].expression;
+            node.props[key] = { ...node.props[key] };
           }
           // The channel restore also reinstates the node's time-dependence — a
           // keyed parameter loaded from disk must be recooked per frame exactly

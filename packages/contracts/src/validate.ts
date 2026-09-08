@@ -42,7 +42,7 @@ const DATA_FIELDS = fields(
 );
 const OUTPUT_FIELDS = fields("kind type description");
 const PROP_FIELDS = fields(
-  "type default label description min max step accept control options",
+  "type default label description min max step accept control options expression",
 );
 
 function diagnostic(code: string, message: string, path?: string): Diagnostic {

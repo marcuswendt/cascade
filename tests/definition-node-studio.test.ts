@@ -80,6 +80,30 @@ const rangedVectorRegistration = {
   loadExecute: async () => executeRangedVector,
 } satisfies DefinitionNodeRegistration<typeof rangedVectorDefinition>;
 
+// A prop that arrives already moving. `$F` rather than `$T` so a frame number
+// reads straight out of the output and a wrong value is obvious.
+const selfAnimatingDefinition = {
+  apiVersion: 1,
+  runsOn: 'portable',
+  props: {
+    time: { type: 'float', default: 0, expression: '$F' },
+  },
+  outputs: {
+    time: { kind: 'data', type: 'float' },
+  },
+} as const satisfies NodeDefinition;
+
+function executeSelfAnimating(context: NodeExecutionContext<typeof selfAnimatingDefinition>) {
+  context.outputs.time.set(context.props.time);
+}
+
+const selfAnimatingRegistration = {
+  kind: 'definition-v1',
+  moduleId: 'cascade.test.SelfAnimating',
+  definition: selfAnimatingDefinition,
+  loadExecute: async () => executeSelfAnimating,
+} satisfies DefinitionNodeRegistration<typeof selfAnimatingDefinition>;
+
 const identityRegistration = {
   kind: 'definition-v1',
   moduleId: 'cascade.test.Identity',
@@ -92,7 +116,7 @@ describe('definition-v1 nodes in Studio', () => {
 
   beforeAll(async () => {
     await initializeNodeLibraries();
-    registerDefinitionNodes([interactionRegistration, identityRegistration, rangedVectorRegistration]);
+    registerDefinitionNodes([interactionRegistration, identityRegistration, rangedVectorRegistration, selfAnimatingRegistration]);
   });
 
   it('lists the runtime geometry library in the node picker', () => {
@@ -398,5 +422,119 @@ describe('definition-v1 nodes in Studio', () => {
     expect(graph.preflight()[0].message).toContain('divisions');
     await graph.dispose();
     await runtime.dispose();
+  });
+  it('starts a declared default expression running in the headless runtime', async () => {
+    const runtime = createRuntime({
+      host: createNodeRuntimeHost({}),
+      nodes: [selfAnimatingRegistration],
+    });
+    const graph = await runtime.load({
+      version: '0.2',
+      nodes: [{ id: 'clock', module: 'cascade.test.SelfAnimating' }],
+      connections: [],
+    });
+
+    graph.setFrame(1);
+    await graph.run();
+    expect(graph.getOutput('clock', 'time')).toBe(1);
+
+    graph.setFrame(42);
+    await graph.run();
+    expect(graph.getOutput('clock', 'time')).toBe(42);
+    await graph.dispose();
+    await runtime.dispose();
+  });
+
+  it('lets a stored plain value beat the default expression', async () => {
+    // The losing case is the one worth asserting. A default expression is a
+    // default: a document that saved a number keeps that number and must not
+    // quietly start animating on load, which is the mirror of the dropped-
+    // `params` fault.
+    const runtime = createRuntime({
+      host: createNodeRuntimeHost({}),
+      nodes: [selfAnimatingRegistration],
+    });
+    const graph = await runtime.load({
+      version: '0.2',
+      nodes: [{ id: 'clock', module: 'cascade.test.SelfAnimating', props: { time: 7 } }],
+      connections: [],
+    });
+
+    graph.setFrame(1);
+    await graph.run();
+    expect(graph.getOutput('clock', 'time')).toBe(7);
+
+    graph.setFrame(42);
+    await graph.run();
+    expect(graph.getOutput('clock', 'time')).toBe(7);
+    await graph.dispose();
+    await runtime.dispose();
+  });
+
+  it('lets a stored expression beat the default expression', async () => {
+    const runtime = createRuntime({
+      host: createNodeRuntimeHost({}),
+      nodes: [selfAnimatingRegistration],
+    });
+    const graph = await runtime.load({
+      version: '0.2',
+      nodes: [{
+        id: 'clock',
+        module: 'cascade.test.SelfAnimating',
+        props: { time: { value: 0, expression: '$F * 2' } },
+      }],
+      connections: [],
+    });
+
+    graph.setFrame(21);
+    await graph.run();
+    expect(graph.getOutput('clock', 'time')).toBe(42);
+    await graph.dispose();
+    await runtime.dispose();
+  });
+
+  it('gives a freshly dropped Studio node the expression, and a restored one its saved value', async () => {
+    const dropped = new Graph();
+    const node = dropped.addNode('cascade.test.SelfAnimating', { x: 0, y: 0 });
+    await dropped.execute(node);
+
+    // A real expression rather than a hidden fallback: it is on the prop, so
+    // the Inspector shows it and it can be deleted like any other.
+    expect(node.parm('time')!.expression()).toBe('$F');
+    expect(node.isTimeDependent).toBe(true);
+
+    const restored = Graph.fromJSON({
+      version: '0.2',
+      nodes: [{ id: 'clock', module: 'cascade.test.SelfAnimating', props: { time: 7 } }],
+    });
+    const saved = restored.getNode('clock')!;
+    await restored.execute(saved);
+
+    expect(saved.parm('time')!.expression()).toBeNull();
+    expect(saved.rawParameterValue('time')).toBe(7);
+    expect(saved.isTimeDependent).toBe(false);
+  });
+  it('does not reinstate a default expression the author deleted', async () => {
+    // Re-declaration is the case that makes the application have to be
+    // tracked rather than merely conditional. A definition-v1 node declares
+    // its parameters once, in setup — but setup runs again when a module is
+    // retargeted or its code is edited, and an author's deletion has to
+    // survive that. Declared directly here rather than through a cook,
+    // because a cook does not re-declare and a test that went through one
+    // passed with the tracking removed, which is how I found it was not
+    // testing this at all.
+    const graph = new Graph();
+    const node = graph.addNode('cascade.test.SelfAnimating', { x: 0, y: 0 });
+    await graph.execute(node);
+    expect(node.parm('time')!.expression()).toBe('$F');
+
+    node.parm('time')!.deleteExpression();
+    expect(node.parm('time')!.expression()).toBeNull();
+
+    // What a retarget or a code edit does.
+    node.param('time', 0, { type: 'float', defaultExpression: '$F' });
+
+    expect(node.parm('time')!.expression()).toBeNull();
+    expect(node.isTimeDependent).toBe(false);
   });
 });

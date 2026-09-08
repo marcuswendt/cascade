@@ -43,6 +43,13 @@ export interface ParamOptions {
   visibleWhen?: (params: Record<string, any>) => boolean;
   /** Refuse promotion for a parameter that could never sensibly be driven. */
   promotable?: boolean;
+  /**
+   * An expression the parameter starts with, so a node can arrive already
+   * moving. Applied once, and only when the document stored nothing for this
+   * parameter — see `bindParameterProp`, where the same idempotence rule
+   * already protects a value someone set.
+   */
+  defaultExpression?: string;
 }
 
 export type PropControlType = 'number' | 'int' | 'slider' | 'text' | 'textarea' | 'color' | 'image' | 'boolean' | 'select' | 'vector' | 'vec2' | 'vec3' | 'vec4' | 'vec2i' | 'vec3i' | 'vec4i' | 'mat2' | 'mat3' | 'mat4' | 'range' | 'button' | 'folder' | 'group' | 'colorramp';

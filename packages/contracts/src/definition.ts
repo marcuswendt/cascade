@@ -128,6 +128,26 @@ export type PropDefinition<T extends PropDataType> = {
   readonly default: SerializableValueForType<T>;
   readonly label?: string;
   readonly description?: string;
+  /**
+   * An expression the prop starts with, so a node can come out of the box
+   * already moving — `sine-oscillator` and `ripple` baked in `$T` as dynamic
+   * nodes and shipped a static 0 once converted, which is what this restores.
+   * Marcus's decision, 2026-09-08, asked as a taste question about his own
+   * tool: a node like that should self-animate when dropped.
+   *
+   * **It is a default, so it loses to a stored value like any other.** A
+   * document that saved a plain number for this prop keeps that number and
+   * does not silently start animating on load. That is the mirror of the
+   * dropped-`params` fault: whatever the author set has to win, and the test
+   * for this asserts the losing case rather than the winning one.
+   *
+   * Applied only when the document stored nothing at all for the prop. It is a
+   * real expression once applied, not a hidden fallback — visible in the
+   * Inspector, editable, and deletable, which is how a stored expression
+   * already reads and the only version that does not lie about where the
+   * number came from.
+   */
+  readonly expression?: string;
 } & NumericMetadata<T> &
   AcceptMetadata<T> &
   SelectMetadata<T>;

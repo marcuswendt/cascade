@@ -484,6 +484,10 @@ export class Node {
    * Add a parameter to this node
    * Short alias for defineProp - use in setup()
    */
+  /** Props whose declared default expression has already been applied — see
+   *  `bindParameterProp`, which must not reinstate one the author deleted. */
+  private readonly defaultExpressionsApplied = new Set<string>();
+
   addParm<T>(name: string, config: Prop<T>): void {
     this.props[name] = config as Prop;
     // Declared by the node's own code, so its cook may read `.value` directly
@@ -923,6 +927,32 @@ export class Node {
       prop = { value: seeded !== undefined ? seeded : parameter.defaultValue } as Prop;
       this.props[name] = prop;
       this.props = { ...this.props };
+    }
+
+    /**
+     * A declared default expression, applied exactly once per prop.
+     *
+     * Once, and tracked, for two reasons. `param()` re-declares on every cook
+     * of a dynamic node, so re-applying would reinstate an expression the
+     * author had just deleted — the same idempotence this whole method already
+     * owes a value someone set. And the declaration cannot tell whether a
+     * document stored anything: `Graph.fromJSON` restores props *after* setup
+     * has run, so at this moment a freshly dropped node and a saved one look
+     * identical. The restore is where a stored plain value clears this again,
+     * which is the rule — a default expression is a default, and the author's
+     * number wins.
+     *
+     * Once applied it is a real expression rather than a hidden fallback: it
+     * shows in the Inspector and deletes like any other, which is the only
+     * version that does not lie about where the number came from.
+     */
+    if (options.defaultExpression && !this.defaultExpressionsApplied.has(name)) {
+      this.defaultExpressionsApplied.add(name);
+      if (!prop.expression) {
+        prop.expression = options.defaultExpression;
+        this.props = { ...this.props };
+        this.updateTimeDependent();
+      }
     }
 
     prop.fromParameter = name;

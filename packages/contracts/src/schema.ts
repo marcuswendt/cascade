@@ -52,10 +52,16 @@ const output = object(
   ["kind", "type"],
 );
 const { kind: _kind, variadic: _variadic, ...propProperties } = dataProperties;
-const prop = object({ ...propProperties, label: { type: "string" } }, [
-  "type",
-  "default",
-]);
+const prop = object(
+  {
+    ...propProperties,
+    label: { type: "string" },
+    // Props only, not inputs: an input's value comes from whatever is wired to
+    // it, so a default expression there would be describing the wrong thing.
+    expression: { type: "string", minLength: 1 },
+  },
+  ["type", "default"],
+);
 
 function environmentCapabilities(
   runsOn: string,

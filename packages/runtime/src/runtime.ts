@@ -1346,7 +1346,22 @@ function materialize(
       `${authored.id}.${name}`,
     );
   const bindings: Record<string, PropBinding> = {};
-  for (const [name, saved] of Object.entries(authored.props ?? {})) {
+  // A declared default expression, applied only where the document stored
+  // nothing at all for the prop. The loop below then runs over what *was*
+  // stored, so an authored value or an authored expression overwrites this —
+  // which is the whole contract: a default expression is a default, and a file
+  // that saved a plain number keeps its number rather than quietly animating.
+  const storedProps = authored.props ?? {};
+  for (const [name, definition] of Object.entries(
+    registration.definition.props ?? {},
+  )) {
+    if (!definition.expression || name in storedProps) continue;
+    bindings[name] = {
+      value: props[name],
+      expression: definition.expression,
+    };
+  }
+  for (const [name, saved] of Object.entries(storedProps)) {
     const definition = registration.definition.props?.[name];
     if (!definition) continue;
     // `{ value, expression?, channel? }` — the object form declared in
@@ -1362,7 +1377,12 @@ function materialize(
       `${authored.id}.${name}`,
     );
     props[name] = value;
-    if (!object) continue;
+    // A stored plain value is an author's decision and beats the declared
+    // default expression, so any binding seeded above has to go.
+    if (!object) {
+      delete bindings[name];
+      continue;
+    }
     const channel = deserializeChannel(object.channel);
     const expression = typeof object.expression === "string" && object.expression
       ? object.expression

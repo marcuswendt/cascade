@@ -20,9 +20,11 @@ function parameterOptions(definition: {
   readonly max?: number;
   readonly step?: number;
   readonly options?: readonly unknown[];
+  readonly expression?: string;
 }): ParamOptions {
   return {
     ...(definition.label ? { label: definition.label } : {}),
+    ...(definition.expression ? { defaultExpression: definition.expression } : {}),
     ...(definition.min === undefined ? {} : { min: definition.min }),
     ...(definition.max === undefined ? {} : { max: definition.max }),
     ...(definition.step === undefined ? {} : { step: definition.step }),
