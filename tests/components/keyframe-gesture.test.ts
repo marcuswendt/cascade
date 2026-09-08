@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { isKeyable, keyState, toggleKeyAtPlayhead } from '@/editor/keyframeGesture';
+import { deleteKeyAtPlayhead, isKeyable, keyState, setKeyAtPlayhead, toggleKeyAtPlayhead } from '@/editor/keyframeGesture';
 import { Graph } from '@/nodes/Graph';
 import { Node } from '@/nodes/Node';
 
@@ -30,6 +30,36 @@ describe('keying a parameter from the Inspector', () => {
 
     expect(toggleKeyAtPlayhead(node, 'angle')).toBe('removed');
     expect(keyState(node, 'angle')).toBe('none');
+  });
+
+  it('alt-click sets and re-keying updates, rather than toggling off', () => {
+    // The gesture pair Marcus asked for: set and delete are separate, because
+    // while scrubbing you cannot see whether a key sits exactly on this frame,
+    // so a toggle sometimes sets and sometimes deletes for reasons invisible
+    // to you. Re-keying after nudging a value is the common case and must
+    // update rather than remove.
+    const node = keyable();
+    expect(setKeyAtPlayhead(node, 'angle')).toBe('set');
+    expect(node.parm('angle')!.keys()[0].value).toBe(30);
+
+    node.updateProp('angle', 55);
+    expect(setKeyAtPlayhead(node, 'angle')).toBe('set');
+    expect(node.parm('angle')!.keys()).toHaveLength(1);
+    expect(node.parm('angle')!.keys()[0].value).toBe(55);
+  });
+
+  it('ctrl-click deletes, and says so when there is nothing here', () => {
+    const node = keyable();
+    expect(deleteKeyAtPlayhead(node, 'angle')).toBe('absent');
+
+    setKeyAtPlayhead(node, 'angle');
+    expect(deleteKeyAtPlayhead(node, 'angle')).toBe('removed');
+    expect(keyState(node, 'angle')).toBe('none');
+
+    // A key at another frame is not this frame's key.
+    node.parm('angle')!.setKey(40, 1);
+    expect(deleteKeyAtPlayhead(node, 'angle')).toBe('absent');
+    expect(node.parm('angle')!.keys()).toHaveLength(1);
   });
 
   it('reports keyed-elsewhere distinctly from keyed-here', () => {

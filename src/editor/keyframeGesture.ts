@@ -51,22 +51,66 @@ export function keyState(node: Node, key: string): KeyState {
 }
 
 /**
- * Toggle a key at the playhead. Returns what it did, so a caller can report
- * rather than guess — a gesture that silently does nothing is the thing this
- * whole file exists to stop.
+ * Set a key at the playhead, replacing one already there.
+ *
+ * Alt-click, and deliberately not a toggle. Marcus, 2026-09-08: Houdini has a
+ * separate gesture for deletion, and he is right that it is the better shape —
+ * while scrubbing you cannot be certain whether a key sits exactly on this
+ * frame, so a toggle sometimes sets and sometimes deletes depending on
+ * something you cannot see. Set always sets; re-keying updates the value, which
+ * is what you want after nudging a slider.
  */
-export function toggleKeyAtPlayhead(node: Node, key: string): 'set' | 'removed' | 'unavailable' {
+export function setKeyAtPlayhead(node: Node, key: string): 'set' | 'unavailable' {
   const parm = parmOf(node, key);
-  if (!parm?.setKey || !parm.deleteKey) return 'unavailable';
+  if (!parm?.setKey) return 'unavailable';
 
+  // Which value to key, and this is subtler than it looks.
+  //
+  // `setKey()` with no arguments keys the *evaluated* value — and once a
+  // channel exists, evaluating resolves the channel, so the evaluated value is
+  // the sampled one. Re-keying a parameter you had just edited would therefore
+  // write back the old key's value and silently discard the edit. Caught by a
+  // test asserting the obvious workflow: nudge a value, key it.
+  //
+  // So: standing on a key, key the *raw* value, because a raw value that
+  // differs from the sampled one is exactly an edit waiting to be committed.
+  // Anywhere else, key the evaluated value, which is what the field is showing
+  // and what you would expect to pin.
   if (keyState(node, key) === 'keyed-here') {
-    parm.deleteKey(currentFrame(node));
-    return 'removed';
+    const raw = (node as any).props?.[key]?.value;
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      parm.setKey(currentFrame(node), raw);
+      return 'set';
+    }
   }
-  // No arguments: key the current frame at the current evaluated value, which
-  // is what alt-click means and what setKey() was written for.
   parm.setKey();
   return 'set';
+}
+
+/**
+ * Delete the key at the playhead. Ctrl-click.
+ *
+ * Reports `absent` rather than pretending, because deleting nothing and
+ * deleting something must be distinguishable to a caller that wants to say so.
+ */
+export function deleteKeyAtPlayhead(node: Node, key: string): 'removed' | 'absent' | 'unavailable' {
+  const parm = parmOf(node, key);
+  if (!parm?.deleteKey) return 'unavailable';
+  if (keyState(node, key) !== 'keyed-here') return 'absent';
+  parm.deleteKey(currentFrame(node));
+  return 'removed';
+}
+
+/**
+ * Toggle — what the diamond button does. A single visible affordance should
+ * both set and clear; the modifier gestures are the explicit pair.
+ */
+export function toggleKeyAtPlayhead(node: Node, key: string): 'set' | 'removed' | 'unavailable' {
+  if (keyState(node, key) === 'keyed-here') {
+    const removed = deleteKeyAtPlayhead(node, key);
+    return removed === 'removed' ? 'removed' : 'unavailable';
+  }
+  return setKeyAtPlayhead(node, key);
 }
 
 /** True when this parameter can be keyed at all — numbers only for now. */
