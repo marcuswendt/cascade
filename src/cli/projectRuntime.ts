@@ -452,6 +452,8 @@ async function prepare(file: string, document: any, compileExecutors: boolean): 
     const mentionsDefinition = /\bexport\s+const\s+definition\b/.test(source);
     const extracted = extractNodeDefinition(source, moduleFile, ts);
     if (!extracted.ok) {
+      const reExport = reExportedDefinition(source);
+      if (reExport) throw new Error(formatDiagnostic(reExport(moduleFile)));
       if (!mentionsDefinition && extracted.diagnostics.every((item) => item.code === 'definition/missing-export')) {
         registrations.push(savedRegistration(id, node));
         continue;
@@ -505,6 +507,47 @@ async function projectModuleFile(
   if (!within(root, candidate)) return { file: null, tried };
   tried.push(candidate);
   return { file: (await exists(candidate)) ? candidate : null, tried };
+}
+
+/**
+ * A module trying to get its definition from somewhere else, which cannot work.
+ *
+ * **A re-export cannot carry a `definition`.** Measured, not assumed:
+ * `export { definition } from`, `export * from` and an import-then-export all
+ * give `definition/missing-export`, and aliasing an imported literal gives
+ * `definition/non-literal`. Only a literal in the file itself extracts,
+ * because the shape is read statically from this one source — which is the
+ * whole point of definition-v1 and the reason `cascade check` can say anything
+ * about a node without cooking it.
+ *
+ * The reason this needs its own diagnostic is that the failure was **silent
+ * and total**. A converted node reached through a stub fell into the legacy
+ * fallback below, and then: `inspect` reported `classification: "dynamic"` for
+ * a definition-v1 node, `validate` passed without a word, and `run` returned
+ * `false` and did nothing at all. Every command reported success while the
+ * node quietly was not the thing it had just been converted into.
+ *
+ * A stub re-exporting only `execute` is left alone, because that is the
+ * legitimate shape in use today — `cloud-plots` reaches shared nodes that way
+ * (a stub rather than a symlink, because `readdir` does not report a symlinked
+ * directory as one) and it restates `icon` and `runsOn` locally for exactly
+ * this reason. Its own comment states the rule this diagnostic enforces:
+ * anything read by a static pass over the file cannot be re-exported. A
+ * `definition` is now the third such thing, and the loudest.
+ */
+function reExportedDefinition(source: string): ((file: string) => Diagnostic) | null {
+  const named = /\bexport\s*\{[^}]*\bdefinition\b[^}]*\}\s*from\s*['"]/.test(source);
+  const star = /\bexport\s*\*\s*from\s*['"]/.test(source);
+  if (!named && !star) return null;
+  const what = named
+    ? 'this module re-exports `definition` from another file'
+    : 'this module has a star re-export and no `definition` of its own';
+  return (file) => ({
+    phase: 'prepare',
+    code: 'definition/re-exported',
+    file,
+    message: `${what}, and a definition cannot arrive that way — it is read statically from this file. Write the literal here, or keep the stub for \`execute\` only and leave this module dynamic. Without this the node loads as dynamic and every command reports success.`,
+  });
 }
 
 /**

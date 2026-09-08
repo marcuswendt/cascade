@@ -80,6 +80,43 @@ describe('deterministic CLI runtime', () => {
     warn.mockRestore();
   });
 
+  it('refuses a stub that tries to re-export its definition', async () => {
+    // Measured before it was designed: a re-export cannot carry a definition,
+    // because the shape is read statically from the one file. What made this
+    // worth a diagnostic is that the failure was silent and total — the node
+    // fell into the legacy fallback, `inspect` called a converted definition-v1
+    // node "dynamic", `validate` passed, and `run` returned false and did
+    // nothing, all reporting success.
+    const fixture = project(validSource);
+    fs.mkdirSync(path.join(fixture.root, 'nodes', 'Stub'), { recursive: true });
+    fs.writeFileSync(
+      path.join(fixture.root, 'nodes', 'Stub', 'index.ts'),
+      `export { definition, execute } from '../Multiply/index.js';\n`,
+    );
+    const document = { ...fixture.document, nodes: [{ id: 'stub', module: 'project.Stub' }] };
+
+    await expect(validateProjectGraph(fixture.file, document)).rejects.toThrow('definition/re-exported');
+  });
+
+  it('leaves an execute-only stub alone, because that shape is in use', async () => {
+    // `cloud-plots` reaches shared nodes exactly this way — a stub rather than
+    // a symlink, since `readdir` does not report a symlinked directory as one —
+    // and restates `icon` and `runsOn` locally for the same static-read reason.
+    // Such a module is legitimately dynamic and must not start failing.
+    const fixture = project(validSource);
+    fs.mkdirSync(path.join(fixture.root, 'nodes', 'Stub'), { recursive: true });
+    fs.writeFileSync(
+      path.join(fixture.root, 'nodes', 'Stub', 'index.ts'),
+      `export const icon = 'Crop';\nexport const runsOn = 'portable';\nexport { execute } from '../Multiply/index.js';\n`,
+    );
+    const document = { ...fixture.document, nodes: [{ id: 'stub', module: 'project.Stub' }] };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await validateProjectGraph(fixture.file, document);
+
+    warn.mockRestore();
+  });
+
   it('says nothing about a module it did resolve', async () => {
     const fixture = project(validSource);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
