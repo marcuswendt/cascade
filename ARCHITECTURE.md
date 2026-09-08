@@ -31,7 +31,7 @@ Randomness is a pure function of an authored seed, never ambient process state.
 Hosts adapt the neutral runtime to an environment:
 
 - Node: files, assets, media, Python, and shell.
-- Browser: assets, media, and WebGL.
+- Browser: assets, media, and the `gpu` capability when WebGPU is available.
 - Mixed application: an explicit bridge for serializable server stages.
 
 Capabilities are injected. A node’s literal `runsOn` and `capabilities` fields are checked before its `execute` module is loaded.
@@ -44,11 +44,18 @@ resize, composite, and encode when both Canvas/WebGL and native implementations
 exist. Both executors must obey the same definition and should share golden
 parity tests for geometry, metadata, and edge cases.
 
+Studio currently implements the first GPU stage. It creates one WebGPU
+`GPUDevice` for the page, gives each declaring node its own keyed resource
+cache, and owns device-loss cleanup and recreation. The contract deliberately
+has no texture store yet: graph ports still exchange `image` values, so
+GPU-resident intermediate connections and explicit texture readback remain
+future work.
+
 `server/` is the project-scoped Node application host. It owns project paths, compilation, HTTP transport, media serving, Python workers, shell policy, and credentials. It is separately manifested and is not a third contracts/runtime workspace.
 
 ## Applications and controllers
 
-Studio’s Svelte components under `src/editor` own rendering, selection, panels, and interaction state. Its compatibility graph now has one graph-owned cook scheduler, while `StudioGraphController` centralizes an increasing set of structural mutations and publishes view snapshots. Compatibility adapters still present runtime-owned built-ins in Studio; collapse/extract and the remaining legacy nodes must migrate before Studio can consume `packages/runtime` directly.
+Studio’s Svelte components under `src/editor` own rendering, selection, panels, and interaction state. Its compatibility graph now has one graph-owned cook scheduler, while `StudioGraphController` centralizes an increasing set of structural mutations and publishes view snapshots. Compatibility adapters still present runtime-owned built-ins in Studio; collapse/extract and the remaining dynamic compatibility nodes must migrate before Studio can consume `packages/runtime` directly.
 
 Studio uses Dockview through the public `dockview` API. Code panels lazy-load
 Monaco and its native editor/TypeScript workers rather than adding Monaco to the
@@ -115,13 +122,13 @@ Execution failures resolve to a failed `RunResult`; API misuse and invalid prefl
 
 ## Animation
 
-A parameter carries up to three bindings: a raw value, an expression, and a keyframe channel. They resolve in exactly one place, `Node.evalParm` in the compatibility engine (`src/nodes/Node.ts`), in the order channel, expression, value. A channel that samples takes precedence and leaves the expression stored but inert, so emptying the channel restores it. Nothing else in Studio may read a prop's `value` directly to obtain an animated parameter; a second resolution path is how an expression badge and a viewer disagree about the same frame.
+A parameter carries up to three bindings: a raw value, an expression, and a keyframe channel. `packages/runtime/src/params/resolve.ts` owns their shared resolution rule: channel, expression, value. A channel that samples takes precedence and leaves the expression stored but inert, so emptying the channel restores it. Studio invokes the resolver from `Node.evalParm`; the deterministic runtime invokes it through `PropAnimator`. Nothing else in Studio may read a prop's `value` directly to obtain an animated parameter; a second rule is how an expression badge and a viewer disagree about the same frame.
 
-The mechanisms are runtime-owned and the composition is not. `packages/runtime/src/expressions` owns preprocessing (`$F`, `$FF`, `$T`, `$FPS` rewritten to plain identifiers), the evaluation scope, and the maths library; `packages/runtime/src/animation` owns the channel model, sampling, interpolation, serialization, and frame-range walking. Both depend only on contracts, so `cascade run` and Studio animate a dynamic graph through the same code rather than two implementations of Hermite interpolation.
+The mechanisms are runtime-owned and the composition is host-specific. `packages/runtime/src/expressions` owns preprocessing (`$F`, `$FF`, `$T`, `$FPS` rewritten to plain identifiers), the evaluation scope, and the maths library; `packages/runtime/src/animation` owns the channel model, sampling, interpolation, serialization, and frame-range walking; `packages/runtime/src/params` owns binding resolution and deterministic graph-wide animation. These modules depend only on contracts or other runtime modules. Studio supplies its compatibility graph scope, while `PropAnimator` supplies the neutral runtime scope, including lazy `ch()` dependency resolution.
 
 `packages/contracts/src/animation.ts` owns the serialized shape. A channel lives inside the node's `props`, not in a separate timeline object, because a parameter's animation belongs to the parameter; a document with a timeline section would need reconciling every time a node was renamed, deleted, or embedded.
 
-The deterministic runtime has no parameter animation. A definition-v1 graph owns its own clock, so `cascade run --frames` refuses it explicitly rather than producing a hundred copies of frame 1. Extending animation to the deterministic runtime is a migration step, not a compatibility branch to add in Studio.
+The deterministic runtime has parameter animation and an explicit graph clock. `setFrame(frame)` and `setFps(fps)` re-resolve bound props without cooking, so inspection can scrub deterministically. `run({ frame, fps })` resolves every bound prop before node execution; the same graph at the same authored state, frame, and fps receives the same parameter values. `cascade run --frames` uses this path for definition-v1 graphs and passes each requested frame and fps into the run. The runtime never reads wall-clock time.
 
 ## Agent sessions
 
@@ -138,6 +145,14 @@ Document freshness is a watcher, not a poll of the agent. `server/src/graphWatch
 ## Security
 
 Project node modules are trusted code. Capabilities describe support and portability; they are not a sandbox.
+
+Studio binds to loopback by default. Remote access requires a specific
+hostname or private interface address via `--host`; wildcard remote binds are
+rejected. That non-loopback host becomes the default trusted browser hostname,
+and repeatable `--trusted-host` values add exact browser authorities when the
+bind address and public hostname differ, including a reverse proxy to a
+loopback bind. Every reachable peer on that trusted interface can access the
+project APIs, so this mode is intended for an authenticated VPN or trusted LAN.
 
 All project HTTP APIs require an exact allowed Host. Origin is validated when
 present and hostile or null Origins are rejected; same-origin GETs may omit it.

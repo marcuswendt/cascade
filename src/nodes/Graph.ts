@@ -1655,10 +1655,38 @@ export class Graph {
             value = propData;
           }
 
-          // Normalize color values (support array format [r,g,b,a] and object format for backward compatibility)
-          // Colors are stored internally as ColorObject, so normalizeColor handles the conversion
+          /**
+           * Legacy colour shapes become the internal object — but **an array
+           * is never coerced on a guess.**
+           *
+           * `isColorValue` answers true for *any* array of three or four
+           * numbers, and this call site had no `type === 'color'` guard, unlike
+           * its two siblings (`Graph.ts` toJSON and `Node.ts`). So every
+           * `vec3`/`vec4` prop in every sketch was silently rewritten on load:
+           * `camera: [0.55, 0.12, 1.95]` arrived at `execute` as
+           * `{r: 0.00216, g: 0.00047, b: 0.00765}` — coerced *and* divided by
+           * 255, because a component above 1 trips `normalizeColor`'s
+           * "not normalised" branch. `cloud-volumes` then threw on
+           * `const [az, el, radius] = props.camera`, which is what the whole
+           * WebGPU path was blocked behind. `vec2` survived only by being
+           * shorter than the threshold.
+           *
+           * The definition-v1 branch below already keeps the raw shape on
+           * purpose. The reason that was not enough: a **project** module's
+           * definition arrives asynchronously, so at load time
+           * `node.parameters` is still empty, `definitionProp` is undefined,
+           * and the value falls through to here.
+           *
+           * So the rule is about ambiguity rather than about types. An object
+           * with `r`/`g`/`b`, or a colour string, can only be a colour. An
+           * array of three numbers is a colour *or* a vector and nothing here
+           * can tell — and colours are written to disk as arrays by the
+           * serialiser above, so leaving one alone round-trips correctly. It is
+           * coerced only where the prop is already declared a colour.
+           */
           let normalizedValue = value;
-          if (isColorValue(value)) {
+          const declaredColor = node.props[key]?.type === 'color';
+          if (isColorValue(value) && (declaredColor || !Array.isArray(value))) {
             const normalized = normalizeColor(value);
             // Store as ColorObject internally (normalizeColor already handles array/object/string formats)
             normalizedValue = normalized.a !== undefined && normalized.a !== 1.0

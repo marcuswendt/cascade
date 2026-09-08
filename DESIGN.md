@@ -3,9 +3,11 @@
 ## Source of truth
 
 - Status: Active
-- Last refreshed: 2026-09-08 (0.3.0)
+- Last refreshed: 2026-09-08 (0.3.1)
 - Primary product surfaces: reusable graph runtime, optional Studio workbench, headless Node/browser hosts, Inspector, Viewer, Timeline, agent console, node ports, project-defined workbenches
-- Evidence reviewed: `VISION.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `spec/CASCADE_SUBNET_AND_SHELL_SPEC.md`, `src/types/coreTypes.ts`, `src/editor/Inspector.svelte`, `src/editor/Viewer.svelte`, `src/editor/panels/TimelinePanel.svelte`, `src/editor/panels/AgentPanel.svelte`, `src/editor/components/PortEditor.svelte`, `src/editor/components/typeRenderers.ts`, `packages/runtime/src/expressions/`, `packages/runtime/src/animation/`, `server/src/agent/`, and the approved plans under `.omx/plans/`
+- Evidence reviewed: `VISION.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `spec/CASCADE_SUBNET_AND_SHELL_SPEC.md`, `src/types/coreTypes.ts`, `src/editor/Inspector.svelte`, `src/editor/Viewer.svelte`, `src/editor/panels/TimelinePanel.svelte`, `src/editor/panels/AgentPanel.svelte`, `src/editor/components/PortEditor.svelte`, `src/editor/components/typeRenderers.ts`, `src/nodes/definition/gpuCapability.ts`, `packages/runtime/src/runtime.ts`, `packages/runtime/src/params/`, `packages/runtime/src/expressions/`, `packages/runtime/src/animation/`, `server/src/agent/`, `server/src/security.ts`, and `server/src/cliCommands.ts`
+
+This document contains both current product rules and intended direction. Sections labelled **Current** describe implemented behavior in the repository. Sections labelled **Target** or **Planned** describe design direction and are not a release commitment. Open questions remain undecided until accepted in a specification or implementation plan.
 
 ## Brand
 
@@ -35,16 +37,16 @@
 
 - One type, one presentation contract: the same type vocabulary drives ports, Inspector, and Viewer.
 - Progressive disclosure: compact summaries in dense panels; richer previews and metadata in Viewer; raw JSON only on demand.
-- Edit only what can be authored honestly: inputs may edit portable values; connected inputs and outputs are read-only; live GPU textures are inspected, not fabricated through form fields.
-- Expensive context changes stay explicit: texture readback, server materialization, and file writes are actions or nodes, never invisible UI coercions.
+- Edit only what can be authored honestly: inputs may edit portable values; connected inputs and outputs are read-only. Future live GPU texture values should be inspected rather than fabricated through form fields.
+- Expensive context changes stay explicit: server materialization and file writes are actions or nodes, never invisible UI coercions. The same rule applies when texture readback is introduced; texture connections and readback are not implemented yet.
 - Project types extend by registration, not central switch statements.
 - The graph runtime is a product surface independent from Studio. Headless hosts consume it now; Studio's compatibility graph has one scheduler/controller boundary but still requires a deliberate built-in and structural-command migration before it consumes the neutral runtime directly.
 - Node metadata is deterministic. A literal exported definition declares ports, properties, types, execution locus, and capabilities; `execute` performs computation only.
-- A parameter is one store with three bindings. A value, an expression, and a keyframe channel live on the same parameter and resolve in one place in a fixed order: channel, then expression, then value. Two stores is what 0.3.0 removed — `param()` wrote to one and every binding read the other, so no parameter a sketch actually declared could carry an expression or a key, and nothing errored. A stronger binding hides a weaker one rather than destroying it, so emptying a channel returns the expression that was already there.
+- A parameter is one store with three bindings. A value, an expression, and a keyframe channel live on the same parameter and use the shared `resolvePropBinding` rule in a fixed order: channel, then expression, then value. Studio calls that rule from `Node.evalParm`; the neutral runtime calls it through `PropAnimator`. Two stores is what 0.3.0 removed — `param()` wrote to one and every binding read the other, so no parameter a sketch actually declared could carry an expression or a key, and nothing errored. A stronger binding hides a weaker one rather than destroying it, so emptying a channel returns the expression that was already there.
 - Time is an expression, not a node. A parameter holding `sin($T) * 40` is the whole of an oscillator, which is why there is no oscillator node and why portable nodes still must not read ambient time or randomness themselves. The variables and the function names are Houdini's, because the people this is for already have them in their hands; the one deliberate divergence is that bare trigonometry is in radians, with `sind`/`cosd`/`tand` provided for formulae carried across.
 - An agent run belongs to the server, not to the browser looking at it. Closing a tab detaches a reader; the transcript is buffered with sequence numbers so reopening replays what was missed and says how much it dropped. The alternative — a run owned by an HTTP request — kills the agent mid-edit on a reload, which is what 0.3.0 fixed.
 - Rendering offline stops at a numbered image sequence. Handing frames to an encoder is a separate decision with its own dependency, and a directory of frames is the input every encoder already takes.
-- Hosts provide explicit capabilities. File, Python, media, WebGL, and shell access are never ambient runtime assumptions. Provider-specific AI abstractions belong to projects or embedding hosts, not Cascade core.
+- Hosts provide explicit capabilities. File, Python, media, GPU, and shell access are never ambient runtime assumptions. Provider-specific AI abstractions belong to projects or embedding hosts, not Cascade core.
 - Neutral-runtime graph loads are atomic. Compatibility Studio collapse/extract are a known migration gap and must move behind transactional structural commands before that guarantee applies to every editor operation.
 - Tradeoff: geometry editors favor transparent structured editing and previews over specialized CAD interactions in this pass.
 
@@ -53,8 +55,9 @@
 - `@cascade/contracts` is the dependency-free source of truth for graph documents, core and namespaced types, deterministic node definitions, diagnostics, run results, capabilities, and schemas.
 - `@cascade/runtime` is the deterministic environment-neutral graph loader, validator, scheduler, serializer, trigger engine, and hierarchy implementation. It depends only on contracts; dynamic compatibility remains in Studio/CLI during migration.
 - The root `cascade` package is the sole published distribution and CLI owner. It exposes `cascade/contracts`, `cascade/contracts/schema`, `cascade/runtime`, `cascade/runtime/node`, `cascade/runtime/browser`, `cascade/runtime/expressions`, `cascade/runtime/animation`, `cascade/runtime/definition/extract`, `cascade/io`, `cascade/net`, `cascade/stage`, and the compatibility `cascade/shell` entry point.
-- Node and browser hosts inject only the capabilities they support. Browser-only WebGL and server-only file, Python, and shell capabilities make portability constraints explicit before execution.
+- Node and browser hosts inject only the capabilities they support. Browser-only GPU and server-only file, Python, and shell capabilities make portability constraints explicit before execution.
 - The Studio owns canvas/view classes and a single `StudioGraphController`; its compatibility `Graph`/`Node` engine is still being reduced. Custom frontends and backend services use the neutral runtime directly and do not load editor code.
+- **Current GPU stage:** Studio creates one WebGPU `GPUDevice` per page, shares it with every node declaring `gpu`, supplies a per-node resource cache, and replaces lost devices on a later cook. Nodes still exchange `image` values; texture ports, GPU-resident intermediate connections, and explicit texture readback are a later stage.
 - **Web technology is the default renderer, and Python is the exception.** Canvas 2D, WebGL and WebGPU first; reach for a Python stage only for work that genuinely cannot be pushed to the browser — exotic ML libraries and the like. Marcus's ruling, 2026-09-07: *"Cascade should prefer web tech canvas/webgpu to keep things smooth and fast. only use Python for exotic ML libraries and similar things that can't be easily pushed to the browser."* The reason is interaction rather than taste: a Python stage costs a process spawn and a round trip per cook, which is invisible on one still frame and fatal to dragging a parameter or playing an animation. It also tends to be more faithful, not less — a gradient drawn with `createRadialGradient` is the same primitive the source artwork carries, where a per-pixel reimplementation is a guess about what that primitive means.
 - Python interoperability remains a host capability for exotic libraries and compute stages. Exchange values cross explicit typed node boundaries rather than leaking Python process details into the neutral runtime.
 - Internal packages remain two workspaces until independent versioning or external consumption justifies separate publication. More npm packages are not a goal by themselves.
@@ -72,8 +75,9 @@
 
 ## Headless and deployment model
 
-- `createRuntime()` is the common entry point for Studio, Node services, UI-free browser embeds, tests, and custom web frontends.
+- `createRuntime()` is the common entry point for deterministic Node services, UI-free browser embeds, tests, and custom frontends. Studio still runs through its compatibility `Graph`/`Node` engine and controller while that migration continues.
 - Registration is sealed after the first graph load. A loaded graph supports inspect, input/property/preset mutation, trigger, run, cancel, subscription, output retrieval, and disposal without editor dependencies.
+- A loaded deterministic graph owns an explicit caller-controlled clock. `setFrame()` and `setFps()` re-resolve animated props for inspection without cooking; `run({ frame, fps })` resolves the same bindings before execution. The runtime never reads ambient time.
 - One run is active per graph; there is no hidden run queue. API misuse rejects, while graph execution resolves to an explicit success/failure/cancelled result.
 - A graph may run wholly in a backend, wholly in a compatible browser, or across an explicitly designed bridge. The runtime never silently moves a stage between hosts.
 - File loading/saving, format versioning, presets, project paths, and workspace conveniences belong to stable platform services around the neutral runtime, not to individual generative algorithms.
@@ -82,7 +86,7 @@
 
 - User node modules are trusted project code, not a sandbox. Deterministic definitions and architecture checks prevent common hidden-state designs and improve inspection, tooling, and portability; hard isolation would additionally require a separate realm or worker per node instance.
 - Shell is a server-only capability backed by one project-scoped service. Projects invoke configured aliases as a fixed executable plus argument array with `shell: false`; arbitrary executables, interpolation, unsafe working directories, dangerous request-time environment overrides, and unbounded output are rejected. The subprocess inherits the server environment before project and allowlisted request overrides are applied.
-- Browser shell transport is loopback-only, uses exact Host and Origin checks plus a process-lifetime random capability token, has route-local request limits, and never logs tokens, paths, arguments, environment, stdin, stdout, or stderr.
+- Sensitive browser transport is enabled for loopback and for an explicitly configured exact trusted host. Every request passes exact Host validation and Origin validation when present; sensitive routes also require a process-lifetime random capability token, apply route-local request limits, and avoid logging tokens, paths, arguments, environment, stdin, stdout, or stderr. Remote Studio rejects wildcard binds and grants every peer that can reach the trusted private interface the same project access.
 - Timeout, cancellation, and output limits terminate the full process tree and wait for closure before reporting completion.
 
 ## Agent workflow contract
@@ -102,12 +106,14 @@
 
 ## Components
 
-- Existing components to reuse: `PortEditor`, `JsonTree`, `ColorPicker`, Viewer image zoom/pan behavior, type renderer registry
-- New/changed components: shared `TypeValue` presentation shell, structured JSON editor, image/texture inspector, geometry summary/preview, asset inspector, Viewer output list
+- **Current:** `PortEditor`, `JsonTree`, `ColorPicker`, `CoreValue`, `StructuredValue`, Viewer image zoom/pan behavior, and the type renderer registry.
+- **Planned:** a shared type-value presentation shell, structured JSON editing, richer image and asset inspection, geometry summaries/previews, a Viewer output list, and texture inspection after texture values exist.
 - Variants and states: `compact`, `inspect`, `view`; editable/read-only; empty/loading/error/stale; connected source; truncated/expanded
 - Token/component ownership: `coreTypes.ts` owns semantic type metadata; the presentation registry owns components; Inspector/Viewer only choose context and mode
 
-### Core type presentation contract
+### Target core type presentation contract
+
+This table defines the intended presentation contract. Individual rows may be only partially implemented; it does not imply that texture ports or every specialized editor currently exists.
 
 | Family | Inspector/editor | Viewer |
 | --- | --- | --- |

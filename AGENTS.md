@@ -73,7 +73,7 @@ Project panels are trusted Studio extensions, not graph/runtime modules. Put the
 
 ## Create a deterministic node
 
-Two node styles exist and both are current. A **definition-v1** module exports a literal `definition` and a typed `execute(context)`; it is statically inspectable, it is what `cascade check` requires, and it runs through the deterministic runtime. A **dynamic** module exports `execute(node, graph)` and declares its ports and parameters imperatively inside it; that is what `cascade run --frames` renders. Studio cooks both, dispatching on what the compiled module exports (`src/nodes/definition/projectDefinition.ts`), so a project node written either way runs in the editor. Prefer definition-v1 for anything new inside this repository, and do not call dynamic modules "legacy" — the naming was retired in 0.3.0, and while Studio no longer blocks the migration, the existing sketches are still dynamic.
+Two node styles exist and both are supported. A **definition-v1** module exports a literal `definition` and a typed `execute(context)`; it is statically inspectable and is what `cascade check` requires. A **dynamic** module exports `execute(node, graph)` and declares its ports and parameters imperatively inside it. Studio cooks both through `src/nodes/definition/projectDefinition.ts`. The CLI supports stills and frame sequences for fully deterministic graphs and for supported dynamic graphs, but rejects graphs mixing the two execution styles. Prefer definition-v1 for new nodes; inspect a project's current modules before assuming its style. Do not call dynamic modules "legacy" in user-facing guidance.
 
 A definition-v1 module looks like this:
 
@@ -107,6 +107,9 @@ Definition rules:
   and have the host registration select the executor. Never expose execution
   location as an artist parameter; parity-test the shared contract.
 - Declare every capability used. File, Python, and shell access are server-only; WebGL is browser-only.
+- `context.nodeId` identifies the instance for namespaces such as `cachePath(context.nodeId, '.png')`; it does not grant access to siblings or hierarchy. A final output may instead have an artist-authored filename.
+- Vector props support `min`, `max`, and `step`, shared across components. Props may declare a default `expression`; an explicitly saved value overrides that default, including when it equals the numeric default.
+- WebGPU nodes declare the browser-only `gpu` capability and use its shared device and per-node `cache`. Import usage constants from `cascade/gpu`. GPU texture exchange and explicit readback through this capability remain future work; current GPU stages exchange images.
 - Treat graph wires as the primary data boundary. A node may observe only its connected inputs, its props, and declared host capabilities; it must not inspect sibling nodes or the graph to discover data.
 - Deterministic node modules may not retain module-level mutable values, access ambient state such as `globalThis`, browser storage, or `process`, run top-level effects, or import sibling node implementations. `cascade check` reports these as `architecture/*` diagnostics.
 - A cache may memoize computation from wired inputs, but it must never supply unwired data. Make cache use an explicitly labelled prop and keep cache keys derived from the complete wired input and relevant props.
@@ -146,13 +149,13 @@ type system knows what a `vec2` is; nothing tells it that `offset_x` and
 
 ## Animation, expressions, and parameters
 
-- **`Node.evalParm` in `src/nodes/Node.ts` is the only place a parameter's bindings resolve**, in the order channel, expression, value. Never read `prop.value` to obtain an animated parameter, and never add a second resolution path: an expression badge and a viewer disagreeing about the same frame is exactly what one produced.
+- **`resolvePropBinding` in `packages/runtime/src/params/resolve.ts` owns binding precedence:** channel, expression, value. Studio's `Node.evalParm` and the neutral runtime both call it with their own expression scope and frame. Never read `prop.value` to obtain an animated parameter or implement a second precedence rule.
 - **A parameter is one store.** `param()` declares the parameter; the value, the expression and the channel live in the prop of the same name. `NodeParameter.value` reads *resolved*; `rawParameterValue()` reads what the author typed, and is what serialization and cache keys must use. `param()` is re-declared on every cook of a dynamic node, so it must stay idempotent — it may never reset a value, an expression, or a channel.
 - **Mechanisms belong to the runtime, composition to the host.** `packages/runtime/src/expressions` owns preprocessing, scope and the maths library; `packages/runtime/src/animation` owns the channel model, sampling, interpolation, serialization and frame-range walking. Both depend only on contracts. Do not implement interpolation, a frame clock, or a second `$T` anywhere else.
 - **The serialized shape is owned by contracts** (`packages/contracts/src/animation.ts`): a channel is `{ keys: [{ frame, value, interpolation? }] }` inside the node's `props`, with `interpolation` omitted when it is the `smooth` default. There is no timeline section in the document, and adding one would need reconciling on every rename, delete and embed.
 - Bare trigonometry is **radians**, deliberately unlike Houdini; `sind`/`cosd`/`tand`/`radians()`/`degrees()` exist for formulae carried over. Only `ch()`, `chs()` and `chv()` are scanned for dependencies, so a new way to reach another parameter also needs a dependency pattern or it will not recook.
-- The deterministic runtime has no parameter animation. `cascade run --frames` refuses a definition-v1 graph rather than rendering frame 1 repeatedly. Extending animation to that runtime is a migration step; do not add a compatibility branch to Studio for it.
-- Studio's timeline panel holds its own frame range, loop and playhead. Only fps reaches the engine clock. Nothing about playback is saved with the document.
+- The deterministic runtime resolves parameter animation through `setFrame`, `setFps`, and `run({ frame, fps })`. `cascade run --frames` supports fully definition-v1 graphs when the Node host can supply their capabilities. A browser-only node still cannot run in that host.
+- Studio's timeline supplies the playhead and fps to the engine; its range and loop setting are panel state. Parameter channels are saved in the document, but playback settings are not.
 
 ## Agent sessions
 
@@ -178,7 +181,7 @@ type system knows what a `vec2` is; nothing tells it that `offset_x` and
 - Contracts have no runtime dependencies.
 - Runtime depends only on contracts and contains no DOM, Svelte, Express, Node filesystem, or child-process imports.
 - Hosts inject capabilities explicitly.
-- Studio consumes runtime through its controller; custom frontends consume runtime directly.
+- Studio uses `StudioGraphController` over its compatibility `Graph`/`Node` engine and reuses runtime mechanisms. Custom frontends consume the neutral runtime directly; full Studio migration remains incomplete.
 - User modules are trusted project code, not a sandbox. Static definitions improve tooling and portability, not isolation.
 - Keep legacy support inside the existing Studio/CLI compatibility engine; do not spread compatibility branches into the deterministic runtime.
 
@@ -198,9 +201,10 @@ Do not add dependencies without a concrete need. Do not create extra packages un
 
 ## Versioning
 
-Cascade `0.2.0` is the 2026 architecture rework. The current release is `0.3.0`,
-which added the animation system and the agent console; `CHANGELOG.md` records
-what changed and is the file to update before a release commit. Increment the
+Cascade `0.2.0` is the 2026 architecture rework; `0.3.0` added animation and the
+agent console. Read `package.json` for the checkout version and `CHANGELOG.md`
+for release history and unreleased changes; a local build can contain changes
+not yet in the published package. Update the changelog before a release commit. Increment the
 root package and CLI patch version for every committed feature or release
 change, keeping `package.json`, the lockfile, and CLI output aligned. A minor
 bump is for a feature large enough to need its own `CHANGELOG.md` section.

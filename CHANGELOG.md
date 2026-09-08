@@ -4,6 +4,21 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+### Documentation
+
+- Updated current guides and generated project instructions for definition-v1
+  animation, stored `props`, instance identity, vector metadata, and the shared
+  GPU capability. Clarified host requirements, Studio's remaining runtime
+  migration, export limitations, and the distinction between implemented
+  workflows and future product directions.
+
+### Animation
+
+- The deterministic runtime resolves expressions and keyframe channels at an
+  explicit frame through the shared parameter resolver. `cascade run --frames`
+  can render fully definition-v1 graphs with compatible Node-host capabilities;
+  mixed definition-v1/dynamic graphs remain unsupported by the CLI.
+
 ### Node authoring
 
 - **A definition-v1 node knows its own id.** `context.nodeId` is the instance's id, which is what lets `cachePath(context.nodeId, '.png')` name a scratch file per instance rather than per module — `field-logo` runs one module three times at three sizes, and a literal path made them overwrite each other. An id is deliberately all a node gets: it names a namespace, not a position, so a v1 node stays a pure function of its own inputs.

@@ -8,14 +8,15 @@ Created by Marcus Wendt at [FIELD.IO](https://www.field.io).
 
 - A typed, inspectable graph model with lazy execution and explicit triggers.
 - Deterministic custom-node definitions that tools can inspect without running user code.
-- The same runtime in Studio, a Node service, or a UI-free browser application.
+- An environment-neutral runtime for Node services and UI-free browser applications.
+- A Studio compatibility controller that already presents deterministic definitions alongside dynamic project nodes while its graph engine migrates to the neutral runtime.
 - Project-native `.cascade` files, assets, presets, and Git-backed version history.
 - Nested subnets with persistent hierarchy.
 - Expressions on parameters, with Houdini's variables and functions: `$F`, `$FF`, `$T`, `$FPS`, and `ch()` to read another parameter.
 - Keyframe channels on parameters, edited through a timeline panel with transport, playhead, scrubbing, and a dope sheet.
 - Offline rendering with `cascade run`, including `--frames 1-100` for a numbered image sequence, rasterised through Skia rather than a browser.
 - A coding-agent console per project, running in the project directory, with a watcher that picks up the files it rewrites without a reload.
-- Explicit browser and server capabilities for WebGL, files, media, Python, and allowlisted shell commands.
+- Explicit browser and server capabilities for WebGPU, files, media, Python, and allowlisted shell commands.
 - A Svelte Studio with an infinite canvas, Inspector, Viewer, timeline, and project workbench.
 
 Cascade separates the generative algorithm from the platform. Custom nodes describe stages of a pipeline; the runtime schedules and validates them; hosts supply environment-specific capabilities; Studio is only one possible frontend.
@@ -29,7 +30,9 @@ npm install -g @field/cascade
 cascade --version
 ```
 
-That installs the `cascade` command: `cascade new` scaffolds a project, `cascade <directory>` opens it in Studio, and `cascade run` renders a graph headlessly.
+That installs the latest published release and the `cascade` command: `cascade new` scaffolds a project, `cascade <directory>` opens it in Studio, and `cascade run` executes a graph headlessly. A generated project records the published package under the local alias `cascade`, so imports such as `cascade/contracts` resolve to `@field/cascade`.
+
+The repository checkout can be ahead of the published release, even with the same version number. Use the global install to scaffold projects, then use their npm scripts or `npx --no-install cascade` to select the project-local version. For checkout development, see [Contributing](CONTRIBUTING.md). When diagnosing a difference, record the installed version and whether it resolves to a local checkout; a version match alone does not prove the same code is installed.
 
 Offline image rendering uses Skia through `@napi-rs/canvas`, an optional dependency of about 26 MB. It installs by default; if you skipped optional dependencies, add it yourself:
 
@@ -63,10 +66,15 @@ npm run build:cli
 
 ## Create a project
 
+`cascade new` scaffolds a project and starts Studio. After stopping that first
+server, install the project's dependencies before reopening it. The example
+below assumes the default projects directory; `cascade projects` reports yours.
+
 ```bash
 cascade new my-artwork
 cd ~/Documents/Cascade/my-artwork
-cascade .
+npm install
+npx --no-install cascade .
 ```
 
 Studio binds to loopback by default. To use a Cascade workstation over a
@@ -80,6 +88,18 @@ Then open `http://KURO:3030`. Cascade uses a specific non-loopback `--host` as
 both the bind target and allowed browser hostname. Use repeatable
 `--trusted-host` only when the bind address and browser hostname differ.
 Wildcard remote binds, unknown options, and invalid ports fail immediately.
+
+An HTTPS reverse proxy may terminate TLS and forward to a loopback Studio. In
+that case, name both sides explicitly:
+
+```bash
+cascade . --host 127.0.0.1 --port 3030 --trusted-host cascade.example.internal
+```
+
+The proxy must preserve the browser's exact `Host`. If the external URL uses a
+non-default port, include it in `--trusted-host`. Use `--no-open` and open the
+HTTPS URL yourself: automatic opening still uses an HTTP URL. This flag admits
+the authority; it does not configure TLS or the proxy itself.
 
 A project is an ordinary directory or Git repository:
 
@@ -152,7 +172,7 @@ Frames are written as `<out>/<node id>.<frame>.<ext>`, zero-padded to at least f
 
 Drawing offline goes through Skia rather than a browser. The optional `@napi-rs/canvas` supplies `OffscreenCanvas`, `Image`, `Path2D` and the rest as globals in the Node process, deliberately not `document`, since that is how a node detects its host. So a node that draws on an `OffscreenCanvas` needs no separate headless implementation, and the built-in `cascade.image.*` library rasterises through Skia in Node too, so a graph built from it renders headlessly with no browser involved. A run without the renderer installed still works for graphs that draw nothing, and says what is missing if a cook fails in a canvas-shaped way.
 
-`--frames` renders dynamic graphs. A definition-v1 graph runs through the deterministic runtime, which owns its own clock and has no parameter animation, and `cascade run` refuses the flag rather than rendering frame 1 a hundred times.
+`--frames` works for an all-dynamic graph and for an all-definition-v1 graph. Definition-v1 runs resolve stored expressions and keyframe channels from the explicit `frame` and `fps` supplied to each deterministic run. A CLI graph that mixes the two node styles is rejected explicitly because there is not yet a bounded adapter between the execution engines.
 
 ## The agent console
 
@@ -219,7 +239,7 @@ host's executor, so the graph stays portable and contains no backend selector.
 This is the intended pattern for media transforms such as crop or resize; use
 shared parity tests to keep their outputs and metadata aligned.
 
-There is a second node style, and it is not deprecated. A **dynamic** module exports `execute(node, graph)` and declares its ports and parameters imperatively inside it, as `node.param('size', 1024, { min: 16, max: 4096 })`, running once for discovery and again on every cook. Studio cooks both styles and a Studio graph may mix them: it dispatches on what a compiled module exports, building a definition-v1 node's ports from its literal and calling `execute` with a real context, and calling a dynamic module as `execute(node, graph)`. `cascade run --frames` renders dynamic graphs, and the deterministic runtime cooks definition-v1 ones, which are what `cascade check` inspects statically. A malformed definition never falls back to dynamic execution — it is reported. A project's own `AGENTS.md`, written by `cascade new`, states which style that project expects.
+There is a second node style, and it is not deprecated. A **dynamic** module exports `execute(node, graph)` and declares its ports and parameters imperatively inside it, as `node.param('size', 1024, { min: 16, max: 4096 })`, running once for discovery and again on every cook. Studio cooks both styles and a Studio graph may mix them through its compatibility controller. The CLI uses the deterministic runtime for an all-definition-v1 document and the compatibility engine for an all-dynamic document; it rejects a mixed document. `cascade check` requires definition-v1 modules because it inspects them statically. A malformed definition never falls back to dynamic execution — it is reported. A project's own `AGENTS.md`, written by `cascade new`, states which style that project expects.
 
 Provider integrations are project code, not Cascade infrastructure. A project
 can call a remote service from a Studio/browser node, invoke Python or an
@@ -262,11 +282,22 @@ cancellation, event subscriptions, output retrieval, and disposal. Hosts
 decide which capabilities exist; Cascade never silently moves a stage between
 browser and server.
 
-The same registration path exposes the initial `cascade.geo.*` library in
-Studio and headless hosts: `Rectangle`, `Circle`, `Transform`, `Merge`,
-`CopyToPoints`, and `SvgExport`. Their definitions, ports, and executors are
-owned by the runtime; Studio adapts those definitions instead of maintaining a
-second set of node algorithms.
+The same definitions expose the initial `cascade.geo.*` library in Studio and
+headless hosts: `Rectangle`, `Circle`, `Transform`, `Merge`, `CopyToPoints`,
+and `SvgExport`. Their definitions, ports, and executors are runtime-owned;
+Studio adapts them through its compatibility controller instead of maintaining
+a second set of node algorithms.
+
+## Current capability boundaries
+
+| Surface | Current status |
+| --- | --- |
+| Studio authoring | Supports dynamic and definition-v1 nodes in one document through the compatibility controller. |
+| Headless CLI | Executes all-definition-v1 or all-dynamic documents; mixed documents are rejected. Both styles can render frame sequences. |
+| Embedded runtime | `cascade/runtime` is the neutral definition-v1 API for Node and browser hosts. It does not load Studio or interpret dynamic nodes. |
+| GPU | Studio provides one shared WebGPU device, adapter metadata, limits, and per-node resource caches to definition-v1 browser nodes declaring `gpu`. Graph texture transport and readback are not implemented yet; ports still carry images. |
+| Standalone HTML export | The existing Studio exporter uses a separate minimal runtime and supports only a subset of graph behavior. Treat it as an experimental convenience, not as a universal deployment artifact. |
+| External services | Project-owned and optional. Cascade itself requires no paid provider or model subscription. |
 
 ## Repository map
 

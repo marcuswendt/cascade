@@ -1,6 +1,12 @@
 # Cascade Vision
 
-A creative thinking framework for the generative AI age.
+A free, open-source platform for long-term creative experimentation at FIELD.IO
+and beyond: generative design sketches, interactive installations, brand
+systems, and the reusable tools that connect them.
+
+This is product intent. [README.md](README.md) describes current workflows;
+[DESIGN.md](DESIGN.md) and [ARCHITECTURE.md](ARCHITECTURE.md) describe product
+decisions and implementation boundaries.
 
 ## Author
 
@@ -10,16 +16,29 @@ A creative thinking framework for the generative AI age.
 ## Core Ideas
 
 **Infinite Visual Canvas**
-Everything lives on an infinite canvas. Drop anything onto it: research materials, images, text, videos, data, or code-based nodes. Use it to organize ideas or feed them directly into nodes that generate new outputs.
+Studio provides an infinite canvas for arranging graph stages and references.
+The long-term aim is to connect research, images, text, media, data, and code
+in an inspectable creative workspace. Algorithms remain usable outside that
+workspace through the runtime.
 
 **Iteration & Exploration**
-Cascade promotes creative iteration. Use it for realtime digital experiences, offline rendered art, brand design, or any creative workflow that benefits from visual thinking and rapid experimentation.
+An experiment should be easy to vary, understand, revisit, and share. A useful
+result should retain the inputs and decisions that produced it, and a promising
+sketch should have a path into an interactive experience or rendered asset set.
 
 **Flexible & Extendable**
 Users can create new node types and graph elements with custom code, parameters, visual components, and editors. The framework adapts to your workflow, not the other way around.
 
 **Open & Long-Term**
-Cascade is open source, built on open web standards. Creative work made with Cascade should exist for the long term, free from licensing concerns or platform lock-in.
+Cascade is MIT-licensed and built on web technologies and ordinary project
+files. The core workflow should remain usable without a paid account or AI
+provider. Projects own their code and assets; external services, models, fonts,
+and media retain their own costs and usage terms.
+
+Team reuse is a product goal: someone should be able to open a colleague's
+experiment, understand its public controls, make a variation, and preserve the
+result. Documentation, reproducible examples, and maintainable interfaces are
+part of that work.
 
 ## Product Shape
 

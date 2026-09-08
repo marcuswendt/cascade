@@ -95,10 +95,11 @@ Read \`node_modules/cascade/AGENTS.md\` for the framework itself. What follows i
 
 ## Read this first
 
-\`node_modules/cascade/doc/NODE_REFERENCE.md\` — every built-in node with its inputs, props and outputs, generated from the definitions themselves. Under 2,500 tokens for the whole catalogue. **Read it instead of searching the codebase for what a node does**, and note before you start that anything time-based is an expression rather than a node.
+\`node_modules/cascade/doc/NODE_REFERENCE.md\` — every built-in node with its inputs, props and outputs, generated from the definitions themselves. Read it before creating a wrapper for an existing node. Time-based parameter changes usually need an expression or channel.
 
 ## Common commands
 
+- Run \`npm install\` in this directory first. Scripts use the project's installed Cascade version; use \`npx --no-install cascade\` for direct local CLI commands.
 - \`npm run check\` — type-check custom nodes.
 - \`npm run check:graph\` — statically check the graph and node definitions.
 - \`npm run validate\` — validate \`index.cascade\`.
@@ -111,7 +112,7 @@ both the explicit bind address and the exact trusted browser hostname.
 
 ## The \`.cascade\` document format
 
-Hand-editing this file is normal and expected. The shape is not what you would guess, and getting it wrong fails **silently** — the graph loads, reports its nodes, says it executed, and does nothing.
+Hand-editing is supported. Preserve metadata, source fields, IDs, and valid connection endpoints, then run the static checks. This example uses the node below; save it at \`nodes/Multiply/index.ts\` before running the graph.
 
 \`\`\`json
 {
@@ -119,28 +120,25 @@ Hand-editing this file is normal and expected. The shape is not what you would g
   "metadata": { "name": "My Sketch" },
   "nodes": [
     {
-      "id": "logo-1024",
-      "module": "project.field-io-gradient-logo",
+      "id": "multiply",
+      "module": "project.Multiply",
       "position": [240, 200],
       "source": "project",
-      "params": [{ "name": "size", "value": 1024 }],
-      "props": { "angle": { "value": 0, "expression": "$T * 40" } }
+      "props": { "factor": { "value": 2, "expression": "2 + sin($T)" } }
     }
   ],
-  "connections": [
-    [["oscillator", 0, "value"], ["logo-1024", 0, "angle"]]
-  ],
+  "connections": [],
   "annotations": []
 }
 \`\`\`
 
 Five things that are easy to get wrong:
 
-- **\`module\`, not \`type\`.** And \`"source": "project"\` is required for a project module — without it the engine never loads the module at all, and nothing complains.
+- **Use \`module\` for the module identity and \`"source": "project"\` for project modules.** Unresolved modules need investigation even when validation only warns.
 - **\`position\` is \`[x, y]\`**, an array, not \`{x, y}\`.
-- **\`params\` is an array** of \`{name, value}\`, not an object.
+- **Definition-v1 stored parameter values belong under \`props\`.** A leftover \`params\` array is not read by the deterministic runtime; \`runtime/stray-params\` warns about stranded values.
 - **A connection is a pair of triples**: \`[[fromNode, portIndex, portName], [toNode, portIndex, portName]]\`. Direction comes from *position in the pair* — first is the source. The middle number is the **port index**, not a direction.
-- **An expression lives under \`props\`** as \`{ value, expression }\`. \`params\` holds plain values.
+- **A prop is a bare value or \`{ value, expression?, channel? }\`.** Channels take precedence over expressions, then stored values. Save the binding, not just its value at the playhead.
 
 ## Before writing a node, check whether you need one
 
@@ -169,25 +167,22 @@ import type { NodeDefinition, NodeExecutionContext } from 'cascade/contracts';
 
 export const definition = {
   apiVersion: 1,
-  label: 'Grain',
+  label: 'Multiply',
   icon: 'Circle',                    // a Lucide icon name
   runsOn: 'portable',                // 'portable' | 'browser' | 'server'
   inputs: {
-    value: { kind: 'data', type: 'float', default: 0 },
+    value: { kind: 'data', type: 'float', default: 3 },
   },
   outputs: {
-    image: { kind: 'data', type: 'image' },
+    result: { kind: 'data', type: 'float' },
   },
   props: {
-    size: { type: 'int', default: 1024, min: 16, max: 4096, step: 16 },
+    factor: { type: 'float', default: 2, min: 0, max: 10, step: 0.1 },
   },
 } as const satisfies NodeDefinition;
 
 export function execute(context: NodeExecutionContext<typeof definition>) {
-  const { value } = context.inputs;
-  const { size } = context.props;
-  // ... work ...
-  context.outputs.image.set({ path, size: [size, size], channels: 'rgb', depth: 'u8', space: 'srgb' });
+  context.outputs.result.set(context.inputs.value * context.props.factor);
 }
 \`\`\`
 
@@ -195,7 +190,7 @@ The declaration is the point: ports, types, props and the execution locus are re
 
 ### Use the vector types
 
-Anything with an x and a y is **one** \`vec2\`, not two floats. Same for \`vec3\` and \`vec4\`, with \`vec2i\`, \`vec3i\` and \`vec4i\` for integer counts and pixel sizes. A position, an offset, a size, a scale, a colour with alpha, a resolution — all single vector ports.
+Anything with an x and a y is **one** \`vec2\`, not two floats. Same for \`vec3\` and \`vec4\`, with \`vec2i\`, \`vec3i\` and \`vec4i\` for integer counts and pixel sizes. Positions, offsets, scales, and resolutions use vector ports; colours use the core \`color\` type.
 
 \`\`\`ts
 // Wrong
@@ -207,21 +202,25 @@ props: { offset: { type: 'vec2', default: [0, 0] } }
 
 Not a style preference. Two floats that are really one vector cannot be connected to a \`vec2\` output, get two rows in the Inspector instead of one control, need two keyframes to animate one movement, and let a graph carry an x without its y. The type system knows what a \`vec2\` is; it cannot know that \`offset_x\` and \`offset_y\` belong together.
 
-Split them only when the components genuinely differ in kind or in range — a \`width\` and a \`depth\` that are separately meaningful are two props, not a \`vec2\`.
+Split only when the components differ in kind. Vector props support \`min\`, \`max\`, and \`step\`, with one range across their components.
 
 Both hosts cook this style. **Studio** builds the node's ports from the literal and calls \`execute\` with a real \`NodeExecutionContext\`; **\`cascade run\`** runs it through the deterministic runtime. Studio reads the definition from the compiled module, so a definition edit shows up on the next save like any other change.
 
-The older **dynamic** style — \`export async function execute(node, graph)\` declaring its ports imperatively inside itself with \`node.in\`, \`node.param\` and \`node.out\` — still cooks in Studio and under \`cascade run\`, so an existing node keeps working. It is not the style to write something new in: nothing can read what a dynamic node takes or returns until it has cooked, so \`cascade check\` cannot check it and the Definition panel has nothing to show. If you are editing one heavily, convert it.
+The **dynamic** style — \`execute(node, graph)\` declaring ports with \`node.in\`, \`node.param\`, and \`node.out\` — remains supported by Studio and the CLI compatibility engine. It cannot provide the same static checks. Studio may mix both styles; the CLI rejects mixed graphs. Convert deliberately with saved-value and output comparisons.
+
+Definition-v1 props support default \`expression\` values. An explicitly saved value overrides that default, even when equal to the numeric default. Both fully definition-v1 and supported dynamic graphs can render sequences with \`cascade run index.cascade --frames 1-100\`, subject to host capabilities.
 
 Either way the module is a real ES module and the loader needs the \`execute\` export. Top-level side effects do not belong in it.
 
 ## Rendering
 
-**Web technology first** — Canvas 2D, WebGL, WebGPU — per \`DESIGN.md\` in the Cascade repo. Reach for a Python stage only for work that genuinely cannot run in a browser, such as an exotic ML library. A Python stage costs a process spawn and a round trip per cook, which is invisible on one still frame and fatal to dragging a parameter.
+Prefer Canvas 2D, WebGL, and WebGPU for interactive rendering. Use Python or another server stage for libraries and tools that require it. Transport, serialization, and cold starts can affect parameter-drag latency; persistent workers can avoid repeated process/model startup.
 
-An \`OffscreenCanvas\` plus \`saveImage(canvas, cachePath(node.id, '.png'))\` is the normal portable shape; the headless host supplies the Canvas APIs needed by \`cascade run\`.
+Definition-v1 image nodes can use \`saveImage(canvas, cachePath(context.nodeId, '.png'))\` from \`cascade/io\`. The instance ID provides a cache namespace, not graph access. Final artefacts may instead use an explicit filename. With optional Skia installed, the Node host supplies Canvas APIs; that does not make DOM or GPU code portable.
 
 Use \`browser\` only for code that genuinely needs the page, such as the DOM or WebGL. Prefer \`new OffscreenCanvas(width, height)\` to \`document.createElement('canvas')\` when both hosts can run the same node.
+
+WebGPU nodes declare \`capabilities: ['gpu']\` and use \`context.capabilities.gpu\` for the shared device and per-node cache. Import usage constants from \`cascade/gpu\`. This capability currently supports image-based stages; GPU texture exchange remains future work.
 
 ## Finding out what exists
 
@@ -231,11 +230,11 @@ Use \`browser\` only for code that genuinely needs the page, such as the DOM or 
 - \`node_modules/cascade/dist/runtime/builtins/\` — the built-in node definitions, as the shipped type declarations. (\`packages/\` is not in the published \`files\` list, so an installed copy has no source tree.)
 - The **Definition panel** in Studio shows, for any selected node, where it is defined and what it declares.
 
-## Two things that will waste your time
+## Verification and shared development
 
-**Never run \`npm run build\` in the Cascade repo.** It empties \`dist/\`, and the Studio servers serve from there.
+Cascade's build refreshes \`dist/\`, which running Studio servers may serve. Coordinate a core rebuild with anyone using that checkout; routine sketch edits do not require rebuilding Cascade.
 
-**Check your work by running the graph**, not by reading it: \`npm run check:graph\` for a static check, \`npm run run\` for a headless cook. A silently-wrong document is the failure mode here, so a green read proves nothing.
+Use \`npm run check:graph\` for static checks and \`npm run run\` for a compatible headless graph. A browser-only node may pass static checks with an environment warning and still be refused by the CLI; verify it in Studio instead. Compare actual outputs after edits and distinguish recorded measurements from tests run in the current session.
 `);
   return directory;
 }

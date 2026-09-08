@@ -4,10 +4,15 @@ Cascade projects are filesystem-native. The graph, custom nodes, assets, presets
 
 ## Create and open a project
 
+`cascade new` scaffolds and starts Studio. Stop that initial server before
+installing dependencies and reopening the project. This example assumes the
+default projects directory; use `cascade projects` to check your configured path.
+
 ```bash
 cascade new my-artwork
 cd ~/Documents/Cascade/my-artwork
-cascade .
+npm install
+npx --no-install cascade .
 ```
 
 For a workstation reached by name over a trusted VPN or LAN, bind deliberately
@@ -21,9 +26,40 @@ Open `http://KURO:3030`. Loopback remains the default. Cascade trusts the
 specific non-loopback bind hostname; `--trusted-host` is only needed when the
 browser uses a different hostname. Wildcard remote binds are rejected.
 
+For an HTTPS reverse proxy that terminates TLS and forwards to loopback, bind
+loopback explicitly and allow the exact external hostname:
+
+```bash
+cascade . --host 127.0.0.1 --port 3030 --trusted-host cascade.example.internal
+```
+
+The proxy must preserve that `Host` value; include a non-default external port
+in `--trusted-host` when applicable. Add `--no-open` and visit the HTTPS URL
+yourself, since automatic opening still constructs an HTTP URL. Cascade does not configure the
+proxy or certificate; the explicit trusted host only admits its browser
+authority while the server remains unreachable directly from the network.
+
 Cascade and generated projects require Node.js 22.13 or newer. Generated
 projects use TypeScript 6 so their static node definitions match Cascade's
 compiler and definition extractor.
+
+`cascade new` writes a project-local dependency named `cascade` which aliases
+the published `@field/cascade` package. Install it before using the project's
+npm scripts:
+
+```bash
+npm install
+npm run check
+npm run validate
+```
+
+That dependency uses a caret range in the CLI's current minor line; the lockfile
+records the resolved version. A local Cascade repository may contain newer
+work even with the same version number. Record both the version and whether
+the project resolves a checkout or a published package when diagnosing a
+difference. Use a deliberate local package override
+for framework development rather than committing a machine-specific
+`file:../../Dev/cascade` dependency to a shared project.
 
 `index.cascade` is the default graph name. A project may contain several `.cascade` files; pass one explicitly when there is no unambiguous default:
 
@@ -94,13 +130,15 @@ export const renderers = {
 
 Each renderer instance owns its cleanup. An optional `update` method receives later values without remounting.
 
-To open a panel from the Inspector, declare an action parameter:
+To open a panel from the Inspector, add an action prop to a definition-v1 node:
 
 ```ts
-node.param('asset_id', '', {
-  label: 'Choose asset',
-  action: 'panel:asset-browser',
-});
+props: {
+  asset_id: {
+    type: 'string', default: '', label: 'Choose asset',
+    action: 'panel:asset-browser'
+  }
+}
 ```
 
 The initiating node ID is captured as `api.sourceNodeId`; `setParam` uses the same history/dirty/cook path as the Inspector, so undo and save continue to work. Panels and project value renderers are Studio-only and are never imported during `cascade run` or by `cascade/runtime`.
@@ -133,11 +171,12 @@ const response = await authorizedFetch('image-api', 'https://api.example.com/v1/
 });
 ```
 
-`cascade/net` is resolved by Cascade's project compiler and backed by the
-Studio server's `/api/net` route. It is not a published package export or a
-neutral headless runtime capability. A standalone headless host must provide
-its own remote-I/O adapter or run the integration through an injected shell,
-Python, or application-specific server bridge.
+`cascade/net` is a published host bridge backed by the Studio server's
+`/api/net` route when project code is compiled by Cascade. It is not a neutral
+runtime capability and has no useful authority without that installed bridge.
+A standalone headless host must provide its own remote-I/O adapter or run the
+integration through an injected shell, Python, or application-specific server
+bridge.
 
 Browser proxy credentials must declare the exact allowed hosts and header metadata alongside the secret:
 
@@ -160,10 +199,18 @@ There are two styles. Write **definition-v1** for anything new; the dynamic styl
 
 | | Cooked by | Checked by |
 | --- | --- | --- |
-| **definition-v1**: a literal `definition` plus `execute(context)` | the deterministic runtime through `cascade run`, and Studio, which builds the ports from the literal | `cascade check`, which requires this style |
-| **dynamic**: `execute(node, graph)` declaring its own ports and parameters | Studio, and `cascade run` including `--frames` | `cascade validate` and a cook |
+| **definition-v1**: a literal `definition` plus `execute(context)` | the deterministic runtime through `cascade run`, including `--frames`; Studio adapts it into its compatibility controller | `cascade check`, which requires this style |
+| **dynamic**: `execute(node, graph)` declaring its own ports and parameters | Studio and the CLI compatibility engine, including `--frames` | `cascade validate` and a cook |
 
-Studio cooks both, and a Studio graph may mix them. `cascade run` picks one host per document: a graph whose project modules are all definition-v1 runs through the deterministic runtime, and anything else runs through the compatibility engine — which is also why `--frames` is refused on an all-definition-v1 graph, the deterministic runtime owning its own clock. The `AGENTS.md` that `cascade new` writes into a project states which style that project expects, and it is the file to believe over this one for a specific project.
+Studio cooks both, and a Studio graph may mix them. `cascade run` picks one host
+per document: an all-definition-v1 graph runs through the deterministic
+runtime and an all-dynamic graph runs through the compatibility engine. A
+mixed CLI document is rejected until the bounded adapter between those engines
+exists. Both homogeneous forms support `--frames`; deterministic runs receive
+an explicit frame and fps so expressions and keyframe channels resolve
+reproducibly. The `AGENTS.md` that `cascade new` writes into a project states
+which style that project expects, and it is the file to believe over this one
+for a specific project.
 
 ### definition-v1
 
@@ -244,9 +291,9 @@ export async function execute(node: any) {
 }
 ```
 
-`param()` is a method on the node the engine hands to `execute`, not an import. It is re-declared on every cook, so it never resets a value, an expression, or a keyframe someone set: reading `.value` gives the *resolved* value for the current frame, whichever of the three bindings is in force. Top-level statements outside `execute` do not run, because the loader imports a real ES module and needs the `execute` export.
+`param()` is a method on the node the engine hands to `execute`, not an import. It is re-declared on every cook, so it never resets a value, an expression, or a keyframe someone set: reading `.value` gives the *resolved* value for the current frame, whichever of the three bindings is in force. The loader imports the module as real JavaScript, so top-level code does run at import time. Keep dynamic modules free of top-level effects and put interface declaration and cooking inside `execute`.
 
-Prefer `new OffscreenCanvas(width, height)` to `document.createElement('canvas')` when both hosts could run the node, and keep `runsOn: 'browser'` for code that genuinely needs the page. Web technology comes first, meaning Canvas 2D, WebGL and WebGPU. A Python stage is for work that cannot run in a browser at all, such as an exotic ML library. A Python stage costs a process spawn and a round trip per cook, which is invisible on one still frame and fatal to dragging a parameter or playing an animation.
+Prefer `new OffscreenCanvas(width, height)` to `document.createElement('canvas')` when both hosts can run the node. A portable declaration still requires output parity checks; installing Skia does not override a browser-only declaration. Use Python for libraries or tools that require a server. Measure transport, serialization, and cold-start costs; persistent workers can avoid repeated process/model startup.
 
 Choose the narrowest execution locus:
 
@@ -267,6 +314,20 @@ export const definition = {
 ```
 
 The runtime refuses unsupported host/capability combinations before executing the graph.
+
+### GPU nodes today
+
+A definition-v1 browser node may declare `capabilities: ['gpu']`. Studio then
+provides one shared `GPUDevice` for the page, adapter identity and limits, plus
+a cache scoped to each node instance for pipelines, samplers, and other
+resources that outlive one cook. The host clears cached resources on graph
+disposal or device loss and requests a fresh device on a later cook.
+
+This is the first GPU capability stage. Texture connections are not available:
+GPU nodes still publish images, so an image must be encoded or read back before
+another node receives it. Do not model a current graph as a chain of portable
+texture handles, and do not keep a device or pipeline in module-level mutable
+state.
 
 Some portable operations have genuinely useful browser and server
 implementations. Keep one literal definition and one module ID; let the host's
@@ -340,7 +401,11 @@ In the document, a channel sits in the node's `props` next to the value and the 
 }
 ```
 
-`params` holds plain values; a binding needs the object form under `props`. Playback settings, the frame range and loop, belong to the Timeline panel and are not saved with the document.
+Definition-v1 parameter values belong under `props`: use a bare value for an
+unbound parameter or the object form for an expression/channel. A leftover
+`params` array is not read by the deterministic runtime and produces a
+`runtime/stray-params` warning. Playback settings, frame range, and loop belong
+to the Timeline panel and are not saved with the document.
 
 ## Run a coding agent in the project
 
@@ -484,11 +549,22 @@ cascade run index.cascade --frames 42 --entry-node logo-1024
 
 Offline, drawing goes through Skia: the optional `@napi-rs/canvas` supplies `OffscreenCanvas`, `Image`, `Path2D` and the rest as globals in the Node process, deliberately not `document`, because that is how a node tells which host it is in. This is why a node that draws on an `OffscreenCanvas` needs no second implementation for headless runs, and why the built-in `cascade.image.*` nodes render under `cascade run` as well as in Studio. A graph that draws nothing runs without the renderer installed.
 
-`--frames` renders dynamic graphs. A definition-v1 graph runs through the deterministic runtime, which owns its own clock and has no parameter animation, and the flag is refused rather than silently rendering the first frame repeatedly.
+`--frames` renders both homogeneous graph forms. An all-definition-v1 graph
+runs once per requested frame through the deterministic runtime, which resolves
+expressions and channels from the explicit frame and fps. An all-dynamic graph
+uses the compatibility frame renderer. A mixed graph is rejected rather than
+silently choosing one engine.
 
 Applications can use `createRuntime()` from `cascade/runtime` directly. Register node modules and host capabilities, load the graph, mutate inputs or presets, run or trigger it, read outputs, then dispose it. This path loads no Svelte or Studio code and works in a backend service or a custom browser application.
 
 Server and browser hosts are deliberately explicit. A graph that uses Python or shell stages belongs on the server or behind an application-defined bridge; the runtime does not silently move computation between environments.
+
+The Studio single-HTML/folder exporter is not this embedding API. It currently
+serializes a compatibility graph into its own small browser runtime, so it does
+not preserve every node, capability, or runtime behavior. Use it only after
+testing the exported artifact for the particular graph. For a dependable
+custom experience today, embed `cascade/runtime` in an application and provide
+the graph's declared modules and capabilities explicitly.
 
 ## Verify a project
 
@@ -499,4 +575,9 @@ Before committing a custom node or graph:
 3. Run the graph headlessly when its capabilities are available. This is the step that catches a document that loads, reports its nodes, and draws nothing. The characteristic failure here is silent, so a static pass alone proves little.
 4. Open Studio only for visual inspection or authoring that benefits from the graph UI.
 
-Dynamic modules are not deprecated and 0.3.0 stopped calling them legacy: the two styles are cooked by different hosts, and a project's own `AGENTS.md` says which one it expects. Convert a node when you need what the other style gives, static inspection and `cascade check` on one side or Studio cooking and `--frames` on the other, rather than on a schedule.
+Dynamic modules are not deprecated and 0.3.0 stopped calling them legacy. The
+two styles are cooked by different CLI engines, while Studio currently adapts
+both through its compatibility controller. Prefer definition-v1 for new work
+because it provides static inspection, `cascade check`, and the neutral runtime.
+Keep an existing dynamic node when its current compatibility-only APIs are
+still required, and keep CLI graphs homogeneous until mixed execution exists.

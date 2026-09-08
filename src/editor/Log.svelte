@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { describeThrown } from '@/utils/thrownError';
   
   interface LogEntry {
     id: string;
@@ -36,11 +37,31 @@
     
     // Format the message
     const formatted = formattedArgs.map(arg => {
-      if (typeof arg === 'object') {
+      /**
+       * An error renders as what it says, not as `{}`.
+       *
+       * This is where Marcus's `Error executing node volume: {}` came from. An
+       * `Error`'s `message` and `stack` are **non-enumerable own properties**,
+       * and `GPUPipelineError`, `GPUValidationError` and `DOMException` carry
+       * `message` on the prototype — so `JSON.stringify` returns `{}` for every
+       * one of them, and a `TypeError` is just as invisible as a WebGPU error.
+       *
+       * Normalising at the throw site fixed the stored value and the first
+       * console argument; it could not fix this, because the panel serialises
+       * whatever object it is handed. One place, every error type.
+       */
+      if (arg instanceof Error) {
+        const kind = arg.name && arg.name !== 'Error' ? `${arg.name}: ` : '';
+        return `${kind}${arg.message || describeThrown((arg as Error & { cause?: unknown }).cause)}`;
+      }
+      if (typeof arg === 'object' && arg !== null) {
         try {
-          return JSON.stringify(arg, null, 2);
+          const json = JSON.stringify(arg, null, 2);
+          // `{}` is the shape that started this: an object whose useful parts
+          // are all non-enumerable. Say something about it instead.
+          return json === '{}' ? describeThrown(arg) : json;
         } catch (e) {
-          return String(arg);
+          return describeThrown(arg);
         }
       }
       return String(arg);

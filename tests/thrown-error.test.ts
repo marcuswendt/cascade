@@ -80,3 +80,29 @@ describe('a node that throws a non-Error', () => {
     errors.mockRestore();
   });
 });
+
+describe('what the Log panel does with an error', () => {
+  /**
+   * The panel formats any object with `JSON.stringify`, which is where
+   * `Error executing node volume: {}` actually came from — an `Error`'s
+   * `message` and `stack` are **non-enumerable own properties**, so a
+   * `TypeError` serialises as emptily as a `GPUPipelineError`.
+   *
+   * Normalising at the throw site fixed the stored value and the first console
+   * argument. It could not fix the panel, which serialises whatever object it
+   * is handed — so this is asserted against the same rule the panel now uses.
+   */
+  it('has something to say about every error shape that serialises to {}', () => {
+    for (const thrown of [new TypeError('bad destructure'), new RangeError('out of range')]) {
+      expect(JSON.stringify(thrown)).toBe('{}');
+      const kind = thrown.name && thrown.name !== 'Error' ? `${thrown.name}: ` : '';
+      expect(`${kind}${thrown.message}`).toContain(thrown.message);
+    }
+
+    // And the non-Error shapes go through describeThrown, which the panel now
+    // reaches for whenever a serialisation comes back empty.
+    class GPUValidationError { get message() { return 'bind group mismatch'; } }
+    expect(JSON.stringify(new GPUValidationError())).toBe('{}');
+    expect(describeThrown(new GPUValidationError())).toBe('GPUValidationError: bind group mismatch');
+  });
+});

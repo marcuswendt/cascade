@@ -1,229 +1,125 @@
-# Cascade API Reference
+# Cascade public API quick reference
 
-Quick reference for node development in Cascade.
+This page summarizes the published project-facing APIs. The authoritative TypeScript contracts live in `cascade/contracts` and `cascade/runtime`; built-in node ports are generated into [`doc/NODE_REFERENCE.md`](../doc/NODE_REFERENCE.md).
 
-## Node Basics
+The class APIs under `src/nodes` are Studio compatibility internals. New project nodes should not extend them or inspect sibling nodes through a graph object.
 
-### Creating Ports
+## Package entry points
 
-```typescript
-// Input ports - receive data from upstream nodes
-const input = node.in<number>('value', 0);           // With default value
-const trigger = node.in('trigger', null, { type: 'trigger' }); // Trigger port
+| Import | Purpose |
+| --- | --- |
+| `cascade/contracts` | Documents, values, definitions, capabilities, animation, and diagnostics |
+| `cascade/contracts/schema` | Document schemas |
+| `cascade/runtime` | Neutral graph runtime and its public types |
+| `cascade/runtime/node` | Node host constructor |
+| `cascade/runtime/browser` | Browser host constructor |
+| `cascade/runtime/expressions` | Expression mechanisms |
+| `cascade/runtime/animation` | Channels and frame ranges |
+| `cascade/runtime/definition/extract` | Static definition extraction |
+| `cascade/studio/panel` | Type-only contract for trusted project panels |
 
-// Output ports - send data downstream
-const output = node.out<number>('result');
-output.setValue(42);
+`cascade/io`, `cascade/net`, `cascade/stage`, and `cascade/shell` are host or compatibility bridges. Their availability depends on the host; importing one does not grant a capability. `cascade/gpu` exports WebGPU usage constants; access to a device comes from the declared `gpu` capability.
 
-// Trigger output
-const tick = node.out('tick', 'trigger');
-tick.trigger({ frame: 1 });
-```
+## Define a node
 
-### Port Properties
+```ts
+import type { NodeDefinition, NodeExecutionContext } from 'cascade/contracts';
 
-```typescript
-input.value        // Current value
-input.defaultValue // Default value
-input.name         // Port name
-input.id           // Unique port ID
-input.connections  // Connected wires
-
-// Callbacks
-input.onChange = (value) => { ... }
-trigger.onTrigger = (props) => { ... }
-```
-
-## Parameters (Props)
-
-Add UI-controlled parameters to nodes:
-
-```typescript
-node.addParm('intensity', {
-  value: 1.0,
-  params: { min: 0, max: 2, step: 0.1 },
-  displayName: 'Intensity',
-  onChange: () => node.requestCook()
-});
-
-node.addParm('mode', {
-  value: 'normal',
-  params: {
-    options: [
-      { value: 'normal', label: 'Normal' },
-      { value: 'multiply', label: 'Multiply' }
-    ]
+export const definition = {
+  apiVersion: 1,
+  label: 'Multiply',
+  runsOn: 'portable',
+  inputs: {
+    value: { kind: 'data', type: 'float', default: 0 },
+    factor: { kind: 'data', type: 'float', default: 2 }
   },
-  displayName: 'Blend Mode'
-});
+  outputs: { result: { kind: 'data', type: 'float' } }
+} as const satisfies NodeDefinition;
 
-node.addParm('color', {
-  value: { r: 1, g: 0, b: 0 },
-  type: 'color',
-  displayName: 'Color'
-});
-
-// Access parameter values
-const intensity = node.props.intensity.value;
-```
-
-### Parameter Options
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `value` | any | Initial value |
-| `params.min` | number | Minimum value (sliders) |
-| `params.max` | number | Maximum value (sliders) |
-| `params.step` | number | Step increment |
-| `params.options` | array | Dropdown options |
-| `displayName` | string | UI label |
-| `hidden` | () => boolean | Conditional visibility |
-| `onChange` | () => void | Value change callback |
-
-## Node Lifecycle
-
-```typescript
-// Called when node should recompute
-node.requestCook();
-
-// Mark node as needing update
-node.markDirty();
-
-// Node state
-node.isDirty       // Needs recomputation
-node.bypass        // Skip execution
-node.error         // Current error (if any)
-
-// Lifecycle hooks
-node.onReady = () => { ... }     // Called after setup
-node.onDestroy = () => { ... }   // Called before removal
-```
-
-## NPM Packages
-
-```typescript
-// Load packages dynamically
-const three = await node.require('three');
-const chroma = await node.require('chroma-js@2.4.2');
-
-// Use immediately
-const scene = new three.Scene();
-```
-
-## Assets
-
-```typescript
-// Load assets
-const image = await node.assets.load('./path/to/image.png');
-const data = await node.assets.load('./data.json');
-```
-
-## Graph Access
-
-```typescript
-// Access graph from node
-node.graph              // Parent graph
-node.graph.nodes        // All nodes
-node.graph.connections  // All connections
-
-// Find nodes
-node.graph.getNode('nodeId');
-node.graph.getElement('elementId');
-```
-
-## LensNode (Image Processing)
-
-Extend `LensNode` for image processing nodes:
-
-```typescript
-import { LensNode, ImageBuffer } from '@/nodes/lens/LensNode';
-
-class MyFilter extends LensNode {
-  protected setup(): void {
-    this.in<ImageInput>('image', null);
-    this.addParm('amount', { value: 1.0, params: { min: 0, max: 1 } });
-    this.out('image');
-  }
-
-  protected render(): void {
-    const input = this.toImageBuffer(this.inputs[0].value);
-    if (!input) return;
-
-    const result = ImageBuffer.rgba(input.width, input.height);
-
-    // Process pixels
-    const r = result.r(), g = result.g(), b = result.b(), a = result.a();
-    for (let i = 0; i < input.width * input.height; i++) {
-      r[i] = input.r()[i] * this.props.amount.value;
-      // ...
-    }
-
-    this.setOutput(this.outputs[0], result);
-  }
+export function execute(context: NodeExecutionContext<typeof definition>) {
+  context.outputs.result.set(context.inputs.value * context.inputs.factor);
 }
 ```
 
-### ImageBuffer API
+The definition must stay JSON-like: literals, arrays, objects, parentheses, `as const`, and `satisfies` are supported. Calls, spreads, computed properties, and imported constants cannot be extracted statically.
 
-```typescript
-// Create buffers
-ImageBuffer.rgba(width, height)    // 4 channels
-ImageBuffer.rgb(width, height)     // 3 channels
-ImageBuffer.mono(width, height)    // 1 channel
+Definitions declare `runsOn` (`portable`, `browser`, or `server`), data or trigger `inputs` and `outputs`, stored `props`, and any required `capabilities`. A prop has a `type` and `default`, with type-appropriate UI metadata such as `label`, `min`, `max`, `step`, `control`, `options`, `accept`, or `action`.
 
-// Channel access
-buffer.r(), buffer.g(), buffer.b(), buffer.a()  // Float32Arrays
-buffer.channels[0]  // Direct channel access
+Use one vector type for one vector value: `vec2`, `vec3`, `vec4`, or their integer forms. Namespaced project types use a name such as `project.palette`.
 
-// Properties
-buffer.width, buffer.height, buffer.channelCount
+`execute(context)` receives resolved inputs and props, typed outputs, an abort signal, progress reporting, `nodeId` for instance namespaces, and only declared capabilities. Set data with `context.outputs.<name>.set(value)`. Deterministic checks reject module-level runtime state, ambient process/browser state, top-level effects, dynamic imports, and sibling node imports; project data crosses wires.
 
-// Operations
-buffer.sample(x, y, channel)  // Bilinear sample
-buffer.fill(channel, value)   // Fill channel
-buffer.toCanvas()             // Convert to HTMLCanvasElement
-buffer.toRGBA()               // Convert to 4-channel
+## Capabilities
+
+| Capability | Environment | Purpose |
+| --- | --- | --- |
+| `assets` | portable | Read/write asset references and optionally resolve URLs |
+| `media` | portable | Decode and encode media through the host |
+| `gpu` | browser | Shared WebGPU device, adapter information, limits, and resource cache |
+| `files` | server | Project-confined byte reads, writes, lists, and stats |
+| `python` | server | Invoke a configured operation with JSON and assets |
+| `shell` | server | Run an allowlisted executable without a shell command string |
+
+The current GPU capability does not provide graph texture transport or readback. Ports still exchange images, and server definitions cannot declare browser-only texture values.
+
+## Embed the runtime
+
+In this integration outline, the application supplies `registrations`,
+`assets`, `media`, and `document`. The document exposes root graph inputs and
+outputs named `amount` and `image` through core boundary nodes.
+
+```ts
+import { createRuntime } from 'cascade/runtime';
+import { createNodeRuntimeHost } from 'cascade/runtime/node';
+
+const host = createNodeRuntimeHost({
+  modules: {
+    async resolve(moduleId) {
+      return registrations.get(moduleId) ?? null;
+    }
+  },
+  assets,
+  media
+});
+
+const runtime = createRuntime({ host });
+const graph = await runtime.load(document);
+await graph.setGraphInput('amount', 0.75);
+
+const result = await graph.run({ frame: 48, fps: 30 });
+if (result.status !== 'completed') {
+  throw new Error(result.diagnostics.map(item => item.message).join('\n'));
+}
+
+console.log(graph.getGraphOutput('image'));
+await graph.dispose();
+await runtime.dispose();
 ```
 
-### Resolution Control (Multi-Input)
+A definition-v1 registration contains `kind: 'definition-v1'`, `moduleId`, the literal `definition`, and `loadExecute(environment)`. Supply registrations through `createRuntime({ host, nodes })`, `runtime.registerNode()` before the first load, or `host.modules.resolve`. Registration is sealed after loading begins.
 
-```typescript
-// In LensNode subclass
-const { buffers, width, height } = this.prepareInputs(
-  [input1, input2],           // Input values
-  'largest',                   // Resolution mode
-  'fill',                      // Fit mode
-  [512, 512]                   // Custom size (if mode='custom')
-);
+The loaded graph API provides:
 
-// Resolution modes: 'input1', 'input2', 'largest', 'smallest', 'custom'
-// Fit modes: 'fill', 'fit', 'stretch', 'native'
+- `preflight()` and `inspect()` for host diagnostics and immutable snapshots.
+- `setInput()`, `setGraphInput()`, `setProp()`, and `applyPreset()` for explicit state.
+- `setFrame()`, `setFps()`, and per-run `frame`/`fps` for deterministic animation.
+- `run()` for all nodes, one node, or one output; `trigger()` for external triggers.
+- `subscribe()` for run, node, trigger, progress, diagnostic, and output events.
+- `getOutput()`, `getOutputs()`, and `getGraphOutput()` for values.
+- `cancel()` and `dispose()` for lifecycle control.
+
+Only one run may be active per loaded graph. Runs return `completed`, `cancelled`, or `failed`; preflight and API misuse reject instead.
+
+## CLI contract
+
+```bash
+cascade validate index.cascade
+cascade check index.cascade
+cascade inspect index.cascade
+cascade run index.cascade
+cascade run index.cascade --frames 1-100 --fps 30 --out renders
 ```
 
-## Keyboard Shortcuts
+`validate` checks document structure. `check` additionally requires and statically checks definition-v1 project modules. `inspect` emits a JSON classification summary. `run` uses the deterministic runtime for an all-definition-v1 document and the compatibility engine for an all-dynamic document. Mixed documents currently fail in the CLI, although Studio can cook them through its compatibility controller.
 
-| Shortcut | Action |
-|----------|--------|
-| Tab | Open node panel |
-| Cmd+K | Search packages (in editor) |
-| Shift+Enter | Compile code |
-| Cmd+Z | Undo |
-| Cmd+Shift+Z | Redo |
-| Delete | Delete selected |
-| Cmd+A | Select all |
-
-## Data Types & Port Colors
-
-| Color | Type |
-|-------|------|
-| Gray | Any/unknown |
-| Blue | Number |
-| Green | String |
-| Yellow | Boolean |
-| Purple | Object/Array |
-| Cyan | Image/Canvas |
-| Orange | Trigger |
-
----
-
-See [CHANGELOG.md](./CHANGELOG.md) for version history.
+See [Project authoring](../doc/PROJECT_AUTHORING.md) for full examples, animation, project configuration, panels, external services, and verification.

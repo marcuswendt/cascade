@@ -1,5 +1,9 @@
 # Changelog
 
+Historical release notes through 0.2.3. Current release notes and unreleased
+changes live in [the root changelog](../CHANGELOG.md). Entries below describe
+their release date, not the current implementation.
+
 ## [0.2.3] - 2026-08-29
 
 - Raised the supported runtime to Node.js 22.13 or newer and upgraded the
