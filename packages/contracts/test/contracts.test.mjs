@@ -235,3 +235,45 @@ test("keeps public type and control schema vocabularies aligned with validation"
   assert.ok(inputSchema.properties.type.anyOf[1].pattern.includes("A-Za-z"));
   assert.ok(inputSchema.properties.control.enum.includes("slider"));
 });
+
+test("checks a labelled select option, and accepts a bare one", () => {
+  // A malformed labelled option renders as "[object Object]" on the control
+  // rather than erroring, and the labelled form exists because a lost label
+  // lost a cost warning — so the shape is checked rather than trusted.
+  const bad = validateNodeDefinition({
+    apiVersion: 1,
+    runsOn: "portable",
+    props: {
+      engine: {
+        type: "string",
+        default: "off",
+        control: "select",
+        options: [
+          { value: "off", label: "Off" },
+          { value: "local" },
+          { value: "magnific", label: "" },
+          { value: "later", label: "Later", disabled: "yes" },
+        ],
+      },
+    },
+  });
+  const codes = bad.map((item) => item.code);
+  assert.ok(codes.includes("definition/invalid-option"), JSON.stringify(codes));
+  assert.equal(bad.filter((item) => item.code === "definition/invalid-option").length, 3);
+
+  const good = validateNodeDefinition({
+    apiVersion: 1,
+    runsOn: "portable",
+    props: {
+      fit: { type: "string", default: "cover", control: "select", options: ["cover", "contain"] },
+      engine: {
+        type: "string",
+        default: "off",
+        control: "select",
+        options: [{ value: "off", label: "Off (pass through)" }],
+      },
+      moment: { type: "string", default: "", action: "panel:observatory-moments" },
+    },
+  });
+  assert.deepEqual(good, []);
+});

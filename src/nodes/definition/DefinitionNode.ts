@@ -22,15 +22,29 @@ function parameterOptions(definition: {
   readonly step?: number;
   readonly options?: readonly unknown[];
   readonly expression?: string;
+  readonly action?: string;
 }): ParamOptions {
   return {
     ...(definition.label ? { label: definition.label } : {}),
     ...(definition.expression ? { defaultExpression: definition.expression } : {}),
+    ...(definition.action ? { action: definition.action } : {}),
     ...(definition.min === undefined ? {} : { min: definition.min }),
     ...(definition.max === undefined ? {} : { max: definition.max }),
     ...(definition.step === undefined ? {} : { step: definition.step }),
     ...(definition.options ? {
-      choices: definition.options.map(value => ({ value, label: String(value) })),
+      // A declared label wins; a bare value is its own label, which is what
+      // every definition written before the labelled form meant. Stringifying
+      // unconditionally is what turned "Magnific — costs money" into
+      // "magnific" and threw away the only notice that it bills per call.
+      choices: definition.options.map(option => (
+        option !== null && typeof option === 'object' && 'value' in option
+          ? {
+            value: (option as { value: unknown }).value,
+            label: String((option as { label?: unknown }).label ?? (option as { value: unknown }).value),
+            ...((option as { disabled?: unknown }).disabled ? { disabled: true } : {}),
+          }
+          : { value: option, label: String(option) }
+      )),
     } : {}),
     promotable: false,
   };

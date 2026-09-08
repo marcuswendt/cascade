@@ -117,6 +117,29 @@ describe('deterministic CLI runtime', () => {
     warn.mockRestore();
   });
 
+  it('tells a stub that icon and runsOn belong inside the definition', async () => {
+    // The literal stub for a converted shared node fails here, and the general
+    // message sends you looking for the wrong thing: it talks about pure
+    // functions and capabilities while the fix is to move two lines into the
+    // object above them. A dynamic node must declare them at module level —
+    // they are read by a pass over the source — so the sentence only changes
+    // once a definition has superseded them.
+    const fixture = project(`
+export const icon = 'Crop';
+export const runsOn = 'portable';
+export const definition = {
+  apiVersion: 1,
+  runsOn: 'portable',
+  outputs: { result: { kind: 'data', type: 'float' } }
+} as const;
+export function execute(context) { context.outputs.result.set(1); }
+`);
+
+    await expect(checkProjectGraph(fixture.file, fixture.document)).rejects.toThrow(
+      /architecture\/module-state.*`icon` belongs inside the definition/s,
+    );
+  });
+
   it('says nothing about a module it did resolve', async () => {
     const fixture = project(validSource);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

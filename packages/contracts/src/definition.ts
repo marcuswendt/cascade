@@ -80,6 +80,30 @@ type NumericMetadata<T extends CascadeType> = T extends
 type AcceptMetadata<T extends CascadeType> = T extends "image" | "asset"
   ? { readonly accept?: readonly string[] }
   : { readonly accept?: never };
+/**
+ * One choice on a select control: the bare value, or the value with the words
+ * a person reads.
+ *
+ * The labelled form exists because losing it cost something real. Converting
+ * `image-superres` turned *"Off (pass through) / Local — Real-ESRGAN /
+ * Magnific — costs money"* into `off` / `local` / `magnific`, and that third
+ * label carried **the only warning that one of the three engines spends money
+ * per call**. A lost display name is a papercut; a lost cost warning is a
+ * bill. Six props across the sketches had lost their labels by the time this
+ * landed, and that one is why it was not deferred any longer.
+ *
+ * A bare value stays legal, and reads as "the value is the label" — which is
+ * true of most enums and is what every existing definition means.
+ */
+export type SelectOption<T extends CascadeType> =
+  | SerializableValueForType<T>
+  | Readonly<{
+      value: SerializableValueForType<T>;
+      label: string;
+      /** Greyed out but visible: an option that exists and cannot be picked
+       *  here, which is more informative than one that is simply absent. */
+      disabled?: boolean;
+    }>;
 type SelectMetadata<T extends CascadeType> =
   | {
       readonly control?: Exclude<ControlFor<T>, "select">;
@@ -87,7 +111,7 @@ type SelectMetadata<T extends CascadeType> =
     }
   | {
       readonly control: Extract<ControlFor<T>, "select">;
-      readonly options?: readonly SerializableValueForType<T>[];
+      readonly options?: readonly SelectOption<T>[];
     };
 
 export interface TriggerInputDefinition {
@@ -148,6 +172,23 @@ export type PropDefinition<T extends PropDataType> = {
    * number came from.
    */
   readonly expression?: string;
+  /**
+   * Render this prop as a button that fires a named action, rather than as an
+   * editable field.
+   *
+   * It exists because converting a node removed a button. `observatory-moment`
+   * declared `action: 'panel:observatory-moments'` as a dynamic node, which the
+   * Inspector renders from `parameter.options.action`; the v1 adapter built its
+   * options from `label`, `min`, `max`, `step` and `options` only, so the
+   * Moment picker quietly became a two-step job through the panel menu instead
+   * of one click on the node. Nothing broke — the panel falls back to the
+   * selected node and reads the same prop — which is exactly why nobody would
+   * have noticed from a test.
+   *
+   * The value is the action name the host dispatches. Cascade does not
+   * interpret it; a `panel:` prefix is a Studio convention, not a contract.
+   */
+  readonly action?: string;
 } & NumericMetadata<T> &
   AcceptMetadata<T> &
   SelectMetadata<T>;

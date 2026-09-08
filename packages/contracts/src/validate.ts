@@ -42,7 +42,7 @@ const DATA_FIELDS = fields(
 );
 const OUTPUT_FIELDS = fields("kind type description");
 const PROP_FIELDS = fields(
-  "type default label description min max step accept control options expression",
+  "type default label description min max step accept control options expression action",
 );
 
 function diagnostic(code: string, message: string, path?: string): Diagnostic {
@@ -240,6 +240,33 @@ export function validateNodeDefinition(value: unknown): readonly Diagnostic[] {
           "options require the select control",
           `${path}.options`,
         );
+      // A labelled option is `{ value, label }`. Checked because the failure
+      // is cosmetic and silent: a malformed entry reaches the control and
+      // renders as "[object Object]" rather than erroring, and the labelled
+      // form exists precisely because a lost label lost a cost warning.
+      if (Array.isArray(raw.options))
+        for (const [index, option] of raw.options.entries()) {
+          if (option === null || typeof option !== "object") continue;
+          const entry = option as Record<string, unknown>;
+          if (!("value" in entry))
+            add(
+              "invalid-option",
+              "a labelled option needs a value",
+              `${path}.options[${index}]`,
+            );
+          if (typeof entry.label !== "string" || !entry.label)
+            add(
+              "invalid-option",
+              "a labelled option needs a non-empty label",
+              `${path}.options[${index}].label`,
+            );
+          if ("disabled" in entry && typeof entry.disabled !== "boolean")
+            add(
+              "invalid-option",
+              "disabled must be a boolean",
+              `${path}.options[${index}].disabled`,
+            );
+        }
       const type = raw.type;
       if (!validType(type)) {
         add(

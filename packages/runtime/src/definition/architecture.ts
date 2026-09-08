@@ -30,13 +30,31 @@ export function validateNodeModuleArchitecture(
     ts.ScriptKind.TS,
   );
   const diagnostics: Diagnostic[] = [];
+  const exportsDefinition = file.statements.some(
+    (statement) =>
+      ts.isVariableStatement(statement) && isDefinition(statement),
+  );
 
   for (const statement of file.statements) {
     if (ts.isVariableStatement(statement) && !isDefinition(statement)) {
+      // `icon` and `runsOn` get their own sentence, because the general
+      // message sends you looking for the wrong thing. A dynamic node declares
+      // them at module level and must — they are read by a pass over the
+      // source. A definition-v1 node declares them *inside* the definition,
+      // and the moment it does, the module-level copies become exactly the
+      // module state this rule forbids.
+      //
+      // Found the hard way on 2026-09-08: the first literal stub written for a
+      // converted shared node failed here, and the message talks about pure
+      // functions and capabilities while the actual fix is to move two lines
+      // into the object above them. That is not guessable from the error.
+      const superseded = supersededByDefinition(statement);
       add(
         statement,
         "module-state",
-        "Node modules may not declare module-level values; use a pure function or pass state through ports, props, and declared capabilities",
+        superseded
+          ? `\`${superseded}\` belongs inside the definition, not beside it — a definition-v1 node declares it as \`${superseded}: ...\` in \`export const definition\`, and a module-level copy is the module state this rule forbids. A dynamic node without a definition still declares it here.`
+          : "Node modules may not declare module-level values; use a pure function or pass state through ports, props, and declared capabilities",
       );
     } else if (
       ts.isClassDeclaration(statement) ||
@@ -114,6 +132,26 @@ export function validateNodeModuleArchitecture(
       (ts.isMethodDeclaration(parent) && parent.name === node) ||
       (ts.isPropertyDeclaration(parent) && parent.name === node)
     );
+  }
+
+  /**
+   * The name of a declaration a `definition` has taken over, or null.
+   *
+   * Only reported when the file actually exports a definition: without one,
+   * `export const icon` is the correct and only way to state it, and telling
+   * somebody to move it into an object that does not exist would be worse than
+   * the general message.
+   */
+  function supersededByDefinition(
+    statement: TypeScript.VariableStatement,
+  ): string | null {
+    if (!exportsDefinition) return null;
+    const declaration = statement.declarationList.declarations[0];
+    if (statement.declarationList.declarations.length !== 1) return null;
+    if (!declaration || !ts.isIdentifier(declaration.name)) return null;
+    return declaration.name.text === "icon" || declaration.name.text === "runsOn"
+      ? declaration.name.text
+      : null;
   }
 
   function isDefinition(statement: TypeScript.VariableStatement): boolean {

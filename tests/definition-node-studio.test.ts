@@ -104,6 +104,41 @@ const selfAnimatingRegistration = {
   loadExecute: async () => executeSelfAnimating,
 } satisfies DefinitionNodeRegistration<typeof selfAnimatingDefinition>;
 
+// A prop with labelled options and an action button — the two pieces of prop
+// metadata the dynamic style carried and definition-v1 did not, each of which
+// lost something real when a sketch converted.
+const controlsDefinition = {
+  apiVersion: 1,
+  runsOn: 'portable',
+  props: {
+    engine: {
+      type: 'string',
+      default: 'off',
+      control: 'select',
+      options: [
+        { value: 'off', label: 'Off (pass through)' },
+        { value: 'local', label: 'Local — Real-ESRGAN' },
+        { value: 'magnific', label: 'Magnific — costs money' },
+        { value: 'later', label: 'Not yet', disabled: true },
+      ],
+    },
+    fit: { type: 'string', default: 'cover', control: 'select', options: ['cover', 'contain'] },
+    moment: { type: 'string', default: '', action: 'panel:observatory-moments' },
+  },
+  outputs: { engine: { kind: 'data', type: 'string' } },
+} as const satisfies NodeDefinition;
+
+function executeControls(context: NodeExecutionContext<typeof controlsDefinition>) {
+  context.outputs.engine.set(context.props.engine);
+}
+
+const controlsRegistration = {
+  kind: 'definition-v1',
+  moduleId: 'cascade.test.Controls',
+  definition: controlsDefinition,
+  loadExecute: async () => executeControls,
+} satisfies DefinitionNodeRegistration<typeof controlsDefinition>;
+
 const identityRegistration = {
   kind: 'definition-v1',
   moduleId: 'cascade.test.Identity',
@@ -116,7 +151,7 @@ describe('definition-v1 nodes in Studio', () => {
 
   beforeAll(async () => {
     await initializeNodeLibraries();
-    registerDefinitionNodes([interactionRegistration, identityRegistration, rangedVectorRegistration, selfAnimatingRegistration]);
+    registerDefinitionNodes([interactionRegistration, identityRegistration, rangedVectorRegistration, selfAnimatingRegistration, controlsRegistration]);
   });
 
   it('lists the runtime geometry library in the node picker', () => {
@@ -547,5 +582,48 @@ describe('definition-v1 nodes in Studio', () => {
     const reopenedNode = reopened.getNode(node.id)!;
     await reopened.execute(reopenedNode);
     expect(reopenedNode.parm('time')!.expression()).toBeNull();
+  });
+  it('keeps a select option\'s label, because one of them was a cost warning', async () => {
+    // `image-superres.engine` read "Off (pass through) / Local — Real-ESRGAN /
+    // Magnific — costs money" as a dynamic node and `off` / `local` /
+    // `magnific` after converting. That third label carried the only notice
+    // that one engine bills per call: a lost display name is a papercut, a
+    // lost cost warning is a bill.
+    const graph = new Graph();
+    const node = graph.addNode('cascade.test.Controls', { x: 0, y: 0 });
+
+    const engine = node.parameters.find(parameter => parameter.name === 'engine');
+    expect(engine?.options.choices).toEqual([
+      { value: 'off', label: 'Off (pass through)' },
+      { value: 'local', label: 'Local — Real-ESRGAN' },
+      { value: 'magnific', label: 'Magnific — costs money' },
+      { value: 'later', label: 'Not yet', disabled: true },
+    ]);
+  });
+
+  it('treats a bare option as its own label, which is what every older definition meant', async () => {
+    const graph = new Graph();
+    const node = graph.addNode('cascade.test.Controls', { x: 0, y: 0 });
+
+    expect(node.parameters.find(parameter => parameter.name === 'fit')?.options.choices)
+      .toEqual([
+        { value: 'cover', label: 'cover' },
+        { value: 'contain', label: 'contain' },
+      ]);
+  });
+
+  it('carries a prop\'s action through, so the button survives conversion', async () => {
+    // Converting `observatory-moment` removed the Moment picker button from
+    // the node: the Inspector renders one from `parameter.options.action`, and
+    // the adapter was not forwarding it. Nothing broke — the panel still opens
+    // from the menu and reads the same prop — which is why no test caught it.
+    const graph = new Graph();
+    const node = graph.addNode('cascade.test.Controls', { x: 0, y: 0 });
+
+    expect(node.parameters.find(parameter => parameter.name === 'moment')?.options.action)
+      .toBe('panel:observatory-moments');
+    // And a prop that declares none does not grow one.
+    expect(node.parameters.find(parameter => parameter.name === 'fit')?.options.action)
+      .toBeUndefined();
   });
 });

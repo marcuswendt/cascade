@@ -44,7 +44,27 @@ const dataProperties = {
   step: { type: "number", exclusiveMinimum: 0 },
   accept: { type: "array", items: { type: "string", minLength: 1 } },
   control,
-  options: { type: "array" },
+  // A bare value, or `{ value, label, disabled? }`. Both forms, because a
+  // bare value means "the value is its own label" and is what every
+  // definition written before the labelled form meant.
+  options: {
+    type: "array",
+    items: {
+      anyOf: [
+        { not: { type: "object" } },
+        {
+          type: "object",
+          properties: {
+            value: {},
+            label: { type: "string", minLength: 1 },
+            disabled: { type: "boolean" },
+          },
+          required: ["value", "label"],
+          additionalProperties: false,
+        },
+      ],
+    },
+  },
 } as const;
 const data = object(dataProperties, ["kind", "type"]);
 const output = object(
@@ -59,6 +79,8 @@ const prop = object(
     // Props only, not inputs: an input's value comes from whatever is wired to
     // it, so a default expression there would be describing the wrong thing.
     expression: { type: "string", minLength: 1 },
+    // A button that fires a named host action instead of an editable field.
+    action: { type: "string", minLength: 1 },
   },
   ["type", "default"],
 );
