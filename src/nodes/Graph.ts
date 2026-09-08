@@ -1322,7 +1322,11 @@ export class Graph {
     // whatever frame the save happened on.
     const rawParameterValue = (p: NodeParameter) => node.rawParameterValue(p.name);
     const changedParameters = (node.parameters ?? [])
-      .filter(p => p.promoted || JSON.stringify(rawParameterValue(p)) !== JSON.stringify(p.defaultValue));
+      .filter(p =>
+        p.promoted ||
+        node.preservesPlainProp(p.name) ||
+        JSON.stringify(rawParameterValue(p)) !== JSON.stringify(p.defaultValue)
+      );
     const parameters = changedParameters
       .filter(p => p.documentField !== 'props')
       .map(p => (p.promoted
@@ -1689,7 +1693,10 @@ export class Graph {
            */
           if (expression && node.props[key]) {
             node.props[key].expression = expression;
-          } else if (node.props[key]?.expression) {
+          } else {
+            node.preservePlainProp(key);
+          }
+          if (!expression && node.props[key]?.expression) {
             // The document stored a plain value for a prop that arrived with a
             // declared default expression, and the author's number wins: a
             // default expression is a default. Without this a saved file would

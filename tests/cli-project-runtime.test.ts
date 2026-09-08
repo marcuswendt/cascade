@@ -40,6 +40,11 @@ describe('deterministic CLI runtime', () => {
     // what let a typo validate clean. The path is in the message because
     // `project.Multply` only reads as a typo once you see it went looking for
     // nodes/Multply/index.ts.
+    //
+    // A warning rather than a rejection, reverted from fatal by Marcus on
+    // 2026-09-08: a sketch mid-conversion is a mixed graph, and an error here
+    // stops it validating at all, which is the one thing you need while
+    // converting it.
     const fixture = project(validSource);
     const typo = { ...fixture.document, nodes: [{ id: 'multiply', module: 'project.Multply' }] };
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -50,6 +55,28 @@ describe('deterministic CLI runtime', () => {
     expect(printed).toContain('One node names a module with no file');
     expect(printed).toContain('project/module-not-found');
     expect(printed).toContain(path.join('nodes', 'Multply', 'index.ts'));
+    warn.mockRestore();
+  });
+
+  it('names an explicit project source that is missing, by its own path', async () => {
+    // The other shape: a node carrying `source: { type: 'project', file }`
+    // rather than a `project.<dir>` id. Same warning, different candidate.
+    const fixture = project(validSource);
+    const explicitSource = {
+      ...fixture.document,
+      nodes: [{
+        id: 'multiply',
+        module: 'custom.Multiply',
+        source: { type: 'project', file: 'nodes/Missing/index.ts' },
+      }],
+    };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await validateProjectGraph(fixture.file, explicitSource);
+
+    const printed = warn.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(printed).toContain('project/module-not-found');
+    expect(printed).toContain(path.join('nodes', 'Missing', 'index.ts'));
     warn.mockRestore();
   });
 
@@ -85,6 +112,23 @@ describe('deterministic CLI runtime', () => {
   it('runs a fully deterministic graph through the headless runtime', async () => {
     const fixture = project(validSource);
     await expect(runDeterministicProjectGraph(fixture.file, fixture.document)).resolves.toBe(true);
+  });
+
+  it('warns on the run path when stored params would be ignored, and runs', async () => {
+    // Reverted from a rejection by Marcus on 2026-09-08. Such a graph runs
+    // perfectly well on its defaults, which is precisely the problem — and a
+    // sketch mid-conversion is a mixed graph all day, so an error here removes
+    // the validation you are converting against.
+    const fixture = project(validSource);
+    fixture.document.nodes[0].params = [{ name: 'value', value: 9 }];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(runDeterministicProjectGraph(fixture.file, fixture.document)).resolves.toBe(true);
+      expect(warn.mock.calls.map((call) => String(call[0])).join('\n'))
+        .toContain('Stored values were dropped on load');
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('recognizes reserved core nodes without project modules', async () => {
@@ -124,16 +168,32 @@ describe('deterministic CLI runtime', () => {
 
   it('rejects mixed deterministic and dynamic execution explicitly', async () => {
     const fixture = project(validSource);
-    fixture.document.nodes.push({ id: 'legacy', module: 'cascade.core.Value' });
+    fixture.document.nodes.push({ id: 'legacy', module: 'cascade.core.Freeze' });
     await expect(runDeterministicProjectGraph(fixture.file, fixture.document)).rejects.toThrow(/Mixed deterministic and dynamic/);
   });
 
   it('keeps document validation compatible but rejects dynamic modules during static check', async () => {
     const fixture = project(validSource);
-    fixture.document.nodes.push({ id: 'legacy', module: 'cascade.core.Value' });
+    fixture.document.nodes.push({ id: 'legacy', module: 'cascade.core.Freeze' });
 
     await expect(validateProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
-    await expect(checkProjectGraph(fixture.file, fixture.document)).rejects.toThrow(/dynamic modules: cascade\.core\.Value/);
+    await expect(checkProjectGraph(fixture.file, fixture.document)).rejects.toThrow(/dynamic modules: cascade\.core\.Freeze/);
+  });
+
+  it('names an unknown standard-library module rather than synthesizing it silently', async () => {
+    // `cascade.geo.Circel` is the typo the warning exists for. Reported, not
+    // rejected: the allowlist of known legacy names that gated the throw was
+    // the "configuration that exists only until the cutover finishes" cost,
+    // and it went with the severity on 2026-09-08.
+    const fixture = project(validSource);
+    fixture.document.nodes = [{ id: 'typo', module: 'cascade.geo.Circel' }] as any;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await validateProjectGraph(fixture.file, fixture.document);
+
+    expect(warn.mock.calls.map((call) => String(call[0])).join('\n'))
+      .toMatch(/project\/module-not-found.*cascade\.geo\.Circel/);
+    warn.mockRestore();
   });
 
   it('validates legacy tuple connections when nodes do not persist port metadata', async () => {
@@ -141,8 +201,8 @@ describe('deterministic CLI runtime', () => {
     fixture.document = {
       version: '0.2',
       nodes: [
-        { id: 'source', module: 'cascade.core.Value' },
-        { id: 'target', module: 'cascade.core.Value' },
+        { id: 'source', module: 'cascade.core.Freeze' },
+        { id: 'target', module: 'cascade.core.Freeze' },
       ],
       connections: [[['source', 0, 'value'], ['target', 0, 'value']]],
     } as any;
@@ -205,13 +265,12 @@ export async function execute(context) {
 export const definition = {
   apiVersion: 1,
   runsOn: 'browser',
-  capabilities: ['webgl'],
+  capabilities: ['gpu'],
   inputs: { seed: { kind: 'data', type: 'float', default: 1 } },
-  outputs: { out: { kind: 'data', type: 'texture' } }
+  outputs: { out: { kind: 'data', type: 'string' } }
 } as const;
 export async function execute(context) {
-  const lease = await context.capabilities.webgl.createTexture({}, { signal: context.signal });
-  context.outputs.out.set(lease.value);
+  context.outputs.out.set(context.capabilities.gpu.adapterInfo.vendor);
 }
 `);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -219,17 +278,23 @@ export async function execute(context) {
       await expect(validateProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
       await expect(checkProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
       expect(warn.mock.calls.flat().join('\n')).toMatch(/one node in this graph targets another host/);
+      warn.mockClear();
+      await expect(runDeterministicProjectGraph(fixture.file, fixture.document)).rejects.toThrow(
+        'requires browser',
+      );
+      expect(warn).not.toHaveBeenCalled();
     } finally {
       warn.mockRestore();
     }
   });
 
-  it('sorts an environment mismatch into warnings and everything else into errors', () => {
+  it('sorts the two reach-and-document codes into warnings, and a real fault into errors', () => {
     const { errors, warnings } = classifyPreflight([
       { phase: 'preflight', code: 'runtime/preflight-environment', message: 'x requires browser' },
       { phase: 'preflight', code: 'runtime/missing-capability', message: 'Missing capability media for x' },
+      { phase: 'preflight', code: 'runtime/stray-params', message: 'x dropped params' },
     ]);
-    expect(warnings.map((item) => item.code)).toEqual(['runtime/preflight-environment']);
+    expect(warnings.map((item) => item.code)).toEqual(['runtime/preflight-environment', 'runtime/stray-params']);
     expect(errors.map((item) => item.code)).toEqual(['runtime/missing-capability']);
   });
 

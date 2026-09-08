@@ -289,6 +289,27 @@ export function validateNodeDefinition(value: unknown): readonly Diagnostic[] {
       )
         add("invalid-step", "step must be greater than zero", `${path}.step`);
       if (
+        section === "props" &&
+        "expression" in raw &&
+        (typeof raw.expression !== "string" || raw.expression.length === 0)
+      )
+        add(
+          "invalid-expression",
+          "expression must be a non-empty string",
+          `${path}.expression`,
+        );
+      for (const field of ["min", "max"] as const) {
+        if (
+          field in raw &&
+          (typeof raw[field] !== "number" || !Number.isFinite(raw[field]))
+        )
+          add(
+            `invalid-${field}`,
+            `${field} must be a finite number`,
+            `${path}.${field}`,
+          );
+      }
+      if (
         typeof raw.min === "number" &&
         typeof raw.max === "number" &&
         raw.min > raw.max

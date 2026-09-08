@@ -487,6 +487,9 @@ export class Node {
   /** Props whose declared default expression has already been applied — see
    *  `bindParameterProp`, which must not reinstate one the author deleted. */
   private readonly defaultExpressionsApplied = new Set<string>();
+  /** Props whose plain stored value explicitly overrides a declared default
+   *  expression. The marker survives even when that value equals the default. */
+  private readonly plainPropOverrides = new Set<string>();
 
   addParm<T>(name: string, config: Prop<T>): void {
     this.props[name] = config as Prop;
@@ -642,6 +645,9 @@ export class Node {
       deleteExpression: () => {
         const { expression: _, expressionError: __, ...rest } = self.props[name];
         self.props[name] = rest as any;
+        if (self.defaultExpressionsApplied.has(name)) {
+          self.plainPropOverrides.add(name);
+        }
         // Re-check time dependency
         self.updateTimeDependent();
         self.markDirty();
@@ -730,6 +736,14 @@ export class Node {
       ...(prop.expression ? { expression: prop.expression } : {}),
       ...(channel ? { channel } : {})
     };
+  }
+
+  preservePlainProp(name: string): void {
+    this.plainPropOverrides.add(name);
+  }
+
+  preservesPlainProp(name: string): boolean {
+    return this.plainPropOverrides.has(name) && this.defaultExpressionsApplied.has(name);
   }
 
   /** Read a channel back off disk. Bad data yields no channel, never a throw. */
@@ -948,7 +962,7 @@ export class Node {
      */
     if (options.defaultExpression && !this.defaultExpressionsApplied.has(name)) {
       this.defaultExpressionsApplied.add(name);
-      if (!prop.expression) {
+      if (!this.plainPropOverrides.has(name) && !prop.expression) {
         prop.expression = options.defaultExpression;
         this.props = { ...this.props };
         this.updateTimeDependent();

@@ -92,9 +92,22 @@ async function preflightAgainstRunHost(
   }
   if (!diagnostics.length) return;
   const { errors, warnings } = classifyPreflight(diagnostics);
+  reportPreflightWarnings(host, warnings);
+  if (!errors.length) return;
+  throw new Error([
+    `This graph cannot run on the ${host.environment} host that "cascade run" uses:`,
+    ...errors.map(line),
+    ...capabilityAdvice(host, errors),
+  ].join('\n'));
+}
+
+function reportPreflightWarnings(
+  host: RuntimeHost,
+  warnings: readonly Diagnostic[],
+): void {
   // Two warnings with opposite meanings, so they cannot share a heading. An
   // environment mismatch says the checker cannot see this graph; a stray
-  // `params` array says the graph loaded wrong and ran anyway.
+  // `params` array says the graph loaded wrong and will run anyway.
   const elsewhere = warnings.filter((item) => item.code === 'runtime/preflight-environment');
   const lossy = warnings.filter((item) => item.code === 'runtime/stray-params');
   if (elsewhere.length) {
@@ -111,12 +124,6 @@ async function preflightAgainstRunHost(
       `  This graph will run, on the defaults, and look like it worked.`,
     ].join('\n'));
   }
-  if (!errors.length) return;
-  throw new Error([
-    `This graph cannot run on the ${host.environment} host that "cascade run" uses:`,
-    ...errors.map(line),
-    ...capabilityAdvice(host, errors),
-  ].join('\n'));
 }
 
 function line(item: Diagnostic): string {
@@ -126,10 +133,10 @@ function line(item: Diagnostic): string {
 /**
  * Which preflight diagnostics stop a run and which only need saying.
  *
- * The rule itself is `PREFLIGHT_WARNING_CODES` in the runtime, because `run`
- * needs the same answer and a second copy here is what previously let
- * `validate` and `check` pass graphs `run` then rejected. This function is
- * only the split.
+ * The static warning codes live in the runtime beside the diagnostics they
+ * classify. Execution is stricter: a server run still rejects a browser node,
+ * while a static server-side check reports that host mismatch as a limit of
+ * the checker rather than a malformed graph.
  *
  * A node saying `runsOn: 'portable'` or `'server'` claims this host can run
  * it. If it then needs a capability the host has not installed, the node has
@@ -227,18 +234,37 @@ export async function runDeterministicProjectGraph(
     throw new Error('Mixed deterministic and dynamic graphs are not executable until the bounded legacy adapter is implemented');
   }
 
+  const host = createProjectHost(file, prepared.registrations);
   const runtime = createRuntime({
-    host: createProjectHost(file, prepared.registrations),
+    host,
     nodes: prepared.registrations,
   });
-  const graph = await runtime.load(document);
-  const result = await graph.run(entryNode ? { target: { kind: 'node', nodeId: entryNode } } : {});
-  await graph.dispose();
-  await runtime.dispose();
-  if (result.status !== 'completed') {
-    throw new Error(result.diagnostics.map((item) => item.message).join('\n') || `Graph ${result.status}`);
+  let graph: LoadedCascadeGraph | undefined;
+  try {
+    graph = await runtime.load(document);
+    // The run path warns too, and it has to: `assertPreflight` throws only on
+    // what stops a run, so a stray-`params` graph cooks on its defaults, and a
+    // warning printed by `check` and not by `run` is a warning nobody reads.
+    //
+    // But only the document-level one. An environment mismatch is a warning to
+    // a *checker*, whose reach is the thing in question, and an error to a
+    // *run*, which is about to refuse — printing "nothing above says the graph
+    // is wrong" here would be a lie told a line before the exception that
+    // contradicts it.
+    reportPreflightWarnings(
+      host,
+      classifyPreflight(graph.preflight()).warnings
+        .filter((item) => item.code === 'runtime/stray-params'),
+    );
+    const result = await graph.run(entryNode ? { target: { kind: 'node', nodeId: entryNode } } : {});
+    if (result.status !== 'completed') {
+      throw new Error(result.diagnostics.map((item) => item.message).join('\n') || `Graph ${result.status}`);
+    }
+    return true;
+  } finally {
+    await graph?.dispose();
+    await runtime.dispose();
   }
-  return true;
 }
 
 export interface DeterministicFrameRenderOptions {
@@ -285,6 +311,7 @@ export async function renderDeterministicProjectFrames(
   options: DeterministicFrameRenderOptions,
 ): Promise<DeterministicFrameRenderResult | null> {
   const prepared = await prepare(file, document, true);
+  reportUnresolved(prepared);
   const nodes = Array.isArray(document?.nodes) ? document.nodes as ProjectNode[] : [];
   const deterministicCount = nodes.filter((node) => prepared.deterministic.has(moduleId(node))).length;
   if (!nodes.length || deterministicCount === 0) return null;
@@ -293,11 +320,13 @@ export async function renderDeterministicProjectFrames(
   }
 
   const project = new ProjectRoot(path.dirname(path.resolve(file)));
+  const host = createProjectHost(file, prepared.registrations);
   const runtime = createRuntime({
-    host: createProjectHost(file, prepared.registrations),
+    host,
     nodes: prepared.registrations,
   });
   const graph = await runtime.load(document);
+  reportPreflightWarnings(host, classifyPreflight(graph.preflight()).warnings);
 
   const outDirectory = project.resolve(options.out);
   await fs.mkdir(outDirectory, { recursive: true });
@@ -371,6 +400,7 @@ function imageOutputs(
 
 export async function inspectProjectGraph(file: string, document: any) {
   const prepared = await prepare(file, document, false);
+  reportUnresolved(prepared);
   const registrations = new Map(
     [...builtinNodeRegistrations, ...prepared.registrations].map((item) => [item.moduleId, item]),
   );
@@ -488,14 +518,16 @@ async function projectModuleFile(
  * It is a warning and not an error, on the ground that decides it: a node with
  * no module file can never run through the deterministic runtime anyway. Its
  * `loadExecute` throws by design and a mixed graph is refused outright, so
- * saying so is never a false alarm — it is only sometimes unwelcome. An
- * unconverted sketch gets one line per unconverted node, which is the
- * conversion checklist rather than noise, and it goes away by itself when the
- * dynamic path does.
+ * saying so is never a false alarm — it is only sometimes unwelcome.
  *
- * The alternative was an error plus an explicit list of legacy modules in
- * `cascade.json`. That makes a typo impossible, at the price of configuration
- * that exists only until the cutover finishes.
+ * It was briefly fatal, gated by an allowlist of known legacy module names, and
+ * Marcus reverted that on 2026-09-08. The evidence: converting sixty-two nodes
+ * across four sketches means working in mixed graphs all day, and as an error
+ * an unconverted sketch stops validating at all — which is the one thing you
+ * need while converting it. An allowlist of retired module names is also the
+ * "configuration that exists only until the cutover finishes" cost, paid as a
+ * hardcoded set in core. Both go; the whole warning goes when the dynamic path
+ * does.
  */
 function unresolvedModule(id: string, node: ProjectNode, tried: readonly string[], root: string): Diagnostic {
   const relative = tried.map((candidate) => path.relative(root, candidate) || candidate);
@@ -506,7 +538,7 @@ function unresolvedModule(id: string, node: ProjectNode, tried: readonly string[
     phase: 'prepare',
     code: 'project/module-not-found',
     path: node.id,
-    message: `${id} has no module file — ${where}. Loading the ports the document saved instead, which cannot run: a typo and an unconverted legacy node look identical from here`,
+    message: `${id} has no module file — ${where}. Only known legacy modules can use saved-port compatibility, for inspection only; unknown and explicit project modules are rejected`,
   };
 }
 

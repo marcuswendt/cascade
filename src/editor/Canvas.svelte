@@ -3198,12 +3198,7 @@ node.onReady = () => {
         }
         
         // Execute the node code to define props
-        console.log(`Executing node ${nodeType}, props before:`, Object.keys(newNode.props).length);
         await graph.execute(newNode);
-        console.log(`Node ${nodeType} executed, props after:`, Object.keys(newNode.props).length, Object.keys(newNode.props));
-        if (newNode.error) {
-          console.error(`Node ${nodeType} execution error:`, newNode.error);
-        }
         
         // Restore bypass and cooking state
         if (wasBypassed) {
@@ -3226,15 +3221,6 @@ node.onReady = () => {
         newNode.props = newProps;
         newNode.markDirty();
         
-        // Log for debugging
-        console.log(`Node ${nodeType} initialized with ${Object.keys(newProps).length} props:`, Object.keys(newProps));
-        if (Object.keys(newProps).length === 0) {
-          console.warn(`Warning: Node ${nodeType} has no props after execution.`);
-          console.warn('Code snippet:', defaultCode.substring(0, 300));
-          if (newNode.error) {
-            console.error('Node execution error:', newNode.error);
-          }
-        }
       } catch (err) {
         console.error('Failed to initialize node:', err);
         newNode.error = err as Error;

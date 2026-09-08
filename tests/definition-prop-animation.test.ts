@@ -55,6 +55,11 @@ export function execute(context) {
 }
 `;
 
+const selfAnimatingDoublerModule = doublerModule.replace(
+  "factor: { type: 'float', default: 2, min: 0, max: 100 },",
+  "factor: { type: 'float', default: 2, min: 0, max: 100, expression: '$F' },",
+);
+
 function document(props: Record<string, unknown>) {
   return {
     version: '0.2',
@@ -115,6 +120,58 @@ describe('an expression on a definition-v1 prop', () => {
     const reloaded = Graph.fromJSON(first.toJSON());
     expect(await cookAt(reloaded, 4)).toBe(6);
     expect(await cookAt(reloaded, 10)).toBe(15);
+  });
+});
+
+describe('a stored project prop overrides a lazily loaded default expression', () => {
+  beforeEach(() => {
+    setProjectModuleCompiler(async () => selfAnimatingDoublerModule);
+    expressionEngine.setFrame(10);
+  });
+  afterEach(() => setProjectModuleCompiler(null));
+
+  it('keeps the stored value after the project definition attaches', async () => {
+    const graph = Graph.fromJSON(document({ factor: 7 }));
+
+    expect(await cookAt(graph, 10)).toBe(21);
+    expect(graph.getNode('subject')!.parm('factor')!.expression()).toBeNull();
+  });
+
+  /**
+   * The boundary, and the defect that shipped in 0.3.0.
+   *
+   * A stored value that happens to *equal* the default was dropped on save —
+   * `Graph.toJSON` filters out any parameter whose raw value matches its
+   * default — so nothing was written, and on reload the declared expression
+   * applied to a number the author had deliberately chosen. Setting a prop back
+   * to its default made it start animating.
+   *
+   * It is the losing case in the one variant three independent proofs all
+   * missed. Each picked a value obviously different from the default — `7`
+   * against `2` above, `7` against `0` and `0.4` against `0` elsewhere —
+   * because a distant value reads as the stronger test. The boundary was the
+   * weaker-looking one and the only one that failed.
+   *
+   * Diagnosed and fixed by Marcus's Codex session (`preservePlainProp`); this
+   * pins it. **The save and reload are the point** — the bug is in what gets
+   * written, so a test that only checks the loaded graph passes either way.
+   */
+  it('keeps a stored value that equals the default, through a save and reload', async () => {
+    const graph = Graph.fromJSON(document({ factor: 2 }));
+
+    expect(await cookAt(graph, 10)).toBe(6);
+    expect(graph.getNode('subject')!.parm('factor')!.expression()).toBeNull();
+
+    const written = JSON.parse(JSON.stringify(graph.toJSON()));
+    const saved = written.nodes.find((node: any) => node.id === 'subject');
+    // Written even though it matches the default, because here that is a
+    // decision rather than an absence.
+    expect(saved.props).toMatchObject({ factor: 2 });
+
+    const reopened = Graph.fromJSON(written);
+    expect(await cookAt(reopened, 10)).toBe(6);
+    expect(reopened.getNode('subject')!.parm('factor')!.expression()).toBeNull();
+    expect(reopened.getNode('subject')!.isTimeDependent).toBe(false);
   });
 });
 

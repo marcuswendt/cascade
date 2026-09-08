@@ -62,12 +62,44 @@ interface RuntimeConnection extends ConnectionInspection {
  * leftover `params` array runs perfectly well on its defaults, which is
  * precisely the problem.
  *
- * This set lives here rather than in the CLI because the run path and the
- * check path both need it, and it was a duplicated rule that let `validate`
- * and `check` pass graphs `run` then rejected.
+ * It was briefly an error, and Marcus reverted that on 2026-09-08 with the
+ * evidence that decides it: while converting sixty-two nodes across four
+ * sketches, every one of them was a mixed graph for most of the day, and as an
+ * error an unconverted or half-converted sketch **stops validating at all** —
+ * which is the one thing you need while converting it. The warning is the
+ * conversion checklist; as an error it is a locked door on the room you are
+ * working in.
+ *
+ * The fair case for the error was that the warning never fired, and that was
+ * true: `check` bailed on dynamic modules before preflight ran. The fix for
+ * that was the reporting *order*, not the severity.
+ *
+ * This set lives here rather than in the CLI because both paths read it, and a
+ * duplicated copy is what let `validate` and `check` pass graphs `run` then
+ * rejected.
+ *
+ * **It classifies a static check, and it is not the run gate.** Those are
+ * different questions and conflating them was a real bug of mine, caught by
+ * Codex's own comment on 2026-09-08: *execution is stricter.* A server run must
+ * still refuse a browser node — you cannot cook WebGPU headlessly, so tolerating
+ * it means executing and failing on an undefined capability instead of saying
+ * why. What a static check downgrades is the *checker's reach*; what a run
+ * tolerates is much narrower. See `RUN_TOLERATED_CODES`.
  */
 export const PREFLIGHT_WARNING_CODES: ReadonlySet<string> = new Set([
   "runtime/preflight-environment",
+  "runtime/stray-params",
+]);
+/**
+ * The only preflight code that does not stop a run.
+ *
+ * A stranded `params` value is a fact about the document: the graph cooks
+ * perfectly well on its defaults, which is exactly the problem, and refusing to
+ * run is the worse answer. Everything else in the preflight is a reason this
+ * host cannot execute this graph — an environment mismatch and a missing
+ * capability both mean the cook would fail partway with a worse message.
+ */
+const RUN_TOLERATED_CODES: ReadonlySet<string> = new Set([
   "runtime/stray-params",
 ]);
 interface RuntimeNode {
@@ -257,6 +289,16 @@ class Runtime implements CascadeRuntime {
 class Graph implements LoadedCascadeGraph {
   private graphState: GraphState = "ready";
   private readonly byId: Map<string, RuntimeNode>;
+  private readonly dataConnectionsByInput: ReadonlyMap<
+    string,
+    readonly RuntimeConnection[]
+  >;
+  private readonly dataConnectionsByNode: ReadonlyMap<
+    string,
+    readonly RuntimeConnection[]
+  >;
+  private readonly connectedInputs: ReadonlySet<string>;
+  private readonly connectedOutputs: ReadonlySet<string>;
   private readonly listeners = new Set<(event: RuntimeEvent) => void>();
   private readonly diagnostics: Diagnostic[] = [];
   private active?: ActiveRun;
@@ -286,6 +328,48 @@ class Graph implements LoadedCascadeGraph {
     annotations: CascadeDocument["annotations"] = [],
   ) {
     this.byId = new Map(nodes.map((node) => [node.id, node]));
+    const byInput = new Map<string, RuntimeConnection[]>();
+    const byNode = new Map<string, RuntimeConnection[]>();
+    const connectedInputs = new Set<string>();
+    const connectedOutputs = new Set<string>();
+    for (const connection of connections) {
+      connectedInputs.add(
+        `${connection.target.nodeId}\0${connection.target.inputName}`,
+      );
+      connectedOutputs.add(
+        `${connection.source.nodeId}\0${connection.source.outputName}`,
+      );
+      if (connection.kind !== "data") continue;
+      const inputKey = `${connection.target.nodeId}\0${connection.target.inputName}`;
+      const inputConnections = byInput.get(inputKey) ?? [];
+      inputConnections.push(connection);
+      byInput.set(inputKey, inputConnections);
+      const nodeConnections = byNode.get(connection.target.nodeId) ?? [];
+      nodeConnections.push(connection);
+      byNode.set(connection.target.nodeId, nodeConnections);
+    }
+    this.dataConnectionsByInput = new Map(
+      [...byInput].map(([key, inputConnections]) => [
+        key,
+        Object.freeze(
+          inputConnections.sort(
+            (first, second) =>
+              (first.variadicIndex ?? first.order) -
+              (second.variadicIndex ?? second.order),
+          ),
+        ),
+      ]),
+    );
+    this.dataConnectionsByNode = new Map(
+      [...byNode].map(([key, nodeConnections]) => [
+        key,
+        Object.freeze(
+          nodeConnections.sort((first, second) => first.order - second.order),
+        ),
+      ]),
+    );
+    this.connectedInputs = connectedInputs;
+    this.connectedOutputs = connectedOutputs;
     this.graphInputs = graphBoundaries(nodes, "cascade.core.Input", "inputName");
     this.graphOutputs = graphBoundaries(nodes, "cascade.core.Output", "outputName");
     this.authoredAnnotations = Object.freeze(
@@ -295,13 +379,7 @@ class Graph implements LoadedCascadeGraph {
       nodes,
       node: (id) => this.byId.get(id),
       inputNode: (node, index) => {
-        const feeding = this.connections
-          .filter(
-            (connection) =>
-              connection.kind === "data" &&
-              connection.target.nodeId === node.id,
-          )
-          .sort((a, b) => a.order - b.order);
+        const feeding = this.dataConnectionsByNode.get(node.id) ?? [];
         const source = feeding[index]?.source.nodeId;
         return (source ? this.byId.get(source) : undefined) ?? null;
       },
@@ -349,11 +427,7 @@ class Graph implements LoadedCascadeGraph {
             {
               kind: definition.kind,
               type: definition.kind === "trigger" ? "trigger" : definition.type,
-              connected: this.connections.some(
-                (connection) =>
-                  connection.target.nodeId === node.id &&
-                  connection.target.inputName === name,
-              ),
+              connected: this.connectedInputs.has(`${node.id}\0${name}`),
               ...(definition.kind === "data"
                 ? { value: snapshot(node.inputs[name]) }
                 : {}),
@@ -368,11 +442,7 @@ class Graph implements LoadedCascadeGraph {
             {
               kind: definition.kind,
               type: definition.kind === "trigger" ? "trigger" : definition.type,
-              connected: this.connections.some(
-                (connection) =>
-                  connection.source.nodeId === node.id &&
-                  connection.source.outputName === name,
-              ),
+              connected: this.connectedOutputs.has(`${node.id}\0${name}`),
               ...(definition.kind === "data" && node.outputs.has(name)
                 ? { value: snapshot(node.outputs.get(name)) }
                 : {}),
@@ -785,15 +855,8 @@ class Graph implements LoadedCascadeGraph {
           const index = integerProp(node.props.inputIndex);
           return [name, this.dataInputValue(parent, `input_${index}`)];
         }
-        const connections = this.connections.filter(
-          (item) =>
-            item.kind === "data" &&
-            item.target.nodeId === node.id &&
-            item.target.inputName === name,
-        ).sort((first, second) =>
-          (first.variadicIndex ?? first.order) -
-          (second.variadicIndex ?? second.order),
-        );
+        const connections =
+          this.dataConnectionsByInput.get(`${node.id}\0${name}`) ?? [];
         if (definition.variadic) {
           const values = connections.map((connection) =>
             this.requireNode(connection.source.nodeId).outputs.get(
@@ -1062,7 +1125,7 @@ class Graph implements LoadedCascadeGraph {
   }
   private assertPreflight(nodes: readonly RuntimeNode[]): void {
     const [first] = this.preflightDiagnostics(nodes).filter(
-      (diagnostic) => !PREFLIGHT_WARNING_CODES.has(diagnostic.code),
+      (diagnostic) => !RUN_TOLERATED_CODES.has(diagnostic.code),
     );
     if (first) throw new CascadeRuntimeError(first.code, [first]);
   }
@@ -1083,8 +1146,9 @@ class Graph implements LoadedCascadeGraph {
     readonly initial: RuntimeNode[];
   } {
     if (target.kind === "all") {
+      const gatedDataDescendants = this.gatedDataDescendants();
       const initial = this.nodes.filter(
-        (node) => !isGated(node) && !this.hasGatedDataAncestor(node.id),
+        (node) => !isGated(node) && !gatedDataDescendants.has(node.id),
       );
       const ids = new Set(initial.map((node) => node.id));
       let changed = true;
@@ -1142,8 +1206,24 @@ class Graph implements LoadedCascadeGraph {
     }
     return this.nodes.filter((node) => ids.has(node.id));
   }
-  private hasGatedDataAncestor(nodeId: string): boolean {
-    return this.dataClosure(nodeId).some(isGated);
+  private gatedDataDescendants(): ReadonlySet<string> {
+    const outgoing = new Map<string, string[]>();
+    for (const dependency of dataDependencies(this.nodes, this.connections)) {
+      const targets = outgoing.get(dependency.sourceId) ?? [];
+      targets.push(dependency.targetId);
+      outgoing.set(dependency.sourceId, targets);
+    }
+    const queue = this.nodes.filter(isGated).map((node) => node.id);
+    const descendants = new Set(queue);
+    let queueIndex = 0;
+    while (queueIndex < queue.length) {
+      for (const targetId of outgoing.get(queue[queueIndex++]) ?? []) {
+        if (descendants.has(targetId)) continue;
+        descendants.add(targetId);
+        queue.push(targetId);
+      }
+    }
+    return descendants;
   }
   private triggerDataAncestors(nodeId: string): RuntimeNode[] {
     const dependencies = this.dataClosure(nodeId).filter(
@@ -1779,6 +1859,7 @@ function topological(
   nodes: readonly RuntimeNode[],
   connections: readonly RuntimeConnection[],
 ): RuntimeNode[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
   const indegree = new Map(nodes.map((node) => [node.id, 0]));
   const outgoing = new Map(nodes.map((node) => [node.id, [] as string[]]));
   for (const dependency of graphDependencies(nodes, connections)) {
@@ -1790,13 +1871,14 @@ function topological(
   }
   const queue = nodes.filter((node) => indegree.get(node.id) === 0);
   const result: RuntimeNode[] = [];
-  while (queue.length) {
-    const node = queue.shift()!;
+  let queueIndex = 0;
+  while (queueIndex < queue.length) {
+    const node = queue[queueIndex++];
     result.push(node);
     for (const id of outgoing.get(node.id)!) {
       indegree.set(id, indegree.get(id)! - 1);
       if (indegree.get(id) === 0)
-        queue.push(nodes.find((candidate) => candidate.id === id)!);
+        queue.push(byId.get(id)!);
     }
   }
   if (result.length !== nodes.length)

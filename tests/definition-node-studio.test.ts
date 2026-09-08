@@ -363,7 +363,10 @@ describe('definition-v1 nodes in Studio', () => {
     })]);
 
     // A warning, so the run still happens. A graph on its defaults runs fine,
-    // which is exactly why this needed saying out loud.
+    // which is exactly why this needed saying out loud — and, per Marcus on
+    // 2026-09-08, why refusing to run is the worse answer: a sketch mid-
+    // conversion is a mixed graph all day, and an error there stops the
+    // validation you are converting against.
     const result = await graph.run();
     expect(result.status).toBe('completed');
     expect(classifyPreflight(graph.preflight())).toMatchObject({ errors: [] });
@@ -536,5 +539,13 @@ describe('definition-v1 nodes in Studio', () => {
 
     expect(node.parm('time')!.expression()).toBeNull();
     expect(node.isTimeDependent).toBe(false);
+
+    const saved = graph.toJSON();
+    expect(saved.nodes[0].props).toEqual({ time: 0 });
+
+    const reopened = Graph.fromJSON(saved);
+    const reopenedNode = reopened.getNode(node.id)!;
+    await reopened.execute(reopenedNode);
+    expect(reopenedNode.parm('time')!.expression()).toBeNull();
   });
 });

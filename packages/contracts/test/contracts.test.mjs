@@ -180,6 +180,30 @@ test("rejects malformed containers, unknown fields, trigger extras, and scalar d
   }
 });
 
+test("rejects malformed prop expressions and numeric metadata", () => {
+  const diagnostics = validateNodeDefinition({
+    apiVersion: 1,
+    runsOn: "portable",
+    props: {
+      amount: {
+        type: "float",
+        default: 0,
+        expression: 42,
+        min: "low",
+        max: Infinity,
+      },
+    },
+  });
+  const codes = diagnostics.map(({ code }) => code);
+  for (const code of [
+    "definition/invalid-expression",
+    "definition/invalid-min",
+    "definition/invalid-max",
+  ]) {
+    assert.ok(codes.includes(code), `missing ${code}`);
+  }
+});
+
 test("rejects ai as a core capability while preserving provider-neutral capabilities", () => {
   assert.deepEqual(validateNodeDefinition({
     apiVersion: 1,
