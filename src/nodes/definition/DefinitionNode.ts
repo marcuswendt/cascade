@@ -140,6 +140,7 @@ export function attachDefinition(
     }));
 
     const context = {
+      nodeId: node.id,
       inputs: inputValues,
       outputs,
       props: Object.fromEntries(node.parameters.map(parameter => [parameter.name, parameter.value])),

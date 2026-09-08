@@ -45,6 +45,31 @@ interface RuntimeConnection extends ConnectionInspection {
   readonly order: number;
   readonly variadicIndex?: number;
 }
+/**
+ * Preflight codes that describe something other than "this graph cannot run
+ * here", so `run` proceeds and a checker reports them as warnings.
+ *
+ * False positives are worse than blindness: a validator that cries wolf gets
+ * ignored, and then it is no better than the one that saw nothing. So the line
+ * is drawn at what the diagnostic is about.
+ *
+ * `preflight-environment` is about the checker's reach — a node saying
+ * `runsOn: 'browser'` claims nothing about the CLI and is not defective
+ * because somebody validated it from a terminal.
+ *
+ * `stray-params` is about the document — values were lost on the way in, which
+ * is worth saying loudly and is not a reason to refuse to run: a graph with a
+ * leftover `params` array runs perfectly well on its defaults, which is
+ * precisely the problem.
+ *
+ * This set lives here rather than in the CLI because the run path and the
+ * check path both need it, and it was a duplicated rule that let `validate`
+ * and `check` pass graphs `run` then rejected.
+ */
+export const PREFLIGHT_WARNING_CODES: ReadonlySet<string> = new Set([
+  "runtime/preflight-environment",
+  "runtime/stray-params",
+]);
 interface RuntimeNode {
   readonly id: string;
   readonly moduleId: string;
@@ -65,6 +90,11 @@ interface RuntimeNode {
    * happened to catch it at.
    */
   readonly bindings: Record<string, PropBinding>;
+  /**
+   * Names this node stored under the legacy `params` key, which this runtime
+   * does not read. Kept only so preflight can say so — see `strayParams`.
+   */
+  readonly strayParams: readonly string[];
   readonly outputs: Map<string, unknown>;
   execute?: NodeExecute;
 }
@@ -897,6 +927,7 @@ class Graph implements LoadedCascadeGraph {
         this.emit({ type: "node:progress", runId, nodeId: node.id, ...event }),
     };
     await node.execute({
+      nodeId: node.id,
       inputs,
       outputs,
       props,
@@ -963,6 +994,12 @@ class Graph implements LoadedCascadeGraph {
     const push = (code: string, nodeId: string, message: string) =>
       diagnostics.push({ phase: "preflight", code, path: nodeId, message });
     for (const node of nodes) {
+      if (node.strayParams.length)
+        push(
+          "runtime/stray-params",
+          node.id,
+          `${node.moduleId} stores ${node.strayParams.join(", ")} under "params", which this runtime does not read — move ${node.strayParams.length === 1 ? "it" : "them"} to "props" or the ${node.strayParams.length === 1 ? "value is" : "values are"} silently the default`,
+        );
       const remote = this.isRemote(node);
       const locationWorks =
         node.definition.runsOn === "portable" ||
@@ -1024,7 +1061,9 @@ class Graph implements LoadedCascadeGraph {
       : `provides no capabilities`;
   }
   private assertPreflight(nodes: readonly RuntimeNode[]): void {
-    const [first] = this.preflightDiagnostics(nodes);
+    const [first] = this.preflightDiagnostics(nodes).filter(
+      (diagnostic) => !PREFLIGHT_WARNING_CODES.has(diagnostic.code),
+    );
     if (first) throw new CascadeRuntimeError(first.code, [first]);
   }
   private isRemote(node: RuntimeNode): boolean {
@@ -1346,8 +1385,36 @@ function materialize(
     inputs,
     props,
     bindings,
+    strayParams: strayParams(authored, registration),
     outputs: new Map(),
   };
+}
+
+/**
+ * The names a document stored under `params` that this runtime will not read.
+ *
+ * Nothing above consults `params`: the loop that fills `props` iterates the
+ * definition and then the document's `props`, so a value left in `params` is
+ * dropped without a word and the prop keeps its default. That is not a
+ * hypothetical — on `cascade-logo` it put a seed back to 7 and two rasterizers
+ * back to 1024, so three nodes wrote one file and the drawing changed, with
+ * every command still reporting success.
+ *
+ * Only names the definition actually declares as props are reported. A
+ * leftover key naming nothing is a different fault and would make this warning
+ * fire on documents where no value was lost.
+ */
+function strayParams(
+  authored: CascadeDocumentNode,
+  registration: DefinitionNodeRegistration,
+): readonly string[] {
+  const declared = registration.definition.props ?? {};
+  const names = Array.isArray(authored.params)
+    ? authored.params.map((saved) => saved?.name)
+    : Object.keys(authored.params ?? {});
+  return names.filter(
+    (name): name is string => typeof name === "string" && name in declared,
+  );
 }
 
 function specializeCoreRegistration(

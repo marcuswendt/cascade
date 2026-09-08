@@ -7,6 +7,18 @@ export interface CascadeDocumentNode {
   readonly parent?: string;
   readonly inputs?: readonly Readonly<{ name: string; defaultValue?: unknown; value?: unknown }>[] | Readonly<Record<string, unknown>>;
   readonly props?: Readonly<Record<string, unknown>>;
+  /**
+   * The dynamic engine's stored parameter values, and dead weight here.
+   *
+   * The deterministic runtime reads `props` and nothing else, so a document
+   * that still carries `params` loses every value in it and reports nothing —
+   * a converted sketch silently reverts to its defaults and draws something
+   * different. Declared so that the runtime can recognise the key and warn
+   * about it, which is the only reason it appears in a v1 type.
+   *
+   * @deprecated Migrate to `props`.
+   */
+  readonly params?: readonly Readonly<{ name: string; value?: unknown }>[] | Readonly<Record<string, unknown>>;
 }
 
 export interface CascadeDocumentAnnotation {

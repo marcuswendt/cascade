@@ -154,6 +154,21 @@ export type DeclaredCapabilities<D extends NodeDefinition> = Readonly<
   >
 >;
 export interface NodeExecutionContext<D extends NodeDefinition> {
+  /**
+   * This node instance's id, stable for the life of the graph.
+   *
+   * It exists for one reason: naming a scratch file so that two instances of
+   * the same module do not overwrite each other. `field-logo` runs one module
+   * three times at three sizes, and `cloud-plots` runs `height-field` twice
+   * with opposite mode toggles — a literal path silently loses one of each
+   * pair. Pass it to `cachePath(context.nodeId, '.png')` and nothing else.
+   *
+   * An id is deliberately all a node gets. It names a namespace, not a
+   * position: there is no way to reach a parent, a sibling or the graph
+   * through it, which is what keeps a definition-v1 node a pure function of
+   * its own inputs. Do not parse it.
+   */
+  readonly nodeId: string;
   readonly inputs: Readonly<{
     [K in keyof Entries<D, "inputs">]: InputValue<Entries<D, "inputs">[K]>;
   }>;

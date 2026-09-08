@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { build } from 'esbuild';
 import { CAPABILITIES_BY_ENVIRONMENT, type Diagnostic, type NodeDefinition } from '../../packages/contracts/src/index.js';
-import { createRuntime } from '../../packages/runtime/src/index.js';
+import { createRuntime, PREFLIGHT_WARNING_CODES } from '../../packages/runtime/src/index.js';
 import { builtinNodeRegistration, builtinNodeRegistrations } from '../../packages/runtime/src/builtins/index.js';
 import { createNodeRuntimeHost } from '../../packages/runtime/src/node.js';
 import { extractNodeDefinition } from '../../packages/runtime/src/definition/extract.js';
@@ -87,11 +87,23 @@ async function preflightAgainstRunHost(
   }
   if (!diagnostics.length) return;
   const { errors, warnings } = classifyPreflight(diagnostics);
-  if (warnings.length) {
+  // Two warnings with opposite meanings, so they cannot share a heading. An
+  // environment mismatch says the checker cannot see this graph; a stray
+  // `params` array says the graph loaded wrong and ran anyway.
+  const elsewhere = warnings.filter((item) => item.code === 'runtime/preflight-environment');
+  const lossy = warnings.filter((item) => item.code === 'runtime/stray-params');
+  if (elsewhere.length) {
     console.warn([
-      `Not checkable here — ${warnings.length === 1 ? 'one node' : `${warnings.length} nodes`} in this graph target${warnings.length === 1 ? 's' : ''} another host:`,
-      ...warnings.map(line),
+      `Not checkable here — ${elsewhere.length === 1 ? 'one node' : `${elsewhere.length} nodes`} in this graph target${elsewhere.length === 1 ? 's' : ''} another host:`,
+      ...elsewhere.map(line),
       `  The CLI runs the ${host.environment} host, so "cascade run" cannot run this graph. Nothing above says the graph is wrong.`,
+    ].join('\n'));
+  }
+  if (lossy.length) {
+    console.warn([
+      `Stored values were dropped on load — ${lossy.length === 1 ? 'one node' : `${lossy.length} nodes`} still keep${lossy.length === 1 ? 's' : ''} values under "params":`,
+      ...lossy.map(line),
+      `  This graph will run, on the defaults, and look like it worked.`,
     ].join('\n'));
   }
   if (!errors.length) return;
@@ -107,25 +119,24 @@ function line(item: Diagnostic): string {
 }
 
 /**
- * False positives are worse than blindness: a validator that cries wolf gets
- * ignored, and then it is no better than the one that saw nothing. So the line
- * is drawn at the node's own declaration.
+ * Which preflight diagnostics stop a run and which only need saying.
+ *
+ * The rule itself is `PREFLIGHT_WARNING_CODES` in the runtime, because `run`
+ * needs the same answer and a second copy here is what previously let
+ * `validate` and `check` pass graphs `run` then rejected. This function is
+ * only the split.
  *
  * A node saying `runsOn: 'portable'` or `'server'` claims this host can run
  * it. If it then needs a capability the host has not installed, the node has
  * contradicted itself and that is an error.
- *
- * A node saying `runsOn: 'browser'` claims nothing about the CLI. It is not
- * defective because somebody validated it from a terminal, so an environment
- * mismatch is a warning about the checker's reach, not a fault in the graph.
  */
 export function classifyPreflight(diagnostics: readonly Diagnostic[]): {
   readonly errors: readonly Diagnostic[];
   readonly warnings: readonly Diagnostic[];
 } {
   return {
-    errors: diagnostics.filter((item) => item.code !== 'runtime/preflight-environment'),
-    warnings: diagnostics.filter((item) => item.code === 'runtime/preflight-environment'),
+    errors: diagnostics.filter((item) => !PREFLIGHT_WARNING_CODES.has(item.code)),
+    warnings: diagnostics.filter((item) => PREFLIGHT_WARNING_CODES.has(item.code)),
   };
 }
 

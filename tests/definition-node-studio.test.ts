@@ -7,6 +7,7 @@ import { initializeNodeLibraries } from '@/nodes/initializeLibraries';
 import type { NodeDefinition, NodeExecutionContext } from '../packages/contracts/src/index.js';
 import { createRuntime } from '../packages/runtime/src/index.js';
 import { createNodeRuntimeHost } from '../packages/runtime/src/node.js';
+import { classifyPreflight } from '@/cli/projectRuntime';
 import type { DefinitionNodeRegistration } from '../packages/runtime/src/types.js';
 
 const interactionDefinition = {
@@ -38,12 +39,34 @@ const interactionRegistration = {
   loadExecute: async () => executeInteraction,
 } satisfies DefinitionNodeRegistration<typeof interactionDefinition>;
 
+// A node's own id is the only thing that lets two instances of one module
+// write different scratch files. Both hosts cast the context they build, so
+// tsc cannot catch a host that forgets the field — only a test can.
+const identityDefinition = {
+  apiVersion: 1,
+  runsOn: 'portable',
+  outputs: {
+    id: { kind: 'data', type: 'string' },
+  },
+} as const satisfies NodeDefinition;
+
+function executeIdentity(context: NodeExecutionContext<typeof identityDefinition>) {
+  context.outputs.id.set(context.nodeId);
+}
+
+const identityRegistration = {
+  kind: 'definition-v1',
+  moduleId: 'cascade.test.Identity',
+  definition: identityDefinition,
+  loadExecute: async () => executeIdentity,
+} satisfies DefinitionNodeRegistration<typeof identityDefinition>;
+
 describe('definition-v1 nodes in Studio', () => {
   afterEach(() => vi.restoreAllMocks());
 
   beforeAll(async () => {
     await initializeNodeLibraries();
-    registerDefinitionNodes([interactionRegistration]);
+    registerDefinitionNodes([interactionRegistration, identityRegistration]);
   });
 
   it('lists the runtime geometry library in the node picker', () => {
@@ -231,6 +254,86 @@ describe('definition-v1 nodes in Studio', () => {
       kind: 'geometry',
       pointCount: 5,
     });
+    await graph.dispose();
+    await runtime.dispose();
+  });
+  it('hands each instance its own id in Studio', async () => {
+    const graph = new Graph();
+    const first = graph.addNode('cascade.test.Identity', { x: 0, y: 0 });
+    const second = graph.addNode('cascade.test.Identity', { x: 0, y: 100 });
+
+    await graph.execute();
+
+    const idOf = (node: typeof first) => node.outputs.find(port => port.name === 'id')?.value;
+    expect(idOf(first)).toBe(first.id);
+    expect(idOf(second)).toBe(second.id);
+    expect(idOf(first)).not.toBe(idOf(second));
+  });
+
+  it('hands each instance its own id in the headless runtime', async () => {
+    const runtime = createRuntime({
+      host: createNodeRuntimeHost({}),
+      nodes: [identityRegistration],
+    });
+    const graph = await runtime.load({
+      version: '0.2',
+      nodes: [
+        { id: 'logo-1024', module: 'cascade.test.Identity' },
+        { id: 'logo-32', module: 'cascade.test.Identity' },
+      ],
+      connections: [],
+    });
+
+    await graph.run();
+
+    expect(graph.getOutput('logo-1024', 'id')).toBe('logo-1024');
+    expect(graph.getOutput('logo-32', 'id')).toBe('logo-32');
+    await graph.dispose();
+    await runtime.dispose();
+  });
+  it('reports a prop still stored under params, and runs anyway', async () => {
+    const runtime = createRuntime({ host: createNodeRuntimeHost({}) });
+    const graph = await runtime.load({
+      version: '0.2',
+      nodes: [{
+        id: 'circle',
+        module: 'cascade.geo.Circle',
+        inputs: { divisions: 5 },
+        params: [{ name: 'type', value: 'poly' }],
+      }],
+      connections: [],
+    });
+
+    // The value is lost — that is the fault, not the warning.
+    expect(graph.inspect().nodes.find(node => node.id === 'circle')?.props.type)
+      .toMatchObject({ value: 'bezier' });
+    expect(graph.preflight()).toEqual([expect.objectContaining({
+      code: 'runtime/stray-params',
+      path: 'circle',
+    })]);
+
+    // A warning, so the run still happens. A graph on its defaults runs fine,
+    // which is exactly why this needed saying out loud.
+    const result = await graph.run();
+    expect(result.status).toBe('completed');
+    expect(classifyPreflight(graph.preflight())).toMatchObject({ errors: [] });
+    await graph.dispose();
+    await runtime.dispose();
+  });
+
+  it('stays quiet about a params key naming nothing the definition declares', async () => {
+    const runtime = createRuntime({ host: createNodeRuntimeHost({}) });
+    const graph = await runtime.load({
+      version: '0.2',
+      nodes: [{
+        id: 'circle',
+        module: 'cascade.geo.Circle',
+        params: [{ name: 'nodeColor', value: '#fff' }],
+      }],
+      connections: [],
+    });
+
+    expect(graph.preflight()).toEqual([]);
     await graph.dispose();
     await runtime.dispose();
   });
