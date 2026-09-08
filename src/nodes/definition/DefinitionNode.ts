@@ -8,7 +8,7 @@ import type {
   RuntimeCapabilities,
 } from '../../../packages/runtime/src/types.js';
 import type { DataType, ParamOptions } from '../../types/node.types.js';
-import { packagePathToType, registerNodeClasses, registerNodeMetadata, type NodeClass } from '../../utils/nodeTypeUtils.js';
+import { packagePathToType, registerNodeClasses, registerNodeMetadata, type NodeClass, type NodeFunction } from '../../utils/nodeTypeUtils.js';
 import type { Graph } from '../Graph.js';
 import { Node } from '../Node.js';
 
@@ -33,11 +33,22 @@ function parameterOptions(definition: {
   };
 }
 
-function configureNode(
+/**
+ * Build a node's ports, parameters and triggers from a definition literal, and
+ * return the cook that runs its `execute` with a real NodeExecutionContext.
+ *
+ * Separated from `configureNode` so a caller that does not own the node's
+ * function can still use the whole adapter. A library definition is known
+ * synchronously, so `configureNode` sets the function itself; a PROJECT module
+ * is compiled on demand and hot-reloaded, so its definition only arrives after
+ * a fetch — the node already has a function by then, and that function is the
+ * one that awaits this. One adapter, two arrival times.
+ */
+export function attachDefinition(
   node: Node,
   registration: DefinitionNodeRegistration,
   capabilities: RuntimeCapabilities,
-): void {
+): NodeFunction {
   const definition = registration.definition;
   const pendingTriggers = new Map<string, unknown>();
   let triggerSequence = 0;
@@ -100,7 +111,7 @@ function configureNode(
   const hasTriggerInputs = Object.values(definition.inputs ?? {})
     .some(input => input.kind === 'trigger');
   let executePromise: ReturnType<DefinitionNodeRegistration['loadExecute']> | undefined;
-  node.setFunction(async () => {
+  return async () => {
     // Runtime trigger branches are dormant until an event reaches them. Studio
     // must not turn loading or an ordinary cook into an implicit trigger.
     if (hasTriggerInputs && pendingTriggers.size === 0) return;
@@ -137,7 +148,15 @@ function configureNode(
       progress: silentProgress,
     } as unknown as NodeExecutionContext<NodeDefinition>;
     await execute(context);
-  });
+  };
+}
+
+function configureNode(
+  node: Node,
+  registration: DefinitionNodeRegistration,
+  capabilities: RuntimeCapabilities,
+): void {
+  node.setFunction(attachDefinition(node, registration, capabilities));
 }
 
 /** Register a definition-v1 module with the compatibility graph through one adapter. */

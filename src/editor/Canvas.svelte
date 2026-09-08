@@ -12,6 +12,7 @@
   import type { Connection } from '@/types/node.types';
   import { packagePathToType, getNodeClass } from '@/utils/nodeTypeUtils';
   import { loadEmbeddedModule, loadProjectModule } from '@/engine/nodeModuleLoader';
+  import { adaptModule } from '@/nodes/definition/projectDefinition';
   import { isFileDrag } from './dragKind';
   import { getPortColor, getConnectionColor, DATA_TYPE_COLORS } from '@/utils/portColors';
   import { recordSnapshotImmediate } from './stores/historyStore';
@@ -3154,7 +3155,11 @@ node.onReady = () => {
       try {
         newNode.resetPortTracking();
         const compiled = await loadProjectModule(nodeType);
-        newNode.setFunction(compiled.execute);
+        // Same dispatch Graph.fromJSON uses, so a node added from the Create
+        // menu cooks exactly as the ones already in the document do — a
+        // definition-v1 module through the definition adapter, a dynamic one
+        // through execute(node, graph).
+        newNode.setFunction(adaptModule(newNode, nodeType, compiled));
         newNode.markDirty();
       } catch (error) {
         console.error(`Failed to load project module ${nodeType}:`, error);
@@ -3178,7 +3183,7 @@ node.onReady = () => {
       try {
         newNode.resetPortTracking();
         const compiled = await loadEmbeddedModule(defaultCode);
-        newNode.setFunction(compiled.execute);
+        newNode.setFunction(adaptModule(newNode, nodeType, compiled));
 
         // Ensure node can execute (not bypassed and temporarily cooking)
         // This is necessary because shouldExecute() checks if node is cooking when there are other cooking nodes

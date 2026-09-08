@@ -23,6 +23,7 @@ import type {
 } from '../types/node.types.js';
 import { packagePathToType, isStandardLibraryNode, getNodeClass, getNodeDisplayName } from '../utils/nodeTypeUtils.js';
 import { loadProjectModule, loadEmbeddedModule } from '../engine/nodeModuleLoader.js';
+import { moduleNodeFunction } from './definition/projectDefinition.js';
 import { normalizeColor, isColorValue } from '../utils/colorUtils.js';
 import { canConnect, normalizeType } from '../types/coreTypes.js';
 import { CookScheduler } from './CookScheduler.js';
@@ -498,7 +499,7 @@ export class Graph {
     const modulePromise = source === 'project'
       ? loadProjectModule(modulePath)
       : loadEmbeddedModule(code ?? node.code);
-    node.setFunction((n: unknown, g: unknown) => modulePromise.then((m) => m.execute(n, g)));
+    node.setFunction(moduleNodeFunction(node, modulePath, modulePromise));
     modulePromise.catch((error) => {
       // The retarget did not happen, so nothing may be reported as dropped.
       node.abandonParameterCarryOver();
@@ -1692,9 +1693,11 @@ export class Graph {
       // .cascade file without that meaning "no function to wire up."
       if (!NodeClass && (source === 'project' || node.code)) {
         const modulePromise = source === 'project' ? loadProjectModule(nodeType) : loadEmbeddedModule(node.code);
-        node.setFunction((n: unknown, g: unknown) =>
-          modulePromise.then((m) => m.execute(n, g))
-        );
+        // Which flavour the module is decides how it is called — see
+        // definition/projectDefinition.ts. A definition-v1 module gets its ports
+        // built from its literal and its execute called with a real
+        // NodeExecutionContext; a dynamic one keeps `execute(node, graph)`.
+        node.setFunction(moduleNodeFunction(node, nodeType, modulePromise));
         modulePromise.catch((err) => {
           console.warn('Failed to compile node ' + node.id + ':', err);
         });

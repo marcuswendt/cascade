@@ -233,7 +233,7 @@
           {/if}
         {/each}
       {:else if facts.flavour === 'legacy-dynamic'}
-        <p class="note standalone">A dynamic module declares nothing up front — its ports appear only once it has cooked, so what it takes and returns is in the Parameters panel rather than here. It is also the style that runs everywhere today: definition-v1 gives you a statically readable declaration, which is where Cascade is heading, but Studio cannot cook one yet.</p>
+        <p class="note standalone">A dynamic module declares nothing up front — its ports appear only once it has cooked, so what it takes and returns is in the Parameters panel rather than here. Definition-v1 declares its ports statically and reads them without running anything, which is why it is where Cascade is heading; Studio now cooks both styles, so this node can be converted whenever it suits.</p>
       {/if}
 
       <!--

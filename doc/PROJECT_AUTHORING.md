@@ -156,14 +156,14 @@ The proxy accepts HTTPS only, refuses undeclared hosts, strips caller-supplied a
 
 Before writing one, check whether you need one. A parameter can hold an expression, so anything time-based is usually a parameter rather than a node. See [Animate a parameter](#animate-a-parameter). A node earns its place when it produces geometry or pixels, or when several parameters share a computation. The built-in library is listed in `NODE_REFERENCE.md`, generated from the definitions themselves; read that before searching for what a node does.
 
-There are two styles, and which one a project uses is not a matter of taste. It decides which host can cook it:
+There are two styles. Write **definition-v1** for anything new; the dynamic style is what existing project nodes use and it still cooks everywhere.
 
 | | Cooked by | Checked by |
 | --- | --- | --- |
-| **definition-v1**: a literal `definition` plus `execute(context)` | the deterministic runtime, through `cascade run` | `cascade check`, which requires this style |
-| **dynamic**: `execute(node, graph)` declaring its own ports and parameters | Studio's compatibility engine, and `cascade run` including `--frames` | `cascade validate` and a cook |
+| **definition-v1**: a literal `definition` plus `execute(context)` | the deterministic runtime through `cascade run`, and Studio, which builds the ports from the literal | `cascade check`, which requires this style |
+| **dynamic**: `execute(node, graph)` declaring its own ports and parameters | Studio, and `cascade run` including `--frames` | `cascade validate` and a cook |
 
-A graph cannot mix them; the CLI refuses a mixed document rather than half-running it. The `AGENTS.md` that `cascade new` writes into a project states which style that project expects, and it is the file to believe over this one for a specific project.
+Studio cooks both, and a Studio graph may mix them. `cascade run` picks one host per document: a graph whose project modules are all definition-v1 runs through the deterministic runtime, and anything else runs through the compatibility engine — which is also why `--frames` is refused on an all-definition-v1 graph, the deterministic runtime owning its own clock. The `AGENTS.md` that `cascade new` writes into a project states which style that project expects, and it is the file to believe over this one for a specific project.
 
 ### definition-v1
 

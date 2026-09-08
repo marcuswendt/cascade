@@ -15,8 +15,18 @@
 
 export type NodeModuleExecute = (node: unknown, graph: unknown) => unknown | Promise<unknown>;
 
-interface LoadedModule {
+export interface LoadedModule {
   execute: NodeModuleExecute;
+  /**
+   * The module's `export const definition`, when it has one.
+   *
+   * Kept unknown on purpose: this loader does not validate it. A project module
+   * is compiled from whatever is on disk, so the export can be anything, and
+   * the one place that decides whether it is a usable definition-v1 literal is
+   * the adapter (see definition/projectDefinition.ts). Discarding it here was
+   * why Studio could not cook the very node `cascade node <Name>` scaffolds.
+   */
+  definition?: unknown;
 }
 
 const moduleCache = new Map<string, Promise<LoadedModule>>();
@@ -51,9 +61,12 @@ async function importCompiledCode(code: string): Promise<LoadedModule> {
   try {
     const mod = await import(/* @vite-ignore */ url);
     if (typeof mod.execute !== 'function') {
-      throw new Error('node module has no execute(node, graph) export');
+      throw new Error('node module has no execute export');
     }
-    return { execute: mod.execute };
+    return {
+      execute: mod.execute,
+      ...(mod.definition === undefined ? {} : { definition: mod.definition }),
+    };
   } finally {
     if (url.startsWith('blob:')) URL.revokeObjectURL(url);
   }

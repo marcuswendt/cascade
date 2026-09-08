@@ -162,26 +162,42 @@ The maths library is exposed bare, so write \`sin(x)\` rather than \`Math.sin(x)
 
 ## Writing a node
 
-Project nodes live at \`nodes/<name>/index.ts\`, one folder per module, referenced as \`project.<name>\`. Write them in the **dynamic** style:
+Project nodes live at \`nodes/<name>/index.ts\`, one folder per module, referenced as \`project.<name>\`. Write them in the **definition-v1** style, which is what \`cascade node <Name>\` scaffolds:
 
 \`\`\`ts
-import { saveImage, cachePath } from 'cascade/io';
+import type { NodeDefinition, NodeExecutionContext } from 'cascade/contracts';
 
-export const icon = 'Circle';        // a Lucide icon name
-export const runsOn = 'portable';    // 'portable' | 'browser' | 'server'
+export const definition = {
+  apiVersion: 1,
+  label: 'Grain',
+  icon: 'Circle',                    // a Lucide icon name
+  runsOn: 'portable',                // 'portable' | 'browser' | 'server'
+  inputs: {
+    value: { kind: 'data', type: 'float', default: 0 },
+  },
+  outputs: {
+    image: { kind: 'data', type: 'image' },
+  },
+  props: {
+    size: { type: 'int', default: 1024, min: 16, max: 4096, step: 16 },
+  },
+} as const satisfies NodeDefinition;
 
-export async function execute(node: any) {
-  const size = node.param('size', 1024, { min: 16, max: 4096, step: 16, type: 'int' }).value;
-  const input = node.in('value', 0, { type: 'float' }).value;
-  const out = node.out('image', 'param', { type: 'image' });
+export function execute(context: NodeExecutionContext<typeof definition>) {
+  const { value } = context.inputs;
+  const { size } = context.props;
   // ... work ...
-  out.setValue({ path, size: [size, size], channels: 'rgb', depth: 'u8', space: 'srgb' });
+  context.outputs.image.set({ path, size: [size, size], channels: 'rgb', depth: 'u8', space: 'srgb' });
 }
 \`\`\`
 
-**Do not write a definition-v1 node** (\`export const definition = {...}\` with \`apiVersion: 1\`). It is the direction Cascade is heading and Studio cannot cook one yet: the compatibility engine calls \`execute(node, graph)\`, so \`context.props\` arrives undefined and the cook throws with an empty log. \`cascade run\` handles them; Studio does not.
+The declaration is the point: ports, types, props and the execution locus are read from the literal without running anything, which is what \`cascade check\` inspects and what the Definition panel shows. \`execute\` then does computation only — it never declares a port.
 
-Ports and parameters are declared *inside* \`execute\` — it runs once to discover them and again on every cook. Top-level statements do not work: the loader imports a real ES module and needs the \`execute\` export.
+Both hosts cook this style. **Studio** builds the node's ports from the literal and calls \`execute\` with a real \`NodeExecutionContext\`; **\`cascade run\`** runs it through the deterministic runtime. Studio reads the definition from the compiled module, so a definition edit shows up on the next save like any other change.
+
+The older **dynamic** style — \`export async function execute(node, graph)\` declaring its ports imperatively inside itself with \`node.in\`, \`node.param\` and \`node.out\` — still cooks in Studio and under \`cascade run\`, so an existing node keeps working. It is not the style to write something new in: nothing can read what a dynamic node takes or returns until it has cooked, so \`cascade check\` cannot check it and the Definition panel has nothing to show. If you are editing one heavily, convert it.
+
+Either way the module is a real ES module and the loader needs the \`execute\` export. Top-level side effects do not belong in it.
 
 ## Rendering
 

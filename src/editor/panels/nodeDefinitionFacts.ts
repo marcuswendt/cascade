@@ -15,6 +15,11 @@ import type { NodeDefinition } from '../../../packages/contracts/src/index.js';
 import { builtinNodeRegistration } from '../../../packages/runtime/src/builtins/index.js';
 import { getNodeMetadata, isStandardLibraryNode, getLibraryIdFromType, typeToPackagePath } from '@/utils/nodeTypeUtils';
 import { moduleName, type RunsOn } from '../stores/executionLocus';
+import {
+  declaresDefinitionV1,
+  definitionAdapterError,
+  missingStudioCapabilities,
+} from '@/nodes/definition/projectDefinition';
 
 export type NodeOrigin = 'core' | 'library' | 'project' | 'embedded' | 'unknown';
 
@@ -149,6 +154,38 @@ function applyDefinition(facts: DefinitionFacts, definition: NodeDefinition): vo
     facts.runsOn = shape.runsOn;
     facts.runsOnNote = 'Declared in the definition.';
   }
+}
+
+/**
+ * Whether Studio can actually cook this node, and if not, why.
+ *
+ * The old condition was "a definition export and no function named `execute`",
+ * which is the one thing a definition-v1 module never is — every one of them
+ * exports `execute`, including the one `cascade node <Name>` scaffolds. So the
+ * warning stayed silent for exactly the node that threw, and fired only for a
+ * module that could not run anywhere. Now that Studio dispatches on the
+ * definition (see nodes/definition/projectDefinition.ts), the real reasons a
+ * cook fails here are: nothing to call, a definition the adapter rejects, a
+ * `definition` export that is not v1 at all, and a capability this host does
+ * not supply. Each is stated as the condition it is.
+ */
+function cookabilityWarnings(facts: DefinitionFacts): string[] {
+  if (facts.hasLegacyExecute === false) {
+    return ['The module exports a definition but no `execute`, so there is nothing to cook — in Studio or under `cascade run`. A definition-v1 node exports both.'];
+  }
+  if (!facts.definition) return [];
+  if (!declaresDefinitionV1(facts.definition)) {
+    return ['The `definition` export does not declare `apiVersion: 1`, so it is not a definition-v1 node. Studio calls this module as `execute(node, graph)`, and any ports it shows are the ones that call declares.'];
+  }
+  const invalid = definitionAdapterError(facts.definition);
+  if (invalid) {
+    return [`Studio cannot build ports from this definition:\n${invalid}`];
+  }
+  const missing = missingStudioCapabilities(facts.definition);
+  if (missing.length) {
+    return [`The definition requires the ${missing.join(', ')} capability, which Studio does not supply. The cook fails here with that message; \`cascade run\` supplies it.`];
+  }
+  return [];
 }
 
 /**
@@ -292,7 +329,7 @@ export async function readDefinitionFacts(
       facts.flavour = classified.flavour;
       facts.hasLegacyExecute = classified.hasLegacyExecute;
       if (classified.flavour === 'definition-v1' && !classified.hasLegacyExecute) {
-        facts.warnings.push('Definition-v1 with no execute(node, graph) export. Studio cooks embedded code through the compatibility engine, which needs that export, so this node will not cook here.');
+        facts.warnings.push('The embedded code exports a definition but no `execute`, so there is nothing to cook. A definition-v1 node exports both.');
       }
       if (classified.flavour === 'unknown') {
         facts.flavourNote = 'Neither a definition nor an execute export was found in the embedded code.';
@@ -356,9 +393,7 @@ export async function readDefinitionFacts(
       } catch (err) {
         facts.error = String(err instanceof Error ? err.message : err);
       }
-      if (facts.hasLegacyExecute === false) {
-        facts.warnings.push('Definition-v1 with no execute(node, graph) export. Studio cooks project nodes through the compatibility engine, which requires that export, so this node does not run in Studio — it runs under `cascade run`.');
-      }
+      facts.warnings.push(...cookabilityWarnings(facts));
     }
     return facts;
   }

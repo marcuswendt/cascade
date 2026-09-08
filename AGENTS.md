@@ -73,7 +73,7 @@ Project panels are trusted Studio extensions, not graph/runtime modules. Put the
 
 ## Create a deterministic node
 
-Two node styles exist and both are current. A **definition-v1** module exports a literal `definition` and a typed `execute(context)`; it is statically inspectable, it is what `cascade check` requires, and it runs through the deterministic runtime. A **dynamic** module exports `execute(node, graph)` and declares its ports and parameters imperatively inside it; that is what Studio's compatibility engine cooks, and what `cascade run --frames` renders. Prefer definition-v1 for anything new inside this repository, and do not call dynamic modules "legacy" — the naming was retired in 0.3.0 because it described a migration that has not happened for project nodes in Studio.
+Two node styles exist and both are current. A **definition-v1** module exports a literal `definition` and a typed `execute(context)`; it is statically inspectable, it is what `cascade check` requires, and it runs through the deterministic runtime. A **dynamic** module exports `execute(node, graph)` and declares its ports and parameters imperatively inside it; that is what `cascade run --frames` renders. Studio cooks both, dispatching on what the compiled module exports (`src/nodes/definition/projectDefinition.ts`), so a project node written either way runs in the editor. Prefer definition-v1 for anything new inside this repository, and do not call dynamic modules "legacy" — the naming was retired in 0.3.0, and while Studio no longer blocks the migration, the existing sketches are still dynamic.
 
 A definition-v1 module looks like this:
 
