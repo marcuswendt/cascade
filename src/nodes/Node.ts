@@ -276,7 +276,33 @@ export class Node {
   protected lastInputHash: string = '';
   cookState: CookState = 'stale';
   private cookGeneration = 0;
-  private stagedOutputs: Map<OutputPort, unknown> | null = null;
+  /**
+   * Output values staged by the cook currently running, one map per cook.
+   *
+   * A stack rather than a field, because it was a field and that was a race.
+   * `stagedOutputs` was instance state created per cook, iterated under a
+   * `generation === this.cookGeneration` guard, and nulled in `finally` — but
+   * `cookGeneration` only advances in `invalidateCook()`, and `cook()` has no
+   * re-entrancy guard. So two overlapping cooks of the same node with no
+   * invalidation between them both ran at the same generation: the second's
+   * `finally` nulled the field, the first resumed, passed the generation check
+   * because nothing had invalidated it, and iterated `null` —
+   * `stagedOutputs is not iterable`.
+   *
+   * Worse than the crash, and the reason this is a correctness fix rather than
+   * a robustness one: the second cook's `new Map()` **replaced the first's
+   * mid-flight**, so the first cook's staged writes were lost whenever the
+   * timing did not happen to produce the throw.
+   *
+   * The underlying fault is that per-cook state lived on the instance, and the
+   * thing protecting it (the generation) was not the thing destroying it (the
+   * `finally`) — two mechanisms guarding one field, neither aware of the other.
+   * Each cook now owns its own map, holds it locally, and removes it **by
+   * identity**, so an interleaving cannot make one cook drop another's.
+   *
+   * Diagnosed by MW-OBSERVATORY-ART, 2026-09-08.
+   */
+  private stagingStack: Map<OutputPort, unknown>[] = [];
   executionTimeout: number = 30000;
 
   // Cook info - performance tracking
@@ -460,8 +486,11 @@ export class Node {
   }
 
   private setOutputValue<T>(port: OutputPort<T>, value: T): void {
-    if (this.stagedOutputs) {
-      this.stagedOutputs.set(port as OutputPort, value);
+    // The newest cook's map: if two overlap, the later one is the one whose
+    // outputs the graph is waiting for.
+    const staging = this.stagingStack[this.stagingStack.length - 1];
+    if (staging) {
+      staging.set(port as OutputPort, value);
       return;
     }
     this.commitOutputValue(port, value);
@@ -1750,7 +1779,8 @@ export class Node {
     const startTime = performance.now();
     const startMemory = (performance as any).memory?.usedJSHeapSize ?? 0;
     const generation = this.cookGeneration;
-    this.stagedOutputs = new Map();
+    const staging = new Map<OutputPort, unknown>();
+    this.stagingStack.push(staging);
     this.setCookState('cooking');
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
@@ -1768,7 +1798,7 @@ export class Node {
 
       if (generation === this.cookGeneration) {
         await this.callLifecycleHooks(needsInitialization);
-        for (const [port, value] of this.stagedOutputs) {
+        for (const [port, value] of staging) {
           this.commitOutputValue(port, value);
         }
         this.error = null;
@@ -1799,7 +1829,10 @@ export class Node {
       }
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
-      this.stagedOutputs = null;
+      // By identity, not `pop()`: two cooks can finish in either order, and
+      // popping would let the first to finish discard the other's map.
+      const index = this.stagingStack.indexOf(staging);
+      if (index >= 0) this.stagingStack.splice(index, 1);
     }
   }
 
