@@ -599,15 +599,20 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     font: inherit;
-    /* Sized to the input's own height rather than to the glyph, so the arrow
-       stays square as the text zooms and the box grows. */
+    padding: 2px 6px;
+    cursor: pointer;
+  }
+
+  /* Only the send button is a square. This used to be folded into the shared
+     rule above, which sized the agent picker and Reset to 30px as well — the
+     picker clipped to one letter and Reset overflowed its own box. */
+  .send {
     width: 30px;
     height: 30px;
     flex: none;
     font-size: 15px;
     line-height: 1;
     padding: 0;
-    cursor: pointer;
   }
 
   .zoom {
