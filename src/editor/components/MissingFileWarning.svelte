@@ -3,7 +3,6 @@
   import { AlertTriangle, FileX, RefreshCw, FileCode, FolderSearch, X } from '@lucide/svelte';
 
   export let filePath = '';
-  export let modulePath = '';
   export let show = false;
 
   const dispatch = createEventDispatcher<{

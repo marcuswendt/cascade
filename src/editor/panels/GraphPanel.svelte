@@ -8,10 +8,7 @@
   import { dockviewStore } from '../dockview/dockview-store.svelte';
   import { ENABLE_CODE_EDITOR } from '@/config/features';
 
-  export let panelId: string;
-  export let panelParams: CascadePanelParams;
   export let panelApi: any;
-  export let containerApi: any;
 
   // These props are passed during mount but we'll use the store for reactivity
   export let graph: Graph | undefined = undefined;

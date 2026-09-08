@@ -2,10 +2,6 @@
   import type { CascadePanelParams } from '../dockview/types';
   import Log from '../Log.svelte';
 
-  export let panelId: string;
-  export let panelParams: CascadePanelParams;
-  export let panelApi: any;
-  export let containerApi: any;
 
   let logRef: any = null;
 

@@ -39,10 +39,6 @@
   import { writeCascadeClipboard } from '../clipboard';
   import { renderMarkdown } from '../utils/renderMarkdown';
 
-  export let panelId: string;
-  export let panelParams: CascadePanelParams;
-  export let panelApi: any = null;
-  export let containerApi: any = null;
 
   type EntryKind = 'you' | 'agent' | 'tool' | 'result' | 'system' | 'error' | 'detail';
   interface Entry {

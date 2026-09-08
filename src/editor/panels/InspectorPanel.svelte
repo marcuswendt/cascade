@@ -7,9 +7,7 @@
   import { selectedNodeIds, selectedNodesOf } from '../stores/selectionStore';
 
   export let panelId: string;
-  export let panelParams: CascadePanelParams;
   export let panelApi: any;
-  export let containerApi: any;
 
   // Props from shared context
   export let graph: Graph | undefined = undefined;

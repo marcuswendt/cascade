@@ -6,7 +6,6 @@
   import { X, AlertTriangle, FileCode, Download, Upload, GitMerge } from '@lucide/svelte';
 
   export let open = false;
-  export let modulePath = '';
   export let filePath = '';
   export let localCode = '';
   export let externalCode = '';

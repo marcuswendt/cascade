@@ -2,7 +2,19 @@
   import type { Prop } from '@/types/node.types';
 
   export let prop: Prop;
-  export let id: string;
+  /**
+   * The id of the control the parameter's `<label for=...>` points at.
+   *
+   * `svelte-check` reported this as an unused prop. It was not unused, it
+   * was unwired: the Inspector renders
+   * `<label class="prop-label" for={inputId}>` beside every parameter and
+   * passes the same id to the control, and this component never applied it.
+   * So for every select-shaped parameter that label pointed at no element —
+   * clicking it did nothing and a screen reader read no association.
+   * Taking the lint's advice would have made the warning quiet and the bug
+   * permanent.
+   */
+  export let id: string | undefined = undefined;
   export let onValueChange: (value: any) => void;
 
   type Option = { value: string; label: string; group?: string; disabled?: boolean } | string;
@@ -89,6 +101,7 @@
 
 <div class="select-input-container" bind:this={dropdownElement}>
   <button
+    {id}
     class="select-button"
     class:open={showDropdown}
     disabled={disabled}
