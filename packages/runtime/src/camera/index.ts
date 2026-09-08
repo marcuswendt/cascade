@@ -14,6 +14,18 @@ import type { Camera, Mat4, Vec3 } from "@cascade/contracts";
  * **+Y** up, rotation is degrees applied in **XYZ** order, and the vertical
  * aperture is derived from the horizontal one and the frame shape rather than
  * stored.
+ *
+ * **Matching a frame is one number, never two.** Both angles come from the same
+ * `focal`, `aperture` and resolution ratio, so a `focal` chosen to reproduce a
+ * known horizontal angle reproduces the vertical one at the same time. Worked
+ * example, from converting `cloud-volumes` off its hand-rolled projection on
+ * 2026-09-08: that sketch pinned its **vertical** half-tangent at `0.36` and
+ * scaled the horizontal by aspect, which on a 1098×1512 page gave a 29.3°
+ * horizontal angle; `focal = (aperture / 2) / 0.261 ≈ 79.2 mm` reproduces it,
+ * and the vertical lands back on `0.36` without being asked. Which is also the
+ * reason that sketch's `fit` parameter had to go — it backed the camera off to
+ * win back horizontal coverage a portrait page had lost, and that is the same
+ * compensation this module already does in the projection.
  */
 
 const DEG = Math.PI / 180;
