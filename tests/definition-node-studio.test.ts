@@ -626,4 +626,64 @@ describe('definition-v1 nodes in Studio', () => {
     expect(node.parameters.find(parameter => parameter.name === 'fit')?.options.action)
       .toBeUndefined();
   });
+  it('refuses a props map that is still a list, which is what a botched migration leaves', async () => {
+    // `params` was `[{name, value}]` and `props` is `{name: value}`. A
+    // migration that changes the key without the shape leaves an array, and
+    // `Object.entries` of one gives keys "0", "1" — matching no declared prop.
+    //
+    // Measured before it was fixed: preflight empty, the prop back at its
+    // default, `cascade run` reporting `completed`. `cloud-plots` rendered a
+    // whole picture against no moment and was reported as working on the
+    // strength of an exit code. This is the fault the stray-`params` warning is
+    // blind to, because the value has left the key it watches.
+    const runtime = createRuntime({ host: createNodeRuntimeHost({}) });
+
+    await expect(runtime.load({
+      version: '0.2',
+      nodes: [{
+        id: 'circle',
+        module: 'cascade.geo.Circle',
+        props: [{ name: 'type', value: 'poly' }] as never,
+      }],
+      connections: [],
+    })).rejects.toMatchObject({ code: 'runtime/props-not-a-map' });
+
+    await runtime.dispose();
+  });
+
+  it('reports a props name the definition does not declare, and runs anyway', async () => {
+    // The other half of a botched move: the value arrived under a name nothing
+    // declares. A warning rather than an error, because a prop renamed or
+    // removed from a definition leaves its value behind honestly and the graph
+    // runs on the defaults.
+    const runtime = createRuntime({ host: createNodeRuntimeHost({}) });
+    const graph = await runtime.load({
+      version: '0.2',
+      nodes: [{ id: 'circle', module: 'cascade.geo.Circle', props: { typ: 'poly' } }],
+      connections: [],
+    });
+
+    expect(graph.preflight()).toEqual([expect.objectContaining({
+      code: 'runtime/unknown-props',
+      path: 'circle',
+    })]);
+    expect(graph.preflight()[0].message).toContain('typ');
+    expect((await graph.run()).status).toBe('completed');
+    expect(classifyPreflight(graph.preflight())).toMatchObject({ errors: [] });
+    await graph.dispose();
+    await runtime.dispose();
+  });
+
+  it('says nothing about a props map that is simply correct', async () => {
+    const runtime = createRuntime({ host: createNodeRuntimeHost({}) });
+    const graph = await runtime.load({
+      version: '0.2',
+      nodes: [{ id: 'circle', module: 'cascade.geo.Circle', props: { type: 'poly' } }],
+      connections: [],
+    });
+
+    expect(graph.preflight()).toEqual([]);
+    await graph.dispose();
+    await runtime.dispose();
+  });
 });

@@ -109,7 +109,12 @@ function reportPreflightWarnings(
   // environment mismatch says the checker cannot see this graph; a stray
   // `params` array says the graph loaded wrong and will run anyway.
   const elsewhere = warnings.filter((item) => item.code === 'runtime/preflight-environment');
-  const lossy = warnings.filter((item) => item.code === 'runtime/stray-params');
+  // Both halves of a botched move share this heading, because from the
+  // author's side they are one thing: a value that is not where the runtime
+  // looks. `stray-params` is the leftover, `unknown-props` is the value that
+  // arrived under a name nothing declares.
+  const lossy = warnings.filter((item) => item.code === 'runtime/stray-params'
+    || item.code === 'runtime/unknown-props');
   if (elsewhere.length) {
     console.warn([
       `Not checkable here — ${elsewhere.length === 1 ? 'one node' : `${elsewhere.length} nodes`} in this graph target${elsewhere.length === 1 ? 's' : ''} another host:`,
@@ -119,7 +124,7 @@ function reportPreflightWarnings(
   }
   if (lossy.length) {
     console.warn([
-      `Stored values were dropped on load — ${lossy.length === 1 ? 'one node' : `${lossy.length} nodes`} still keep${lossy.length === 1 ? 's' : ''} values under "params":`,
+      `Stored values were dropped on load — ${lossy.length === 1 ? 'one node' : `${lossy.length} nodes`}:`,
       ...lossy.map(line),
       `  This graph will run, on the defaults, and look like it worked.`,
     ].join('\n'));
@@ -254,7 +259,8 @@ export async function runDeterministicProjectGraph(
     reportPreflightWarnings(
       host,
       classifyPreflight(graph.preflight()).warnings
-        .filter((item) => item.code === 'runtime/stray-params'),
+        .filter((item) => item.code === 'runtime/stray-params'
+          || item.code === 'runtime/unknown-props'),
     );
     const result = await graph.run(entryNode ? { target: { kind: 'node', nodeId: entryNode } } : {});
     if (result.status !== 'completed') {

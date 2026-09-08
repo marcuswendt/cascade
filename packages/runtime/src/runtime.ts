@@ -89,6 +89,7 @@ interface RuntimeConnection extends ConnectionInspection {
 export const PREFLIGHT_WARNING_CODES: ReadonlySet<string> = new Set([
   "runtime/preflight-environment",
   "runtime/stray-params",
+  "runtime/unknown-props",
 ]);
 /**
  * The only preflight code that does not stop a run.
@@ -101,6 +102,7 @@ export const PREFLIGHT_WARNING_CODES: ReadonlySet<string> = new Set([
  */
 const RUN_TOLERATED_CODES: ReadonlySet<string> = new Set([
   "runtime/stray-params",
+  "runtime/unknown-props",
 ]);
 interface RuntimeNode {
   readonly id: string;
@@ -127,6 +129,9 @@ interface RuntimeNode {
    * does not read. Kept only so preflight can say so — see `strayParams`.
    */
   readonly strayParams: readonly string[];
+  /** Names stored under `props` that the definition does not declare, so their
+   *  values were dropped on the way in — see `unknownProps`. */
+  readonly unknownProps: readonly string[];
   readonly outputs: Map<string, unknown>;
   execute?: NodeExecute;
 }
@@ -1057,6 +1062,12 @@ class Graph implements LoadedCascadeGraph {
     const push = (code: string, nodeId: string, message: string) =>
       diagnostics.push({ phase: "preflight", code, path: nodeId, message });
     for (const node of nodes) {
+      if (node.unknownProps.length)
+        push(
+          "runtime/unknown-props",
+          node.id,
+          `${node.moduleId} stores ${node.unknownProps.join(", ")} under "props", and its definition declares no such prop — ${node.unknownProps.length === 1 ? "that value was" : "those values were"} dropped on load. A prop renamed or removed leaves its value behind; a name that never existed is a typo`,
+        );
       if (node.strayParams.length)
         push(
           "runtime/stray-params",
@@ -1425,6 +1436,29 @@ function materialize(
       false,
       `${authored.id}.${name}`,
     );
+  /**
+   * `props` is a map and `params` was a list, and a migration that changes the
+   * key without changing the shape leaves an array here.
+   *
+   * Fatal, and the reason is what it costs: `Object.entries` of an array gives
+   * keys `"0"`, `"1"`, which match no declared prop, so **every authored value
+   * is dropped and every signal stays green.** Measured on 2026-09-08 —
+   * preflight empty, the prop back at its default, `cascade run` reporting
+   * `completed`. `cloud-plots` rendered a whole picture against no moment and
+   * was reported as working on the strength of an exit code.
+   *
+   * An error rather than a warning, unlike a leftover under `params`: that is a
+   * real state an unconverted sketch is legitimately in and must keep
+   * validating, whereas `props` as an array is never valid — the schema
+   * declares a record — and nothing passes through it on the way to being
+   * right. Same reasoning as `definition/re-exported`.
+   */
+  if (Array.isArray(authored.props))
+    misuse(
+      "runtime/props-not-a-map",
+      `Node ${authored.id} stores props as a list. "props" is a map of name to value; "params" was the list. Every value in it is being dropped, silently, and the graph would run on its defaults`,
+    );
+
   const bindings: Record<string, PropBinding> = {};
   // A declared default expression, applied only where the document stored
   // nothing at all for the prop. The loop below then runs over what *was*
@@ -1486,6 +1520,7 @@ function materialize(
     props,
     bindings,
     strayParams: strayParams(authored, registration),
+    unknownProps: unknownProps(authored, registration),
     outputs: new Map(),
   };
 }
@@ -1511,6 +1546,30 @@ function materialize(
  * naming nothing is a different fault, and reporting it would make this fire on
  * documents where no value was lost.
  */
+/**
+ * Names stored under `props` that the definition does not declare.
+ *
+ * The mirror of `strayParams`, and the gap that one had: it asks *is anything
+ * still under the old key*, which is blind to *did what arrived under the new
+ * key arrive in the right form*. One is a leftover, the other is a botched
+ * move, and the second is worse because it looks finished.
+ *
+ * A warning rather than an error, because unlike an array container this is a
+ * state a real document reaches honestly: a prop renamed or removed from a
+ * definition leaves its value behind, and the graph runs on the defaults. Same
+ * class as a leftover under `params`, and the same severity for the same
+ * reason — a sketch mid-conversion must keep validating.
+ */
+function unknownProps(
+  authored: CascadeDocumentNode,
+  registration: DefinitionNodeRegistration,
+): readonly string[] {
+  const props = authored.props;
+  if (!props || Array.isArray(props)) return [];
+  const declared = registration.definition.props ?? {};
+  return Object.keys(props).filter((name) => !(name in declared));
+}
+
 function strayParams(
   authored: CascadeDocumentNode,
   registration: DefinitionNodeRegistration,
