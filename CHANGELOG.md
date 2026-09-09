@@ -2,6 +2,15 @@
 
 Notable changes to Cascade. Newest first.
 
+## 0.5.1 — 2026-09-09
+
+- Prepared the 0.5 browser-player release for npm, with updated README and
+  cascade.field.io documentation covering web embeds, geometry, subnets,
+  particles, Feedback, scenes, animation and bounded Dawn renders for agents.
+- Clarified browser/server execution limits, current wireframe/point rendering,
+  explicit asset packaging and same-origin player controls. The npm homepage
+  now points to cascade.field.io.
+
 ## 0.5.0 — 2026-09-09
 
 ### Browser player

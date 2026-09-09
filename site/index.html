@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cascade</title>
-<meta name="description" content="A node-graph runtime and visual Studio for generative design. FIELD.IO's studio instrument.">
+<meta name="description" content="An open-source node-graph runtime and visual Studio for generative design, browser experiences, motion, print, and installations. Built at FIELD.IO.">
 <style>
   :root {
     color-scheme: light dark;
@@ -44,6 +44,7 @@
     margin: 0 0 0.4rem;
   }
   .tagline { color: var(--ink-soft); margin: 0; max-width: 34rem; }
+  .release { color: var(--ink-soft); font-size: 0.8rem; margin-top: 0.7rem; }
   h2 {
     font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
     letter-spacing: 0.08em; color: var(--ink-soft);
@@ -96,12 +97,26 @@
 <main>
   <header>
     <h1>Cascade</h1>
-    <p class="tagline">A node-graph runtime with a visual Studio, for generative design. Built at FIELD.IO and used for our own work.</p>
+    <p class="tagline">An open-source node-graph runtime with a visual Studio, for building generative design systems that move between print, motion, installations, and the web. Built at FIELD.IO and used for our own work.</p>
+    <p class="release">Current release: 0.5.1</p>
   </header>
+
+  <h2>What it is</h2>
+  <p>Cascade separates a visual system from the application around it. You author typed stages as a graph; the runtime validates and schedules them; Studio, the CLI, a browser player, or another host supplies the environment. A project is an ordinary folder of TypeScript, assets, and diffable <code>.cascade</code> files.</p>
+  <p>Houdini is the conceptual north star: small composable operators, explicit data flow, nested networks, parameters, animation, feedback, and a result that can be cooked again in another context.</p>
+
+  <h2>What you can build</h2>
+  <ul>
+    <li><strong>2D and 3D geometry systems</strong> using a shared geometry type, transforms, merging, copying to points, SVG export, scenes, lights, and Houdini-style cameras.</li>
+    <li><strong>Motion and simulation</strong> with expressions, keyframes, a timeline, explicit Feedback loops, particles, forces, bounded checkpoints, and trails that remain printable geometry.</li>
+    <li><strong>Interactive browser work</strong> as a standalone static player, without shipping Studio or running a Cascade server.</li>
+    <li><strong>Offline stills and sequences</strong> through the CLI, using Skia for Canvas2D work or optional Dawn for portable WebGPU nodes.</li>
+    <li><strong>Project-specific tools</strong> as typed TypeScript nodes and trusted Studio panels, including file, Python, media, and allowlisted shell stages where the host permits them.</li>
+  </ul>
 
   <h2>Before you start</h2>
   <p>You need <strong>Node 22.13 or newer</strong>. Check with <code>node --version</code>; if it is older, or missing, install it from <a href="https://nodejs.org">nodejs.org</a> or with <code>brew install node</code>.</p>
-  <p>macOS and Linux are what we run. Studio itself is a web app and works in any current browser.</p>
+  <p>macOS and Linux are what we run. Studio is a web app; use a current Chromium, Firefox, or Safari release. Individual nodes can have narrower requirements, especially WebGPU work.</p>
 
   <h2>Getting started</h2>
 
@@ -145,32 +160,62 @@ cascade my-sketch</pre>
   <h2>Working in Studio</h2>
   <p>Studio is dockable: a graph canvas, an inspector, a viewer, a code editor, logs, and panels a project defines itself. Tab adds a node, and the graph is a plain <code>.cascade</code> file you can commit and diff.</p>
   <p>A sketch owns its own nodes as ordinary TypeScript under <code>nodes/&lt;Name&gt;/index.ts</code>, so anything you can write in a file you can wire into a graph. Read the <code>AGENTS.md</code> in your new sketch first — it is short, and written for both you and whatever coding agent you point at the folder.</p>
+  <p>Subnets let a network become a reusable operator without changing the document into a second graph format. The 3D Viewer displays geometry, cameras, and scenes as wireframes and points; light data is part of the scene contract, while shaded scene rendering is still future work.</p>
+
+  <h2>Animation and simulation</h2>
+  <p>Parameters can use values, expressions, or keyframe channels. Expressions include <code>$F</code>, <code>$T</code>, <code>$FPS</code>, <code>ch()</code>, noise, fitting, and familiar maths functions. Keyframes are edited in the Inspector and Timeline, with constant, linear, or smooth interpolation.</p>
+  <p>Feedback is explicit graph state. Particle nodes accumulate forces and integrate them once; trails are normal geometry, so the same simulation can feed a viewport, an SVG export, or an offline render. Checkpoints accelerate repeated work, but do not change the result.</p>
+
+  <h2>Publish to the web</h2>
+  <p>A compatible definition-v1 graph can become a self-contained static site. The output directory must be new; add repeatable <code>--asset &lt;project-relative-file&gt;</code> options for asset paths computed in node code.</p>
+  <pre>cascade build index.cascade --out web-player</pre>
+  <p>Serve the generated directory over HTTP or HTTPS. Open its <code>index.html</code>, embed <code>player.html</code> directly, or use the same-origin <code>embed.js</code> API for play, pause, seek, parameter changes, output selection, and downloads.</p>
+  <pre>&lt;iframe src="/artwork/player.html"
+  title="Generative artwork"
+  style="width:100%;height:600px;border:0"&gt;&lt;/iframe&gt;</pre>
+  <p>Each embed owns its graph runtime, assets, generated images, and GPU lifecycle, so multiple sketches can coexist safely on one page. Compatible geometry and scenes render in the player. Browser WebGPU nodes use the visitor's device and require WebGPU support plus a secure HTTPS or localhost context; unsupported devices fail with a diagnostic.</p>
+  <div class="note">
+    <p>The static player supports deterministic definition-v1 graphs. Dynamic modules and nodes requiring Python, shell, server files, or Studio APIs are rejected during the build. Package any explicit assets and move heavy preprocessing outside the live browser graph.</p>
+  </div>
+
+  <h2>Headless rendering for agents</h2>
+  <p>The CLI can produce a still or numbered image sequence without opening Studio. Its JSON mode gives an agent or test process a small machine-readable contract: output files, frames, timing, and GPU adapter metadata when used.</p>
+  <pre>cascade run index.cascade --frames 1 --json --timeout 60000
+cascade run index.cascade --frames 1-48 --fps 24 --out renders --json --timeout 120000</pre>
+  <p>Portable WebGPU nodes run through optional Dawn on supported machines. Dawn loads only when a GPU node cooks; CPU projects do not require it. It is a native GPU host, not a browser emulator, and does not provide DOM, video, WebGL, or browser-only APIs. Agent callers should bound frame counts and dimensions, set a timeout, check the exit code, and retain the graph, code, assets, seed, and settings with selected outputs.</p>
 
   <h2>Useful commands</h2>
   <pre>cascade new &lt;name&gt;            create a sketch and open it
 cascade .                     open the sketch in this folder
 cascade node &lt;Name&gt;           scaffold a typed custom node
 cascade run &lt;graph.cascade&gt;   execute a graph headlessly, no browser
+cascade run &lt;graph&gt; --frames 1-48 --fps 24
+cascade build &lt;graph&gt; --out &lt;new-directory&gt;
 cascade check &lt;graph.cascade&gt;  static check of types and structure
+cascade inspect &lt;graph.cascade&gt; print a JSON graph summary
 cascade projects &lt;dir&gt;        move where sketches live
 cascade --help                all of it</pre>
 
   <h2>A few things worth knowing</h2>
   <ul>
-    <li>Some sketches need more than Node. Anything doing heavy image work has a Python stage and its own <code>requirements</code> file — check the sketch's README before assuming it is broken.</li>
+    <li>Some sketches need more than Node. A project may use Python, native image libraries, external tools, or optional Dawn; check its README and <code>package.json</code> before assuming it is broken.</li>
     <li>Studio serves on localhost by default. <code>--host</code> exposes it on your network for a browser on another machine, and that is for a trusted network only. <strong>Never put Studio on the public internet</strong>; it compiles and runs code from the project folder by design.</li>
-    <li>Credentials live in <code>~/.cascade/credentials.yaml</code>, per machine, never in a graph.</li>
+    <li>A static player is the public deployment surface. It includes only compatible graph code and declared assets, and needs no Cascade API.</li>
+    <li>GPU output can vary across hardware and drivers. Record adapter information and use image tolerances rather than assuming identical pixels everywhere.</li>
+    <li>A project declares the credential names it needs, never their values. Values default to <code>~/.cascade/credentials.yaml</code>, or to the file selected by <code>CASCADE_CREDENTIALS</code>, and are never stored in a graph.</li>
   </ul>
 
   <h2>Going deeper</h2>
   <ul>
-    <li><code>doc/PROJECT_AUTHORING.md</code> — how a project is laid out, and how to write nodes properly.</li>
-    <li><code>ARCHITECTURE.md</code> — contracts, runtime, hosts, and why the dependencies point one way.</li>
-    <li><code>doc/Cascade Product Overview.md</code> — what Cascade owns and what a project owns.</li>
+    <li><a href="https://github.com/marcuswendt/cascade/blob/main/doc/PROJECT_AUTHORING.md">Project authoring</a> — project layout, graph files, and typed nodes.</li>
+    <li><a href="https://github.com/marcuswendt/cascade/blob/main/doc/WEB_PLAYER.md">Browser player</a> — embedding, controls, assets, and host limits.</li>
+    <li><a href="https://github.com/marcuswendt/cascade/blob/main/doc/HEADLESS_GPU.md">Headless WebGPU</a> — Dawn setup, JSON render manifests, testing, and platform caveats.</li>
+    <li><a href="https://github.com/marcuswendt/cascade/blob/main/doc/NODE_REFERENCE.md">Node reference</a> — the generated reference for core, geometry, particle, and scene nodes.</li>
+    <li><a href="https://github.com/marcuswendt/cascade/blob/main/ARCHITECTURE.md">Architecture</a> — contracts, runtime, hosts, and dependency boundaries.</li>
   </ul>
 
   <footer>
-    <p><strong>This is our studio's instrument, not a product.</strong> It is MIT licensed and openly installable because that is cheaper than the alternative, but there is no roadmap and no support promise, and it changes without warning. If something is broken, tell Marcus.</p>
+    <p><strong>Cascade is a shared creative instrument.</strong> FIELD uses it to explore and deliver visual systems, and develops it in the open so the whole team—and anyone else—can inspect it, extend it, and build with agents. It is free and MIT licensed.</p>
     <p><a href="https://github.com/marcuswendt/cascade">github.com/marcuswendt/cascade</a> &middot; <a href="https://www.npmjs.com/package/@field/cascade">npm</a> &middot; MIT</p>
   </footer>
 </main>

@@ -79,3 +79,26 @@ Never edit the generated [node reference](doc/NODE_REFERENCE.md) by hand.
 
 Release/version rules live in [AGENTS.md](AGENTS.md). Publishing and deployment
 are separate maintainer actions; a documentation update does not publish a release.
+
+With an explicit release request, update the README, feature guides, changelog,
+root package/lock version and `site/index.html` together. Run the checks above
+and `CASCADE_TEST_PLAYER=1 CASCADE_TEST_DAWN=1 npm run test:package` on a supported
+GPU machine before publishing. The packed test checks a fresh consumer, browser
+embeds, native GPU output and the optional-renderer-absent path.
+
+The public package is `@field/cascade` (`npm publish --access public`). Check
+`npm whoami` and `npm view @field/cascade dist-tags` first; verify the published
+version and a fresh installation afterward. Git push, npm publication and the
+website deployment are separate operations, not an automatic release pipeline.
+
+The documentation website is the static **`site/` directory**, not Studio's
+`dist/`. Its existing Vercel project is `field-io/cascade`:
+
+```sh
+vercel link --cwd site --project cascade --scope field-io --yes
+vercel deploy --cwd site --scope field-io --prod --yes
+```
+
+Confirm the linked project before deployment and check `https://cascade.field.io`
+afterward. Do not deploy the repository root or expose a Studio server as the
+public site. `.vercel` is local deployment metadata and stays ignored.

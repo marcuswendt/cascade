@@ -1,7 +1,8 @@
 # Browser player
 
 The player runs a compatible graph in a browser without Studio or a Cascade
-server. It is an **unreleased checkout feature**; build Cascade before using it.
+server. Available in Cascade 0.5+. Install `@field/cascade@latest`, or build the
+checkout when developing Cascade itself.
 
 ## Build and launch
 

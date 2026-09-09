@@ -2,13 +2,15 @@
 
 Cascade is a TypeScript node-graph runtime and optional visual workspace for generative design. It is built for projects that move between interactive web work, WebGL, print, motion, sound, Python, and external services without rebuilding the surrounding application infrastructure each time.
 
-Created by Marcus Wendt at [FIELD.IO](https://www.field.io).
+Created by Marcus Wendt at [FIELD.IO](https://www.field.io). Free and open source
+under the MIT license. [Getting started and features](https://cascade.field.io).
 
 ## What Cascade provides
 
 - A typed, inspectable graph model with lazy execution and explicit triggers.
 - Deterministic custom-node definitions that tools can inspect without running user code.
 - An environment-neutral runtime for Node services and UI-free browser applications.
+- A standalone browser player: build static pages and embeddable sketches without a Studio server.
 - A Studio compatibility controller that already presents deterministic definitions alongside dynamic project nodes while its graph engine migrates to the neutral runtime.
 - Project-native `.cascade` files, assets, presets, and Git-backed version history.
 - Nested subnets with persistent hierarchy.
@@ -16,12 +18,38 @@ Created by Marcus Wendt at [FIELD.IO](https://www.field.io).
 - Scenes with cameras and lights, a 3D Viewer, and shared CPU wireframe/point rendering.
 - Expressions on parameters, with Houdini's variables and functions: `$F`, `$FF`, `$T`, `$FPS`, and `ch()` to read another parameter.
 - Keyframe channels on parameters, edited through a timeline panel with transport, playhead, scrubbing, and a dope sheet.
-- Offline rendering with `cascade run`, including `--frames 1-100` for a numbered image sequence, rasterised through Skia rather than a browser.
+- Offline rendering with `cascade run`: Skia for Canvas2D, optional Dawn for compatible WebGPU nodes, and `--frames 1-100` for numbered image sequences.
 - A coding-agent console per project, running in the project directory, with a watcher that picks up the files it rewrites without a reload.
 - Explicit browser and server capabilities for WebGPU, files, media, Python, and allowlisted shell commands.
 - A Svelte Studio with an infinite canvas, Inspector, Viewer, timeline, and project workbench.
 
 Cascade separates the generative algorithm from the platform. Custom nodes describe stages of a pipeline; the runtime schedules and validates them; hosts supply environment-specific capabilities; Studio is only one possible frontend.
+
+## New in 0.5
+
+Build a visual system once, then use its supported host for print, stills,
+motion frames or an interactive web embed. This release adds the standalone
+player and hardens the geometry, simulation and scene tools added during 0.4:
+
+- **Web delivery:** `cascade build` packages a compatible graph and its explicit
+  assets. Embeds have independent runtimes, playback, parameter/input controls,
+  image downloads and disposal; no editor or Cascade API is required.
+- **Geometry and subnets:** compose shapes, transforms and copies through one
+  geometry type; organize reusable networks with typed Input/Output boundaries.
+- **Particles and feedback:** wire sources, forces and a solver, retain bounded
+  history, and turn particle trails into geometry for SVG or raster output.
+  Checkpoint reuse now preserves complete trails; nested Feedback respects loop
+  ownership and dependency order.
+- **Scenes and cameras:** assemble geometry, a camera and lights, inspect in the
+  3D Viewer, and use shared camera math for output. Rendering currently draws
+  wireframes and points; lights do not yet shade surfaces.
+- **Agent-ready rendering:** static node checks, finite render timeouts and JSON
+  image manifests let an agent edit, render and inspect results. Dawn is optional
+  native WebGPU for the Node host, not a browser emulator or model integration.
+
+Studio now uses only its active Dockview layout; the unreachable old window UI
+has been removed. No new dependencies or graph engine were introduced for the
+player. See the [changelog](CHANGELOG.md) for release details.
 
 ## Install
 
@@ -129,7 +157,7 @@ See [Project authoring](doc/PROJECT_AUTHORING.md) for project layout, nodes, `.c
 
 ## Publish a browser sketch
 
-The checkout's standalone player exports compatible definition-v1 graphs to
+The standalone player in Cascade 0.5+ exports compatible definition-v1 graphs to
 static files, without Studio or a Cascade server:
 
 ```bash
@@ -141,8 +169,18 @@ Open `index.html`, embed `player.html` in an iframe, or import `embed.js` for
 same-origin controls. Server/Python/shell-dependent graphs must first separate
 or replace those stages; export does not move them into the browser silently.
 See [Browser player](doc/WEB_PLAYER.md) for assets, inputs, animation and limits.
-This workflow is unreleased; use the built checkout rather than assuming the
-published package contains it.
+
+For example, after hosting the output at `/artwork/`:
+
+```html
+<iframe src="/artwork/player.html" title="Generative artwork"
+  style="width:100%;height:600px;border:0"></iframe>
+```
+
+Ordinary iframe embeds can cross origins. JavaScript controls through the
+generated `embed.js` require the same origin. WebGPU requires a compatible
+browser/device and HTTPS or localhost. Use `--asset assets/photo.png` for a
+file whose path is computed in code; export never copies the whole project.
 
 Projects may also provide trusted, dockable Studio panels as plain TypeScript modules under `panels/`. These extensions remain outside graph documents and are never loaded by headless execution.
 
@@ -190,6 +228,20 @@ cascade run index.cascade --frames 42 --entry-node logo-1024
 Frames are written as `<out>/<node id>.<frame>.<ext>`, zero-padded to at least four digits, into `renders/` unless `--out` says otherwise. One rule regardless of how many outputs the graph has, because a graph writing the same mark at three sizes from one cook is the normal case. Every image output with nothing downstream of it is saved, or the outputs of `--entry-node` when one is named. Cascade stops at the sequence; a directory of numbered frames is what every encoder already takes.
 
 Drawing offline goes through Skia rather than a browser. The optional `@napi-rs/canvas` supplies `OffscreenCanvas`, `Image`, `Path2D` and the rest as globals in the Node process, deliberately not `document`, since that is how a node detects its host. So a node that draws on an `OffscreenCanvas` needs no separate headless implementation, and the built-in `cascade.image.*` library rasterises through Skia in Node too, so a graph built from it renders headlessly with no browser involved. A run without the renderer installed still works for graphs that draw nothing, and says what is missing if a cook fails in a canvas-shaped way.
+
+Compatible definition-v1 GPU nodes use optional Dawn instead. For a bounded
+still render that a test or agent can consume:
+
+```bash
+cascade check index.cascade
+cascade run index.cascade --frames 1 --json --timeout 60000
+```
+
+Check the exit code before parsing the success manifest on stdout, then inspect
+the images listed in `files`; diagnostics go to stderr. Dawn does not make DOM,
+WebGL or browser-only nodes portable, and pixel equality across GPU drivers is
+not guaranteed. See [Headless WebGPU](doc/HEADLESS_GPU.md) for host requirements,
+readback and testing guidance. Cascade does not upload these images to a model.
 
 `--frames` works for an all-dynamic graph and for an all-definition-v1 graph. Definition-v1 runs resolve stored expressions and keyframe channels from the explicit `frame` and `fps` supplied to each deterministic run. A CLI graph that mixes the two node styles is rejected explicitly because there is not yet a bounded adapter between the execution engines.
 
@@ -314,8 +366,9 @@ a second set of node algorithms.
 | Studio authoring | Supports dynamic and definition-v1 nodes in one document through the compatibility controller. |
 | Headless CLI | Executes all-definition-v1 or all-dynamic documents; mixed documents are rejected. Both styles can render frame sequences. |
 | Embedded runtime | `cascade/runtime` is the neutral definition-v1 API for Node and browser hosts. It does not load Studio or interpret dynamic nodes. |
+| Static browser player | `cascade build` exports definition-v1 browser/portable graphs with assets and optional browser WebGPU. No server operations, dynamic modules or project Studio panels. Same-origin JavaScript controls; ordinary cross-origin iframe embeds. |
 | GPU | Studio and the optional Dawn CLI host provide a shared device, adapter metadata, limits, and per-node caches. Portable GPU nodes render offscreen and explicitly read RGBA8 pixels through `cascade/gpu`; graph ports still carry images. See [headless GPU rendering](doc/HEADLESS_GPU.md). |
-| Standalone HTML export | The existing Studio exporter uses a separate minimal runtime and supports only a subset of graph behavior. Treat it as an experimental convenience, not as a universal deployment artifact. |
+| Studio HTML export | The older Studio exporter uses a separate minimal runtime and supports only a subset of graph behavior. Use `cascade build` for supported definition-v1 web deployment. |
 | External services | Project-owned and optional. Cascade itself requires no paid provider or model subscription. |
 
 ## Repository map
@@ -326,12 +379,14 @@ packages/runtime/    environment-neutral graph runtime and adapters
 src/editor/          optional Svelte Studio, including the timeline and agent panels
 src/nodes/           current class-based built-in node libraries (core, geo, image)
 src/engine/          current compatibility services
-src/cli/             the `cascade` command: new, validate, check, inspect, run, Studio
+src/cli/             the `cascade` command: new, validate, check, inspect, run, build, Studio
+src/player/          standalone browser host and iframe controls
 server/              project-scoped Node host and transports, including the agent session host
 scripts/             package build, node-reference generation, and release verification tooling
 tests/               behavior, workflow, security, and performance tests
 spec/                accepted feature specifications
 doc/                 authoring guides and implementation plans
+site/                static documentation at cascade.field.io
 ```
 
 The root `cascade` package is the distribution and CLI owner. The two internal workspaces define architectural boundaries; they are not independently published until independent versioning or external consumption requires it.

@@ -8,10 +8,10 @@ DOM, WebGL, canvas presentation, image decoding, or video APIs.
 
 ## Decision and release status
 
-Implemented on 2026-09-08 and checked in as source version `0.3.2`; see the
-[changelog](../CHANGELOG.md). Checking in the source does not publish the npm
-package. Use a built checkout or a tarball known to include the feature until
-the corresponding package release is published.
+Implemented on 2026-09-08 as source version `0.3.2` and included in the 0.5
+release; see the [changelog](../CHANGELOG.md). Use the project-local CLI and
+record its version when comparing renders. A source checkout may contain
+changes beyond the installed npm package.
 
 The decision is to use optional native Dawn for browser-independent GPU
 execution and agent image feedback. Browser automation remains useful for
