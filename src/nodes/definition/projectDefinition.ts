@@ -31,6 +31,7 @@ import type { Graph } from '../Graph.js';
 import type { Node } from '../Node.js';
 import { attachDefinition } from './DefinitionNode.js';
 import { browserAssetCapability } from './browserCapabilities.js';
+import { browserShellCapability, shellRouteAvailable } from './browserShellCapability.js';
 import { createStudioGpuCapability, type StudioGpuHost } from './gpuCapability.js';
 
 /**
@@ -49,7 +50,32 @@ export const studioCapabilities: RuntimeCapabilities = {
   // Studio gpu capability", both naming what is missing. A stub that threw on
   // first use would name nothing.
   ...gpuCapabilityIfAvailable(),
+  /**
+   * Shell is present up front and withdrawn if the route turns out not to be
+   * there, which is the opposite way round from gpu and worth the sentence.
+   *
+   * `navigator.gpu` is a synchronous check, so gpu can be absent from the map
+   * before anything reads it. Whether the shell route exists takes a fetch, and
+   * this object is a module-level const read by three default parameters — so
+   * the choice is between delaying Studio's boot on a request, racing the
+   * probe, or installing and withdrawing. Installing is the one where the
+   * common case (a loopback server, where the route is always there) has no
+   * race at all and no cost.
+   *
+   * What it costs: on a server that does NOT offer the route, a cook in the
+   * first few milliseconds after boot sees the capability present and fails at
+   * the fetch instead of at the gate. That failure still names itself — *"the
+   * shell capability is disabled on this server"* — so it is a worse-shaped
+   * error rather than a silent one, and once the probe lands the preflight is
+   * correct from then on.
+   */
+  shell: browserShellCapability,
 };
+
+// Withdrawn rather than never added: see the note on `shell` above.
+void shellRouteAvailable().then((available) => {
+  if (!available) delete (studioCapabilities as { shell?: unknown }).shell;
+});
 
 function gpuCapabilityIfAvailable(): { gpu?: StudioGpuHost } {
   const gpu = createStudioGpuCapability();
