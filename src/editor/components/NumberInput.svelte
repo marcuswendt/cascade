@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { Prop } from '@/types/node.types';
+  import { expressionEngine } from '@/engine/expressions/index';
+  import { numberFieldCommit, NUMBER_PATTERN } from './numberFieldCommit';
 
   export let prop: Prop;
   export let id: string;
@@ -14,6 +16,20 @@
    * expression field. So the field is text with a numeric input mode, and text
    * that does not parse as a number is handed to this callback to become an
    * expression rather than being thrown away.
+   *
+   * **But only if it is a valid expression.** Until 2026-09-09 anything that
+   * was not a number became one, so a fat-fingered edit did real damage:
+   * typing `0.4` in front of an existing `1.215` gives `0.41.215`, which
+   * became an expression, which removed the slider and left the parameter in
+   * `has-error` with the tooltip `Unexpected number`. The only way back was
+   * the ✕ that deletes the expression. That is what Marcus meant by *"there's
+   * something strange with the spin parameter — i cant change its value"*:
+   * his `spin` held 1.215, he edited on top of it, and the control vanished.
+   *
+   * A typo is not a gesture. Text that parses as neither a number nor a valid
+   * expression is now rejected with the field intact and the parameter
+   * untouched — measured and diagnosed by MW-OBSERVATORY-ART from a browser
+   * session.
    *
    * Optional: without it the old behaviour stands and unparseable text reverts.
    */
@@ -38,9 +54,7 @@
   // Follow the value while the field is not being typed into.
   $: if (!focused) text = String(displayValue);
 
-  /** A COMPLETE number. `parseFloat` accepts "1.2abc" and "1." and would
-   *  commit halfway through typing an expression; this does not. */
-  const NUMBER = /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/;
+  const NUMBER = NUMBER_PATTERN;
 
   function clamp(next: number): number {
     let clamped = next;
@@ -60,21 +74,80 @@
   function handleTextInput(e: Event) {
     text = (e.target as HTMLInputElement).value;
     const trimmed = text.trim();
-    if (NUMBER.test(trimmed)) onValueChange(clamp(Number(trimmed)));
+    if (NUMBER.test(trimmed)) {
+      rejected = null;
+      lastCommitted = trimmed;
+      onValueChange(clamp(Number(trimmed)));
+    }
   }
 
-  /** Enter or blur: a number commits, anything else becomes an expression. */
+  /**
+   * What was last sent upward, so the same edit is not committed twice.
+   *
+   * Enter calls `commit` and then blurs the field, and blur calls `commit`
+   * again — so every typed parameter change cooked the graph **twice**.
+   * Measured on `cloud-volumes`: the first cook was aborted about 82 ms in,
+   * *after* it had already encoded and PUT a 1.55 MB PNG, so a keyboard edit
+   * cost an extra 82 ms and a wasted 1.55 MB upload every time. Frame-stepping
+   * cooked once, which is what pointed at the field rather than the scheduler.
+   */
+  let lastCommitted: string | null = null;
+
+  /** Why the last commit was refused, shown on the field itself. Reverting
+   *  silently is the other half of the trap: the value snaps back and nothing
+   *  says the text was not an expression. */
+  let rejected: string | null = null;
+
+  /** Enter or blur. The decision itself is in `numberFieldCommit`, which is
+   *  where it can be tested; this only carries it out. */
   function commit(): void {
-    const trimmed = text.trim();
-    if (NUMBER.test(trimmed)) {
-      onValueChange(clamp(Number(trimmed)));
-      return;
+    const outcome = numberFieldCommit(text, {
+      lastCommitted,
+      allowExpression: Boolean(onExpressionChange),
+      expressionError,
+    });
+
+    switch (outcome.kind) {
+      case 'unchanged':
+        return;
+      case 'value':
+        rejected = null;
+        lastCommitted = outcome.text;
+        onValueChange(clamp(outcome.value));
+        return;
+      case 'expression':
+        rejected = null;
+        lastCommitted = outcome.text;
+        onExpressionChange?.(outcome.expression);
+        return;
+      case 'rejected':
+        // The parameter keeps its value and its control; only the field
+        // reverts, and it carries the reason so the revert is not silent.
+        rejected = outcome.reason;
+        text = String(displayValue);
+        return;
+      case 'revert':
+        rejected = null;
+        text = String(displayValue);
+        return;
     }
-    if (trimmed && onExpressionChange) {
-      onExpressionChange(trimmed);
-      return;
+  }
+
+  /**
+   * Whether this text would compile, without evaluating it.
+   *
+   * `compile()` already returns `{ error }` for a syntax fault and caches by
+   * source, so this is the check the engine could always answer and nothing
+   * asked. Deliberately syntax only: an expression referring to a node that
+   * does not exist yet is a legitimate thing to type, and rejecting it here
+   * would make the field refuse valid work.
+   */
+  function expressionError(expression: string): string | null {
+    try {
+      return expressionEngine.compile(expression).error ?? null;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
     }
-    text = String(displayValue);
   }
 
   /** Arrow keys still nudge. They came free with `type="number"` and would
@@ -91,6 +164,8 @@
       // Floating-point step arithmetic prints 0.30000000000000004 otherwise.
       const rounded = isInteger ? next : Number(next.toFixed(6));
       text = String(rounded);
+      rejected = null;
+      lastCommitted = text;
       onValueChange(rounded);
       return;
     }
@@ -100,12 +175,16 @@
       (e.target as HTMLInputElement).blur();
     } else if (e.key === 'Escape') {
       text = String(displayValue);
+      rejected = null;
       (e.target as HTMLInputElement).blur();
     }
   }
 
   function handleFocus() {
     focused = true;
+    // A fresh edit is not the previous one, so the guard must not suppress
+    // retyping the same value after it has been changed elsewhere.
+    lastCommitted = null;
   }
 
   function handleBlur() {
@@ -134,6 +213,8 @@
         spellcheck="false"
         autocomplete="off"
         class="number-input"
+        class:rejected={rejected !== null}
+        title={rejected ?? undefined}
         value={text}
         disabled={disabled}
         on:input={handleTextInput}
@@ -150,6 +231,8 @@
       autocomplete="off"
       id={id}
       class="number-input-full"
+      class:rejected={rejected !== null}
+      title={rejected ?? undefined}
       value={text}
       disabled={disabled}
       on:input={handleTextInput}
@@ -161,6 +244,14 @@
 </div>
 
 <style>
+  /* The field snapped back and said nothing, which is the other half of the
+     trap: a silent revert reads as the field being broken rather than as the
+     text being refused. The reason is on the title so it is readable without
+     a panel to put it in. */
+  .rejected {
+    border-color: var(--status-error) !important;
+  }
+
   .number-input-container {
     width: 100%;
   }
