@@ -210,3 +210,76 @@ export function geometryPresentation(value: unknown, type: string): GeometryPres
   }
   return result;
 }
+
+/**
+ * What a geometry actually is, for a hover.
+ *
+ * Marcus, 2026-09-09: *"when the output of a node is geometry, i need a way to
+ * see what exactly that is - add this to the mouseover mode."*
+ *
+ * The counts are the obvious half and the **attributes are the useful half.**
+ * A port that says "2,500 points" tells you the shape of the data; a port that
+ * says it carries `P v age life id Cd` tells you whether the node you are
+ * about to wire it into will work. Every failure in a day of building the
+ * particle set was an attribute that was absent or the wrong size — a solver
+ * refusing a geometry with no `id`, a trail with no colour to promote, a `Cd`
+ * that was three components — and none of them was visible without cooking.
+ *
+ * Grouped by level and named in declaration order rather than sorted, because
+ * the order a node writes its attributes in is information: `P` first is the
+ * position, and what follows is what that node added.
+ */
+export function geometryFacts(value: unknown): string[] {
+  const data = value as {
+    kind?: string;
+    pointCount?: number;
+    vertexCount?: number;
+    primitiveCount?: number;
+    point?: Record<string, unknown>;
+    vertex?: Record<string, unknown>;
+    primitive?: Record<string, unknown>;
+    detail?: Record<string, unknown>;
+    pointGroups?: Record<string, unknown>;
+    primitiveGroups?: Record<string, unknown>;
+  } | null;
+  if (!data || typeof data !== 'object' || data.kind !== 'geometry') return [];
+
+  const facts: string[] = [];
+  const counts = [
+    data.pointCount ? `${data.pointCount.toLocaleString()} points` : null,
+    data.primitiveCount ? `${data.primitiveCount.toLocaleString()} prims` : null,
+    // Vertices only when they differ from points: for a point cloud they are
+    // the same number and saying it twice is noise.
+    data.vertexCount && data.vertexCount !== data.pointCount
+      ? `${data.vertexCount.toLocaleString()} verts`
+      : null,
+  ].filter(Boolean);
+  if (counts.length > 0) facts.push(counts.join(' · '));
+
+  for (const [level, set] of [
+    ['point', data.point],
+    ['vertex', data.vertex],
+    ['prim', data.primitive],
+  ] as const) {
+    const names = set ? Object.keys(set) : [];
+    if (names.length > 0) facts.push(`${level}: ${names.join(' ')}`);
+  }
+
+  // Detail carries values rather than arrays, so the value is short enough to
+  // show — and `nextid` at a glance is what tells you a particle system has
+  // been stepped rather than merely built.
+  const detail = data.detail ? Object.entries(data.detail) : [];
+  if (detail.length > 0) {
+    facts.push(`detail: ${detail.map(([name, held]) =>
+      typeof held === 'number' || typeof held === 'string' ? `${name}=${held}` : name,
+    ).join(' ')}`);
+  }
+
+  const groups = [
+    ...Object.keys(data.pointGroups ?? {}).map((name) => `@${name}`),
+    ...Object.keys(data.primitiveGroups ?? {}).map((name) => `@${name}`),
+  ];
+  if (groups.length > 0) facts.push(`groups: ${groups.join(' ')}`);
+
+  return facts;
+}

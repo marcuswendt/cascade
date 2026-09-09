@@ -359,6 +359,7 @@ Runs on `portable`.
 | `width` | `float` | `0` |  |
 | `height` | `float` | `0` |  |
 | `margin` | `float` | `0` |  |
+| `bounds` | `vec4` | `[0,0,0,0]` |  |
 | `background` | `color` | `[0,0,0,0]` |  |
 | `stroke` | `color` | `[0,0,0,1]` |  |
 | `strokeWidth` | `float` | `1` |  |

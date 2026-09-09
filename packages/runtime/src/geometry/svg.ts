@@ -77,6 +77,22 @@ export interface SvgExportOptions {
   /** Added around the derived bounds, in geometry units. */
   readonly margin?: number;
   /**
+   * An explicit world rectangle, `[minX, minY, maxX, maxY]`, replacing the
+   * derived bounds.
+   *
+   * **A frame sequence needs this and cannot work without it.** The bounds are
+   * derived per export, so in an animation every frame gets its own viewBox —
+   * and as the drawing grows the content appears to scale and drift, which
+   * reads as a camera move nobody asked for. Rendering 110 frames of a
+   * particle system is what surfaced it: the early frames are sparse, so their
+   * bounds are tight, so the first strokes fill the screen and then zoom out
+   * for the rest of the sequence.
+   *
+   * `margin` still applies, so a fixed rectangle can breathe the same way a
+   * derived one does.
+   */
+  readonly bounds?: readonly [number, number, number, number];
+  /**
    * A ground behind the drawing, or absent for a transparent document.
    *
    * Absent by default, because plotter work wants paper and a filled rectangle
@@ -125,11 +141,14 @@ export function geometryToSvg(
 ): string {
   validateOptions(options);
   const margin = options.margin ?? 0;
-  const bounds = geometryBounds(geometry);
-  const minX = bounds === undefined ? 0 : bounds.min[0] - margin;
-  const minY = bounds === undefined ? 0 : bounds.min[1] - margin;
-  const maxX = bounds === undefined ? 1 : bounds.max[0] + margin;
-  const maxY = bounds === undefined ? 1 : bounds.max[1] + margin;
+  // An explicit rectangle wins over the geometry's own, because the caller
+  // stating a frame is a stronger signal than the content filling one.
+  const explicit = options.bounds;
+  const bounds = explicit ? undefined : geometryBounds(geometry);
+  const minX = explicit ? explicit[0] - margin : bounds === undefined ? 0 : bounds.min[0] - margin;
+  const minY = explicit ? explicit[1] - margin : bounds === undefined ? 0 : bounds.min[1] - margin;
+  const maxX = explicit ? explicit[2] + margin : bounds === undefined ? 1 : bounds.max[0] + margin;
+  const maxY = explicit ? explicit[3] + margin : bounds === undefined ? 1 : bounds.max[1] + margin;
   const spanX = Math.max(maxX - minX, Number.EPSILON);
   const spanY = Math.max(maxY - minY, Number.EPSILON);
   const width = options.width && options.width > 0 ? options.width : spanX;

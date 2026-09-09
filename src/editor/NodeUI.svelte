@@ -4,6 +4,7 @@
   import { getNodeIcon } from './nodeTemplates';
   import Icon from './Icon.svelte';
   import { getPortColor } from '@/utils/portColors';
+  import { geometryFacts } from './components/typePresentation';
   import { propUpdateCounters } from './stores/propUpdateStore';
   import { runsOnByModule, iconByModule, moduleName, type RunsOn } from './stores/executionLocus';
   import { graphStructure } from './stores/graphStructure';
@@ -133,12 +134,36 @@
   }
   
   let isDragging = false;
-  let tooltip: { name: string; dataType: string; color: string; x: number; y: number; type: 'input' | 'output' } | null = null;
+  let tooltip: {
+    name: string; dataType: string; color: string; x: number; y: number;
+    type: 'input' | 'output';
+    /** What the port is actually carrying, when that can be said usefully. */
+    facts: string[];
+  } | null = null;
   let isEditingName = false;
   let nameInput: HTMLInputElement;
   let tempName = node.id;
 
-  function showPortTooltip(e: MouseEvent, portName: string, dataType: string, color: string, portType: 'input' | 'output') {
+  /**
+   * Marcus, 2026-09-09: *"when the output of a node is geometry, i need a way
+   * to see what exactly that is - add this to the mouseover mode."*
+   *
+   * Read from the port's live value at hover time rather than tracked
+   * reactively: a hover is a question, and computing this for every port of
+   * every node on every cook would be work nobody asked for. The value is
+   * whatever the last cook left there, which is exactly what the question
+   * means.
+   */
+  function portFacts(value: unknown): string[] {
+    try {
+      return geometryFacts(value);
+    } catch {
+      // A tooltip must never be the thing that breaks a hover.
+      return [];
+    }
+  }
+
+  function showPortTooltip(e: MouseEvent, portName: string, dataType: string, color: string, portType: 'input' | 'output', value?: unknown) {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 
     // getBoundingClientRect returns viewport coordinates, but since the tooltip
@@ -159,7 +184,8 @@
       color,
       x: containerX,
       y: portType === 'input' ? containerY + offset : containerY - offset,
-      type: portType
+      type: portType,
+      facts: portFacts(value),
     };
   }
   
@@ -371,7 +397,7 @@
                 on:click={(e) => handlePortClick(port.id, 'input', e)}
                 on:mousedown={(e) => handlePortMouseDown(port.id, 'input', e)}
                 on:keydown={(e) => handleKeyDown(port.id, 'input', e)}
-                on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'input')}
+                on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'input', port.value)}
                 on:mouseleave={hidePortTooltip}
                 data-node-id={node.id}
                 data-port-id={port.id}
@@ -391,7 +417,7 @@
                   on:click={(e) => handlePortClick(displayPort.firstPort.id, 'input', e)}
                   on:mousedown={(e) => handlePortMouseDown(displayPort.firstPort.id, 'input', e)}
                   on:keydown={(e) => handleKeyDown(displayPort.firstPort.id, 'input', e)}
-                  on:mouseenter={(e) => showPortTooltip(e, displayPort.baseName, displayPort.firstPort.dataType || 'any', portColor, 'input')}
+                  on:mouseenter={(e) => showPortTooltip(e, displayPort.baseName, displayPort.firstPort.dataType || 'any', portColor, 'input', displayPort.firstPort.value)}
                   on:mouseleave={hidePortTooltip}
                   data-node-id={node.id}
                   data-port-id={displayPort.firstPort.id}
@@ -479,7 +505,7 @@
               on:click={(e) => handlePortClick(port.id, 'output', e)}
               on:mousedown={(e) => handlePortMouseDown(port.id, 'output', e)}
               on:keydown={(e) => handleKeyDown(port.id, 'output', e)}
-              on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'output')}
+              on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'output', port.value)}
               on:mouseleave={hidePortTooltip}
               data-node-id={node.id}
               data-port-id={port.id}
@@ -545,6 +571,9 @@
   >
     <span class="tooltip-name">{tooltip.name}</span>
     <span class="tooltip-type" style="color: {tooltip.color};">{tooltip.dataType}</span>
+    {#each tooltip.facts as fact}
+      <span class="tooltip-fact">{fact}</span>
+    {/each}
   </div>
 {/if}
 
@@ -962,6 +991,14 @@
 
   .tooltip-name {
     font-weight: 500;
+  }
+
+  .tooltip-fact {
+    display: block;
+    font-size: 9px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   .tooltip-type {

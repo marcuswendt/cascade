@@ -34,6 +34,12 @@ export async function executeSvgExport(
     width: props.width,
     height: props.height,
     margin: props.margin,
+    // All-zero means "derive", because a zero-area rectangle is not a frame
+    // anyone would ask for and a separate boolean for it would be a second
+    // way to say the same thing.
+    ...(props.bounds.some((value) => value !== 0)
+      ? { bounds: [props.bounds[0], props.bounds[1], props.bounds[2], props.bounds[3]] as const }
+      : {}),
     // Only when it would show: a fully transparent ground and no ground at all
     // are the same document, and emitting a rect for it would put a shape in
     // the file that a plotter would try to draw.

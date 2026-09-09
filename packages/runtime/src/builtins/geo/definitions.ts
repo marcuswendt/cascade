@@ -127,6 +127,14 @@ export const svgExportDefinition = {
     },
     height: { type: "float", default: 0, min: 0, label: "Height" },
     margin: { type: "float", default: 0, label: "Margin" },
+    /**
+     * An explicit world rectangle, `[minX, minY, maxX, maxY]`, instead of the
+     * geometry's own bounds. All zero derives them as before.
+     *
+     * A frame sequence needs it: derived bounds give every frame its own
+     * viewBox, so a growing drawing appears to zoom out over the animation.
+     */
+    bounds: { type: "vec4", default: [0, 0, 0, 0], label: "Bounds" },
     /** A ground behind the drawing. Fully transparent leaves the document
      *  transparent, which is what plotter work wants. */
     background: {
