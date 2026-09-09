@@ -49,7 +49,22 @@ export function setProjectModuleCompiler(compiler: ProjectModuleCompiler | null)
   moduleCache.clear();
 }
 
-async function importCompiledCode(code: string): Promise<LoadedModule> {
+/**
+ * `source` names what failed, and it is the whole reason this parameter exists.
+ *
+ * The message used to be a bare *"node module has no execute export"* with
+ * nothing identifying it, and MW-OBSERVATORY-ART lost real time to it: a graph
+ * generated into `.cascade-cache/` made `ProjectRoot.from` treat that directory
+ * as the project root, so no node folder resolved, and **every node in the
+ * graph failed with the same anonymous sentence**. It read as a repo full of
+ * broken nodes rather than as one misplaced graph file.
+ *
+ * A module that compiles and exports nothing named `execute` is nearly always
+ * one of two things — a module that is not a node, or a node folder that was
+ * looked for in the wrong root — so the message says both rather than leaving
+ * the reader to guess which.
+ */
+async function importCompiledCode(code: string, source: string): Promise<LoadedModule> {
   // A blob URL is the browser's route and the only one it has. Node defines
   // createObjectURL but its ESM loader refuses the blob: scheme, so testing for
   // the function is not enough — the branch has to be on the environment. Node
@@ -61,7 +76,13 @@ async function importCompiledCode(code: string): Promise<LoadedModule> {
   try {
     const mod = await import(/* @vite-ignore */ url);
     if (typeof mod.execute !== 'function') {
-      throw new Error('node module has no execute export');
+      const exported = Object.keys(mod).filter(name => name !== 'default');
+      throw new Error(
+        `${source} has no execute export`
+        + (exported.length > 0 ? ` (it exports ${exported.join(', ')})` : ' (it exports nothing)')
+        + '. Either the module is not a node, or its folder was resolved against the wrong '
+        + 'project root — a graph file outside the project root takes its own directory as one.',
+      );
     }
     return {
       execute: mod.execute,
@@ -79,10 +100,10 @@ export function loadProjectModule(modulePath: string): Promise<LoadedModule> {
   let cached = moduleCache.get(cacheKey);
   if (!cached) {
     cached = projectCompiler
-      ? projectCompiler(folderName).then(importCompiledCode)
+      ? projectCompiler(folderName).then(code => importCompiledCode(code, modulePath))
       : fetch(`/api/nodes/${encodeURIComponent(folderName)}/compiled`).then(async (res) => {
         if (!res.ok) throw new Error(await res.text());
-        return importCompiledCode(await res.text());
+        return importCompiledCode(await res.text(), modulePath);
       });
     moduleCache.set(cacheKey, cached);
   }
@@ -105,7 +126,7 @@ export function loadEmbeddedModule(code: string): Promise<LoadedModule> {
   let cached = moduleCache.get(cacheKey);
   if (!cached) {
     if (embeddedCompiler) {
-      cached = embeddedCompiler(code).then(importCompiledCode);
+      cached = embeddedCompiler(code).then(compiled => importCompiledCode(compiled, 'this embedded module'));
       moduleCache.set(cacheKey, cached);
       return cached;
     }
@@ -115,7 +136,7 @@ export function loadEmbeddedModule(code: string): Promise<LoadedModule> {
       body: JSON.stringify({ code }),
     }).then(async (res) => {
       if (!res.ok) throw new Error(await res.text());
-      return importCompiledCode(await res.text());
+      return importCompiledCode(await res.text(), 'this embedded module');
     });
     moduleCache.set(cacheKey, cached);
   }

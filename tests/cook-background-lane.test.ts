@@ -259,3 +259,62 @@ describe('a cook signal', () => {
     expect(stateDuringCancel).toBe('cooking');
   });
 });
+
+/**
+ * The trap, as a test rather than as a comment.
+ *
+ * `runBackground`'s doc comment has warned since it was written that mutating
+ * the graph from inside a background task reaches `markStale`, which preempts
+ * the lane — so a task that invalidates the graph cancels itself. **The comment
+ * did not stop its own author walking into it within the hour**, adding a
+ * `background` option to the panel API's `cook()` that routed through
+ * `scheduler.flush` and therefore returned `'preempted'` on every call.
+ *
+ * MW-OBSERVATORY-ART's read of that is the reason this exists: the comment did
+ * not prevent the mistake, but it made the failure recognisable instantly
+ * instead of a debugging session — and **where a trap is mechanically
+ * checkable, it should be a test.** This is that. It asserts the trap rather
+ * than a fix, so it will fail if the preemption is ever weakened, which is the
+ * change that would make the surrounding design quietly wrong.
+ */
+describe('the self-cancellation trap', () => {
+  let graph: Graph;
+
+  beforeEach(() => {
+    graph = new Graph();
+  });
+
+  it('a background task that flushes the interactive queue cancels itself', async () => {
+    const node = new Node('subject', 'Test', graph);
+    graph.addElement(node);
+    node.setFunction(() => {});
+    await graph.execute(node);
+
+    let abortedAfterFlush = false;
+    const outcome = await graph.scheduler.runBackground(async signal => {
+      await graph.scheduler.flush();
+      abortedAfterFlush = signal.aborted;
+    }, { settleMs: 10 });
+
+    expect(abortedAfterFlush).toBe(true);
+    expect(outcome).toBe('preempted');
+  });
+
+  /** And through `markDirty`, which is the same route by a different door and
+   *  the one a series client would actually take: applying a parameter set
+   *  invalidates the graph. */
+  it('a background task that invalidates a node cancels itself', async () => {
+    const node = new Node('subject', 'Test', graph);
+    graph.addElement(node);
+    node.setFunction(() => {});
+    await graph.execute(node);
+
+    let aborted = false;
+    await graph.scheduler.runBackground(async signal => {
+      node.markDirty();
+      aborted = signal.aborted;
+    }, { settleMs: 10 });
+
+    expect(aborted).toBe(true);
+  });
+});
