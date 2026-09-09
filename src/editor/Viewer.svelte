@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { looksLikeSvg, svgDataUrl } from './svgPreview';
   import { onMount, onDestroy } from 'svelte';
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
@@ -195,6 +196,10 @@
           currentViewer = 'image';
         } else if (activeOutputType === 'image' && imagePathFromValue(outputPort.value)) {
           currentViewer = 'image';
+        } else if (looksLikeSvg(outputPort.value)) {
+          // The one string worth looking at rather than reading. Marcus's
+          // screenshot of this node showed nine hundred lines of path data.
+          currentViewer = 'image';
         } else if (GEOMETRY_KINDS.has(activeOutputType) && geometryUrl) {
           // Geometry is shown as an image because that is what it gets drawn
           // to — which gives points and chains the same pan, zoom and Fit as
@@ -293,8 +298,19 @@
    * stipple-points reported seven thousand points and showed nothing at all.
    */
   let geometryUrl: string | null = null;
+  /**
+   * A data URL for an SVG output, or null.
+   *
+   * Derived rather than built in the render path, so the URL exists before the
+   * mode decision reads it — the geometry path had to fall through to the typed
+   * view until its draw finished, and an SVG needs no draw so it should not
+   * inherit that wait.
+   */
+  let svgUrl: string | null = null;
   let geometrySummary = '';
   let geometryKey = '';
+
+  $: svgUrl = looksLikeSvg(activeOutput?.value) ? svgDataUrl(activeOutput.value as string) : null;
 
   // Draw whenever the selected output is geometry. Reactive rather than driven
   // from the render path: the render needs the image to already exist to decide
@@ -337,6 +353,10 @@
     if (!displayNode) return null;
     if (displayNode.preview instanceof HTMLImageElement) return null;
     if (geometryUrl && GEOMETRY_KINDS.has(activeOutputType)) return geometryUrl;
+    // An SVG document is a picture rather than a wall of source. Riding the
+    // image path gives it the same pan, zoom, Fit and 1:1 as every other
+    // stage, which is the same argument geometryRaster makes.
+    if (svgUrl) return svgUrl;
     return findImagePath(displayNode);
   }
 
