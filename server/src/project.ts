@@ -134,8 +134,29 @@ export class ProjectRoot {
     return this.resolve(relativePath);
   }
 
+  /**
+   * Whether this project is under version control, walking **up** rather than
+   * looking only at the root.
+   *
+   * It checked `<root>/.git` alone, which is right for a sketch that is its own
+   * repository and wrong for one inside a repository of sketches — every
+   * example in `cascade-sketches` reported *"not a git repo yet"* while sitting
+   * in a perfectly good repo. Found 2026-09-09 by an agent that mentioned it in
+   * passing while launching a server, which is the sort of aside worth reading.
+   *
+   * A worktree's `.git` is a file rather than a directory, so the test is
+   * existence and not `isDirectory()`. And the walk stops at the filesystem
+   * root, where `dirname` stops changing — a `while (true)` on `dirname` is an
+   * infinite loop on any path that never contains one.
+   */
   get isGitRepo(): boolean {
-    return fssync.existsSync(path.join(this.root, '.git'));
+    let directory = this.root;
+    for (;;) {
+      if (fssync.existsSync(path.join(directory, '.git'))) return true;
+      const parent = path.dirname(directory);
+      if (parent === directory) return false;
+      directory = parent;
+    }
   }
 
   /** Every `*.cascade` file directly in the project root, relative names,
