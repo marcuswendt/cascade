@@ -1039,14 +1039,59 @@ export class Node {
     });
   }
 
-  /** Write a parameter's stored value. The prop object is replaced so a panel
-   *  reading it sees the change; no cook is scheduled here — the callers that
-   *  should (setParameter, updateProp) do it themselves. */
+  /**
+   * Write a parameter's stored value.
+   *
+   * **A written value clears a DEFAULT expression**, which is the rule the rest
+   * of the system already states — *a default expression is a default, and the
+   * author's number wins* — and which this method did not implement. The
+   * asymmetry was real and silent: `parameter.value` reads *resolved*, so
+   * writing 42 over a prop declaring `defaultExpression: '2 * 5'` stored 42 and
+   * then read back 10. A panel doing exactly that (`setParam` then `getParam`)
+   * saw its own write vanish, concluded the write had failed, and re-rendered
+   * every series instance at the value it had just replaced — identical cache
+   * keys, identical output, and nothing thrown or logged. Found by
+   * MW-OBSERVATORY-ART building the series panel.
+   *
+   * An expression the author wrote is a different matter and is NOT cleared
+   * here: it legitimately wins, and deleting it to make a write stick would
+   * destroy work. `setParameter` reports that case instead of hiding it.
+   *
+   * The prop object is replaced so a panel reading it sees the change; no cook
+   * is scheduled here — the callers that should (setParameter, updateProp) do
+   * it themselves.
+   */
   private writeParameterValue(name: string, value: unknown): void {
     const prop = this.props[name];
     if (!prop) return;
-    this.props[name] = { ...prop, value: Array.isArray(value) ? [...value] : value };
+    const next: Prop = { ...prop, value: Array.isArray(value) ? [...value] : value };
+    if (prop.expression && this.defaultExpressionsApplied.has(name)) {
+      delete next.expression;
+      delete next.expressionError;
+      this.plainPropOverrides.add(name);
+    }
+    this.props[name] = next;
     this.props = { ...this.props };
+    this.updateTimeDependent();
+  }
+
+  /**
+   * Why a written value would not be the value read back, or null if it would.
+   *
+   * `parameter.value` resolves a channel first, then an expression, then the
+   * stored value — so a write beneath either of the first two is stored and
+   * then shadowed. That is correct precedence and a terrible silence: the
+   * caller has no way to tell a shadowed write from a failed one, and both
+   * look like the parameter ignoring them.
+   */
+  parameterWriteShadowedBy(name: string): 'channel' | 'expression' | null {
+    const prop = this.props[name];
+    if (!prop) return null;
+    if ((prop.channel?.keys?.length ?? 0) > 0) return 'channel';
+    // A default expression is cleared by the write itself, so it shadows
+    // nothing.
+    if (prop.expression && !this.defaultExpressionsApplied.has(name)) return 'expression';
+    return null;
   }
 
   /**

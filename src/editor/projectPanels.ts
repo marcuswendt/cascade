@@ -67,11 +67,42 @@ export function createProjectPanelApi(options: {
     getParam(nodeId, name) {
       return node(nodeId)?.parameters.find(parameter => parameter.name === name)?.value;
     },
+    getRawParam<T = unknown>(nodeId: string, name: string): T | undefined {
+      return node(nodeId)?.rawParameterValue(name) as T | undefined;
+    },
     setParam(nodeId, name, value) {
       const target = node(nodeId);
       const parameter = target?.parameters.find(candidate => candidate.name === name);
       if (!target || !parameter) throw new Error(`Unknown parameter ${nodeId}.${name}`);
+      // A stored value nobody will ever read is not a successful write. See
+      // `Node.parameterWriteShadowedBy` for what this cost when it was silent.
+      const shadowedBy = target.parameterWriteShadowedBy(name);
+      if (shadowedBy) {
+        throw new Error(
+          `${nodeId}.${name} is driven by a ${shadowedBy}, so writing its value would have no effect. `
+          + `Clear the ${shadowedBy} first.`,
+        );
+      }
       setStudioParameter(target, name, value, options.context()?.onRecordHistory);
+    },
+    getOutput<T = unknown>(nodeId: string, outputName: string): T | undefined {
+      return node(nodeId)?.outputs.find(port => port.name === outputName)?.value as T | undefined;
+    },
+    getOutputs(nodeId) {
+      const target = node(nodeId);
+      if (!target) return Object.freeze({});
+      return Object.freeze(Object.fromEntries(
+        target.outputs.map(port => [port.name, port.value]),
+      ));
+    },
+    async cook(cookOptions = {}) {
+      const graph = options.context()?.graph;
+      if (!graph) return;
+      const entry = cookOptions.nodeId ? graph.getNode(cookOptions.nodeId) : undefined;
+      if (cookOptions.nodeId && !entry) {
+        throw new Error(`Unknown node ${cookOptions.nodeId}`);
+      }
+      await graph.scheduler.flush(entry ?? undefined);
     },
     selectedNodeId() {
       return options.context()?.selectedNode?.id ?? null;
