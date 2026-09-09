@@ -20,6 +20,7 @@ export async function initializeNodeLibraries(): Promise<void> {
   await Promise.all([
     import('./core/index'),
     import('./geo/index'),
+    import('./pop/index'),
     import('./image/index')
   ]);
 

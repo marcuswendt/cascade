@@ -3,6 +3,7 @@
 import { imageLibrary } from '@/nodes/image/library';
 import { coreLibrary } from '@/nodes/core/library';
 import { geoLibrary } from '@/nodes/geo/library';
+import { popLibrary } from '@/nodes/pop/library';
 import type { Library, NodeTemplate } from '@/types/library.types';
 
 // Re-export types for backward compatibility
@@ -32,6 +33,7 @@ export const nodeLibraries: Library[] = [
   annotationsLibrary,
   coreLibrary,
   geoLibrary,
+  popLibrary,
   imageLibrary
 ];
 

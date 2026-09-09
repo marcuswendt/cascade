@@ -126,3 +126,109 @@ describe('a particle graph, cooked headlessly', () => {
     await done();
   });
 });
+
+/**
+ * `Simulate` and its trails — the re-simulating node the plan says to build
+ * first, because *re-simulation from the start frame is the definition of
+ * correctness* and a cache is an accelerator that must hold nothing
+ * re-simulation would not have produced.
+ *
+ * The trails come out of this node rather than a standalone `Trail`, and that
+ * is a consequence of purity rather than a shortcut: a node is a function of
+ * its inputs, so a standalone `Trail` sees one frame and can draw nothing.
+ * Re-simulation has the whole history in hand.
+ */
+describe('re-simulation and trails', () => {
+  const simDocument = (frame: number, over: Record<string, unknown> = {}) => ({
+    version: '0.2',
+    nodes: [
+      {
+        // `radius` is a vec2 and `divisions` is an input — the vector rule
+        // again, since an ellipse is one radius rather than two numbers. Got
+        // this wrong twice; reading the definition beats guessing at it.
+        id: 'shape', module: 'cascade.geo.Circle',
+        inputs: [
+          { name: 'radius', defaultValue: [40, 40], dataType: 'vec2' },
+          { name: 'divisions', defaultValue: 24, dataType: 'int' },
+        ],
+        props: { type: 'polygon' },
+      },
+      {
+        id: 'sim', module: 'cascade.pop.Simulate',
+        inputs: [{ name: 'frame', defaultValue: frame, dataType: 'float' }],
+        props: {
+          impulse: 3, life: 5, lifevar: 0, airresist: 0.2,
+          noise_amplitude: 20, noise_frequency: 0.02, trail_length: 8, ...over,
+        },
+      },
+      { id: 'points', module: 'cascade.core.Output', props: { outputName: 'points' } },
+      { id: 'lines', module: 'cascade.core.Output', props: { outputName: 'trails' } },
+    ],
+    connections: [
+      { source: { nodeId: 'shape', outputName: 'geometry' }, target: { nodeId: 'sim', inputName: 'geometry' } },
+      { source: { nodeId: 'sim', outputName: 'geometry' }, target: { nodeId: 'points', inputName: 'input' } },
+      { source: { nodeId: 'sim', outputName: 'trails' }, target: { nodeId: 'lines', inputName: 'input' } },
+    ],
+  }) as never;
+
+  async function cook(frame: number, over: Record<string, unknown> = {}) {
+    const runtime = createRuntime({
+      host: createNodeRuntimeHost({ modules: { resolve: async () => null } }),
+    });
+    const graph = await runtime.load(simDocument(frame, over));
+    const result = await graph.run();
+    expect(result.status).toBe('completed');
+    const out = {
+      points: graph.getGraphOutput('points') as Geometry,
+      trails: graph.getGraphOutput('trails') as Geometry,
+    };
+    await graph.dispose();
+    await runtime.dispose();
+    return out;
+  }
+
+  it('accumulates particles as the frame advances', async () => {
+    const early = await cook(2);
+    const later = await cook(10);
+    expect(early.points.pointCount).toBe(6);
+    expect(later.points.pointCount).toBe(30);
+  });
+
+  it('draws one polyline per particle that has moved', async () => {
+    const { points, trails } = await cook(10);
+    expect(trails.primitiveCount).toBeGreaterThan(0);
+    // A particle born this frame has one position and no line, so there are
+    // never more trails than particles.
+    expect(trails.primitiveCount).toBeLessThanOrEqual(points.pointCount);
+    // Open polylines, not closed loops. `closed` is a parallel Uint8Array,
+    // one per primitive — deliberately separate from `kinds`, because an open
+    // and a closed polygon are the same kind of thing and every 2D operation
+    // cares about the difference.
+    expect([...trails.topology.closed].every(flag => flag === 0)).toBe(true);
+  });
+
+  it('keeps each trail to the frames the length asks for', async () => {
+    const short = await cook(20, { trail_length: 3 });
+    const long = await cook(20, { trail_length: 12 });
+    expect(long.trails.pointCount).toBeGreaterThan(short.trails.pointCount);
+  });
+
+  /** Trails carry the particle id at the primitive level, so a stroke can
+   *  still be told which particle it belongs to — a trail that loses its id is
+   *  back to being addressed by position in an array. */
+  it('labels each trail with its particle id', async () => {
+    const { trails } = await cook(10);
+    expect(trails.primitive.id).toBeDefined();
+    expect(trails.primitive.id!.size).toBe(1);
+  });
+
+  /** The property the whole design rests on, through the graph this time
+   *  rather than through the arithmetic. */
+  it('cooks the same frame identically twice', async () => {
+    const first = await cook(15);
+    const second = await cook(15);
+    expect([...(first.points.point.P!.data as any)])
+      .toEqual([...(second.points.point.P!.data as any)]);
+    expect(first.trails.pointCount).toBe(second.trails.pointCount);
+  });
+});
