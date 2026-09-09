@@ -19,6 +19,10 @@ export async function initializeNodeLibraries(): Promise<void> {
   // Dynamically import all libraries - this triggers their registration
   await Promise.all([
     import('./core/index'),
+    // The `cascade.core.*` nodes authored as definition-v1 — Camera, Time,
+    // Feedback, Previous. Separate from `core/index` because that file pulls
+    // each class's source in with Vite's `?raw` and these have no class.
+    import('./core/definitions'),
     import('./geo/index'),
     import('./pop/index'),
     import('./image/index')

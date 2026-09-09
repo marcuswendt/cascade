@@ -98,7 +98,22 @@ export function getNodeSource(type: string): string | null {
  * Called by library modules during initialization
  */
 export function registerNodeClasses(libraryId: string, classes: Record<string, NodeClass>): void {
-  nodeClassRegistries.set(libraryId, classes);
+  /**
+   * Merged, not replaced — and that used to be a `set`.
+   *
+   * `cascade.core` is registered from two places: `src/nodes/core/index.ts`
+   * ships the hand-written classes, and the definition-v1 adapter ships the
+   * ones authored as definitions. Replacing meant whichever ran last erased the
+   * other, and the failure was invisible until a graph used one of the losers:
+   * Marcus, 2026-09-09, *"Failed to load default graph: Unknown Cascade node
+   * type: cascade.core.Time"*.
+   *
+   * `cascade.core.Camera` had the same fault since the day it was written and
+   * nothing noticed, because no saved graph had used it in Studio yet — a node
+   * that exists, typechecks, has tests and cannot be loaded.
+   */
+  const existing = nodeClassRegistries.get(libraryId);
+  nodeClassRegistries.set(libraryId, existing ? { ...existing, ...classes } : classes);
 }
 
 /**
