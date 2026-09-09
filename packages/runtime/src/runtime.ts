@@ -1462,6 +1462,17 @@ class Graph implements LoadedCascadeGraph {
         `${node.id} has no cascade.core.Output inside it, so a step has no result to carry. Add one and wire the step's result into it.`,
       );
 
+    /**
+     * How many step results to keep for the `history` output.
+     *
+     * Zero by default and read once, before the loop: a simulation that
+     * quietly held every frame of its own geometry would be the difference
+     * between a preview and a tab that runs out of memory, so keeping history
+     * is something a graph asks for and bounds.
+     */
+    const keep = Math.max(0, integerProp(node.props.history));
+    const history: unknown[] = [];
+
     // Zero steps is the initial state, not a failure: frame zero of a
     // simulation is where it starts, and a graph that throws at the beginning
     // of the timeline is unusable.
@@ -1475,7 +1486,16 @@ class Graph implements LoadedCascadeGraph {
       }
       if (signal.aborted) break;
       carried = sink!.outputs.get("output");
+      if (keep > 0) {
+        history.push(carried);
+        // Trimmed inside the loop rather than after it, so the peak memory is
+        // the cap and not the step count. Trimming afterwards would keep every
+        // frame first and then throw most of them away, which is the version
+        // that runs out of memory on the graph that needed the cap.
+        if (history.length > keep) history.shift();
+      }
     }
+    node.outputs.set("history", Object.freeze(history));
     /**
      * Hygiene, and honestly labelled as such: no test can observe this, because
      * every `Previous` inside a container is excluded from the main order and

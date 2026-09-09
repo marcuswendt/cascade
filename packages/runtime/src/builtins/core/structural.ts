@@ -118,8 +118,44 @@ const feedbackDefinition = {
       type: "any",
       description: "The last step's result, or `initial` when steps is zero.",
     },
+    /**
+     * Every kept step, oldest first.
+     *
+     * This exists because **a trail needs the history, not the final state**,
+     * and nothing outside the loop could reconstruct it: a downstream node sees
+     * one frame, which draws nothing. Houdini's Trail SOP has the same
+     * requirement and solves it the same way, by being given the frames.
+     *
+     * Empty unless `history` is non-zero, because the alternative is a
+     * simulation that quietly holds 120 copies of its own geometry — and at
+     * a few thousand particles that is the difference between a preview and a
+     * tab that runs out of memory.
+     */
+    history: {
+      kind: "data",
+      type: "array",
+      description: "The kept step results, oldest first. Empty unless History is set.",
+    },
   },
-  props: {},
+  props: {
+    /**
+     * How many step results to keep, newest-biased: `0` keeps none, `N` keeps
+     * the last `N`.
+     *
+     * A prop rather than an input because it is structural — how much memory
+     * this loop is allowed — rather than something to animate. It is also a
+     * cap rather than a flag on purpose: "keep everything" is not offered,
+     * because the honest version of that is a number somebody chose.
+     */
+    history: {
+      type: "int",
+      default: 0,
+      min: 0,
+      max: 100000,
+      label: "History",
+      description: "Keep the last N step results on the history output. 0 keeps none.",
+    },
+  },
 } as const;
 
 /**

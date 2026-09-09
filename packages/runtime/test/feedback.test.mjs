@@ -303,3 +303,65 @@ test("nested feedback: an inner loop runs to completion inside each outer step",
   await graph.run();
   assert.equal(graph.getOutput("outer", "result"), 6);
 });
+
+test("history is empty unless asked for", async () => {
+  // The default has to be empty. A loop that quietly held every step of its own
+  // geometry is the difference between a preview and a tab that runs out of
+  // memory, and nothing in the graph would say so.
+  const graph = await runCounter({ steps: 5, initial: 0 });
+  assert.deepEqual(graph.getOutput("loop", "history"), []);
+});
+
+test("history keeps the last N steps, oldest first", async () => {
+  runCounts.clear();
+  const runtime = createRuntime({ host: host() });
+  const graph = await runtime.load(
+    document(
+      [
+        {
+          id: "loop",
+          module: "cascade.core.Feedback",
+          inputs: { initial: 0, steps: 6 },
+          props: { history: 3 },
+        },
+        { id: "prev", module: "cascade.core.Previous", parent: "loop" },
+        { id: "body", module: "project.Add", parent: "loop", inputs: { by: 1 } },
+        { id: "out", module: "cascade.core.Output", parent: "loop", props: { outputIndex: 0 } },
+      ],
+      [
+        [["prev", 0, "value"], ["body", 0, "value"]],
+        [["body", 0, "value"], ["out", 0, "input"]],
+      ],
+    ),
+  );
+  await graph.run();
+  // Six steps of +1; the last three results are 4, 5, 6, oldest first.
+  assert.deepEqual(graph.getOutput("loop", "history"), [4, 5, 6]);
+  assert.equal(graph.getOutput("loop", "result"), 6);
+});
+
+test("a history shorter than the cap holds every step", async () => {
+  runCounts.clear();
+  const runtime = createRuntime({ host: host() });
+  const graph = await runtime.load(
+    document(
+      [
+        {
+          id: "loop",
+          module: "cascade.core.Feedback",
+          inputs: { initial: 0, steps: 2 },
+          props: { history: 10 },
+        },
+        { id: "prev", module: "cascade.core.Previous", parent: "loop" },
+        { id: "body", module: "project.Add", parent: "loop", inputs: { by: 1 } },
+        { id: "out", module: "cascade.core.Output", parent: "loop", props: { outputIndex: 0 } },
+      ],
+      [
+        [["prev", 0, "value"], ["body", 0, "value"]],
+        [["body", 0, "value"], ["out", 0, "input"]],
+      ],
+    ),
+  );
+  await graph.run();
+  assert.deepEqual(graph.getOutput("loop", "history"), [1, 2]);
+});
