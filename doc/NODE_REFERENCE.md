@@ -359,6 +359,7 @@ Runs on `portable`.
 | `width` | `float` | `0` |  |
 | `height` | `float` | `0` |  |
 | `margin` | `float` | `0` |  |
+| `background` | `color` | `[0,0,0,0]` |  |
 | `stroke` | `color` | `[0,0,0,1]` |  |
 | `strokeWidth` | `float` | `1` |  |
 | `opacity` | `float` | `1` | 0…1 |
@@ -487,6 +488,9 @@ Runs on `portable`.
 | `field_level` | `float` | `0.35` | 0…1 |
 | `field_hold` | `float` | `0` | 0…40000 |
 | `birth_area` | `vec4` | `[0,0,0,0]` |  |
+| `birth_hue` | `vec2` | `[0,0]` | 0…1 |
+| `birth_saturation` | `float` | `0.6` | 0…1 |
+| `birth_value` | `float` | `1` | 0…1 |
 | `attract_amplitude` | `float` | `0` | 0…20000 |
 | `attract_radius` | `float` | `60` | 0…5000 |
 | `separate_radius` | `float` | `0` | 0…500 |

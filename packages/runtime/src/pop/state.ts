@@ -66,6 +66,15 @@ export class ParticleState {
   readonly age: Float32Array;
   readonly life: Float32Array;
   readonly id: Int32Array;
+  /**
+   * `Cd`, four components, or null for a system with no colour.
+   *
+   * Null rather than a default white array, because the absence is meaningful:
+   * `SvgExport` and every other consumer falls back to its own stroke prop
+   * when a primitive carries no `Cd`, and filling one in here would take that
+   * choice away from the graph.
+   */
+  readonly colour: Float32Array | null;
   nextId: number;
 
   /**
@@ -80,14 +89,16 @@ export class ParticleState {
    */
   static of(fields: {
     count: number; size: number; position: Float64Array; velocity: Float32Array;
-    age: Float32Array; life: Float32Array; id: Int32Array; nextId: number;
+    age: Float32Array; life: Float32Array; id: Int32Array;
+    colour?: Float32Array | null; nextId: number;
   }): ParticleState {
     return new ParticleState(fields);
   }
 
   private constructor(fields: {
     count: number; size: number; position: Float64Array; velocity: Float32Array;
-    age: Float32Array; life: Float32Array; id: Int32Array; nextId: number;
+    age: Float32Array; life: Float32Array; id: Int32Array;
+    colour?: Float32Array | null; nextId: number;
   }) {
     this.count = fields.count;
     this.size = fields.size;
@@ -96,6 +107,7 @@ export class ParticleState {
     this.age = fields.age;
     this.life = fields.life;
     this.id = fields.id;
+    this.colour = fields.colour ?? null;
     this.nextId = fields.nextId;
   }
 
@@ -105,6 +117,7 @@ export class ParticleState {
       count: 0, size,
       position: new Float64Array(0), velocity: new Float32Array(0),
       age: new Float32Array(0), life: new Float32Array(0), id: new Int32Array(0),
+      colour: null,
       nextId: 0,
     });
   }
@@ -134,6 +147,9 @@ export class ParticleState {
       age: Float32Array.from(geometry.point.age!.data as ArrayLike<number>),
       life: Float32Array.from(geometry.point.life!.data as ArrayLike<number>),
       id: Int32Array.from(geometry.point.id!.data as ArrayLike<number>),
+      colour: geometry.point.Cd && geometry.point.Cd.storage !== "string"
+        ? Float32Array.from(geometry.point.Cd.data as ArrayLike<number>)
+        : null,
       nextId: Number(geometry.detail.nextid ?? geometry.pointCount),
     });
   }
@@ -152,6 +168,9 @@ export class ParticleState {
     builder.setAttribute("point", "age", { storage: "f32", size: 1, data: this.age });
     builder.setAttribute("point", "life", { storage: "f32", size: 1, data: this.life });
     builder.setAttribute("point", "id", { storage: "i32", size: 1, data: this.id });
+    if (this.colour) {
+      builder.setAttribute("point", "Cd", { storage: "f32", size: 4, data: this.colour });
+    }
     builder.setDetail("nextid", this.nextId);
     return builder.build();
   }
@@ -162,6 +181,10 @@ export class ParticleState {
     readonly position: ArrayLike<number>;
     readonly velocity?: ArrayLike<number>;
     readonly life: ArrayLike<number>;
+    /** `Cd` per new particle, four components. Once any particle has a colour
+     *  the whole system carries the attribute, so the ones born before it get
+     *  opaque white rather than the array being ragged. */
+    readonly colour?: ArrayLike<number>;
   }): ParticleState {
     const added = points.life.length;
     if (added === 0) return this;
@@ -171,6 +194,15 @@ export class ParticleState {
     const age = new Float32Array(count);
     const life = new Float32Array(count);
     const id = new Int32Array(count);
+    const wantsColour = this.colour !== null || points.colour !== undefined;
+    const colour = wantsColour ? new Float32Array(count * 4) : null;
+    if (colour) {
+      // White for anything already present without a colour: a ragged
+      // attribute is not representable, and white is what a fallback stroke
+      // multiplies to itself.
+      colour.fill(1, 0, this.count * 4);
+      if (this.colour) colour.set(this.colour);
+    }
 
     position.set(this.position);
     velocity.set(this.velocity);
@@ -185,13 +217,20 @@ export class ParticleState {
         velocity[at * this.size + component] = points.velocity?.[index * this.size + component] ?? 0;
       }
       life[at] = points.life[index]!;
+      if (colour) {
+        for (let channel = 0; channel < 4; channel += 1) {
+          colour[at * 4 + channel] = points.colour
+            ? Number(points.colour[index * 4 + channel] ?? 1)
+            : 1;
+        }
+      }
       // Monotonic, and never reused: a trail keyed on an id that came back
       // would join two unrelated particles into one stroke.
       id[at] = this.nextId + index;
     }
 
     return ParticleState.of({
-      count, size: this.size, position, velocity, age, life, id,
+      count, size: this.size, position, velocity, age, life, id, colour,
       nextId: this.nextId + added,
     });
   }
@@ -262,6 +301,7 @@ export function step(
   return kill(ParticleState.of({
     count, size: state.size, position, velocity, age,
     life: Float32Array.from(state.life), id: Int32Array.from(state.id),
+    colour: state.colour ? Float32Array.from(state.colour) : null,
     nextId: state.nextId,
   }));
 }
@@ -299,6 +339,7 @@ export function select(state: ParticleState, indices: readonly number[]): Partic
   const age = new Float32Array(count);
   const life = new Float32Array(count);
   const id = new Int32Array(count);
+  const colour = state.colour ? new Float32Array(count * 4) : null;
 
   indices.forEach((from, to) => {
     for (let component = 0; component < size; component += 1) {
@@ -308,10 +349,15 @@ export function select(state: ParticleState, indices: readonly number[]): Partic
     age[to] = state.age[from]!;
     life[to] = state.life[from]!;
     id[to] = state.id[from]!;
+    if (colour && state.colour) {
+      for (let channel = 0; channel < 4; channel += 1) {
+        colour[to * 4 + channel] = state.colour[from * 4 + channel]!;
+      }
+    }
   });
 
   return ParticleState.of({
-    count, size, position, velocity, age, life, id, nextId: state.nextId,
+    count, size, position, velocity, age, life, id, colour, nextId: state.nextId,
   });
 }
 

@@ -124,6 +124,38 @@ export function buildTrails(
     // particle a stroke belongs to — a trail that loses its id is back to
     // being addressed by position in an array.
     builder.setNumericAttribute("primitive", "id", Int32Array.from(trailIds), 1, "i32");
+
+    /**
+     * And its colour, looked up by id rather than by index.
+     *
+     * `SvgExport` reads a primitive's `Cd` and falls back to its own stroke
+     * prop without one, so promoting the particle's colour to the stroke is
+     * what makes a per-particle colour visible at all. Looked up in `current`
+     * by id because a trail's history may include a particle that has since
+     * died: that stroke gets white and the export's fallback applies, which is
+     * better than a wrong colour and better than dropping the stroke.
+     */
+    const currentColour = current.point.Cd;
+    if (currentColour && currentColour.storage !== "string") {
+      const byId = new Map<number, number>();
+      const ids = current.point.id?.data as ArrayLike<number> | undefined;
+      if (ids) {
+        for (let index = 0; index < current.pointCount; index += 1) {
+          byId.set(Number(ids[index]), index);
+        }
+      }
+      const source = currentColour.data as ArrayLike<number>;
+      const colours = new Float32Array(trailIds.length * 4);
+      colours.fill(1);
+      trailIds.forEach((id, primitive) => {
+        const at = byId.get(id);
+        if (at === undefined) return;
+        for (let channel = 0; channel < 4; channel += 1) {
+          colours[primitive * 4 + channel] = Number(source[at * 4 + channel] ?? 1);
+        }
+      });
+      builder.setNumericAttribute("primitive", "Cd", colours, 4, "f32");
+    }
   }
   void size;
   return builder.build();

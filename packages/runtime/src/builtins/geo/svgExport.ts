@@ -34,6 +34,10 @@ export async function executeSvgExport(
     width: props.width,
     height: props.height,
     margin: props.margin,
+    // Only when it would show: a fully transparent ground and no ground at all
+    // are the same document, and emitting a rect for it would put a shape in
+    // the file that a plotter would try to draw.
+    ...(props.background[3] > 0 ? { background: props.background } : {}),
     stroke: props.stroke,
     strokeWidth: props.strokeWidth,
     opacity: props.opacity,

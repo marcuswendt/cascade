@@ -127,6 +127,14 @@ export const svgExportDefinition = {
     },
     height: { type: "float", default: 0, min: 0, label: "Height" },
     margin: { type: "float", default: 0, label: "Margin" },
+    /** A ground behind the drawing. Fully transparent leaves the document
+     *  transparent, which is what plotter work wants. */
+    background: {
+      type: "color",
+      default: [0, 0, 0, 0],
+      label: "Background",
+      description: "A ground behind the drawing. Transparent by default, because a plotter wants paper.",
+    },
     stroke: {
       type: "color",
       default: [0, 0, 0, 1],

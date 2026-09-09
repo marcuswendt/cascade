@@ -76,6 +76,19 @@ export interface SvgExportOptions {
   readonly height?: number;
   /** Added around the derived bounds, in geometry units. */
   readonly margin?: number;
+  /**
+   * A ground behind the drawing, or absent for a transparent document.
+   *
+   * Absent by default, because plotter work wants paper and a filled rectangle
+   * is a rectangle a pen would draw. It exists for the other case: a piece
+   * framed on screen has a ground, and every preview of one was otherwise
+   * hand-editing a `<rect>` into the file afterwards — which is the sort of
+   * step that says a prop is missing.
+   *
+   * Emitted at the viewBox rather than at the document size, so it fills the
+   * frame however the drawing is fitted inside it.
+   */
+  readonly background?: Color;
   /** Fallback stroke colour for a primitive with no `Cd`. */
   readonly stroke?: Color;
   /** Fallback stroke width for a primitive with no `width`. */
@@ -224,6 +237,12 @@ export function geometryToSvg(
 
   const root: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${number(width)}" height="${number(height)}" viewBox="${number(minX)} ${number(-maxY)} ${number(spanX)} ${number(spanY)}">`,
+    ...(options.background
+      ? [indent(
+          `<rect x="${number(minX)}" y="${number(-maxY)}" width="${number(spanX)}" height="${number(spanY)}" fill="${Color.toHex(options.background)}" />`,
+          1,
+        )]
+      : []),
     indent("<!-- Geometry is +Y up; SVG is +Y down. This is the one flip. -->", 1),
     indent(
       `<g transform="scale(1,-1)" fill="${

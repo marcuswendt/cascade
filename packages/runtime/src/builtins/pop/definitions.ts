@@ -51,6 +51,24 @@ const sourceDefinition = {
   },
 } as const satisfies NodeDefinition;
 
+/** HSV in, RGB out. Written here rather than imported because a colour
+ *  conversion is four lines and an import across package boundaries for four
+ *  lines is worse. */
+function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
+  const turn = ((h % 1) + 1) % 1;
+  const sector = turn * 6;
+  const c = v * s;
+  const x = c * (1 - Math.abs((sector % 2) - 1));
+  const m = v - c;
+  const rgb: [number, number, number] =
+    sector < 1 ? [c, x, 0] :
+    sector < 2 ? [x, c, 0] :
+    sector < 3 ? [0, c, x] :
+    sector < 4 ? [0, x, c] :
+    sector < 5 ? [x, 0, c] : [c, 0, x];
+  return [rgb[0] + m, rgb[1] + m, rgb[2] + m];
+}
+
 /** A hash rather than a stream, so a birth is a pure function of `(seed, id)`
  *  and re-simulating reproduces the same particles. */
 function birthRandom(seed: number, sample: number): number {
@@ -355,6 +373,20 @@ const simulateDefinition = {
      * nothing travels and the field has nothing to reveal.
      */
     birth_area: { type: "vec4", default: [0, 0, 0, 0] },
+    /**
+     * A colour per particle, drawn at birth and fixed for its life.
+     *
+     * Hashed on the id, so the same particle gets the same colour however many
+     * times the frame is re-simulated — a colour drawn from a stream would
+     * change on every scrub, which reads as the render being unstable.
+     *
+     * `[from, to]` in turns around the wheel. Equal values give one hue; a
+     * narrow span is usually what a piece wants, because a full-spectrum
+     * random set reads as a test pattern rather than as a palette.
+     */
+    birth_hue: { type: "vec2", default: [0, 0], min: 0, max: 1, step: 0.01 },
+    birth_saturation: { type: "float", default: 0.6, min: 0, max: 1, step: 0.01 },
+    birth_value: { type: "float", default: 1, min: 0, max: 1, step: 0.01 },
     /** How hard the targets pull. Houdini's POP Attract strength. */
     attract_amplitude: { type: "float", default: 0, min: 0, max: 20000, step: 1 },
     /** Beyond this distance a target is ignored, which is what keeps the pull
@@ -402,6 +434,12 @@ export function executeSimulate(
       const born = scatter ? props.impulse : Math.min(props.impulse, available);
       const position = new Float64Array(born * 2);
       const life = new Float32Array(born);
+      // Only when a span is asked for: an all-white `Cd` would still be a `Cd`,
+      // and it would override the export's own stroke colour with white.
+      const colours = props.birth_hue[0] !== props.birth_hue[1]
+        || props.birth_saturation !== 0
+        ? new Float32Array(born * 4)
+        : null;
       for (let index = 0; index < born; index += 1) {
         const id = state.nextId + index;
         if (scatter) {
@@ -422,8 +460,20 @@ export function executeSimulate(
         }
         const jitter = birthRandom(props.seed, id);
         life[index] = props.life * (1 - props.lifevar * jitter);
+        if (colours) {
+          // A third hash sample, distinct from the two the scatter uses and
+          // the one the life uses: drawing twice from the same sample would
+          // correlate a particle's colour with where it was born.
+          const hue = props.birth_hue[0]!
+            + birthRandom(props.seed, id * 4 + 3) * (props.birth_hue[1]! - props.birth_hue[0]!);
+          const [r, g, b] = hsvToRgb(hue, props.birth_saturation, props.birth_value);
+          colours[index * 4] = r;
+          colours[index * 4 + 1] = g;
+          colours[index * 4 + 2] = b;
+          colours[index * 4 + 3] = 1;
+        }
       }
-      state = state.born({ position, life });
+      state = state.born({ position, life, ...(colours ? { colour: colours } : {}) });
     }
 
     const forces: ParticleForce[] = [];
