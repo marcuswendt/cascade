@@ -10,6 +10,23 @@ export interface CookStatus {
   currentNode: Node | null;
   startedAt: number | null;
   elapsed: number;
+  /**
+   * Which pass of this run the scheduler is on, from 1.
+   *
+   * `run()` loops while `rerunRequested`, which is set both by a flush arriving
+   * mid-run and by a node going stale during its own cook. So under sustained
+   * invalidation the loop does not exit and `phase` stays `cooking`
+   * indefinitely — measured 2026-09-09 by MW-OBSERVATORY-ART as a cook that sat
+   * in `cooking` for over sixty seconds while the graph re-invalidated at exact
+   * eight-second intervals.
+   *
+   * That is not a hang and there is no missing timeout: `Node.executionTimeout`
+   * is 30 s and every individual node completed. It is roughly fifteen
+   * successive passes, and `elapsed` resets on each one — so from the outside a
+   * livelock and one slow cook produce the same reading. This is the number
+   * that separates them, which is the whole reason it exists.
+   */
+  pass: number;
 }
 
 type CookListener = (status: Readonly<CookStatus>) => void;
@@ -26,6 +43,7 @@ export class CookScheduler {
   private idleResolvers = new Set<() => void>();
   private _status: CookStatus = {
     phase: 'idle',
+    pass: 0,
     total: 0,
     completed: 0,
     currentNode: null,
@@ -90,7 +108,7 @@ export class CookScheduler {
     }
     if (this.timer) clearTimeout(this.timer);
     const total = this.graph.nodes.filter(node => node.cookState === 'stale' || node.cookState === 'queued').length;
-    this.setStatus({ phase: 'scheduled', total, completed: 0, currentNode: null, startedAt: null, elapsed: 0 });
+    this.setStatus({ phase: 'scheduled', total, completed: 0, currentNode: null, pass: 0, startedAt: null, elapsed: 0 });
     this.timer = setTimeout(() => {
       this.timer = null;
       void this.flushScheduled();
@@ -148,6 +166,7 @@ export class CookScheduler {
 
   private async run(entryNode?: Node): Promise<void> {
     let restrictTo = entryNode ? this.collectDownstream(entryNode) : null;
+    let pass = 0;
 
     do {
       this.rerunRequested = false;
@@ -167,11 +186,13 @@ export class CookScheduler {
 
       for (const node of ordered) node.setCookState('queued');
       const startedAt = performance.now();
+      pass += 1;
       this.setStatus({
         phase: 'cooking',
         total: ordered.length,
         completed: 0,
         currentNode: null,
+        pass,
         startedAt,
         elapsed: 0
       });
@@ -213,7 +234,7 @@ export class CookScheduler {
       if (superseded) this.rerunRequested = true;
     } while (this.rerunRequested);
 
-    this.setStatus({ phase: 'idle', total: 0, completed: 0, currentNode: null, startedAt: null, elapsed: 0 });
+    this.setStatus({ phase: 'idle', total: 0, completed: 0, currentNode: null, pass: 0, startedAt: null, elapsed: 0 });
     for (const resolve of this.idleResolvers) resolve();
     this.idleResolvers.clear();
   }

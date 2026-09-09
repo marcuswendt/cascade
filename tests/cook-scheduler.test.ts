@@ -296,3 +296,77 @@ describe('CookScheduler', () => {
     expect(unrelatedCook).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * A run that keeps restarting is not the same thing as a run that is slow, and
+ * from the outside they read identically.
+ *
+ * Measured 2026-09-09 by MW-OBSERVATORY-ART: a cook sat in `cooking` for over
+ * sixty seconds while the graph re-invalidated at exact eight-second intervals.
+ * That was reported as a cook with no timeout — but `Node.executionTimeout` is
+ * 30 s and every individual node completed. `run()` loops while
+ * `rerunRequested`, which a mid-run flush sets, so under sustained invalidation
+ * the loop simply never exits. Roughly fifteen successive passes, with
+ * `elapsed` resetting on each one, so nothing in the status said so.
+ *
+ * `pass` is what separates the two, and it matters beyond the diagnosis: the
+ * series scheduler needs to start background work only once the graph is
+ * genuinely idle, and a status that cannot tell a livelock from a long cook
+ * cannot answer that.
+ */
+describe('the cook status under repeated invalidation', () => {
+  let graph: Graph;
+
+  beforeEach(() => {
+    vi.useRealTimers();
+    graph = new Graph();
+  });
+
+  it('counts each pass, so many restarts do not read as one long cook', async () => {
+    const node = new Node('subject', 'Test', graph);
+    graph.addElement(node);
+
+    const passes: number[] = [];
+    graph.scheduler.subscribe(status => {
+      if (status.phase === 'cooking') passes.push(status.pass);
+    });
+
+    // Three cooks, each invalidating during the previous one's execute — the
+    // shape of an external invalidation source arriving mid-run.
+    let cooks = 0;
+    node.setFunction(() => {
+      cooks += 1;
+      if (cooks < 3) node.markDirty();
+    });
+
+    await graph.execute(node);
+
+    expect(cooks).toBe(3);
+    // Not one pass reported three times: three passes.
+    expect(Math.max(...passes)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('reports pass 1 for an ordinary single cook', async () => {
+    const node = new Node('subject', 'Test', graph);
+    graph.addElement(node);
+    node.setFunction(() => {});
+
+    const passes: number[] = [];
+    graph.scheduler.subscribe(status => {
+      if (status.phase === 'cooking') passes.push(status.pass);
+    });
+
+    await graph.execute(node);
+    expect(Math.max(...passes)).toBe(1);
+  });
+
+  it('returns to pass 0 when the graph goes idle', async () => {
+    const node = new Node('subject', 'Test', graph);
+    graph.addElement(node);
+    node.setFunction(() => {});
+
+    await graph.execute(node);
+    expect(graph.scheduler.status.phase).toBe('idle');
+    expect(graph.scheduler.status.pass).toBe(0);
+  });
+});

@@ -88,6 +88,7 @@
   let unsubscribeCookStatus: (() => void) | undefined;
   let cookStatus: Readonly<CookStatus> = {
     phase: 'idle',
+    pass: 0,
     total: 0,
     completed: 0,
     currentNode: null,
@@ -112,6 +113,7 @@
     if (graph) cascade.setGraph(graph);
     cookStatus = graph?.scheduler.status ?? {
       phase: 'idle',
+      pass: 0,
       total: 0,
       completed: 0,
       currentNode: null,
