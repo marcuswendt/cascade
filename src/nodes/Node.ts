@@ -301,6 +301,51 @@ export class Node {
 
   // Path system - hierarchical node organization
   parent: Node | null = null;
+
+  /**
+   * Child parameters this node shows as its own — Houdini's promoted
+   * parameters.
+   *
+   * Marcus, 2026-09-09, on where a force's settings should live: *"keep the
+   * force settings on the inside, but allow to promote parameters to the level
+   * above with 1 click."*
+   *
+   * **This is presentation, not state.** The value stays on the child and there
+   * is exactly one of it; the container only says which ones to show. The
+   * alternative — a real parameter on the container that writes through — would
+   * be a second copy of the value, a resolution order between the two, and a
+   * way for them to disagree. Props already carry a value, an expression and a
+   * channel with an order between them; doing it again for promotion is the
+   * mistake this avoids.
+   *
+   * Which is also why the runtime ignores this field entirely. Nothing about a
+   * cook changes when a parameter is promoted, so a headless render and a
+   * Studio session cannot diverge over it.
+   */
+  promotions: Array<{ nodeId: string; param: string; label?: string }> = [];
+
+  /** Is this child parameter shown on the parent? */
+  isPromotedToParent(param: string): boolean {
+    return (this.parent?.promotions ?? []).some(
+      entry => entry.nodeId === this.id && entry.param === param,
+    );
+  }
+
+  /**
+   * One click, both directions.
+   *
+   * A no-op without a parent rather than an error: the button is only rendered
+   * for a child, and a guard that throws would turn a stale UI into a crash.
+   */
+  setPromotedToParent(param: string, promoted: boolean): void {
+    const parent = this.parent;
+    if (!parent) return;
+    const index = parent.promotions.findIndex(
+      entry => entry.nodeId === this.id && entry.param === param,
+    );
+    if (promoted && index < 0) parent.promotions.push({ nodeId: this.id, param });
+    else if (!promoted && index >= 0) parent.promotions.splice(index, 1);
+  }
   protected _children: Node[] = [];
 
   // Execution state

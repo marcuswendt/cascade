@@ -90,18 +90,24 @@
    * Session-scoped: it is a working preference, not something to write into the
    * graph file.
    */
-  const sectionState = new Map<string, { inputs: boolean; params: boolean; outputs: boolean }>();
+  const sectionState = new Map<
+    string,
+    { inputs: boolean; params: boolean; promoted: boolean; outputs: boolean }
+  >();
   let sectionVersion = 0;
 
   function sectionsFor(id: string) {
     // Parameters open by default: they are the node's controls, and the reason
     // to select a node is usually to change one. Pins stay shut — they are
     // structure, and the graph already shows them.
-    if (!sectionState.has(id)) sectionState.set(id, { inputs: false, params: true, outputs: false });
+    // Promoted opens with Parameters: on a container these are the controls you
+    // came for — the forces inside a Feedback, not its step count.
+    if (!sectionState.has(id))
+      sectionState.set(id, { inputs: false, params: true, promoted: true, outputs: false });
     return sectionState.get(id)!;
   }
 
-  function toggleSection(id: string, which: 'inputs' | 'params' | 'outputs') {
+  function toggleSection(id: string, which: 'inputs' | 'params' | 'promoted' | 'outputs') {
     const state = sectionsFor(id);
     state[which] = !state[which];
     sectionVersion += 1;
@@ -109,7 +115,9 @@
 
   function currentSections(version: number) {
     void version;
-    return node ? sectionsFor(node.id) : { inputs: false, params: true, outputs: false };
+    return node
+      ? sectionsFor(node.id)
+      : { inputs: false, params: true, promoted: true, outputs: false };
   }
 
   $: openSections = currentSections(sectionVersion);
@@ -264,6 +272,66 @@
     node.setParameterPromoted(parameter.name, !parameter.promoted);
     if (graph) graph.elements = [...graph.elements];
     sectionVersion += 1;
+    portsVersion += 1;
+  }
+
+  /**
+   * Show this child parameter on its container, or stop showing it.
+   *
+   * Marcus's ask, 2026-09-09: *"keep the force settings on the inside, but
+   * allow to promote parameters to the level above with 1 click."* Distinct
+   * from `togglePromoted` above, which turns a parameter into an input PIN on
+   * the same node — two different meanings of "promote", and Houdini uses the
+   * word for this one.
+   *
+   * The value does not move. The container is told to display it, and edits
+   * there write straight back to this parameter, so there is one value and no
+   * order to resolve between two copies of it.
+   */
+  function toggleParentPromotion(parameter: any) {
+    if (!node?.parent) return;
+    maybeRecordHistory();
+    node.setPromotedToParent(parameter.name, !node.isPromotedToParent(parameter.name));
+    if (graph) graph.elements = [...graph.elements];
+    sectionVersion += 1;
+    portsVersion += 1;
+  }
+
+  /**
+   * The child parameters this container is showing, resolved to live objects.
+   *
+   * A promotion naming a child that no longer exists is skipped rather than
+   * rendered as a blank row: deleting a node inside a container should not
+   * leave a broken control on the outside of it.
+   */
+  function promotedParameters(_version: number) {
+    if (!node?.promotions?.length || !graph) return [] as any[];
+    return node.promotions
+      .map(entry => {
+        const child = graph.elements.find((element: any) => element?.id === entry.nodeId);
+        const parameter = (child as any)?.parameters?.find((p: any) => p.name === entry.param);
+        return parameter ? { child, parameter, label: entry.label } : null;
+      })
+      .filter(Boolean) as any[];
+  }
+
+  $: promoted = promotedParameters(portsVersion);
+
+  /**
+   * A promoted edit goes to the child, through the same path the child's own
+   * Inspector row uses.
+   *
+   * `handleParamChange` is bound to the selected node, and the selected node
+   * here is the container — so this calls the child's writer directly rather
+   * than reusing it. Writing to the container instead is the bug this shape
+   * prevents: the value would land somewhere nothing reads.
+   */
+  function promotedChange(entry: any, value: unknown) {
+    maybeRecordHistory();
+    entry.child.writeParameterValue?.(entry.parameter.name, value)
+      ?? (entry.parameter.value = value);
+    entry.child.markDirty?.();
+    if (graph) graph.elements = [...graph.elements];
     portsVersion += 1;
   }
 
@@ -1553,6 +1621,39 @@
         </div>
       {/if}
 
+      <!-- Promoted: parameters that live on children and are shown here.
+           First, above the container's own parameters, because on a container
+           these are the controls you came for — the forces inside a Feedback,
+           not its step count. Editing one writes to the child: there is one
+           value, and this is a view of it. -->
+      {#if promoted.length > 0}
+        <div class="port-section">
+          <button class="port-heading" on:click={() => toggleSection(node.id, 'promoted')}>
+            <span class="twisty">{openSections.promoted ? '▾' : '▸'}</span>
+            Promoted
+            <span class="tally">{promoted.length}</span>
+          </button>
+          {#if openSections.promoted}
+            {#each promoted as entry (`${entry.child.id}:${entry.parameter.name}`)}
+              <div class="parameter">
+                <PortEditor
+                  port={{
+                    name: entry.label ?? `${entry.child.id}.${entry.parameter.options?.label ?? entry.parameter.name}`,
+                    dataType: entry.parameter.dataType,
+                    value: entry.parameter.value,
+                    connections: [],
+                    options: entry.parameter.options ?? {},
+                  }}
+                  node={entry.child}
+                  direction="input"
+                  onChange={(value) => promotedChange(entry, value)}
+                />
+              </div>
+            {/each}
+          {/if}
+        </div>
+      {/if}
+
       <!-- Parameters: the node's own values. Between the pins, in the order the
            data actually moves — inputs, then what the node does with them, then
            outputs. -->
@@ -1663,6 +1764,16 @@
                       direction="input"
                       onChange={(value) => handleParamChange(parameter, value)}
                     />
+                  {/if}
+                  {#if node.parent && !parameter.options?.action}
+                    <button
+                      class="promote"
+                      class:on={node.isPromotedToParent(parameter.name)}
+                      title={node.isPromotedToParent(parameter.name)
+                        ? `Stop showing this on ${node.parent.id}`
+                        : `Show this on ${node.parent.id}, the level above`}
+                      on:click={() => toggleParentPromotion(parameter)}
+                    >{node.isPromotedToParent(parameter.name) ? 'up ✓' : 'up'}</button>
                   {/if}
                   {#if !parameter.options?.action && parameter.options?.promotable !== false}
                     <button

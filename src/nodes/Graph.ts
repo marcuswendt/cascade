@@ -1337,6 +1337,23 @@ export class Graph {
     }
 
     /**
+     * Promoted child parameters — which of its children's parameters this
+     * container shows as its own.
+     *
+     * Presentation, so the runtime ignores it and a headless render cannot
+     * diverge from a Studio session over it. Written only when there is
+     * something to write, on the same principle as `params`: a file records
+     * decisions rather than restating every default.
+     */
+    if (node.promotions?.length) {
+      result.promotions = node.promotions.map(entry => ({
+        nodeId: entry.nodeId,
+        param: entry.param,
+        ...(entry.label ? { label: entry.label } : {}),
+      }));
+    }
+
+    /**
      * Serialize the value of every UNCONNECTED input port.
      *
      * This is where a node's parameters actually live: a node declares them
@@ -1584,6 +1601,22 @@ export class Graph {
           }
         });
       }
+      /**
+       * Restored before the children exist, which is fine: a promotion names a
+       * child by id and is resolved when the Inspector reads it, not now. That
+       * also means a promotion pointing at a deleted child is inert rather than
+       * a load failure — it simply shows nothing.
+       */
+      if (Array.isArray(nodeData.promotions)) {
+        node.promotions = nodeData.promotions
+          .filter((entry: any) => entry?.nodeId && entry?.param)
+          .map((entry: any) => ({
+            nodeId: String(entry.nodeId),
+            param: String(entry.param),
+            ...(entry.label ? { label: String(entry.label) } : {}),
+          }));
+      }
+
       graph.addElement(node);
 
       // Runtime documents accept either the legacy port array or the compact
