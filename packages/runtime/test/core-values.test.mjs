@@ -287,11 +287,19 @@ test("cascade.core.Time declares $F and $T as prop default expressions", async (
   // a `defaultExpression`, which is the one mechanism that already reads the
   // clock and maintains a node's time dependency.
   assert.equal(timeDefinition.props.frame.expression, "$F");
+  assert.equal(timeDefinition.props.fframe.expression, "$FF");
   assert.equal(timeDefinition.props.time.expression, "$T");
+  // `frame` is an INT and `fframe` a float, which is Houdini's own split and
+  // the reason both exist: anything that counts frames — a feedback step
+  // count, a sequence index — needs an integer, and narrowing is never
+  // implicit here. Without this a float frame could not be wired to a step
+  // count at all.
+  assert.equal(timeDefinition.outputs.frame.type, "int");
+  assert.equal(timeDefinition.outputs.fframe.type, "float");
   // No inputs: it is a source. A frame input would be the thing it exists to
   // provide.
   assert.deepEqual(Object.keys(timeDefinition.inputs), []);
-  assert.deepEqual(Object.keys(timeDefinition.outputs), ["frame", "time"]);
+  assert.deepEqual(Object.keys(timeDefinition.outputs), ["frame", "fframe", "time"]);
 });
 
 test("cascade.core.Time passes its props through and calls no clock", async () => {
@@ -302,15 +310,17 @@ test("cascade.core.Time passes its props through and calls no clock", async () =
     inputs: {},
     outputs: {
       frame: { set: (value) => (values.frame = value) },
+      fframe: { set: (value) => (values.fframe = value) },
       time: { set: (value) => (values.time = value) },
     },
-    props: { frame: 47.5, time: 1.979 },
+    props: { frame: 47, fframe: 47.5, time: 1.979 },
     capabilities: {},
     signal: { aborted: false, addEventListener() {}, removeEventListener() {} },
     progress: { report() {} },
   });
-  // Fractional on purpose: sub-frame time exists, and rounding here would make
-  // a 48 fps preview step in pairs.
-  assert.equal(values.frame, 47.5);
+  assert.equal(values.frame, 47);
+  // Fractional on purpose: sub-frame time exists, and rounding it away would
+  // make a 48 fps preview step in pairs.
+  assert.equal(values.fframe, 47.5);
   assert.equal(values.time, 1.979);
 });

@@ -49,10 +49,26 @@ export const timeDefinition = {
   runsOn: "portable",
   inputs: {},
   outputs: {
+    /**
+     * The whole frame, as an integer — Houdini's `$F`.
+     *
+     * An `int` rather than a `float`, and that is the point of having two
+     * outputs. Anything that **counts** frames needs an integer: a feedback
+     * container's step count, a sequence index, a modulo. Narrowing is never
+     * implicit in Cascade, so a float frame simply could not be wired to a step
+     * count, and the alternative — truncating silently somewhere downstream —
+     * is a simulation running 3 steps when the graph said 3.7.
+     */
     frame: {
       kind: "data",
+      type: "int",
+      description: "The whole frame. Houdini's $F.",
+    },
+    /** The fractional frame — Houdini's `$FF`. For anything that moves. */
+    fframe: {
+      kind: "data",
       type: "float",
-      description: "The playhead's frame. Fractional — sub-frame time exists.",
+      description: "The fractional frame, for sub-frame motion. Houdini's $FF.",
     },
     time: {
       kind: "data",
@@ -62,12 +78,19 @@ export const timeDefinition = {
   },
   props: {
     frame: {
-      type: "float",
+      type: "int",
       default: 1,
       expression: "$F",
       label: "Frame",
       description:
         "Bound to $F. Replace with a number to pin a still, or with any expression.",
+    },
+    fframe: {
+      type: "float",
+      default: 1,
+      expression: "$FF",
+      label: "Fractional Frame",
+      description: "Bound to $FF.",
     },
     time: {
       type: "float",
@@ -83,6 +106,7 @@ export function executeTime(
   context: NodeExecutionContext<typeof timeDefinition>,
 ): void {
   context.outputs.frame.set(context.props.frame);
+  context.outputs.fframe.set(context.props.fframe);
   context.outputs.time.set(context.props.time);
 }
 

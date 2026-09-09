@@ -16,6 +16,7 @@ import {
   noiseField,
   separation,
   step,
+  trailFrame,
   type ParticleForce,
   type TrailFrame,
 } from "../../pop/index.js";
@@ -278,6 +279,194 @@ export function executeSeparate(
       ),
       state.size,
     ),
+  );
+}
+
+/**
+ * `cascade.pop.FieldForce` — the flow field, as a node.
+ *
+ * Extracted from `pop.Simulate`'s `field_*` props on 2026-09-09 so that the
+ * force which actually makes the calligraphy is a node you can see inside the
+ * container, reorder, and drive from a ramp. Two components, and they are the
+ * whole effect: `normal` pulls along the field's `N` toward the spine of the
+ * type, `tangential` pushes perpendicular to it, around the outline. The
+ * balance between them is what turns a hairball into a stroke.
+ *
+ * `level` and `hold` are the reason the lines follow the letters rather than
+ * collapsing onto them: instead of climbing to the field's peak, a particle
+ * holds a chosen contour. Marcus's own note on wanting this: *"we want the
+ * lines to extend and really flow around the letters, creating an elegant
+ * calligraphy… not hairballs or knots."*
+ */
+const fieldForceDefinition = {
+  apiVersion: 1,
+  label: "POP Field Force",
+  description:
+    "Pull particles along a field's gradient and around its contours. The calligraphy force.",
+  icon: "Waves",
+  runsOn: "portable",
+  inputs: {
+    particles: { kind: "data", type: "geometry" },
+    /** The field: points carrying `N` (the gradient) and optionally `level`. */
+    field: { kind: "data", type: "geometry" },
+  },
+  outputs: { geometry: { kind: "data", type: "geometry" } },
+  props: {
+    normal: {
+      type: "float",
+      default: 0,
+      min: -100000,
+      max: 100000,
+      label: "Normal",
+      description: "Along N, toward the spine. Negative pushes away.",
+    },
+    tangential: {
+      type: "float",
+      default: 2600,
+      min: -100000,
+      max: 100000,
+      label: "Tangential",
+      description: "Perpendicular to N, around the outline. Sign picks the direction.",
+    },
+    radius: {
+      type: "float",
+      default: 20,
+      min: 0,
+      max: 10000,
+      label: "Radius",
+      description: "How far a field sample reaches.",
+    },
+    level: {
+      type: "float",
+      default: 0.28,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      label: "Level",
+      description: "The contour to hold, rather than climbing to the peak.",
+    },
+    hold: {
+      type: "float",
+      default: 5200,
+      min: 0,
+      max: 100000,
+      label: "Hold",
+      description: "How hard to hold that contour.",
+    },
+  },
+} as const satisfies NodeDefinition;
+
+export function executeFieldForce(
+  context: NodeExecutionContext<typeof fieldForceDefinition>,
+): void {
+  const incoming = context.inputs.particles;
+  if (!incoming) {
+    context.outputs.geometry.set(emptyParticleGeometry(2));
+    return;
+  }
+  const flow = context.inputs.field;
+  const props = context.props;
+  // No field, or a field with no gradient, contributes nothing — rather than
+  // throwing. A half-wired graph should draw the particles standing still, not
+  // refuse to cook.
+  if (
+    !flow ||
+    flow.pointCount === 0 ||
+    !flow.point.N ||
+    (props.normal === 0 && props.tangential === 0)
+  ) {
+    context.outputs.geometry.set(incoming);
+    return;
+  }
+  const state = ParticleState.fromGeometry(incoming);
+  context.outputs.geometry.set(
+    accumulateForce(
+      incoming,
+      flowField({
+        positions: flow.point.P!.data as ArrayLike<number>,
+        positionSize: flow.point.P!.size,
+        directions: flow.point.N.data as ArrayLike<number>,
+        ...(flow.point.level && flow.point.level.storage !== "string"
+          ? { levels: flow.point.level.data as ArrayLike<number> }
+          : {}),
+        count: flow.pointCount,
+        normal: props.normal,
+        tangential: props.tangential,
+        radius: props.radius,
+        level: props.level,
+        hold: props.hold,
+      }).accelerate(state, state.size),
+      state.size,
+    ),
+  );
+}
+
+/**
+ * `cascade.pop.Trail` — trails from a Feedback container's history.
+ *
+ * The node that makes the network version of the piece possible at all. A trail
+ * needs the *frames*, and a node downstream of a simulation sees one — which
+ * draws nothing. `cascade.core.Feedback` keeps a bounded history for exactly
+ * this, and this node consumes it.
+ *
+ * The parameter names are Houdini's Trail SOP: `result`, `length`,
+ * `increment`, `velocityscale`.
+ */
+const trailDefinition = {
+  apiVersion: 1,
+  label: "POP Trail",
+  description: "Build trails from a Feedback container's history.",
+  icon: "Activity",
+  runsOn: "portable",
+  inputs: {
+    /** The container's `history` output: every kept step, oldest first. */
+    history: { kind: "data", type: "array" },
+    /** The current state, for `preserve` and for the newest point of each trail. */
+    particles: { kind: "data", type: "geometry" },
+  },
+  outputs: { geometry: { kind: "data", type: "geometry" } },
+  props: {
+    result: {
+      type: "string",
+      default: "polylines",
+      control: "select",
+      options: [
+        { value: "polylines", label: "Polylines - one line per particle" },
+        { value: "preserve", label: "Preserve - pass the points through" },
+      ],
+      label: "Result",
+    },
+    length: { type: "int", default: 12, min: 1, max: 100000, label: "Length" },
+    increment: { type: "int", default: 1, min: 1, max: 1000, label: "Increment" },
+    velocityscale: { type: "float", default: 1, min: 0, max: 100, step: 0.01, label: "Velocity Scale" },
+  },
+} as const satisfies NodeDefinition;
+
+export function executeTrail(
+  context: NodeExecutionContext<typeof trailDefinition>,
+): void {
+  const current = context.inputs.particles;
+  if (!current) {
+    context.outputs.geometry.set(emptyParticleGeometry(2));
+    return;
+  }
+  const history = (context.inputs.history ?? []) as readonly unknown[];
+  const frames: TrailFrame[] = [];
+  for (const entry of history) {
+    // A history that is not particle geometry is skipped rather than throwing:
+    // the input is typed `array`, so anything can arrive on it, and a viewport
+    // going black is a worse answer than a shorter trail.
+    if (typeof entry === "object" && entry !== null && (entry as Geometry).kind === "geometry")
+      frames.push(trailFrame(entry as Geometry));
+  }
+  const props = context.props;
+  context.outputs.geometry.set(
+    buildTrails(frames, current, {
+      result: props.result === "preserve" ? "preserve" : "polylines",
+      length: props.length,
+      increment: props.increment,
+      velocityscale: props.velocityscale,
+    }),
   );
 }
 
@@ -702,12 +891,28 @@ export const separateRegistration = {
   loadExecute: async () => executeSeparate,
 } satisfies DefinitionNodeRegistration<typeof separateDefinition>;
 
+export const fieldForceRegistration = {
+  kind: "definition-v1",
+  moduleId: "cascade.pop.FieldForce",
+  definition: fieldForceDefinition,
+  loadExecute: async () => executeFieldForce,
+} satisfies DefinitionNodeRegistration<typeof fieldForceDefinition>;
+
+export const trailRegistration = {
+  kind: "definition-v1",
+  moduleId: "cascade.pop.Trail",
+  definition: trailDefinition,
+  loadExecute: async () => executeTrail,
+} satisfies DefinitionNodeRegistration<typeof trailDefinition>;
+
 export const popNodeRegistrations: readonly DefinitionNodeRegistration[] = Object.freeze([
   simulateRegistration,
   sourceRegistration,
   solverRegistration,
   noiseForceRegistration,
   separateRegistration,
+  fieldForceRegistration,
+  trailRegistration,
 ]);
 
 /** `[moduleId, definition]` pairs, for a host building a node palette. The
@@ -719,4 +924,6 @@ export const popNodeDefinitions = Object.freeze([
   ["cascade.pop.Solver", solverDefinition],
   ["cascade.pop.NoiseForce", noiseForceDefinition],
   ["cascade.pop.Separate", separateDefinition],
+  ["cascade.pop.FieldForce", fieldForceDefinition],
+  ["cascade.pop.Trail", trailDefinition],
 ] as const);
