@@ -372,3 +372,114 @@ export function attract(options: {
 function bucketKey(x: number, y: number, cell: number): string {
   return `${Math.floor(x / cell)}:${Math.floor(y / cell)}`;
 }
+
+/**
+ * A flow field carried as geometry: points with a direction on them.
+ *
+ * Marcus's description of the original, 2026-09-09: *"a delicate balance
+ * between a force pulling the particles towards the centre spine of the type
+ * and tangentially around their outlines."* Two components of one field, and
+ * that sentence is the whole specification.
+ *
+ * **Why a blurred field gives you a spine.** A hard letterform's gradient
+ * points at the nearest edge, so attracting up it pins particles to outlines.
+ * Blur the letterform first and each stroke becomes a ridge whose peak runs
+ * down its middle — so the gradient points at the *spine*, and the level sets
+ * run *along* the outline. Which is why the original blurs its text before
+ * reading pixels back: the blur is not softening, it is what turns an outline
+ * into a skeleton.
+ *
+ * So `normal` pulls up the gradient toward the spine, and `tangential` pushes
+ * along the perpendicular — around the outline rather than across it. Balance
+ * those two and you get the original's behaviour; take either away and you get
+ * a clump or a drift.
+ *
+ * The field arrives as points carrying `N`, because that is a vector field in
+ * Cascade's existing vocabulary and it keeps the rasterising upstream in
+ * whatever node knows about type. A core force doing image IO is the thing
+ * that stopped being pure earlier.
+ */
+export function flowField(options: {
+  /** Field sample positions, flat, `size` components each. */
+  readonly positions: ArrayLike<number>;
+  readonly positionSize: number;
+  /** The gradient at each sample, same count, 2 components — pointing uphill,
+   *  toward the spine. */
+  readonly directions: ArrayLike<number>;
+  readonly count: number;
+  /** Along `N`, toward the spine. */
+  readonly normal: number;
+  /** Perpendicular to `N`, around the outline. Sign picks the direction. */
+  readonly tangential: number;
+  /** Samples beyond this are ignored, and it is also the grid's cell size. */
+  readonly radius: number;
+}): ParticleForce {
+  const { positions, positionSize, directions, count, normal, tangential, radius } = options;
+
+  // Built once, for the reason the attract index exists: the field does not
+  // change between steps, and rebuilding it per step is the same mistake one
+  // level up.
+  const cell = radius > 0 ? radius : 1;
+  const buckets = new Map<string, number[]>();
+  for (let sample = 0; sample < count; sample += 1) {
+    const key = bucketKey(
+      Number(positions[sample * positionSize]),
+      Number(positions[sample * positionSize + 1]),
+      cell,
+    );
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(sample);
+    else buckets.set(key, [sample]);
+  }
+
+  return {
+    label: "flowField",
+    accelerate(state: ParticleState, size: number): Float32Array {
+      const out = new Float32Array(state.count * size);
+      if (count === 0 || (normal === 0 && tangential === 0)) return out;
+      const limit = radius * radius;
+
+      for (let index = 0; index < state.count; index += 1) {
+        const px = state.position[index * size]!;
+        const py = state.position[index * size + 1]!;
+        const cx = Math.floor(px / cell);
+        const cy = Math.floor(py / cell);
+
+        // Distance-weighted mean of the nearby gradients, so a particle
+        // between samples gets a smooth direction rather than snapping to the
+        // nearest one — snapping is visible as the sampling grid.
+        let gx = 0;
+        let gy = 0;
+        let weightSum = 0;
+
+        for (let ox = -1; ox <= 1; ox += 1) {
+          for (let oy = -1; oy <= 1; oy += 1) {
+            const bucket = buckets.get(`${cx + ox}:${cy + oy}`);
+            if (!bucket) continue;
+            for (const sample of bucket) {
+              const dx = Number(positions[sample * positionSize]) - px;
+              const dy = Number(positions[sample * positionSize + 1]) - py;
+              const distanceSquared = dx * dx + dy * dy;
+              if (distanceSquared > limit) continue;
+              const weight = 1 - Math.sqrt(distanceSquared) / radius;
+              if (weight <= 0) continue;
+              gx += Number(directions[sample * 2]) * weight;
+              gy += Number(directions[sample * 2 + 1]) * weight;
+              weightSum += weight;
+            }
+          }
+        }
+
+        if (weightSum === 0) continue;
+        gx /= weightSum;
+        gy /= weightSum;
+
+        // Rotating the gradient by a quarter turn gives the tangent, which is
+        // the direction the field's level sets run — along the outline.
+        out[index * size] = gx * normal - gy * tangential;
+        out[index * size + 1] = gy * normal + gx * tangential;
+      }
+      return out;
+    },
+  };
+}

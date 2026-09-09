@@ -4,6 +4,7 @@ import {
   ParticleState,
   attract,
   buildTrails,
+  flowField,
   drag,
   emptyParticleGeometry,
   gravity,
@@ -261,6 +262,18 @@ const simulateDefinition = {
      * that has one; this input is the composable half.
      */
     attract: { kind: "data", type: "geometry" },
+    /**
+     * A flow field, as points carrying `N`.
+     *
+     * Marcus's description of the original: *"a delicate balance between a
+     * force pulling the particles towards the centre spine of the type and
+     * tangentially around their outlines."* This is that field — the gradient
+     * of a BLURRED letterform, whose ridge runs down each stroke's middle, so
+     * the gradient points at the spine and its perpendicular runs along the
+     * outline. `field_normal` and `field_tangential` are the two halves of the
+     * balance.
+     */
+    field: { kind: "data", type: "geometry" },
   },
   outputs: {
     /** The particles, one point each. */
@@ -312,6 +325,24 @@ const simulateDefinition = {
     noise_frequency: { type: "float", default: 0.02, min: 0.001, max: 10, step: 0.001 },
     /** Turns per second of field evolution. */
     noise_evolve: { type: "float", default: 0.08, min: -10, max: 10, step: 0.01 },
+    /** Toward the spine, up the field's gradient. */
+    field_normal: { type: "float", default: 0, min: -20000, max: 20000, step: 1 },
+    /** Around the outline, perpendicular to the gradient. Sign picks which way. */
+    field_tangential: { type: "float", default: 0, min: -20000, max: 20000, step: 1 },
+    /** Field samples beyond this are ignored, and it is the grid's cell size. */
+    field_radius: { type: "float", default: 24, min: 0.5, max: 2000, step: 0.5 },
+    /**
+     * Scatter births across this box instead of on the source geometry's
+     * points, `[minX, minY, maxX, maxY]`. All zero uses the points.
+     *
+     * Houdini's POP Source has the same choice — *Scatter onto Surface* against
+     * *Points* — and Marcus's note is that the original spawns *around* the
+     * type rather than on it: *"The particles should spawn in the area around
+     * the type … and then the forces should drag them around."* Birthing on
+     * the letterforms puts every particle where it is already going, so
+     * nothing travels and the field has nothing to reveal.
+     */
+    birth_area: { type: "vec4", default: [0, 0, 0, 0] },
     /** How hard the targets pull. Houdini's POP Attract strength. */
     attract_amplitude: { type: "float", default: 0, min: 0, max: 20000, step: 1 },
     /** Beyond this distance a target is ignored, which is what keeps the pull
@@ -341,25 +372,43 @@ export function executeSimulate(
   const history: TrailFrame[] = [];
   const available = from ? from.pointCount : 0;
   const source = from?.point.P;
-  // Read once for the whole replay: the targets do not change within a cook.
+  // Read once for the whole replay: none of these change within a cook.
   const targets = context.inputs.attract;
+  const flow = context.inputs.field;
+  const scatter = props.birth_area.some((value) => value !== 0)
+    ? props.birth_area
+    : null;
+  // Scattering needs no source points: the box is the source. Requiring a
+  // wired geometry to scatter inside a box would be a dependency on nothing.
+  const canBirth = scatter !== null || (available > 0 && source !== undefined);
   const wrap = props.wrap.some((value) => value !== 0)
     ? ([props.wrap[0], props.wrap[1], props.wrap[2], props.wrap[3]] as const)
     : undefined;
 
   for (let frame = 1; frame <= frames; frame += 1) {
-    if (available > 0 && source && props.impulse > 0) {
-      const born = Math.min(props.impulse, available);
+    if (canBirth && props.impulse > 0) {
+      const born = scatter ? props.impulse : Math.min(props.impulse, available);
       const position = new Float64Array(born * 2);
       const life = new Float32Array(born);
       for (let index = 0; index < born; index += 1) {
-        // Walk the source's points across frames rather than restarting at
-        // zero, so a small impulse eventually covers the whole shape instead
-        // of birthing from the same handful of points forever.
-        const pick = (frame * born + index) % available;
-        position[index * 2] = Number((source.data as ArrayLike<number>)[pick * source.size] ?? 0);
-        position[index * 2 + 1] = Number((source.data as ArrayLike<number>)[pick * source.size + 1] ?? 0);
-        const jitter = birthRandom(props.seed, state.nextId + index);
+        const id = state.nextId + index;
+        if (scatter) {
+          // Hashed on the id, so a particle is born in the same place however
+          // many times the frame is re-simulated. Two draws from one hash
+          // stream would correlate x with y into a diagonal, so the second
+          // takes a different sample.
+          position[index * 2] = scatter[0]! + birthRandom(props.seed, id * 2) * (scatter[2]! - scatter[0]!);
+          position[index * 2 + 1] = scatter[1]! + birthRandom(props.seed, id * 2 + 1) * (scatter[3]! - scatter[1]!);
+        } else {
+          // Walk the source's points across frames rather than restarting at
+          // zero, so a small impulse eventually covers the whole shape instead
+          // of birthing from the same handful of points forever.
+          const pick = (frame * born + index) % available;
+          const points = source!.data as ArrayLike<number>;
+          position[index * 2] = Number(points[pick * source!.size] ?? 0);
+          position[index * 2 + 1] = Number(points[pick * source!.size + 1] ?? 0);
+        }
+        const jitter = birthRandom(props.seed, id);
         life[index] = props.life * (1 - props.lifevar * jitter);
       }
       state = state.born({ position, life });
@@ -376,6 +425,18 @@ export function executeSimulate(
         // Derived from the frame the caller stated, not from a clock — which
         // is what keeps the whole node a pure function of `frame`.
         evolve: frame * props.timestep * props.noise_evolve,
+      }));
+    }
+    if (flow && flow.pointCount > 0 && flow.point.N
+        && (props.field_normal !== 0 || props.field_tangential !== 0)) {
+      forces.push(flowField({
+        positions: flow.point.P!.data as ArrayLike<number>,
+        positionSize: flow.point.P!.size,
+        directions: flow.point.N.data as ArrayLike<number>,
+        count: flow.pointCount,
+        normal: props.field_normal,
+        tangential: props.field_tangential,
+        radius: props.field_radius,
       }));
     }
     if (targets && targets.pointCount > 0 && props.attract_amplitude > 0) {

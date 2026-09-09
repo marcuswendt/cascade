@@ -463,6 +463,7 @@ Runs on `portable`.
 | `geometry` | `geometry` |  |  |
 | `frame` | `float` | `1` |  |
 | `attract` | `geometry` |  |  |
+| `field` | `geometry` |  |  |
 
 **Props**
 
@@ -480,6 +481,10 @@ Runs on `portable`.
 | `noise_amplitude` | `float` | `14` | 0…500 |
 | `noise_frequency` | `float` | `0.02` | 0.001…10 |
 | `noise_evolve` | `float` | `0.08` | -10…10 |
+| `field_normal` | `float` | `0` | -20000…20000 |
+| `field_tangential` | `float` | `0` | -20000…20000 |
+| `field_radius` | `float` | `24` | 0.5…2000 |
+| `birth_area` | `vec4` | `[0,0,0,0]` |  |
 | `attract_amplitude` | `float` | `0` | 0…20000 |
 | `attract_radius` | `float` | `60` | 0…5000 |
 | `separate_radius` | `float` | `0` | 0…500 |
