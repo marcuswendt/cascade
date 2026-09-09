@@ -779,8 +779,16 @@ class Graph implements LoadedCascadeGraph {
         queue.push({ nodeId, inputName, event });
         this.emit({ type: "trigger:queued", runId, nodeId, inputName, event });
       };
-      const ordered = topological(this.nodes, this.connections).filter((node) =>
-        initial.includes(node),
+      /**
+       * Feedback descendants are removed from the main order: their container
+       * runs them, once per step. Leaving them here would cook each of them a
+       * second time, out of the loop and with whatever state the last step
+       * happened to leave behind — which reads as a simulation that is one step
+       * wrong rather than as a scheduling bug.
+       */
+      const insideFeedback = this.feedbackDescendants();
+      const ordered = topological(this.nodes, this.connections).filter(
+        (node) => initial.includes(node) && !insideFeedback.has(node.id),
       );
       for (const node of ordered) {
         if (signal.aborted) break;
@@ -849,6 +857,24 @@ class Graph implements LoadedCascadeGraph {
     ) => void,
   ): Promise<void> {
     this.emit({ type: "node:start", runId, nodeId: node.id });
+    /**
+     * `cascade.core.Previous` reads the carried state off its container, the
+     * same way `cascade.core.Input` reads the parent's wired input: a boundary's
+     * value comes from the parent's evaluation, not from a wire of its own.
+     *
+     * Outside a container it falls through to its own `initial`, which is what
+     * makes a node dragged out of a loop explicable rather than an error.
+     */
+    if (node.moduleId === "cascade.core.Previous") {
+      const container = this.enclosingFeedback(node);
+      const state = container ? this.feedbackState.get(container) : undefined;
+      if (state) {
+        node.outputs.set("value", state.value);
+        node.outputs.set("step", state.step);
+        this.emit({ type: "node:complete", runId, nodeId: node.id });
+        return;
+      }
+    }
     const inputs = Object.fromEntries(
       Object.entries(node.definition.inputs ?? {}).map(([name, definition]) => {
         if (definition.kind === "trigger") return [name, triggers[name]];
@@ -1011,6 +1037,11 @@ class Graph implements LoadedCascadeGraph {
       progress,
     } as never);
     if (signal.aborted) return;
+    if (node.definition.container === "feedback") {
+      // Resolved here rather than in the node's own execute, because the loop
+      // needs the graph and a definition-v1 node is given only its own id.
+      pendingData.set("result", await this.runFeedback(node, runId, signal, enqueue));
+    }
     if (node.moduleId === "cascade.core.Subnet") {
       for (const child of this.nodes) {
         if (
@@ -1324,6 +1355,152 @@ class Graph implements LoadedCascadeGraph {
   private isDisposed(): boolean {
     return this.graphState === "disposed";
   }
+  /**
+   * The state a feedback container is carrying, while it is running.
+   *
+   * Runtime state on the instance rather than on the node, because it is alive
+   * only during one container's loop and a node's `outputs` map is the graph's
+   * result — putting a half-finished step in there would make a partially
+   * simulated value readable by anything that inspects outputs mid-run.
+   *
+   * Keyed by container id so nested feedback works: an outer loop's carried
+   * state survives an inner loop running to completion inside one of its steps.
+   */
+  private readonly feedbackState = new Map<
+    string,
+    { readonly value: unknown; readonly step: number }
+  >();
+
+  /**
+   * Every node under a feedback container, transitively.
+   *
+   * These are excluded from the main cook order — the container runs them, once
+   * per step. Computed once per run rather than per step: the hierarchy cannot
+   * change mid-run, and this is walked for every node in the order.
+   */
+  private feedbackDescendants(): Set<string> {
+    const containers = new Set(
+      this.nodes
+        .filter((node) => node.definition.container === "feedback")
+        .map((node) => node.id),
+    );
+    if (!containers.size) return new Set();
+    const inside = new Set<string>();
+    for (const node of this.nodes) {
+      let parent = node.parent;
+      const seen = new Set<string>();
+      while (parent && !seen.has(parent)) {
+        seen.add(parent);
+        if (containers.has(parent)) {
+          inside.add(node.id);
+          break;
+        }
+        parent = this.byId.get(parent)?.parent;
+      }
+    }
+    return inside;
+  }
+
+  /**
+   * Run a feedback container's contents `steps` times and return the last
+   * result.
+   *
+   * The order the children run in is the graph's own topological order
+   * restricted to this container's descendants, which is what makes the forces
+   * inside behave like nodes rather than like a list: wiring one into another
+   * changes the order they apply in.
+   */
+  private async runFeedback(
+    node: RuntimeNode,
+    runId: string,
+    signal: MutableAbortSignal,
+    enqueue: (
+      nodeId: string,
+      inputName: string,
+      payload: JsonValue | undefined,
+      source: TriggerEvent["source"],
+    ) => void,
+  ): Promise<unknown> {
+    const initial = this.dataInputValue(node, "initial");
+    const requested = this.dataInputValue(node, "steps");
+    const steps = Math.max(0, Math.trunc(Number(requested ?? 0)));
+    if (!Number.isFinite(steps))
+      throw runtimeError(
+        "runtime/feedback-steps",
+        `${node.id}.steps is not a finite number`,
+      );
+
+    const inside = new Set(
+      [...this.feedbackDescendants()].filter((id) => {
+        let parent = this.byId.get(id)?.parent;
+        const seen = new Set<string>();
+        while (parent && !seen.has(parent)) {
+          if (parent === node.id) return true;
+          seen.add(parent);
+          parent = this.byId.get(parent)?.parent;
+        }
+        return false;
+      }),
+    );
+    const children = topological(this.nodes, this.connections).filter((child) =>
+      inside.has(child.id),
+    );
+
+    // The step's result comes from the Output boundary at index 0, the same
+    // convention a subnet uses. Resolved before the loop so that a container
+    // with no Output fails immediately rather than after simulating everything
+    // and finding nothing to return.
+    const sink = children.find(
+      (child) =>
+        child.parent === node.id &&
+        child.moduleId === "cascade.core.Output" &&
+        integerProp(child.props.outputIndex) === 0,
+    );
+    if (steps > 0 && !sink)
+      throw runtimeError(
+        "runtime/feedback-no-output",
+        `${node.id} has no cascade.core.Output inside it, so a step has no result to carry. Add one and wire the step's result into it.`,
+      );
+
+    // Zero steps is the initial state, not a failure: frame zero of a
+    // simulation is where it starts, and a graph that throws at the beginning
+    // of the timeline is unusable.
+    let carried = initial;
+    for (let step = 0; step < steps; step += 1) {
+      if (signal.aborted) break;
+      this.feedbackState.set(node.id, { value: carried, step });
+      for (const child of children) {
+        if (signal.aborted) break;
+        await this.executeNode(child, runId, signal, {}, enqueue);
+      }
+      if (signal.aborted) break;
+      carried = sink!.outputs.get("output");
+    }
+    /**
+     * Hygiene, and honestly labelled as such: no test can observe this, because
+     * every `Previous` inside a container is excluded from the main order and
+     * every step overwrites the entry before reading it. It stays because the
+     * map would otherwise hold one entry per container for the life of the
+     * runtime, and because a live entry after the loop has finished is a lie
+     * about what is running.
+     */
+    this.feedbackState.delete(node.id);
+    return carried;
+  }
+
+  /** The nearest ancestor that is a feedback container, or undefined. */
+  private enclosingFeedback(node: RuntimeNode): string | undefined {
+    let parent = node.parent;
+    const seen = new Set<string>();
+    while (parent && !seen.has(parent)) {
+      seen.add(parent);
+      const candidate = this.byId.get(parent);
+      if (candidate?.definition.container === "feedback") return candidate.id;
+      parent = candidate?.parent;
+    }
+    return undefined;
+  }
+
   private requireNode(id: string): RuntimeNode {
     const node = this.byId.get(id);
     if (!node) misuse("runtime/node-not-found", `Unknown node ${id}`);
@@ -1843,10 +2020,13 @@ function validateHierarchy(
         "runtime/parent-not-found",
         `Node ${node.id} references missing parent ${node.parent}`,
       );
-    if (parent.definition.container !== "subnet")
+    if (
+      parent.definition.container !== "subnet" &&
+      parent.definition.container !== "feedback"
+    )
       misuse(
         "runtime/parent-not-container",
-        `Node ${node.id} parent ${node.parent} is not a subnet container`,
+        `Node ${node.id} parent ${node.parent} is not a container`,
       );
   }
   for (const node of nodes) {
@@ -2006,6 +2186,49 @@ function dataDependencies(
       }
     } else if (node.moduleId === "cascade.core.Output") {
       const dependency = { sourceId: node.id, targetId: node.parent };
+      dependencies.set(`${dependency.sourceId}\0${dependency.targetId}`, dependency);
+    }
+  }
+  /**
+   * A value wired from outside a feedback container into one of its children is
+   * a dependency of the **container**, not just of the child.
+   *
+   * The children are removed from the executed order — the container runs them
+   * — so a dependency recorded only against a child does not delay the
+   * container, and the container could run before the value it needs exists.
+   * The child would then read `undefined` on the first step.
+   *
+   * In practice the ordinary chain usually saves this: source → force → Output →
+   * container is already transitive. It fails for a child that reads an outside
+   * value and does not reach the container's `Output`, and "usually correct
+   * because of how the inside happens to be wired" is not a scheduling
+   * guarantee.
+   */
+  const parents = new Map(nodes.map((node) => [node.id, node.parent]));
+  const feedbackContainers = new Set(
+    nodes
+      .filter((node) => node.definition.container === "feedback")
+      .map((node) => node.id),
+  );
+  if (feedbackContainers.size) {
+    const containerOf = (id: string | undefined): string | undefined => {
+      const seen = new Set<string>();
+      let parent = id ? parents.get(id) : undefined;
+      while (parent && !seen.has(parent)) {
+        seen.add(parent);
+        if (feedbackContainers.has(parent)) return parent;
+        parent = parents.get(parent);
+      }
+      return undefined;
+    };
+    for (const connection of connections) {
+      if (connection.kind !== "data") continue;
+      const target = containerOf(connection.target.nodeId);
+      if (!target) continue;
+      // Wires wholly inside one container are the loop's own business.
+      if (containerOf(connection.source.nodeId) === target) continue;
+      if (connection.source.nodeId === target) continue;
+      const dependency = { sourceId: connection.source.nodeId, targetId: target };
       dependencies.set(`${dependency.sourceId}\0${dependency.targetId}`, dependency);
     }
   }

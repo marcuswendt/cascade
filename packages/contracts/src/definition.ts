@@ -198,8 +198,27 @@ export type AnyPropDefinition = {
 export interface NodeDefinitionForEnvironment<E extends RuntimeEnvironment> {
   readonly apiVersion: 1;
   readonly runsOn: E;
-  /** Declares that authored nodes may use this node as their parent. */
-  readonly container?: "subnet";
+  /**
+   * Declares that authored nodes may use this node as their parent.
+   *
+   * `subnet` is a **grouping**: the children are ordinary nodes in the one flat
+   * graph, cooked once each in the usual dependency order, and the container is
+   * a boundary for display and for `cascade.core.Input`/`Output` to bind to.
+   *
+   * `feedback` is an **evaluation construct**: the children are removed from the
+   * main order and re-run once per step by the container, with the previous
+   * step's result entering through `cascade.core.Previous`. It exists because a
+   * simulation is the one thing a pure DAG cannot express — which is why Houdini
+   * made its Solver SOP special too — and Marcus asked for it on 2026-09-09,
+   * wanting to dive into a particle node and see its forces as nodes.
+   *
+   * The distinction is load-bearing for correctness, not just for scheduling: a
+   * `subnet` child's output is read once and is a function of the graph, while a
+   * `feedback` child's output is read N times and is a function of the graph
+   * *and* the step. Anything that caches on a node's inputs has to know which
+   * kind it is looking at.
+   */
+  readonly container?: "subnet" | "feedback";
   readonly capabilities?: readonly CapabilityForEnvironment<E>[];
   readonly label?: string;
   readonly description?: string;

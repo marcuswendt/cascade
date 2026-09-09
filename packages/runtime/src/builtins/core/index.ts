@@ -3,11 +3,19 @@ import { cameraRegistration } from "./camera.js";
 import { randomRegistration } from "./random.js";
 import { remapRegistration } from "./remap.js";
 import { mergeRegistration, nullRegistration, selectRegistration, switchRegistration } from "./routing.js";
-import { inputRegistration, outputRegistration, subnetRegistration } from "./structural.js";
+import {
+  feedbackRegistration,
+  inputRegistration,
+  outputRegistration,
+  previousRegistration,
+  subnetRegistration,
+} from "./structural.js";
 import { timeRegistration } from "./time.js";
 
 export {
   cameraRegistration,
+  feedbackRegistration,
+  previousRegistration,
   inputRegistration,
   mergeRegistration,
   nullRegistration,
@@ -32,6 +40,8 @@ export const coreNodeRegistrations: readonly DefinitionNodeRegistration[] = Obje
   remapRegistration,
   cameraRegistration,
   timeRegistration,
+  feedbackRegistration,
+  previousRegistration,
 ]);
 
 const registrationsById = new Map(

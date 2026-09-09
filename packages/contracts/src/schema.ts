@@ -102,7 +102,7 @@ export const nodeDefinitionSchema = {
     {
       apiVersion: { const: 1 },
       runsOn: { enum: ["portable", "browser", "server"] },
-      container: { const: "subnet" },
+      container: { enum: ["subnet", "feedback"] },
       capabilities: {
         type: "array",
         items: { type: "string" },

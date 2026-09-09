@@ -120,8 +120,12 @@ export function validateNodeDefinition(value: unknown): readonly Diagnostic[] {
     add("api-version", "apiVersion must be 1", "apiVersion");
   if (!Object.prototype.hasOwnProperty.call(ALLOWED, String(environment)))
     add("environment", "runsOn must be portable, browser, or server", "runsOn");
-  if (value.container !== undefined && value.container !== "subnet")
-    add("invalid-container", "container must be subnet", "container");
+  if (
+    value.container !== undefined &&
+    value.container !== "subnet" &&
+    value.container !== "feedback"
+  )
+    add("invalid-container", "container must be subnet or feedback", "container");
 
   const allowed = ALLOWED[environment as RuntimeEnvironment] ?? [];
   if (value.capabilities !== undefined && !Array.isArray(value.capabilities))
