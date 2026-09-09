@@ -2,6 +2,7 @@ import type { DefinitionNodeRegistration } from "../../types.js";
 import { copyToPointsRegistration } from "./copyToPoints.js";
 import { circleRegistration, rectangleRegistration } from "./generators.js";
 import { mergeRegistration } from "./merge.js";
+import { renderRegistration } from "./render.js";
 import { svgExportRegistration } from "./svgExport.js";
 import { transformRegistration } from "./transform.js";
 
@@ -22,6 +23,7 @@ export {
   copyToPointsRegistration,
   mergeRegistration,
   rectangleRegistration,
+  renderRegistration,
   svgExportRegistration,
   transformRegistration,
 };
@@ -34,7 +36,8 @@ export const geoNodeRegistrations: readonly DefinitionNodeRegistration[] =
     transformRegistration,
     mergeRegistration,
     copyToPointsRegistration,
-    svgExportRegistration,
+    renderRegistration,
+  svgExportRegistration,
   ]);
 
 const registrationsById = new Map(

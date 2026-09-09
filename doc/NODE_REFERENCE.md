@@ -339,6 +339,39 @@ Runs on `portable`.
 | --- | --- | --- | --- |
 | `geometry` | `geometry` |  |  |
 
+### `cascade.geo.Render`
+
+Render — Draw geometry through a camera, as a raster.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `geometry` | `geometry` |  |  |
+| `camera` | `camera` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `size` | `vec2i` | `[1280,720]` | 16…8192 |
+| `filename` | `string` | `"render.png"` |  |
+| `background` | `color` | `[0,0,0,0]` |  |
+| `stroke` | `color` | `[0,0,0,1]` |  |
+| `strokeWidth` | `float` | `1` | 0…200 |
+| `opacity` | `float` | `1` | 0…1 |
+| `drawPoints` | `bool` | `false` |  |
+| `pointRadius` | `float` | `1.5` | 0…50 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+| `asset` | `asset` |  |  |
+
 ### `cascade.geo.SvgExport`
 
 SVG Export — Write geometry as an SVG document, one group element per group.
@@ -581,7 +614,7 @@ under `src/nodes/<library>/nodes/`.
 
 ### Geometry — `cascade.geo.*`
 
-**Geometry.** `cascade.geo.Rectangle` (A closed four-point polygon, counter-clockwise from bottom-left.), `cascade.geo.Circle` (A closed circle, as one cubic Bezier chain or as a polygon of divisions segments.), `cascade.geo.Transform` (Translate, rotate and scale geometry about a pivot.), `cascade.geo.Merge` (Concatenate geometries, taking the union of their attributes.), `cascade.geo.CopyToPoints` (Instance one geometry onto every point of another.), `cascade.geo.SvgExport` (Write geometry as an SVG document, one group element per group.)
+**Geometry.** `cascade.geo.Rectangle` (A closed four-point polygon, counter-clockwise from bottom-left.), `cascade.geo.Circle` (A closed circle, as one cubic Bezier chain or as a polygon of divisions segments.), `cascade.geo.Transform` (Translate, rotate and scale geometry about a pivot.), `cascade.geo.Merge` (Concatenate geometries, taking the union of their attributes.), `cascade.geo.CopyToPoints` (Instance one geometry onto every point of another.), `cascade.geo.SvgExport` (Write geometry as an SVG document, one group element per group.), `cascade.geo.Render` (Draw geometry through a camera, as a raster.)
 
 ### Image — `cascade.image.*`
 

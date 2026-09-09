@@ -163,6 +163,7 @@ describe('definition-v1 nodes in Studio', () => {
       'cascade.geo.Merge',
       'cascade.geo.CopyToPoints',
       'cascade.geo.SvgExport',
+      'cascade.geo.Render',
     ]);
     expect(getNodePathShort('cascade.geo.Transform')).toBe('geo.Transform');
   });

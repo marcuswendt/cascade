@@ -197,6 +197,44 @@ export const svgExportDefinition = {
   },
 } as const satisfies NodeDefinition;
 
+export const renderDefinition = {
+  apiVersion: 1,
+  label: "Render",
+  description: "Draw geometry through a camera, as a raster.",
+  icon: "Camera",
+  runsOn: "portable",
+  capabilities: ["assets"],
+  inputs: {
+    geometry: { kind: "data", type: "geometry" },
+    /**
+     * The camera. Required rather than defaulted, and that is the point of the
+     * node: a render with an implicit camera is a render nobody can reproduce,
+     * and `cascade.core.Camera` is one node away.
+     */
+    camera: { kind: "data", type: "camera" },
+  },
+  outputs: {
+    image: { kind: "data", type: "image" },
+    asset: { kind: "data", type: "asset" },
+  },
+  props: {
+    /** Pixels. Separate from the camera's own `resolution`, which describes
+     *  the frame the projection assumes — so a preview renders small and frames
+     *  identically to the full-size render. */
+    size: { type: "vec2i", default: [1280, 720], min: 16, max: 8192 },
+    filename: { type: "string", default: "render.png", label: "Filename" },
+    background: { type: "color", default: [0, 0, 0, 0], label: "Background" },
+    /** Fallback for a primitive with no `Cd`, exactly as SvgExport's is. */
+    stroke: { type: "color", default: [0, 0, 0, 1], label: "Stroke" },
+    strokeWidth: { type: "float", default: 1, min: 0, max: 200, step: 0.05 },
+    opacity: { type: "float", default: 1, min: 0, max: 1, step: 0.01 },
+    /** Points no primitive claimed. Off by default: a trail system has
+     *  thousands of vertices and a dot on every one buries the strokes. */
+    drawPoints: { type: "bool", default: false, label: "Draw Loose Points" },
+    pointRadius: { type: "float", default: 1.5, min: 0, max: 50, step: 0.1 },
+  },
+} as const satisfies NodeDefinition;
+
 export const geoNodeDefinitions = Object.freeze([
   ["cascade.geo.Rectangle", rectangleDefinition],
   ["cascade.geo.Circle", circleDefinition],
@@ -204,4 +242,5 @@ export const geoNodeDefinitions = Object.freeze([
   ["cascade.geo.Merge", mergeDefinition],
   ["cascade.geo.CopyToPoints", copyToPointsDefinition],
   ["cascade.geo.SvgExport", svgExportDefinition],
+  ["cascade.geo.Render", renderDefinition],
 ] as const);
