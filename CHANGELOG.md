@@ -2,7 +2,7 @@
 
 Notable changes to Cascade. Newest first.
 
-## Unreleased
+## 0.4.0 — 2026-09-09
 
 ### Documentation
 
@@ -42,7 +42,27 @@ Notable changes to Cascade. Newest first.
 
 - **The CLI build resolves `@cascade/runtime/params`.** `src/nodes/Node.ts` imports `resolvePropBinding` from it, the browser build resolved it through `vite.config.ts`, and the CLI build had no alias — so the CLI, which is what the sketches actually run, was the broken half.
 
-## 0.3.2 — 2026-09-09
+### Camera
+
+- **A camera is a core type, and it is Houdini's camera.** `camera` joins `CORE_TYPES`, `cascade.core.Camera` emits one, and every derivation — basis, view and projection matrices, horizontal and vertical angle — lives in `cascade/runtime/camera` so no renderer derives it twice. Following `/obj/cam` costs the two things the obvious design would have done instead: there is **no field of view** (`focal` and `aperture` in millimetres, angle derived — Houdini's 50 mm on 41.4214 mm is exactly 45°), and the orientation is **`translate` and `rotate`** rather than eye-and-target, looking down its own **-Z** with **+Y** up, with look-at layered on top as an override. `resolution` is on the camera because Houdini derives the vertical aperture from the frame shape; it is one `vec2i` rather than `resx`/`resy` because the vec rule is the more specific one. Matching a frame is therefore always one number, never two.
+- `rotate.z` is a roll about the camera's own view direction. The first two rotation orders tried were indistinguishable from this one by every test in the suite — with `rotate.z` at zero all three agree exactly — so the test that separates them asserts that roll changes the up and leaves the view direction alone.
+
+### Series
+
+- **A series is a graph plus an ordered list of parameter sets** (`CascadeSeries`, `runSeries`), cooked once per set and addressed by **record id, never index**, because a filter change reorders a set and a judgement pinned to a position silently becomes a different picture. `CascadePreset` and `applyPreset` already were the parameter set and had no callers. There is no marked region: the affected subgraph is derived from the overrides, so nothing can be marked wrongly.
+- A parameter set is **sparse**, so every instance cooks from a baseline captured before the first `applyPreset` — otherwise an instance that overrides nothing inherits the previous one's values, which is accidental feedback in a mechanism specified as having none, and it presents as a flaky renderer rather than as a bug. `first` reorders the work and never the results, so a gallery fills in as instances land without the list reshuffling under a selection.
+
+### Capabilities
+
+- **Studio can reach the shell.** The server has had an allowlist-gated `/api/shell` for a while and Studio never wired it as a node capability, so a definition declaring `capabilities: ['shell']` ran through `cascade run` and threw in the browser — a node marked `runsOn: 'portable'` that runs in one host is what `runsOn` exists to prevent. A `CascadeAbortSignal` is bridged to a DOM one rather than serialised; a 403 re-handshakes exactly once and then reports, naming the Allowed Commands editor rather than a status code.
+
+### Correctness
+
+- **A `vec3` prop stays a `vec3`.** `isColorValue` answers true for any three- or four-number array and the deserialise path had no `type === 'color'` guard, so every vector prop in every sketch was rewritten on load — `[0.55, 0.12, 1.95]` reached `execute` as a colour object, coerced and divided by 255. A guard existed one branch away and never ran, because a **project** module's definition arrives asynchronously and `node.parameters` is empty at load. Coercion is now decided by ambiguity: objects and strings still normalise, arrays only where the prop is already declared a colour.
+- **An error in the log says what it is.** The Log panel `JSON.stringify`s any object and `Error.message` is non-enumerable, so a `TypeError` and a `GPUPipelineError` were equally invisible as `{}`.
+- **Selecting a failing node no longer cooks it forever.** The Viewer's rAF pump is throttled to 100 ms and polls its watched node while dirty; an execute that throws never reaches `clean`, so it ran a full `scheduler.flush()` ten times a second, re-fetching inputs over the network, at 61 fps and never looking wrong. `Node.hasSettledFailure` is what the poll now skips — deliberately not folded into `isDirty`, because an explicit `requestOutput` still retries and that is the transient GPU and network case.
+- **Renaming a node is a double click.** The name label sits in the middle of the node body and a single click opened the rename editor, so aiming at a node to select it renamed it instead, in memory only and discarded on reload.
+- **A proxied Studio can save.** `https` origins are accepted and default ports matched, so a reverse-proxied or Tailscale-served Studio can POST — which is also what unblocks WebGPU, the clipboard and the microphone, all of which need a secure context.
 
 ### Headless GPU
 
