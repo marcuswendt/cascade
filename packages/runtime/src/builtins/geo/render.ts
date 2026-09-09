@@ -1,8 +1,8 @@
 import type { NodeExecutionContext } from "@cascade/contracts";
-import { emptyGeometry } from "@cascade/contracts";
+import { asScene } from "@cascade/contracts";
 
 import {
-  renderGeometry,
+  renderScene,
   renderToPng,
   type DrawingSurface,
 } from "../../geometry/render.js";
@@ -53,16 +53,25 @@ export async function executeRender(
   context: NodeExecutionContext<typeof renderDefinition>,
 ): Promise<void> {
   const { props } = context;
-  const camera = context.inputs.camera;
+  const scene = asScene(context.inputs.scene);
+  /**
+   * The camera input wins over the scene's own, so one scene can be rendered
+   * from several viewpoints without being rebuilt.
+   *
+   * And a render still refuses to invent one. The viewport may fall back to
+   * whatever camera you have navigated to, because a view is a way of looking;
+   * a render is a document, and a document with an implicit camera is one
+   * nobody can reproduce — including `cascade run --frames`, which has no
+   * viewport to borrow from.
+   */
+  const camera = context.inputs.camera ?? scene.camera;
   if (!camera) {
-    // Named rather than defaulted. A render with an invented camera is a render
-    // nobody can reproduce, and the message says what to wire.
     throw new Error(
-      "cascade.geo.Render has no camera — wire a cascade.core.Camera to its camera input",
+      "cascade.geo.Render has no camera — wire a cascade.core.Camera to its camera input, or into the scene",
     );
   }
 
-  const surface = renderGeometry(context.inputs.geometry ?? emptyGeometry(2), {
+  const surface = renderScene(scene.geometry, {
     camera,
     size: [props.size[0], props.size[1]],
     ...(props.background[3] > 0 ? { background: props.background } : {}),

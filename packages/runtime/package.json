@@ -21,6 +21,10 @@
       "types": "./dist/camera/index.d.ts",
       "default": "./dist/camera/index.js"
     },
+    "./scene": {
+      "types": "./dist/scene/index.d.ts",
+      "default": "./dist/scene/index.js"
+    },
     "./params": {
       "types": "./dist/params/index.d.ts",
       "default": "./dist/params/index.js"

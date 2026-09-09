@@ -1,5 +1,6 @@
 import type { Camera } from "./camera.js";
 import type { Color } from "./color.js";
+import type { Light, Scene } from "./scene.js";
 import type {
   Geometry,
   GeometryFileRef,
@@ -31,6 +32,8 @@ export const CORE_TYPES = [
   "rects",
   "color",
   "camera",
+  "scene",
+  "light",
   "asset",
   "array",
   "object",
@@ -54,6 +57,13 @@ export const IMPLICIT_TYPE_CONVERSIONS: Readonly<Record<string, readonly string[
   vec2i: ["vec2"],
   vec3i: ["vec3"],
   vec4i: ["vec4"],
+  /**
+   * A geometry *is* a scene — one with the viewport's own camera and no lights.
+   * So the wire is legal and nothing is lost, which is the widening rule this
+   * table already follows. Every consumer of a `scene` input reads it through
+   * `asScene`, which performs the promotion; see `scene.ts`.
+   */
+  geometry: ["scene"],
   vec4: ["color"],
   color: ["vec4"],
 };
@@ -192,6 +202,10 @@ export type ValueForType<T extends CascadeType> = T extends "float" | "int"
                           ? Color
                           : T extends "camera"
                             ? Camera
+                          : T extends "scene"
+                            ? Scene
+                          : T extends "light"
+                            ? Light
                           : T extends "image"
                             ? ImageRef
                             : T extends "texture"

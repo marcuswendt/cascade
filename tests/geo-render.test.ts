@@ -17,7 +17,9 @@ import { CAMERA_DEFAULTS, type Camera, type Geometry } from '@cascade/contracts'
 import { createCanvas } from '@napi-rs/canvas';
 
 import { GeometryBuilder } from '../packages/runtime/src/geometry/builder.js';
-import { renderGeometry } from '../packages/runtime/src/geometry/render.js';
+import { renderGeometry, renderScene } from '../packages/runtime/src/geometry/render.js';
+import { executeRender, renderDefinition } from '../packages/runtime/src/builtins/geo/render.js';
+import type { Scene } from '@cascade/contracts';
 
 /**
  * The surface, injected. This is the payoff from the renderer taking a factory
@@ -70,6 +72,68 @@ function ink(surface: any): { count: number; x: number; y: number } {
   return count === 0
     ? { count: 0, x: NaN, y: NaN }
     : { count, x: sumX / count, y: sumY / count };
+}
+
+/** The alpha at one pixel. Counting ink cannot tell one stroke from two on top
+ *  of each other; the composite is only visible in the channel. */
+function alphaAt(surface: any, x: number, y: number): number {
+  return surface.getContext('2d').getImageData(x, y, 1, 1).data[3];
+}
+
+function sceneOf(geometry: Geometry[], withCamera: Camera | null): Scene {
+  return { geometry, camera: withCamera, lights: [] };
+}
+
+/**
+ * Cook the node itself, not the renderer under it.
+ *
+ * `hostSurface` reads `OffscreenCanvas` off the global, which is the one host
+ * assumption in the node — so the harness supplies it the way a host would
+ * rather than the node being changed to make it testable.
+ */
+async function cook(inputs: Record<string, unknown>): Promise<{
+  image: any;
+  marks: number;
+}> {
+  const previous = (globalThis as any).OffscreenCanvas;
+  (globalThis as any).OffscreenCanvas = class {
+    constructor(width: number, height: number) {
+      return createCanvas(width, height) as never;
+    }
+  };
+  try {
+    const values: Record<string, any> = {};
+    const outputs: Record<string, { set: (value: unknown) => void }> = {};
+    for (const name of Object.keys(renderDefinition.outputs))
+      outputs[name] = { set: (value) => { values[name] = value; } };
+    const props: Record<string, unknown> = {};
+    for (const [name, prop] of Object.entries(renderDefinition.props))
+      props[name] = (prop as { default: unknown }).default;
+    props.size = [200, 200];
+    let bytes = new Uint8Array(0);
+    await executeRender({
+      nodeId: 'test',
+      inputs: inputs as never,
+      outputs: outputs as never,
+      props: props as never,
+      capabilities: {
+        assets: {
+          write: async (data: Uint8Array) => {
+            bytes = data;
+            return { path: '/assets/render.png', mediaType: 'image/png' };
+          },
+          read: async () => new Uint8Array(0),
+        },
+      } as never,
+      signal: { aborted: false, addEventListener() {}, removeEventListener() {} } as never,
+      progress: { report() {} } as never,
+    });
+    // Marks read back out of the PNG the node actually wrote, so the assertion
+    // is about the delivered bytes rather than an intermediate surface.
+    return { image: values.image, marks: bytes.length };
+  } finally {
+    (globalThis as any).OffscreenCanvas = previous;
+  }
 }
 
 describe('rendering through a camera', () => {
@@ -163,5 +227,85 @@ describe('rendering through a camera', () => {
 
     expect(() => renderGeometry(builder.build(), { camera: camera(), ...options }))
       .toThrow(/primitive.Cd has size 3/);
+  });
+});
+
+/**
+ * The scene half, added 2026-09-09 when `Render` started taking a `scene`.
+ *
+ * Marcus's reason for the type is what these are checking: *"a 'scene' node
+ * with a camera, lights and geometry attached becomes a '3d scene'."* Once the
+ * viewport and this node read the same object, they cannot frame a graph two
+ * ways — so the assertions are that a scene draws all of its geometry, that the
+ * promotion is transparent, and that a camera is still never invented.
+ */
+describe('rendering a scene', () => {
+  it('draws every geometry in the scene, not just the first', () => {
+    const one = ink(renderScene([segment([-1, 1, 0], [1, 1, 0])], { camera: camera(), ...options }));
+    const both = ink(
+      renderScene(
+        [segment([-1, 1, 0], [1, 1, 0]), segment([-1, -1, 0], [1, -1, 0])],
+        { camera: camera(), ...options },
+      ),
+    );
+    expect(both.count).toBeGreaterThan(one.count * 1.8);
+    // Two segments either side of the axis average back onto it. A renderer
+    // that drew only the first would put the centroid on the first line, so
+    // this is the assertion that actually discriminates.
+    // Within a pixel of the frame's centre line; the half-pixel is the pixel
+    // centre offset, not a framing error.
+    expect(Math.abs(both.y - 100)).toBeLessThan(1);
+    expect(one.y).toBeLessThan(90);
+  });
+
+  it('composites onto one surface rather than one per geometry', () => {
+    // Overlapping strokes at half opacity: drawn onto one surface the overlap
+    // is one alpha; composited per geometry it is darker, and the pixel count
+    // is identical either way — so the test reads the alpha, not the count.
+    const overlapping = renderScene(
+      [segment([-1, 0, 0], [1, 0, 0]), segment([-1, 0, 0], [1, 0, 0])],
+      { camera: camera(), ...options, opacity: 0.5 },
+    );
+    const single = renderScene([segment([-1, 0, 0], [1, 0, 0])], {
+      camera: camera(), ...options, opacity: 0.5,
+    });
+    expect(alphaAt(overlapping, 100, 100)).toBeGreaterThan(alphaAt(single, 100, 100));
+  });
+
+  it('an empty scene renders an empty frame rather than throwing', () => {
+    expect(ink(renderScene([], { camera: camera(), ...options })).count).toBe(0);
+  });
+
+  it('renderGeometry is renderScene of one, so the old path is the same code', () => {
+    const viaGeometry = ink(renderGeometry(segment([-1, 0, 0], [1, 0, 0]), { camera: camera(), ...options }));
+    const viaScene = ink(renderScene([segment([-1, 0, 0], [1, 0, 0])], { camera: camera(), ...options }));
+    expect(viaScene).toEqual(viaGeometry);
+  });
+});
+
+describe('the Render node resolves its camera', () => {
+  it('takes the scene\'s camera when no camera is wired', async () => {
+    const { image } = await cook({ scene: sceneOf([segment([-1, 0, 0], [1, 0, 0])], camera()) });
+    expect(image.size).toEqual([200, 200]);
+  });
+
+  it('lets a wired camera override the scene\'s', async () => {
+    // A 24 mm lens draws the same segment wider than a 100 mm one. If the
+    // override were ignored the two would be identical, which is what makes
+    // this the discriminating case rather than a smoke test.
+    const scene = sceneOf([segment([-1, 0, 0], [1, 0, 0])], camera({ focal: 100 }));
+    const wide = await cook({ scene, camera: camera({ focal: 24 }) });
+    const narrow = await cook({ scene });
+    expect(wide.marks).toBeGreaterThan(narrow.marks);
+  });
+
+  it('refuses to invent a camera, and says what to wire', async () => {
+    await expect(cook({ scene: sceneOf([segment([-1, 0, 0], [1, 0, 0])], null) }))
+      .rejects.toThrow(/no camera — wire a cascade.core.Camera/);
+  });
+
+  it('accepts a bare geometry, because geometry widens to scene', async () => {
+    const { marks } = await cook({ scene: segment([-1, 0, 0], [1, 0, 0]), camera: camera() });
+    expect(marks).toBeGreaterThan(0);
   });
 });

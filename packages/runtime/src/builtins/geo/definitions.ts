@@ -200,16 +200,32 @@ export const svgExportDefinition = {
 export const renderDefinition = {
   apiVersion: 1,
   label: "Render",
-  description: "Draw geometry through a camera, as a raster.",
+  description: "Draw a scene through a camera, as a raster.",
   icon: "Camera",
   runsOn: "portable",
   capabilities: ["assets"],
   inputs: {
-    geometry: { kind: "data", type: "geometry" },
     /**
-     * The camera. Required rather than defaulted, and that is the point of the
-     * node: a render with an implicit camera is a render nobody can reproduce,
-     * and `cascade.core.Camera` is one node away.
+     * A scene, or a geometry — `geometry` widens to `scene`, so wiring a
+     * geometry straight in still works and arrives through `asScene`.
+     *
+     * Taking a scene rather than a geometry is what makes the viewport and this
+     * node incapable of disagreeing about framing: both read the same object,
+     * so the picture on screen and the picture in the PNG come from one camera
+     * and one list of geometry rather than from two paths that have to be kept
+     * in step by hand.
+     */
+    scene: { kind: "data", type: "scene" },
+    /**
+     * The camera, and required in the sense that matters: it may come from the
+     * scene instead, but it may not be invented. A render with an implicit
+     * camera is a render nobody can reproduce, and `cascade.core.Camera` is one
+     * node away.
+     *
+     * Wired here it **overrides** the scene's own camera, which is what lets one
+     * scene be rendered from several viewpoints without rebuilding it — and is
+     * also why the viewport's navigated camera never reaches this node. A view
+     * you dragged is not a document.
      */
     camera: { kind: "data", type: "camera" },
   },

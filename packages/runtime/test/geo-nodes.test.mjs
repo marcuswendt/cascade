@@ -96,7 +96,7 @@ function assetCapability(written = []) {
   };
 }
 
-test("the six nodes register once each under one namespace", () => {
+test("every geo node registers once, under one namespace", () => {
   assert.deepEqual(
     geoNodeRegistrations.map((registration) => registration.moduleId),
     [
@@ -105,6 +105,7 @@ test("the six nodes register once each under one namespace", () => {
       "cascade.geo.Transform",
       "cascade.geo.Merge",
       "cascade.geo.CopyToPoints",
+      "cascade.geo.Render",
       "cascade.geo.SvgExport",
     ],
   );
@@ -112,12 +113,16 @@ test("the six nodes register once each under one namespace", () => {
     assert.equal(registration.definition.apiVersion, 1);
     assert.equal(registration.definition.runsOn, "portable");
   }
-  // Only the export touches the world, and it declares exactly one capability.
+  // Only the two that write files touch the world, and each declares exactly
+  // one capability. Everything else is a pure function of its inputs.
   assert.deepEqual(
     geoNodeRegistrations
       .filter((item) => item.definition.capabilities)
       .map((item) => [item.moduleId, item.definition.capabilities]),
-    [["cascade.geo.SvgExport", ["assets"]]],
+    [
+      ["cascade.geo.Render", ["assets"]],
+      ["cascade.geo.SvgExport", ["assets"]],
+    ],
   );
 });
 

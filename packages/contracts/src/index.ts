@@ -6,6 +6,7 @@ export * from "./definition.js";
 export * from "./document.js";
 export * from "./geometry.js";
 export * from "./particles.js";
+export * from "./scene.js";
 export * from "./series.js";
 export * from "./validate.js";
 export * from "./values.js";

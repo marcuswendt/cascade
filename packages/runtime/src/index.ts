@@ -6,5 +6,6 @@ export * from "./expressions/index.js";
 export * from "./geometry/index.js";
 export * from "./gpu.js";
 export * from "./params/index.js";
+export * from "./scene/index.js";
 export { createRuntime, PREFLIGHT_WARNING_CODES } from "./runtime.js";
 export type * from "./types.js";

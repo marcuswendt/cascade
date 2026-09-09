@@ -128,8 +128,18 @@ function multiply(matrix: readonly number[], x: number, y: number, z: number): r
   );
 }
 
-export function renderGeometry(
-  geometry: Geometry,
+/**
+ * A scene onto one surface: the background once, then every geometry through
+ * the same camera.
+ *
+ * Separate from `renderGeometry` only in that it draws N of them. The surface,
+ * the background and the matrices are set up once, which is the reason this is
+ * a function rather than a loop at the call site — a loop there would produce a
+ * surface per geometry and composite them, and compositing straight alpha over
+ * straight alpha darkens every overlap.
+ */
+export function renderScene(
+  geometry: readonly Geometry[],
   options: RenderOptions,
 ): DrawingSurface {
   const [width, height] = options.size;
@@ -145,10 +155,36 @@ export function renderGeometry(
     context.fillRect(0, 0, canvas.width, canvas.height);
   }
 
+  for (const one of geometry) drawGeometry(context, canvas, one, options);
+  return canvas;
+}
+
+/** One geometry through a camera, on its own surface. */
+export function renderGeometry(
+  geometry: Geometry,
+  options: RenderOptions,
+): DrawingSurface {
+  return renderScene([geometry], options);
+}
+
+/**
+ * Draw one geometry onto a context that is already sized and cleared.
+ *
+ * The matrices are rebuilt per geometry rather than hoisted, and that is
+ * deliberate: it costs two small matrix builds per geometry and it keeps this
+ * function a pure function of its arguments, so a caller cannot pass a view
+ * matrix that disagrees with the camera it also passed.
+ */
+function drawGeometry(
+  context: DrawingContext,
+  canvas: DrawingSurface,
+  geometry: Geometry,
+  options: RenderOptions,
+): void {
   const view = viewMatrix(options.camera);
   const projection = projectionMatrix(options.camera);
   const position = geometry.point[POSITION_ATTRIBUTE];
-  if (!position || position.storage === "string") return canvas;
+  if (!position || position.storage === "string") return;
   const size = position.size;
   const points = position.data as ArrayLike<number>;
 
@@ -235,8 +271,6 @@ export function renderGeometry(
       context.fill();
     }
   }
-
-  return canvas;
 }
 
 /** The raster as PNG bytes, for the asset capability. */

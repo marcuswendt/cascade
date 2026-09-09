@@ -61,7 +61,7 @@ export const GEOMETRY_TYPES = ['geometry', 'points', 'lines', 'polyline', 'mesh'
 
 /** Colour is kept apart from vec4: it means something different, it wants a
  *  swatch rather than four number fields, and it carries a colour space. */
-export const OTHER_TYPES = ['color', 'camera', 'asset', 'array', 'object', 'any'] as const;
+export const OTHER_TYPES = ['color', 'camera', 'scene', 'light', 'asset', 'array', 'object', 'any'] as const;
 
 export const CORE_TYPES = CONTRACT_CORE_TYPES;
 
