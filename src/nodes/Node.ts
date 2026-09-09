@@ -1453,11 +1453,31 @@ export class Node {
   }
 
   /**
-   * Check if this node is a network (can contain children)
-   * Override in SubnetNode to return true
+   * A container that a declaration said is one.
+   *
+   * Set by `attachDefinition` from `definition.container`, because `isNetwork`
+   * was a class override and a definition-v1 node is a plain `Node` — so a
+   * `cascade.core.Subnet` created through the adapter reported `false` and
+   * nothing that asks could tell it was a subnet.
+   *
+   * Marcus, 2026-09-09, hitting both symptoms of that at once: *"double
+   * clicking on the node goes to the code view ... not the subnet ... also the
+   * i and o keys are not doing anything."* Two features, one cause — the
+   * double-click handler and the i/o shortcuts both gate on `isNetwork()`, and
+   * both were correct code asking a question that could only ever answer no.
+   */
+  declaredContainer: 'subnet' | 'array' | null = null;
+
+  /**
+   * Whether this node can contain children.
+   *
+   * Two sources, and both are legitimate: a subclass that overrides this
+   * (`SubnetNode`), and a definition that declares a container. The class
+   * route came first and stays, because the class nodes are a third authoring
+   * style that is not going anywhere yet.
    */
   isNetwork(): boolean {
-    return false;
+    return this.declaredContainer === 'subnet';
   }
 
   /**

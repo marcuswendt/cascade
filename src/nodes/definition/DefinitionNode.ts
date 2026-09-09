@@ -87,6 +87,13 @@ export function attachDefinition(
   const pendingTriggers = new Map<string, unknown>();
   let triggerSequence = 0;
 
+  // A declaration that says it contains things has to reach the host, or every
+  // caller of `isNetwork()` gets a confident no. See `Node.declaredContainer`.
+  const container = (definition as { container?: string }).container;
+  if (container === 'subnet' || container === 'array') {
+    node.declaredContainer = container;
+  }
+
   for (const [name, input] of Object.entries(definition.inputs ?? {})) {
     if (input.kind === 'trigger') {
       const port = node.in(name, undefined, {
