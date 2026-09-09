@@ -199,6 +199,37 @@ function carryTypesMatch(before: string, after: string): boolean {
   return before === after;
 }
 
+/**
+ * Whether two stored parameter values are the same.
+ *
+ * Structural for arrays and plain objects, because the case this serves is a
+ * panel handing back a copy of the values it just read — `===` calls that a
+ * change and cooks the graph for nothing. Deliberately shallow past plain
+ * containers: anything else (a canvas, an ImageBuffer, a geometry) is compared
+ * by identity, since a deep walk of a megabyte of pixels to avoid one cook is
+ * the wrong trade.
+ */
+function sameStoredValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((item, index) => sameStoredValue(item, b[index]));
+  }
+  if (isPlainRecord(a) && isPlainRecord(b)) {
+    const keys = Object.keys(a);
+    if (keys.length !== Object.keys(b).length) return false;
+    return keys.every(key => key in b && sameStoredValue(a[key], b[key]));
+  }
+  // NaN is not === itself, and a parameter legitimately holds one.
+  return typeof a === 'number' && typeof b === 'number'
+    && Number.isNaN(a) && Number.isNaN(b);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 export class Node {
   // Static callback for UI reactivity (set by editor, not required for headless)
   static onPropParamsChanged?: (nodeId: string) => void;
@@ -1133,11 +1164,42 @@ export class Node {
     this.markDirty();
   }
 
+  /**
+   * Write a parameter and cook — unless the write would change nothing.
+   *
+   * It marked the node dirty unconditionally, and MW-OBSERVATORY-ART found
+   * what that costs a panel: the series panel re-writes its filter on every
+   * load, so **mounting it cooked the whole document to arrive at values it
+   * already held.** Every panel that restores state on mount hits this, and
+   * each of them would otherwise write the same guard.
+   *
+   * The equality test is on the RAW stored value, because that is what a write
+   * replaces. Two things it must not treat as unchanged, both of which would
+   * make this quietly wrong:
+   *
+   *   - a write that **clears a declared default expression** changes the
+   *     resolved value even though the stored one may match, so a bound prop
+   *     is never skipped;
+   *   - an array or object, which is compared structurally rather than by
+   *     reference — a panel that hands back a copy of the same numbers is the
+   *     exact case this exists for, and `===` would call it a change.
+   */
   setParameter(name: string, value: any): void {
     const parameter = this.parameters.find(p => p.name === name);
     if (!parameter) return;
+    if (this.parameterWriteIsNoop(name, value)) return;
     parameter.value = value;
     this.markDirty();
+  }
+
+  /** Whether writing this value would leave the node exactly as it is. */
+  private parameterWriteIsNoop(name: string, value: unknown): boolean {
+    const prop = this.props[name];
+    // No prop, or a bound one: let the write through. A default expression is
+    // cleared by the write, which is a change; a channel or an author's
+    // expression means the caller has other problems, reported elsewhere.
+    if (!prop || prop.expression || (prop.channel?.keys?.length ?? 0) > 0) return false;
+    return sameStoredValue(prop.value, value);
   }
 
   // ============ Parameter carry-over ============

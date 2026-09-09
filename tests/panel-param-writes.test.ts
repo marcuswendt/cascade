@@ -200,3 +200,91 @@ describe('the panel API', () => {
       .toThrow(/driven by an? expression, so writing its value would have no effect/);
   });
 });
+
+/**
+ * A write that changes nothing must not cook the graph.
+ *
+ * MW-OBSERVATORY-ART, after wiring the series panel to the new API: the panel
+ * re-writes its filter on every load, and `setParameter` marked the node dirty
+ * whether or not the value changed — so **mounting the panel cooked the whole
+ * document to arrive at values it already held.** Every panel that restores
+ * state on mount hits this, and each would otherwise write the same guard.
+ */
+describe('a write that changes nothing', () => {
+  function counted() {
+    const graph = new Graph();
+    const node = new Node('subject', 'Test', graph);
+    graph.addElement(node);
+    node.param('gain', 1, { type: 'float' });
+    node.param('range', [0, 1], { type: 'vec2' } as never);
+    let cooks = 0;
+    node.setFunction(() => { cooks += 1; });
+    return { graph, node, cooks: () => cooks };
+  }
+
+  it('does not mark the node dirty', async () => {
+    const { graph, node, cooks } = counted();
+    await graph.execute(node);
+    expect(cooks()).toBe(1);
+
+    node.setParameter('gain', 1);
+    expect(node.isDirty).toBe(false);
+    await graph.scheduler.flush();
+    expect(cooks()).toBe(1);
+  });
+
+  it('still cooks when the value actually changes', async () => {
+    const { graph, node, cooks } = counted();
+    await graph.execute(node);
+
+    node.setParameter('gain', 2);
+    await graph.scheduler.flush();
+    expect(cooks()).toBe(2);
+  });
+
+  /** The case this exists for: a panel hands back a copy of the array it just
+   *  read, and `===` would call that a change. */
+  it('compares an array structurally rather than by reference', async () => {
+    const { graph, node, cooks } = counted();
+    await graph.execute(node);
+
+    node.setParameter('range', [0, 1]);
+    expect(node.isDirty).toBe(false);
+    node.setParameter('range', [0, 2]);
+    expect(node.isDirty).toBe(true);
+    await graph.scheduler.flush();
+    expect(cooks()).toBe(2);
+  });
+
+  /**
+   * A bound prop is never skipped. Writing over a declared default expression
+   * clears it, which changes the resolved value even when the stored one
+   * matches — skipping that would leave the parameter animating after the
+   * author had set a number.
+   */
+  it('is not a no-op when the write clears a default expression', async () => {
+    const graph = new Graph();
+    const node = new Node('subject', 'Test', graph);
+    graph.addElement(node);
+    node.param('gain', 5, { type: 'float', defaultExpression: '5' } as never);
+    await graph.execute(node);
+
+    // The stored value and the written value agree, and the write still has
+    // work to do: the expression has to go.
+    node.setParameter('gain', 5);
+    expect(node.props.gain.expression).toBeUndefined();
+    expect(node.parameters.find(p => p.name === 'gain')!.value).toBe(5);
+  });
+
+  it('treats two NaNs as the same stored value', async () => {
+    const { graph, node, cooks } = counted();
+    node.setParameter('gain', Number.NaN);
+    await graph.execute(node);
+    const before = cooks();
+
+    node.setParameter('gain', Number.NaN);
+    expect(node.isDirty).toBe(false);
+    await graph.scheduler.flush();
+    expect(cooks()).toBe(before);
+  });
+});
