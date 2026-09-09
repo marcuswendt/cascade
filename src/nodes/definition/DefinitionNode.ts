@@ -192,7 +192,9 @@ export function attachDefinition(
       outputs,
       props: Object.fromEntries(node.parameters.map(parameter => [parameter.name, parameter.value])),
       capabilities: nodeCapabilities,
-      signal: new AbortController().signal,
+      // The node's own cook signal, not a fresh one that nobody aborts. See
+      // `Node.cookSignal` for what that cost.
+      signal: node.cookSignal ?? new AbortController().signal,
       progress: silentProgress,
     } as unknown as NodeExecutionContext<NodeDefinition>;
     await execute(context);

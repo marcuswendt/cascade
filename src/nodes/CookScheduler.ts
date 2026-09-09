@@ -41,6 +41,7 @@ export class CookScheduler {
   private rerunRequested = false;
   private listeners = new Set<CookListener>();
   private idleResolvers = new Set<() => void>();
+  private backgroundAbort: AbortController | null = null;
   private _status: CookStatus = {
     phase: 'idle',
     pass: 0,
@@ -102,6 +103,11 @@ export class CookScheduler {
   }
 
   schedule(): void {
+    // Interactive work arriving is the whole reason the background lane can be
+    // preempted, and it is preempted here rather than when the run starts:
+    // between `schedule` and the debounce firing there is a whole 50 ms in
+    // which a background render would otherwise keep the CPU.
+    this.preemptBackground('interactive work arrived');
     if (this.activeRun) {
       this.rerunRequested = true;
       return;
@@ -124,6 +130,7 @@ export class CookScheduler {
   }
 
   private async flushInternal(entryNode: Node | undefined, retryErrors: boolean): Promise<void> {
+    this.preemptBackground('interactive work arrived');
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
@@ -157,6 +164,7 @@ export class CookScheduler {
   }
 
   dispose(): void {
+    this.preemptBackground('the graph went away');
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.listeners.clear();
@@ -237,6 +245,106 @@ export class CookScheduler {
     this.setStatus({ phase: 'idle', total: 0, completed: 0, currentNode: null, pass: 0, startedAt: null, elapsed: 0 });
     for (const resolve of this.idleResolvers) resolve();
     this.idleResolvers.clear();
+  }
+
+  // ============ The background lane ============
+
+  /**
+   * Work that must never delay the thing being looked at.
+   *
+   * Marcus's rule for an auto-updating series, 2026-09-09: *"i want the series
+   * to auto-update ... however the single live node has priority."* That cannot
+   * be expressed in the interactive queue, which is one FIFO with no priority
+   * in it — measured by MW-OBSERVATORY-ART as 91 of 91 downstream cooks queued
+   * behind their upstream with zero overlap and nothing ever superseded. A
+   * series auto-updating through that queue would sit in front of the next
+   * edit: twelve instances at ~220 ms each is 2.6 seconds between Marcus and
+   * the slider he is dragging.
+   *
+   * So background is a second lane with three properties, and all three are
+   * load-bearing:
+   *
+   *   - it **starts only when the graph is quiet** — `phase === 'idle'` plus a
+   *     settling interval, because otherwise a drag becomes a chain of
+   *     started-and-cancelled passes, which is worse than not starting;
+   *   - it is **abandoned the moment interactive work arrives**, at `schedule`
+   *     rather than at the run, so the debounce window is not spent on it;
+   *   - it is abandoned **through a signal the work can see**, so an expensive
+   *     task can bail before committing rather than after. That is the fault
+   *     this lane exists to avoid rather than relocate: an abandoned cook on
+   *     `cloud-volumes` had already encoded and uploaded a 1.55 MB PNG before
+   *     anything noticed it was superseded.
+   *
+   * **The trap for whoever builds the first client.** Mutating the graph from
+   * inside a background task — which is what applying a parameter set does —
+   * reaches `markStale`, and `markStale` calls `schedule`, which preempts the
+   * background lane. A task that invalidates the graph therefore cancels
+   * itself. The way out is to drive nodes directly rather than through the
+   * interactive queue, not to weaken the preemption; the preemption is the
+   * only thing making the lane honest.
+   */
+  async runBackground(
+    task: (signal: AbortSignal) => Promise<void>,
+    options: { readonly settleMs?: number } = {},
+  ): Promise<'completed' | 'preempted'> {
+    this.preemptBackground('superseded by a newer background task');
+    await this.whenSettled(options.settleMs ?? this.debounceMs * 4);
+
+    const abort = new AbortController();
+    this.backgroundAbort = abort;
+    try {
+      await task(abort.signal);
+      return abort.signal.aborted ? 'preempted' : 'completed';
+    } finally {
+      if (this.backgroundAbort === abort) this.backgroundAbort = null;
+    }
+  }
+
+  /** Whether background work is in flight. Distinct from `isRunning`, which is
+   *  the interactive lane — a panel showing one as the other would report the
+   *  series as though Marcus's own edit were still cooking. */
+  get isRunningBackground(): boolean {
+    return this.backgroundAbort !== null;
+  }
+
+  /** @internal Abandon the background lane. Public so a client can stand down
+   *  without waiting for an invalidation to do it. */
+  preemptBackground(reason: string): void {
+    const abort = this.backgroundAbort;
+    if (!abort) return;
+    this.backgroundAbort = null;
+    if (!abort.signal.aborted) abort.abort(new Error(reason));
+  }
+
+  /**
+   * Resolve once the graph has been idle for `settleMs` without interruption.
+   *
+   * Deliberately not `whenIdle()` plus a timer: `whenIdle` resolves the instant
+   * the queue drains, and a drag drains it between every keystroke. The
+   * settling interval is what turns *momentarily idle* into *finished*, and it
+   * restarts whenever work reappears — so under sustained invalidation this
+   * never resolves, which is correct. Background work has no business starting
+   * while the graph is still moving.
+   */
+  private whenSettled(settleMs: number): Promise<void> {
+    return new Promise<void>(resolve => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const stop = this.subscribe(status => {
+        if (status.phase === 'idle') {
+          if (timer === null) {
+            timer = setTimeout(() => {
+              stop();
+              resolve();
+            }, settleMs);
+          }
+          return;
+        }
+        if (timer !== null) {
+          clearTimeout(timer);
+          timer = null;
+        }
+      });
+    });
   }
 
   private collectDownstream(entryNode: Node): Set<string> {

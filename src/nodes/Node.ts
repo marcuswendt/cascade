@@ -278,6 +278,16 @@ export class Node {
   /** The inputs an execute threw on, or null if the last cook did not throw.
    *  Read only by `isDirty` — see the comment there for why it exists. */
   protected failedInputHash: string | null = null;
+
+  /**
+   * The abort controllers for cooks currently in flight.
+   *
+   * A set rather than one, for the same reason `stagingStack` is a stack: two
+   * cooks can overlap, and the one that finishes first must not cancel the
+   * other. Aborted together on invalidation, because an invalidation
+   * invalidates every version of this node's work rather than the newest.
+   */
+  private cookAborts = new Set<AbortController>();
   cookState: CookState = 'stale';
   private cookGeneration = 0;
   /**
@@ -1663,10 +1673,51 @@ export class Node {
     this.graph.scheduler.markStale(this);
   }
 
+  /**
+   * The signal for the cook in flight, or null outside one.
+   *
+   * **Until 2026-09-09 Studio handed every node `new AbortController().signal`
+   * and never aborted it**, so `context.signal` was inert: a node that checked
+   * it — `series-source` does — could not be cancelled, and every long node
+   * ran to completion whether or not its result was still wanted. The
+   * generation check in `execute` then discarded the result, which is the
+   * expensive half in the wrong order: measured on `cloud-volumes`, an
+   * abandoned cook had already encoded and uploaded a 1.55 MB PNG before
+   * anything noticed it was superseded.
+   *
+   * So the signal is real, and a node with expensive work owes itself a check
+   * before committing to it. That is the only place preemption can be cheap.
+   */
+  get cookSignal(): AbortSignal | null {
+    for (const controller of this.cookAborts) {
+      if (!controller.signal.aborted) return controller.signal;
+    }
+    return null;
+  }
+
   /** @internal Scheduler-owned invalidation primitive. */
   invalidateCook(): void {
     this.cookGeneration++;
+    this.abortCooks('superseded');
     this.setCookState('stale');
+  }
+
+  /**
+   * @internal Abandon whatever this node is doing.
+   *
+   * Separate from `invalidateCook` because the scheduler needs to stop
+   * background work WITHOUT marking it stale — a preempted instance is not
+   * dirty, it is unfinished, and telling the graph it is stale would put it
+   * straight back in the queue it was just taken out of.
+   */
+  cancelCook(reason: string): void {
+    this.abortCooks(reason);
+  }
+
+  private abortCooks(reason: string): void {
+    for (const controller of this.cookAborts) {
+      if (!controller.signal.aborted) controller.abort(new Error(reason));
+    }
   }
 
   /** @internal Scheduler-owned state transition. */
@@ -1815,6 +1866,8 @@ export class Node {
     const generation = this.cookGeneration;
     const staging = new Map<OutputPort, unknown>();
     this.stagingStack.push(staging);
+    const abort = new AbortController();
+    this.cookAborts.add(abort);
     this.setCookState('cooking');
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
@@ -1880,6 +1933,7 @@ export class Node {
       // popping would let the first to finish discard the other's map.
       const index = this.stagingStack.indexOf(staging);
       if (index >= 0) this.stagingStack.splice(index, 1);
+      this.cookAborts.delete(abort);
     }
   }
 
