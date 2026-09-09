@@ -159,11 +159,8 @@ export class ProjectRoot {
     }
   }
 
-  /** Every `*.cascade` file directly in the project root, relative names,
-   * sorted — a project may have exactly one (the common case) or several
-   * (test-quill's convo1/convo2/test-quill1 is real, not a bug to design
-   * away). The caller decides what "the" graph means when there's more
-   * than one; this just reports what's actually there. */
+  /** Sorted graph filenames directly in the project root. The caller chooses
+   * the active document when a project contains several graphs. */
   async listGraphFiles(): Promise<string[]> {
     const entries = await fs.readdir(this.root, { withFileTypes: true });
     return entries

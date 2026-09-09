@@ -13,6 +13,7 @@ for product decisions, and [ARCHITECTURE.md](ARCHITECTURE.md) for dependencies.
 - `packages/runtime/` owns environment-neutral execution mechanisms.
 - `server/` owns project files, compilation, processes, and host transports.
 - `src/editor/` owns Studio interactions and presentation.
+- `src/player/` owns the standalone browser host and embed controls.
 - Sketch repositories own creative algorithms, providers, and project panels.
 
 Keep provider SDKs and client-specific data in projects. Do not add dependencies
@@ -39,10 +40,19 @@ git diff --check
 `npm run build` also runs `build:cli` through its postbuild hook. Keep a final
 CLI build after any separate Vite build because Vite refreshes `dist/`. Coordinate
 rebuilds when running Studio servers serve from that checkout.
+Do not run package builds concurrently with tests that read generated package
+files: the builds replace those directories while tests may be importing them.
 
 For public API or packaging changes, run `npm run test:package`, which exercises
 the packed distribution from a temporary consumer. Built-in node-definition or
 registry changes also require `npm run build:node-reference`; include its result.
+
+For player changes, run `npm run test:player` after building the CLI. It opens
+an isolated headless Chrome profile and checks actual pixels, multiple embeds,
+playback and disposal on a static server. Set `CASCADE_CHROME` to the Chrome
+executable on non-macOS systems. `CASCADE_TEST_PLAYER=1 npm run test:package`
+also runs that proof against the installed tarball. GPU package verification
+is opt-in separately with `CASCADE_TEST_DAWN=1`.
 
 For prose-only changes, verify source claims, links, examples, and diff hygiene.
 When changing generated project instructions in `server/src/projectTemplate.ts`,

@@ -166,8 +166,7 @@ declare const graph: any;
   let fileStatus: FileStatus = 'synced';
   let historyCount = 0;
 
-  // WindowManager mounts this without a graph prop, and every action below
-  // needs one, so fall back to the node's own graph reference.
+  // Hosts may supply a graph explicitly; otherwise use the node's graph.
   $: activeGraph = (graph ?? (node as any)?.graph ?? null) as Graph | null;
 
   // Computed

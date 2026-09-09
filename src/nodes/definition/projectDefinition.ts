@@ -32,7 +32,8 @@ import type { Node } from '../Node.js';
 import { attachDefinition } from './DefinitionNode.js';
 import { browserAssetCapability } from './browserCapabilities.js';
 import { browserShellCapability, shellRouteAvailable } from './browserShellCapability.js';
-import { createStudioGpuCapability, type StudioGpuHost } from './gpuCapability.js';
+import { createBrowserGpuHost } from '../../browser/gpu.js';
+import type { GpuHost } from '../../../packages/runtime/src/gpu.js';
 
 /**
  * What a project module may reach for when Studio is the host.
@@ -77,8 +78,8 @@ void shellRouteAvailable().then((available) => {
   if (!available) delete (studioCapabilities as { shell?: unknown }).shell;
 });
 
-function gpuCapabilityIfAvailable(): { gpu?: StudioGpuHost } {
-  const gpu = createStudioGpuCapability();
+function gpuCapabilityIfAvailable(): { gpu?: GpuHost } {
+  const gpu = createBrowserGpuHost();
   return gpu ? { gpu } : {};
 }
 

@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Graph } from '@/nodes/Graph';
 import { registerDefinitionNodes } from '@/nodes/definition/DefinitionNode';
 import { initializeNodeLibraries } from '@/nodes/initializeLibraries';
-import { createStudioGpuCapability } from '@/nodes/definition/gpuCapability';
+import { createBrowserGpuHost } from '@/browser/gpu';
 import type { NodeDefinition, NodeExecutionContext } from '../packages/contracts/src/index.js';
 import type { DefinitionNodeRegistration } from '../packages/runtime/src/types.js';
 
@@ -71,7 +71,7 @@ function stubWebGpu() {
  * wants its own device and its own call counts. So one stable object is
  * registered and delegates to whichever host the current test built.
  */
-let host: ReturnType<typeof createStudioGpuCapability>;
+let host: ReturnType<typeof createBrowserGpuHost>;
 const delegating = {
   get device() { return host!.device; },
   get adapterInfo() { return host!.adapterInfo; },
@@ -99,7 +99,7 @@ describe('the gpu capability, Stage 0', () => {
 
   it('hands two nodes the same device', async () => {
     const gpu = stubWebGpu();
-    host = createStudioGpuCapability();
+    host = createBrowserGpuHost();
     const graph = new Graph();
     graph.addNode('cascade.test.GpuNode', { x: 0, y: 0 });
     graph.addNode('cascade.test.GpuNode', { x: 0, y: 100 });
@@ -116,7 +116,7 @@ describe('the gpu capability, Stage 0', () => {
 
   it('keys the resource cache per node, so two instances do not collide', async () => {
     stubWebGpu();
-    host = createStudioGpuCapability();
+    host = createBrowserGpuHost();
     const graph = new Graph();
     const first = graph.addNode('cascade.test.GpuNode', { x: 0, y: 0 });
     const second = graph.addNode('cascade.test.GpuNode', { x: 0, y: 100 });
@@ -129,7 +129,7 @@ describe('the gpu capability, Stage 0', () => {
 
   it('builds a cached resource once and returns the same value on a re-cook', async () => {
     stubWebGpu();
-    host = createStudioGpuCapability();
+    host = createBrowserGpuHost();
     const graph = new Graph();
     const node = graph.addNode('cascade.test.GpuNode', { x: 0, y: 0 });
 
@@ -146,7 +146,7 @@ describe('the gpu capability, Stage 0', () => {
 
   it('reports the adapter, so a difference between two runs is attributable', async () => {
     stubWebGpu();
-    host = createStudioGpuCapability();
+    host = createBrowserGpuHost();
     const graph = new Graph();
     graph.addNode('cascade.test.GpuNode', { x: 0, y: 0 });
 
@@ -159,6 +159,6 @@ describe('the gpu capability, Stage 0', () => {
 
   it('installs nothing when the browser has no WebGPU', () => {
     delete (navigator as any).gpu;
-    expect(createStudioGpuCapability()).toBeUndefined();
+    expect(createBrowserGpuHost()).toBeUndefined();
   });
 });

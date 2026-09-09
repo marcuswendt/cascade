@@ -2,9 +2,6 @@
 import { fireEvent, render } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import CustomNodeDialog from '@/editor/CustomNodeDialog.svelte';
-import GraphTabs from '@/editor/GraphTabs.svelte';
-import Splitter from '@/editor/Splitter.svelte';
-import Tabs from '@/editor/Tabs.svelte';
 import ColorRampEditor from '@/editor/components/ColorRampEditor.svelte';
 
 describe('keyboard UI interactions', () => {
@@ -67,86 +64,4 @@ describe('keyboard UI interactions', () => {
     getContext.mockRestore();
   });
 
-  it('selects a tab with the keyboard', async () => {
-    const selected = vi.fn();
-    const view = render(Tabs, {
-      props: {
-        tabs: [{ id: 'graph', type: 'graph', label: 'Graph', windowId: 'main' }],
-        activeTabId: null,
-      },
-      events: { tabSelect: selected },
-    } as never);
-
-    await fireEvent.keyDown(view.getByRole('tab', { name: 'Graph' }), { key: 'Enter' });
-
-    expect(selected).toHaveBeenCalledWith(expect.objectContaining({ detail: { tabId: 'graph' } }));
-  });
-
-  it('uses roving focus and keeps close actions outside tabs', async () => {
-    const selected = vi.fn();
-    const view = render(Tabs, {
-      props: {
-        tabs: [
-          { id: 'one', type: 'editor', label: 'One', windowId: 'main' },
-          { id: 'two', type: 'editor', label: 'Two', windowId: 'main' },
-        ],
-        activeTabId: 'one',
-      },
-      events: { tabSelect: selected },
-    } as never);
-    const [first, second] = view.getAllByRole('tab');
-
-    expect(view.getByRole('tablist', { name: 'Open views' })).toBeTruthy();
-    expect(first.getAttribute('tabindex')).toBe('0');
-    expect(second.getAttribute('tabindex')).toBe('-1');
-    expect(first.contains(view.getAllByRole('button', { name: 'Close tab' })[0])).toBe(false);
-
-    first.focus();
-    await fireEvent.keyDown(first, { key: 'ArrowRight' });
-
-    expect(document.activeElement).toBe(second);
-    expect(selected).toHaveBeenLastCalledWith(expect.objectContaining({ detail: { tabId: 'two' } }));
-  });
-
-  it('includes the document and editor views in GraphTabs keyboard navigation', async () => {
-    const selected = vi.fn();
-    const view = render(GraphTabs, {
-      props: {
-        tabs: [
-          { id: 'graph', type: 'graph', label: 'Graph', windowId: 'main' },
-          { id: 'editor', type: 'editor', label: 'Editor', windowId: 'main' },
-        ],
-        activeTabId: 'graph',
-        documentName: 'Sketch',
-      },
-      events: { tabSelect: selected },
-    } as never);
-    const [documentTab, editorTab] = view.getAllByRole('tab');
-
-    expect(documentTab.textContent).toContain('Sketch');
-    expect(documentTab.contains(view.getByRole('button', { name: 'Close tab' }))).toBe(false);
-    await fireEvent.keyDown(documentTab, { key: 'ArrowRight' });
-
-    expect(document.activeElement).toBe(editorTab);
-    expect(selected).toHaveBeenLastCalledWith(expect.objectContaining({ detail: { tabId: 'editor' } }));
-  });
-
-  it('resizes a splitter with arrow keys', async () => {
-    const resized = vi.fn();
-    const view = render(Splitter, {
-      props: { splitterId: 'main', direction: 'vertical' },
-      events: { resize: resized },
-    } as never);
-
-    const separator = view.getByRole('separator');
-    expect(separator.hasAttribute('aria-valuemin')).toBe(false);
-    expect(separator.hasAttribute('aria-valuemax')).toBe(false);
-    expect(separator.hasAttribute('aria-valuenow')).toBe(false);
-
-    await fireEvent.keyDown(separator, { key: 'ArrowRight' });
-
-    expect(resized).toHaveBeenCalledWith(expect.objectContaining({
-      detail: { splitterId: 'main', delta: 10, direction: 'vertical' },
-    }));
-  });
 });

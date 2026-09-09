@@ -232,3 +232,49 @@ describe('re-simulation and trails', () => {
     expect(first.trails.pointCount).toBe(second.trails.pointCount);
   });
 });
+
+describe('optional POP operator inputs', () => {
+  it('treats absent Trail history as empty but rejects a malformed supplied entry', async () => {
+    const { executeTrail } = await import('../packages/runtime/src/builtins/pop/definitions.js');
+    const particles = ParticleState.empty().toGeometry();
+    let output: Geometry | undefined;
+    const context = (history: unknown) => ({
+      nodeId: 'trail',
+      inputs: { particles, history },
+      props: { result: 'polylines', length: 4, increment: 1, velocityscale: 1 },
+      outputs: { geometry: { set: (value: Geometry) => { output = value; } } },
+    }) as never;
+
+    executeTrail(context(undefined));
+    expect(output?.pointCount).toBe(0);
+    expect(() => executeTrail(context([42])))
+      .toThrow('trail.history[0] must be particle geometry');
+  });
+
+  it('treats an absent FieldForce field as a no-op but rejects nonempty fields without N', async () => {
+    const { executeFieldForce } = await import('../packages/runtime/src/builtins/pop/definitions.js');
+    const particles = ParticleState.empty().toGeometry();
+    let output: Geometry | undefined;
+    const context = (field: Geometry | undefined) => ({
+      nodeId: 'field-force',
+      inputs: { particles, field },
+      props: { normal: 1, tangential: 0, radius: 20, level: 0.28, hold: 0 },
+      outputs: { geometry: { set: (value: Geometry) => { output = value; } } },
+    }) as never;
+
+    executeFieldForce(context(undefined));
+    expect(output).toBe(particles);
+
+    const malformed = {
+      kind: 'geometry', pointCount: 1, vertexCount: 0, primitiveCount: 0,
+      topology: {
+        vertexPoints: new Int32Array(0), offsets: new Int32Array([0]),
+        kinds: new Uint8Array(0), closed: new Uint8Array(0),
+      },
+      point: { P: { storage: 'f64', size: 2, data: new Float64Array([0, 0]) } },
+      vertex: {}, primitive: {}, detail: {}, pointGroups: {}, primitiveGroups: {},
+    } as Geometry;
+    expect(() => executeFieldForce(context(malformed)))
+      .toThrow('field-force.field requires point attribute N');
+  });
+});

@@ -1,6 +1,6 @@
 {
   "name": "@field/cascade",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Visual programming for generative art",
   "license": "MIT",
   "author": "FIELD.IO <marcus@field.io>",
@@ -34,6 +34,7 @@
     "doc/NODE_REFERENCE.md",
     "doc/PROJECT_AUTHORING.md",
     "doc/HEADLESS_GPU.md",
+    "doc/WEB_PLAYER.md",
     "README.md",
     "LICENSE"
   ],
@@ -111,6 +112,10 @@
     },
     "./studio/panel": {
       "types": "./dist/studio/panel.d.ts"
+    },
+    "./player": {
+      "types": "./dist/player/embed.d.ts",
+      "default": "./dist/player/embed.js"
     }
   },
   "scripts": {
@@ -130,6 +135,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:package": "node scripts/smoke-package.mjs",
+    "test:player": "node scripts/smoke-player.mjs",
     "build:node-reference": "tsx scripts/build-node-reference.mjs"
   },
   "dependencies": {

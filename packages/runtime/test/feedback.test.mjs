@@ -66,6 +66,41 @@ project(
   },
 );
 
+let abortController;
+let abortAfter = Infinity;
+let abortCalls = 0;
+project(
+  "project.AbortAdd",
+  {
+    apiVersion: 1,
+    runsOn: "portable",
+    inputs: { value: { kind: "data", type: "float", default: 0 } },
+    outputs: { value: { kind: "data", type: "float" } },
+  },
+  ({ inputs, outputs }) => {
+    abortCalls += 1;
+    outputs.value.set((inputs.value ?? 0) + 1);
+    if (abortCalls === abortAfter) abortController?.abort("test cancellation");
+  },
+);
+
+let throwAfter = Infinity;
+let throwCalls = 0;
+project(
+  "project.ThrowAdd",
+  {
+    apiVersion: 1,
+    runsOn: "portable",
+    inputs: { value: { kind: "data", type: "float", default: 0 } },
+    outputs: { value: { kind: "data", type: "float" } },
+  },
+  ({ inputs, outputs }) => {
+    throwCalls += 1;
+    outputs.value.set((inputs.value ?? 0) + 1);
+    if (throwCalls === throwAfter) throw new Error("test feedback failure");
+  },
+);
+
 /** A constant, for wiring a value in from outside the container. */
 project(
   "project.Const",
@@ -206,6 +241,31 @@ test("a value wired in from outside reaches every step", async () => {
   assert.equal(graph.getOutput("loop", "result"), 12);
 });
 
+test("a value wired from a feedback child delays an outside consumer until the loop finishes", async () => {
+  const runtime = createRuntime({ host: host() });
+  const graph = await runtime.load(
+    document(
+      [
+        // Authored first on purpose: only the lifted dependency can put this
+        // after the container, because its wire originates at a loop child.
+        { id: "consumer", module: "project.Add", inputs: { by: 10 } },
+        { id: "loop", module: "cascade.core.Feedback", inputs: { initial: 0, steps: 2 } },
+        { id: "prev", module: "cascade.core.Previous", parent: "loop" },
+        { id: "body", module: "project.Add", parent: "loop", inputs: { by: 1 } },
+        { id: "out", module: "cascade.core.Output", parent: "loop", props: { outputIndex: 0 } },
+      ],
+      [
+        [["prev", 0, "value"], ["body", 0, "value"]],
+        [["body", 0, "value"], ["out", 0, "input"]],
+        [["body", 0, "value"], ["consumer", 0, "value"]],
+      ],
+    ),
+  );
+  await graph.run();
+  assert.equal(graph.getOutput("loop", "result"), 2);
+  assert.equal(graph.getOutput("consumer", "value"), 12);
+});
+
 test("Previous reports the step index", async () => {
   // What a force needs to evolve noise or ramp a strength across a run, and the
   // reason it is an output rather than a global: a step-dependent node stays a
@@ -289,19 +349,108 @@ test("nested feedback: an inner loop runs to completion inside each outer step",
         { id: "inner", module: "cascade.core.Feedback", parent: "outer", inputs: { steps: 3 } },
         { id: "innerPrev", module: "cascade.core.Previous", parent: "inner" },
         { id: "innerBody", module: "project.Add", parent: "inner", inputs: { by: 1 } },
+        { id: "innerCount", module: "project.Count", parent: "inner" },
         { id: "innerOut", module: "cascade.core.Output", parent: "inner", props: { outputIndex: 0 } },
         { id: "outerOut", module: "cascade.core.Output", parent: "outer", props: { outputIndex: 0 } },
       ],
       [
         [["outerPrev", 0, "value"], ["inner", 0, "initial"]],
         [["innerPrev", 0, "value"], ["innerBody", 0, "value"]],
-        [["innerBody", 0, "value"], ["innerOut", 0, "input"]],
+        [["innerBody", 0, "value"], ["innerCount", 0, "value"]],
+        [["innerCount", 0, "value"], ["innerOut", 0, "input"]],
         [["inner", 0, "result"], ["outerOut", 0, "input"]],
       ],
     ),
   );
   await graph.run();
   assert.equal(graph.getOutput("outer", "result"), 6);
+  assert.equal(runCounts.get("innerCount"), 6);
+});
+
+test("an external source for a nested feedback child delays every enclosing loop", async () => {
+  const runtime = createRuntime({ host: host() });
+  const graph = await runtime.load(
+    document(
+      [
+        { id: "outer", module: "cascade.core.Feedback", inputs: { initial: 0, steps: 2 } },
+        { id: "outerPrev", module: "cascade.core.Previous", parent: "outer" },
+        { id: "inner", module: "cascade.core.Feedback", parent: "outer", inputs: { initial: 0, steps: 2 } },
+        { id: "innerPrev", module: "cascade.core.Previous", parent: "inner" },
+        { id: "innerBody", module: "project.Add", parent: "inner" },
+        { id: "innerOut", module: "cascade.core.Output", parent: "inner", props: { outputIndex: 0 } },
+        { id: "outerOut", module: "cascade.core.Output", parent: "outer", props: { outputIndex: 0 } },
+        // The extra source hop makes the outer container ready before the
+        // nested input unless that dependency is lifted through both loops.
+        { id: "source", module: "project.Const" },
+        { id: "seed", module: "project.Const" },
+        { id: "seedStart", module: "project.Const", inputs: { value: 3 } },
+      ],
+      [
+        // The nested result is deliberately not the outer result. The source
+        // must still run before the outer container because the outer executes
+        // every child, including this otherwise independent nested loop.
+        [["outerPrev", 0, "value"], ["outerOut", 0, "input"]],
+        [["innerPrev", 0, "value"], ["innerBody", 0, "value"]],
+        [["seedStart", 0, "value"], ["seed", 0, "value"]],
+        [["seed", 0, "value"], ["source", 0, "value"]],
+        [["source", 0, "value"], ["innerBody", 1, "by"]],
+        [["innerBody", 0, "value"], ["innerOut", 0, "input"]],
+      ],
+    ),
+  );
+  await graph.run();
+  assert.equal(graph.getOutput("inner", "result"), 6);
+});
+
+test("cancelling feedback does not publish partial result or history", async () => {
+  const runtime = createRuntime({ host: host() });
+  const graph = await runtime.load(counterGraph({ steps: 4, body: "project.AbortAdd" }));
+  await graph.setProp("loop", "history", 4);
+
+  abortAfter = Infinity;
+  abortCalls = 0;
+  await graph.run();
+  assert.equal(graph.getOutput("loop", "result"), 4);
+  assert.deepEqual(graph.getOutput("loop", "history"), [1, 2, 3, 4]);
+
+  abortController = new AbortController();
+  abortAfter = 2;
+  abortCalls = 0;
+  const result = await graph.run({ signal: abortController.signal });
+  assert.equal(result.status, "cancelled");
+  assert.equal(graph.getOutput("loop", "result"), 4);
+  assert.deepEqual(graph.getOutput("loop", "history"), [1, 2, 3, 4]);
+  abortController = undefined;
+});
+
+test("feedback clears transient carried state when a child throws", async () => {
+  const runtime = createRuntime({ host: host() });
+  const graph = await runtime.load(counterGraph({ steps: 4, body: "project.ThrowAdd" }));
+  throwAfter = 2;
+  throwCalls = 0;
+  const failed = await graph.run();
+  assert.equal(failed.status, "failed");
+  // White-box by design: the leak is transient runtime state and has no public
+  // value surface. A failed loop must not remain registered as live.
+  assert.equal(graph.feedbackState.size, 0);
+
+  throwAfter = Infinity;
+  throwCalls = 0;
+  const recovered = await graph.run();
+  assert.equal(recovered.status, "completed");
+  assert.equal(graph.getOutput("loop", "result"), 4);
+});
+
+test("feedback history and result use ordinary staged output events", async () => {
+  const graph = await runCounter({ steps: 2, initial: 0 });
+  await graph.setProp("loop", "history", 2);
+  const outputs = [];
+  graph.subscribe((event) => {
+    if (event.type === "node:output" && event.nodeId === "loop")
+      outputs.push(event.outputName);
+  });
+  await graph.run();
+  assert.deepEqual(outputs.sort(), ["history", "result"]);
 });
 
 test("history is empty unless asked for", async () => {

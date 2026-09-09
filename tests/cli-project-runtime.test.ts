@@ -174,6 +174,15 @@ export function execute(context) { context.outputs.result.set(1); }
     await expect(runDeterministicProjectGraph(fixture.file, fixture.document)).resolves.toBe(true);
   });
 
+  it('leaves empty and dynamic graphs to the dynamic host', async () => {
+    const fixture = project(validSource);
+    const empty = { version: '0.2', nodes: [], connections: [] };
+    const dynamic = project(validSource.replace(/export const definition[\s\S]*?} as const;/, ''));
+
+    await expect(runDeterministicProjectGraph(fixture.file, empty)).resolves.toBe(false);
+    await expect(runDeterministicProjectGraph(dynamic.file, dynamic.document)).resolves.toBe(false);
+  });
+
   it('warns on the run path when stored params would be ignored, and runs', async () => {
     // Reverted from a rejection by Marcus on 2026-09-08. Such a graph runs
     // perfectly well on its defaults, which is precisely the problem — and a
@@ -468,5 +477,19 @@ export async function execute(context) {
     await expect(renderDeterministicProjectFrames(dynamic.file, dynamic.document, {
       start: 1, end: 2, out: 'renders',
     })).resolves.toBeNull();
+  }, 30_000);
+
+  it('leaves an empty graph to the other host and rejects a mixed graph', async () => {
+    const fixture = project(validSource);
+    const empty = { version: '0.2', nodes: [], connections: [] };
+    const mixed = {
+      ...fixture.document,
+      nodes: [...fixture.document.nodes, { id: 'legacy', module: 'cascade.core.Freeze' }],
+    };
+    const options = { start: 1, end: 2, out: 'renders' };
+
+    await expect(renderDeterministicProjectFrames(fixture.file, empty, options)).resolves.toBeNull();
+    await expect(renderDeterministicProjectFrames(fixture.file, mixed, options))
+      .rejects.toThrow(/Mixed deterministic and dynamic/);
   }, 30_000);
 });

@@ -1040,7 +1040,10 @@ class Graph implements LoadedCascadeGraph {
     if (node.definition.container === "feedback") {
       // Resolved here rather than in the node's own execute, because the loop
       // needs the graph and a definition-v1 node is given only its own id.
-      pendingData.set("result", await this.runFeedback(node, runId, signal, enqueue));
+      const feedback = await this.runFeedback(node, runId, signal, enqueue);
+      if (signal.aborted) return;
+      pendingData.set("result", feedback.result);
+      pendingData.set("history", feedback.history);
     }
     if (node.moduleId === "cascade.core.Subnet") {
       for (const child of this.nodes) {
@@ -1420,7 +1423,7 @@ class Graph implements LoadedCascadeGraph {
       payload: JsonValue | undefined,
       source: TriggerEvent["source"],
     ) => void,
-  ): Promise<unknown> {
+  ): Promise<Readonly<{ result: unknown; history: readonly unknown[] }>> {
     const initial = this.dataInputValue(node, "initial");
     const requested = this.dataInputValue(node, "steps");
     const steps = Math.max(0, Math.trunc(Number(requested ?? 0)));
@@ -1430,20 +1433,8 @@ class Graph implements LoadedCascadeGraph {
         `${node.id}.steps is not a finite number`,
       );
 
-    const inside = new Set(
-      [...this.feedbackDescendants()].filter((id) => {
-        let parent = this.byId.get(id)?.parent;
-        const seen = new Set<string>();
-        while (parent && !seen.has(parent)) {
-          if (parent === node.id) return true;
-          seen.add(parent);
-          parent = this.byId.get(parent)?.parent;
-        }
-        return false;
-      }),
-    );
-    const children = topological(this.nodes, this.connections).filter((child) =>
-      inside.has(child.id),
+    const children = topological(this.nodes, this.connections).filter(
+      (child) => this.enclosingFeedback(child) === node.id,
     );
 
     // The step's result comes from the Output boundary at index 0, the same
@@ -1477,35 +1468,30 @@ class Graph implements LoadedCascadeGraph {
     // simulation is where it starts, and a graph that throws at the beginning
     // of the timeline is unusable.
     let carried = initial;
-    for (let step = 0; step < steps; step += 1) {
-      if (signal.aborted) break;
-      this.feedbackState.set(node.id, { value: carried, step });
-      for (const child of children) {
+    try {
+      for (let step = 0; step < steps; step += 1) {
         if (signal.aborted) break;
-        await this.executeNode(child, runId, signal, {}, enqueue);
+        this.feedbackState.set(node.id, { value: carried, step });
+        for (const child of children) {
+          if (signal.aborted) break;
+          await this.executeNode(child, runId, signal, {}, enqueue);
+        }
+        if (signal.aborted) break;
+        carried = sink!.outputs.get("output");
+        if (keep > 0) {
+          history.push(carried);
+          // Trimmed inside the loop rather than after it, so the peak memory is
+          // the cap and not the step count.
+          if (history.length > keep) history.shift();
+        }
       }
-      if (signal.aborted) break;
-      carried = sink!.outputs.get("output");
-      if (keep > 0) {
-        history.push(carried);
-        // Trimmed inside the loop rather than after it, so the peak memory is
-        // the cap and not the step count. Trimming afterwards would keep every
-        // frame first and then throw most of them away, which is the version
-        // that runs out of memory on the graph that needed the cap.
-        if (history.length > keep) history.shift();
-      }
+      return Object.freeze({
+        result: carried,
+        history: Object.freeze(history),
+      });
+    } finally {
+      this.feedbackState.delete(node.id);
     }
-    node.outputs.set("history", Object.freeze(history));
-    /**
-     * Hygiene, and honestly labelled as such: no test can observe this, because
-     * every `Previous` inside a container is excluded from the main order and
-     * every step overwrites the entry before reading it. It stays because the
-     * map would otherwise hold one entry per container for the life of the
-     * runtime, and because a live entry after the loop has finished is a lie
-     * about what is running.
-     */
-    this.feedbackState.delete(node.id);
-    return carried;
   }
 
   /** The nearest ancestor that is a feedback container, or undefined. */
@@ -2210,19 +2196,17 @@ function dataDependencies(
     }
   }
   /**
-   * A value wired from outside a feedback container into one of its children is
-   * a dependency of the **container**, not just of the child.
+   * Project data dependencies across every Feedback boundary they cross.
    *
-   * The children are removed from the executed order — the container runs them
-   * — so a dependency recorded only against a child does not delay the
-   * container, and the container could run before the value it needs exists.
-   * The child would then read `undefined` on the first step.
+   * Feedback descendants are removed from the main execution order because
+   * their container runs them. Therefore an outside source wired to a child
+   * must delay every enclosing container, and a child wired to an outside
+   * consumer must make that consumer wait for the container. Nested or sibling
+   * loops need the same projection between their scheduled containers.
    *
-   * In practice the ordinary chain usually saves this: source → force → Output →
-   * container is already transitive. It fails for a child that reads an outside
-   * value and does not reach the container's `Output`, and "usually correct
-   * because of how the inside happens to be wired" is not a scheduling
-   * guarantee.
+   * Shared ancestors are excluded: a wire whose endpoints are already inside
+   * the same loop orders the children only. Projecting it onto that shared
+   * container would create a false container-to-itself cycle.
    */
   const parents = new Map(nodes.map((node) => [node.id, node.parent]));
   const feedbackContainers = new Set(
@@ -2231,25 +2215,41 @@ function dataDependencies(
       .map((node) => node.id),
   );
   if (feedbackContainers.size) {
-    const containerOf = (id: string | undefined): string | undefined => {
+    const feedbackLineage = (id: string): readonly string[] => {
+      const lineage: string[] = [];
       const seen = new Set<string>();
-      let parent = id ? parents.get(id) : undefined;
-      while (parent && !seen.has(parent)) {
-        seen.add(parent);
-        if (feedbackContainers.has(parent)) return parent;
-        parent = parents.get(parent);
+      let current: string | undefined = id;
+      while (current && !seen.has(current)) {
+        seen.add(current);
+        if (feedbackContainers.has(current)) lineage.push(current);
+        current = parents.get(current);
       }
-      return undefined;
+      return lineage;
+    };
+    const add = (sourceId: string, targetId: string): void => {
+      if (sourceId === targetId) return;
+      const dependency = { sourceId, targetId };
+      dependencies.set(`${sourceId}\0${targetId}`, dependency);
     };
     for (const connection of connections) {
       if (connection.kind !== "data") continue;
-      const target = containerOf(connection.target.nodeId);
-      if (!target) continue;
-      // Wires wholly inside one container are the loop's own business.
-      if (containerOf(connection.source.nodeId) === target) continue;
-      if (connection.source.nodeId === target) continue;
-      const dependency = { sourceId: connection.source.nodeId, targetId: target };
-      dependencies.set(`${dependency.sourceId}\0${dependency.targetId}`, dependency);
+      const sourceLineage = feedbackLineage(connection.source.nodeId);
+      const targetLineage = feedbackLineage(connection.target.nodeId);
+      const sourceSet = new Set(sourceLineage);
+      const targetSet = new Set(targetLineage);
+      const crossedFrom = sourceLineage.filter((id) => !targetSet.has(id));
+      const crossedInto = targetLineage.filter((id) => !sourceSet.has(id));
+
+      if (crossedFrom.length > 0 && crossedInto.length > 0) {
+        for (const sourceId of crossedFrom)
+          for (const targetId of crossedInto) add(sourceId, targetId);
+      } else if (crossedFrom.length > 0) {
+        for (const sourceId of crossedFrom)
+          add(sourceId, connection.target.nodeId);
+      } else {
+        for (const targetId of crossedInto)
+          add(connection.source.nodeId, targetId);
+      }
     }
   }
   return [...dependencies.values()];

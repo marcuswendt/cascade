@@ -37,6 +37,15 @@ my-project/
 
 Use `cascade new <name>` to create a project and `cascade node <Name>` to scaffold a custom node in one. Run `cascade .` from a project root to open Studio, `cascade validate <graph.cascade>` for validation, `cascade check <graph.cascade>` for static definition/type checks, `cascade inspect <graph.cascade>` for a JSON summary, `cascade run <graph.cascade>` for headless execution, and `cascade run <graph.cascade> --frames 1-100` for an offline image sequence. `cascade projects` shows or sets the default projects directory.
 
+`cascade build <graph.cascade> --out <new-directory>` exports a static browser
+player. Use repeatable `--asset <project-relative-file>` for inputs whose paths
+are computed in code. Read `doc/WEB_PLAYER.md` before exporting: server stages
+and dynamic modules are not supported, assets must be explicit, and an existing
+output directory is never overwritten. Serve the result over HTTP, not file://.
+The player is an application host under `src/player`, not another graph engine.
+Each embed owns an iframe realm, assets, IO bridge and GPU lifecycle. No Studio
+imports or `/api/*` dependency may enter the static deployment.
+
 ## Launch Studio
 
 For a browser on the same machine, use the secure loopback default:
@@ -134,6 +143,15 @@ The geometry set is reserved the same way, under `cascade.geo.*`:
 They all speak the one `geometry` type, so any output fits any input, and they
 follow Houdini's parameter names where Houdini has an equivalent node. Geometry
 is +Y up; the flip into SVG's frame lives in `SvgExport` alone.
+
+`cascade.pop.*` uses geometry-native particle state; forces accumulate and the
+solver integrates once. `cascade.core.Feedback` owns previous state and bounded
+history, including nested loops. Trails are geometry, not a second canvas
+history. A checkpoint is only an accelerator: cold and warm runs must match
+complete geometry and trails. `cascade.scene.*` assembles geometry, camera and
+lights; the current renderer draws wireframes/points and does not shade lights.
+Read the generated reference for the complete library rather than extending
+the partial vocabulary examples in this guide.
 
 These modules are reserved and need no file under `nodes/`. Do not override a
 `cascade.core.*` module or use ambient random/time state in a portable node.

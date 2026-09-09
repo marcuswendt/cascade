@@ -20,11 +20,12 @@ Contracts contain no DOM, Svelte, Express, filesystem, process, or implementatio
 
 The runtime is environment-neutral. It works in Node and browsers without importing either platform’s APIs, and it never imports Studio. Registration is sealed after the first graph load. Each graph permits one active run and has explicit lifecycle states.
 
-The reserved `cascade.core.*` registry is owned here. `Subnet`, `Input`,
-`Output`, `Switch`, `Merge`, `Select`, `Null`, seeded `Random`, and `Remap` resolve
-without a project module loader. Named, typed root Input/Output nodes form an
-explicit headless graph interface; typed child Input/Output nodes form a subnet interface.
-Randomness is a pure function of an authored seed, never ambient process state.
+Reserved built-ins are registered once in `packages/runtime/src/builtins`:
+core hierarchy/routing/time/camera, geometry operations, particle simulation,
+and scene assembly. They need no project module file. The generated
+[node reference](doc/NODE_REFERENCE.md) owns the complete port/parameter list.
+Named, typed root Input/Output nodes form the public graph interface; child
+Input/Output nodes form a subnet interface. Randomness takes an authored seed.
 
 ## Hosts
 
@@ -67,9 +68,12 @@ Custom server applications and browser frontends use `cascade/runtime` directly 
 
 ## Distribution
 
-The repository has exactly two internal npm workspaces: `@cascade/contracts` and `@cascade/runtime`. The root `cascade` package is the only published package and the only owner of the executable.
+The repository has exactly two internal npm workspaces: `@cascade/contracts` and `@cascade/runtime`. The root `@field/cascade` package, normally installed under the alias `cascade` in projects, is the only published package and executable owner.
 
-Public subpaths are `cascade/contracts`, `cascade/contracts/schema`, `cascade/runtime`, `cascade/runtime/node`, `cascade/runtime/browser`, `cascade/runtime/expressions`, `cascade/runtime/animation`, `cascade/runtime/definition/extract`, `cascade/io`, `cascade/net`, `cascade/stage`, and the compatibility `cascade/shell`.
+Public subpaths include contracts/schema, runtime and its Node/browser,
+expression, animation, camera, render, scene and definition-extraction entries,
+plus `cascade/io`, `cascade/gpu`, `cascade/net`, `cascade/stage`,
+`cascade/shell`, and `cascade/player`. `package.json` is the exact export map.
 
 Studio-only project extensions use the type-only `cascade/studio/panel` contract. They are compiled and loaded only by Studio; the neutral runtime and headless hosts never discover or import them.
 
@@ -120,6 +124,48 @@ Callbacks and destruction hooks run after a valid structural commit. They are no
 Data runs follow graph dependencies. Explicit triggers use a FIFO queue, authored fan-out order, monotonic per-run sequence IDs, and cycle rejection. A triggered node receives cooked data ancestors before delivery.
 
 Execution failures resolve to a failed `RunResult`; API misuse and invalid preflight reject. Cancellation propagates through capability calls. Inspection and output values are immutable snapshots; browser-only live resources remain host-owned handles.
+
+### Geometry, simulation and feedback
+
+Geometry is a shared typed value with point/vertex/primitive attributes,
+topology and groups, not an editor object. POP uses that same value for
+particle state. Forces accumulate acceleration; the solver integrates once
+per timestep. Trails are geometry and can feed the ordinary render/export nodes.
+
+`cascade.core.Feedback` is an explicit stateful container within the data DAG.
+Its children run per step; nested Feedback owns its own descendants. Previous
+state and bounded history are wired values, not sibling lookups. Result and
+history use normal output staging and cancellation, with transient loop state
+released even when a child throws.
+
+POP checkpoints accelerate deterministic re-simulation; clearing them must not
+change particles **or trails**. The sparse derived cache is module-local, has a
+64-checkpoint bound across keys, and copies snapshots at its boundary. It does
+not define simulation state. CLI `--frames` already reuses a loaded runtime,
+so it can benefit from checkpoints within the sequence. Separate CLI launches
+do not share that cache.
+
+A `scene` contains geometry, an optional camera and lights. A missing camera
+means the viewer supplies its view; an explicit render requires an authored
+camera. The current shared CPU renderer draws wireframes and points, not lit
+surfaces. Camera derivations belong to `packages/runtime/src/camera`; Studio's
+3D view and offline rendering use that convention rather than separate matrices.
+
+### Browser player
+
+The player is a browser application host under `src/player`, not another graph
+engine or package. Static export compiles definition-v1 project modules into
+browser ESM and supplies assets locally. Studio, Python, shell and project
+server routes are not deployment dependencies. Unsupported server operations
+fail explicitly during export. See [browser player](doc/WEB_PLAYER.md) for the
+build/embed contract and current limitations.
+
+Each embed has its own iframe realm, runtime, IO bridge, assets and GPU host.
+This isolates existing ambient `cascade/io` imports without swapping global
+transports between asynchronous runs. Shared browser GPU acquisition lives in
+`src/browser/gpu.ts`, also used by Studio. A future migration to explicit
+capability-only IO could permit direct DOM mounts; that is not implemented by
+the iframe player.
 
 ## Animation
 

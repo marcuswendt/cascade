@@ -379,9 +379,8 @@ There are now two candidates, and conflating them is the trap:
 | Travels | with the graph, wherever it is copied | with the repo |
 | Holds | name, description, author, created | allowed commands, paths, defaults |
 
-`ProjectRoot` already contemplates several graphs in one folder —
-`listGraphFiles()` and its comment about `test-quill`'s three. So *"Project
-name: My Artwork"* is ambiguous as stated, and the answer is that both exist:
+`ProjectRoot.listGraphFiles()` supports several graphs in one folder. So
+*"Project name: My Artwork"* is ambiguous as stated: both names exist:
 
 - **Graph name** → `metadata.name` in the `.cascade` file. `My Artwork`.
 - **Project name** → `cascade.json`, covering every graph in the folder.

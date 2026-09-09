@@ -155,7 +155,6 @@
       {selectedNode}
       {selectedAnnotation}
       transform={canvasTransform}
-      {onRecordHistory}
       on:nodeSelect={handleNodeSelect}
       on:annotationSelect={handleAnnotationSelect}
       on:transformChange={handleTransformChange}

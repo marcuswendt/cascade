@@ -1,19 +1,5 @@
-/**
- * `cascade/io` — the runtime a BROWSER-side node imports.
- *
- * The interop rests on one rule: an image port carries a project-relative PATH,
- * never pixels. A Python node writes a file and emits its path; a WebGL node
- * reads that path as a texture, renders, writes its result back, and emits a
- * path of the same kind. Neither knows or cares which side produced its input,
- * which is what makes the two interchangeable — and it lets the heavy stages
- * stay in Python while the interactive ones run in the page.
- *
- * The counterpart on the server side is the project's own exec bridge
- * (`runStage`), which is per-project because the stages are.
- *
- * This file is compiled into any node module that imports 'cascade/io'; it is
- * not published to npm and has no dependencies.
- */
+/** Shared `cascade/io` helpers. Studio uses project HTTP routes; other hosts
+ * install a bridge. Image ports carry paths rather than ambient pixel buffers. */
 
 export interface MediaOptions {
   /** Ask for a resized copy. Never upscales past the file's own resolution. */
@@ -30,6 +16,8 @@ export interface MediaOptions {
 /** Build the URL that serves a project file to the page. */
 export function mediaUrl(path: string, options: MediaOptions = {}): string {
   if (/^(https?:|data:|blob:)/.test(path)) return path;
+  const bridge = localIo();
+  if (bridge?.url) return bridge.url(path, options);
   const clean = path.replace(/^\.?\//, '');
   const encoded = clean.split('/').map(encodeURIComponent).join('/');
   const params = new URLSearchParams();
@@ -61,6 +49,8 @@ export interface IoBridge {
   read(path: string, options?: MediaOptions): Promise<Uint8Array>;
   /** Write bytes into the project cache. Returns the stored project-relative path. */
   write(path: string, data: Uint8Array): Promise<string>;
+  /** Host-owned display URL, valid until the host releases its stored asset. */
+  url?(path: string, options?: MediaOptions): string;
 }
 
 const IO_BRIDGE_KEY = '__cascadeIoBridge';
@@ -108,20 +98,36 @@ export async function loadBytes(path: string, options: MediaOptions = { raw: tru
 export async function loadImage(path: string, options: MediaOptions = { raw: true }): Promise<HTMLImageElement> {
   const image = new Image();
   const bridge = localIo();
-  if (bridge) {
-    // No origin to resolve a URL against; hand the decoder the bytes.
-    (image as unknown as { src: unknown }).src = new Uint8Array(await loadBytes(path, options));
-  } else {
-    image.crossOrigin = 'anonymous';
-    image.src = mediaUrl(path, options);
+  let temporaryUrl: string | undefined;
+  try {
+    if (bridge?.url) {
+      image.crossOrigin = 'anonymous';
+      image.src = bridge.url(path, options);
+    } else if (bridge) {
+      const bytes = await loadBytes(path, options);
+      if (typeof document === 'undefined') {
+        // The Node canvas Image decoder accepts bytes, not browser Blob URLs.
+        (image as unknown as { src: unknown }).src = new Uint8Array(bytes);
+      } else {
+        temporaryUrl = URL.createObjectURL(new Blob([bytes]));
+        image.src = temporaryUrl;
+      }
+    } else {
+      image.crossOrigin = 'anonymous';
+      image.src = mediaUrl(path, options);
+    }
+    await image.decode();
+    return image;
+  } finally {
+    if (temporaryUrl) URL.revokeObjectURL(temporaryUrl);
   }
-  await image.decode();
-  return image;
 }
 
 /** Same, as an ImageBitmap — the right input for `texImage2D`. */
 export async function loadBitmap(path: string, options: MediaOptions = { raw: true }): Promise<ImageBitmap> {
-  if (localIo()) return createImageBitmap(new Blob([await loadBytes(path, options)]));
+  const bridge = localIo();
+  if (bridge?.url) return createImageBitmap(await loadImage(path, options));
+  if (bridge) return createImageBitmap(new Blob([await loadBytes(path, options)]));
   const response = await fetch(mediaUrl(path, options));
   if (!response.ok) throw new Error(`cascade/io: cannot load ${path} (${response.status})`);
   return createImageBitmap(await response.blob());

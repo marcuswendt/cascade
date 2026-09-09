@@ -3,12 +3,9 @@ import type { GpuCapability } from '@cascade/contracts';
 import {
   createGpuHost,
   type GpuHost,
-} from '../../../packages/runtime/src/gpu.js';
+} from '../../packages/runtime/src/gpu.js';
 
-/** Kept as the Studio-facing name for compatibility with existing callers. */
-export type StudioGpuHost = GpuHost;
-
-export function createStudioGpuCapability(): StudioGpuHost | undefined {
+export function createBrowserGpuHost(): GpuHost | undefined {
   const gpu = (globalThis.navigator as Navigator | undefined)?.gpu;
   if (!gpu) return undefined;
 

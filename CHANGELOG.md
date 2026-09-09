@@ -2,6 +2,44 @@
 
 Notable changes to Cascade. Newest first.
 
+## 0.5.0 — 2026-09-09
+
+### Browser player
+
+- `cascade build <graph> --out <new-directory>` exports definition-v1 graphs as
+  static pages with a lightweight iframe embed API. Browser execution supports
+  assets and WebGPU; server capabilities and dynamic modules are rejected at
+  build time. No Studio server is required. See [Web player](doc/WEB_PLAYER.md).
+- Each embed owns its runtime, IO bridge and generated assets. Playback and
+  edits serialize, failed cooks pause playback, and disposal releases resources.
+  Generated images have immutable paths and explicit retention limits.
+- Browser image loading now decodes bridged assets correctly, including SVG
+  bitmaps. Studio and the player share browser GPU acquisition.
+
+### Runtime correctness and performance
+
+- POP checkpoint caching enforces its 64-entry bound even for one simulation,
+  copies mutable particle state at the boundary, and replays the trail window
+  so warm and cold renders agree. Malformed field and trail data report errors.
+- Nested Feedback runs children only in their owning loop, orders dependencies
+  across container boundaries, publishes history consistently, and clears
+  transient state after failures or cancellation.
+
+### Documentation and verification
+
+- Updated architecture, authoring and agent guides for geometry, simulations,
+  scenes and static deployment. Added real-browser embed and packed-consumer
+  checks alongside focused runtime and IO regressions.
+- Retired archived Quill examples with a recoverable backup; removed incidental
+  Quill examples from current guidance while retaining removed-node rejection tests.
+- Streamlined shared player image decoding, MIME inference and cleanup error
+  handling without changing the public player contract.
+- Removed unused Studio component props and consolidated CLI execution-style
+  checks. Empty/dynamic fallback and mixed-graph rejection remain unchanged.
+- Deleted the unreachable WindowManager UI and its private window/tab components;
+  Dockview remains Studio's sole layout host. Removed the commented-out Canvas
+  sample initializer. The active Graph/Node compatibility engine is unchanged.
+
 ## 0.4.0 — 2026-09-09
 
 ### Documentation

@@ -564,12 +564,24 @@ Applications can use `createRuntime()` from `cascade/runtime` directly. Register
 
 Server and browser hosts are deliberately explicit. A graph that uses Python or shell stages belongs on the server or behind an application-defined bridge; the runtime does not silently move computation between environments.
 
-The Studio single-HTML/folder exporter is not this embedding API. It currently
+For a browser-only deployment, build a static player:
+
+```bash
+cascade build index.cascade --out web-player --asset assets/source.svg
+```
+
+The output directory must be new. Serve it over HTTP(S), open `index.html`, or
+embed `player.html` in an iframe. `embed.js` supplies same-origin playback,
+parameter and output controls. Only explicitly included files and literal typed
+asset/image references are copied; server capabilities are rejected, not proxied.
+See [Web player](WEB_PLAYER.md) for the full deployment and asset contract.
+
+The Studio single-HTML/folder exporter is separate from this player. It currently
 serializes a compatibility graph into its own small browser runtime, so it does
 not preserve every node, capability, or runtime behavior. Use it only after
-testing the exported artifact for the particular graph. For a dependable
-custom experience today, embed `cascade/runtime` in an application and provide
-the graph's declared modules and capabilities explicitly.
+testing the exported artifact for the particular graph. Prefer `cascade build`
+for definition-v1 browser graphs, or embed `cascade/runtime` directly when an
+application needs custom capabilities and presentation.
 
 ## Verify a project
 

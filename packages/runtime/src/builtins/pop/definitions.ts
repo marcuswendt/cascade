@@ -1,4 +1,9 @@
-import type { Geometry, NodeDefinition, NodeExecutionContext } from "@cascade/contracts";
+import {
+  checkParticleContract,
+  type Geometry,
+  type NodeDefinition,
+  type NodeExecutionContext,
+} from "@cascade/contracts";
 
 import {
   ParticleState,
@@ -366,18 +371,16 @@ export function executeFieldForce(
   }
   const flow = context.inputs.field;
   const props = context.props;
-  // No field, or a field with no gradient, contributes nothing — rather than
-  // throwing. A half-wired graph should draw the particles standing still, not
-  // refuse to cook.
-  if (
-    !flow ||
-    flow.pointCount === 0 ||
-    !flow.point.N ||
-    (props.normal === 0 && props.tangential === 0)
-  ) {
+  // An absent or empty optional field contributes nothing. A present nonempty
+  // field without directions is malformed, not equivalent to no field.
+  if (!flow || flow.pointCount === 0 || (props.normal === 0 && props.tangential === 0)) {
     context.outputs.geometry.set(incoming);
     return;
   }
+  if (!flow.point.N)
+    throw new Error(
+      `${context.nodeId}.field requires point attribute N when the field contains points`,
+    );
   const state = ParticleState.fromGeometry(incoming);
   context.outputs.geometry.set(
     accumulateForce(
@@ -452,12 +455,17 @@ export function executeTrail(
   }
   const history = (context.inputs.history ?? []) as readonly unknown[];
   const frames: TrailFrame[] = [];
-  for (const entry of history) {
-    // A history that is not particle geometry is skipped rather than throwing:
-    // the input is typed `array`, so anything can arrive on it, and a viewport
-    // going black is a worse answer than a shorter trail.
-    if (typeof entry === "object" && entry !== null && (entry as Geometry).kind === "geometry")
-      frames.push(trailFrame(entry as Geometry));
+  for (const [index, entry] of history.entries()) {
+    if (typeof entry !== "object" || entry === null || (entry as Geometry).kind !== "geometry")
+      throw new Error(`${context.nodeId}.history[${index}] must be particle geometry`);
+    const violations = checkParticleContract(entry as Geometry);
+    if (violations.length > 0)
+      throw new Error(
+        `${context.nodeId}.history[${index}] is not particle geometry: ${violations
+          .map((violation) => violation.reason)
+          .join("; ")}`,
+      );
+    frames.push(trailFrame(entry as Geometry));
   }
   const props = context.props;
   context.outputs.geometry.set(
@@ -710,24 +718,16 @@ export function executeSimulate(
     ? ([props.wrap[0], props.wrap[1], props.wrap[2], props.wrap[3]] as const)
     : undefined;
 
-  /**
-   * Resume from the nearest checkpoint at or before this frame.
-   *
-   * An accelerator and nothing more: with the cache cleared this loop starts at
-   * frame 1 and produces exactly the same result, which is what
-   * `tests/pop-cache.test.ts` asserts by seeking cold and comparing bytes.
-   *
-   * The trail history is NOT restored, and that is a decision rather than an
-   * omission. A resumed cook has no history before its checkpoint, so its
-   * trails are short until the window refills — visibly different from a cold
-   * cook. The alternative is caching the window too, which makes the cache as
-   * large as the state it exists to avoid re-deriving. So trails are rebuilt
-   * from the frames actually stepped, and a scrub shows shorter trails for
-   * `trail_length` frames afterwards. Worth knowing; not worth the memory to
-   * hide.
-   */
+  /** Resume early enough to replay the complete bounded trail window. A
+   * checkpoint is state after its frame, so the lookup stops before the first
+   * frame the trail needs to retain. */
   const fingerprint = simulationFingerprint(props as Record<string, unknown>, [from, targets, flow]);
-  const resumed = checkpointAtOrBefore(context.nodeId, fingerprint, frames);
+  const keep = props.trail_length * props.trail_increment;
+  const resumed = checkpointAtOrBefore(
+    context.nodeId,
+    fingerprint,
+    Math.max(0, frames - keep),
+  );
   if (resumed) {
     state = resumed.state;
     startFrame = resumed.frame + 1;
@@ -839,7 +839,6 @@ export function executeSimulate(
       position: Float64Array.from(state.position),
       size: state.size,
     });
-    const keep = props.trail_length * props.trail_increment;
     if (history.length > keep) history.splice(0, history.length - keep);
 
     offerCheckpoint(context.nodeId, fingerprint, frame, state);

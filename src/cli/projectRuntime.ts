@@ -203,6 +203,16 @@ function reportUnresolved(prepared: PreparedGraph): void {
   ].join('\n'));
 }
 
+function usesDeterministicHost(document: any, prepared: PreparedGraph): boolean {
+  const nodes = Array.isArray(document?.nodes) ? document.nodes as ProjectNode[] : [];
+  const deterministicCount = nodes.filter((node) => prepared.deterministic.has(moduleId(node))).length;
+  if (!nodes.length || deterministicCount === 0) return false;
+  if (deterministicCount !== nodes.length) {
+    throw new Error('Mixed deterministic and dynamic graphs are not executable until the bounded legacy adapter is implemented');
+  }
+  return true;
+}
+
 export async function validateProjectGraph(file: string, document: any): Promise<void> {
   const prepared = await prepare(file, document, false);
   reportUnresolved(prepared);
@@ -234,12 +244,7 @@ export async function runDeterministicProjectGraph(
 ): Promise<boolean> {
   const prepared = await prepare(file, document, true);
   reportUnresolved(prepared);
-  const nodes = Array.isArray(document?.nodes) ? document.nodes as ProjectNode[] : [];
-  const deterministicCount = nodes.filter((node) => prepared.deterministic.has(moduleId(node))).length;
-  if (!nodes.length || deterministicCount === 0) return false;
-  if (deterministicCount !== nodes.length) {
-    throw new Error('Mixed deterministic and dynamic graphs are not executable until the bounded legacy adapter is implemented');
-  }
+  if (!usesDeterministicHost(document, prepared)) return false;
 
   const host = createProjectHost(file, prepared.registrations);
   const runtime = createRuntime({
@@ -323,12 +328,7 @@ export async function renderDeterministicProjectFrames(
 ): Promise<DeterministicFrameRenderResult | null> {
   const prepared = await prepare(file, document, true);
   reportUnresolved(prepared);
-  const nodes = Array.isArray(document?.nodes) ? document.nodes as ProjectNode[] : [];
-  const deterministicCount = nodes.filter((node) => prepared.deterministic.has(moduleId(node))).length;
-  if (!nodes.length || deterministicCount === 0) return null;
-  if (deterministicCount !== nodes.length) {
-    throw new Error('Mixed deterministic and dynamic graphs are not executable until the bounded legacy adapter is implemented');
-  }
+  if (!usesDeterministicHost(document, prepared)) return null;
 
   const project = new ProjectRoot(path.dirname(path.resolve(file)));
   const host = createProjectHost(file, prepared.registrations);
@@ -506,7 +506,7 @@ async function prepare(file: string, document: any, compileExecutors: boolean): 
  * `nodes/Multply/index.ts`. Reported by `unresolvedModule`; requested by the
  * session converting the sketches, which is the one that reads these.
  */
-async function projectModuleFile(
+export async function projectModuleFile(
   root: string,
   node: ProjectNode,
   id: string,
@@ -693,7 +693,7 @@ function portDefinitions(value: unknown, direction: 'input' | 'output'): Record<
   }));
 }
 
-function moduleId(node: ProjectNode): string {
+export function moduleId(node: ProjectNode): string {
   return typeof node?.module === 'string' ? node.module : typeof node?.type === 'string' ? node.type : '';
 }
 

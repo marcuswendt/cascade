@@ -53,6 +53,32 @@ Runs on `portable`.
 | --- | --- | --- | --- |
 | `camera` | `camera` |  |  |
 
+### `cascade.core.Feedback`
+
+Feedback — Runs its contents once per step, carrying the previous result forward.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `initial` | `any` | `null` |  |
+| `steps` | `int` | `1` |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `history` | `int` | `0` | 0…100000 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `result` | `any` |  |  |
+| `history` | `array` |  |  |
+
 ### `cascade.core.Input`
 
 Input — Defines a public graph or subnet input
@@ -146,6 +172,25 @@ Runs on `portable`.
 | name | type | default | range |
 | --- | --- | --- | --- |
 | `output` | `any` |  |  |
+
+### `cascade.core.Previous`
+
+Previous — The previous step's state, inside a Feedback container. The first step gets the container's initial value.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `initial` | `any` | `null` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `any` |  |  |
+| `step` | `int` |  |  |
 
 ### `cascade.core.Random`
 
@@ -250,6 +295,28 @@ Runs on `portable`.
 | --- | --- | --- | --- |
 | `output` | `any` |  |  |
 
+### `cascade.core.Time`
+
+Time — The current frame and time, as values the graph can read.
+
+Runs on `portable`.
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `frame` | `int` | `1` |  |
+| `fframe` | `float` | `1` |  |
+| `time` | `float` | `0` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `frame` | `int` |  |  |
+| `fframe` | `float` |  |  |
+| `time` | `float` |  |  |
+
 ### `cascade.geo.Circle`
 
 Circle — A closed circle, as one cubic Bezier chain or as a polygon of divisions segments.
@@ -341,7 +408,7 @@ Runs on `portable`.
 
 ### `cascade.geo.Render`
 
-Render — Draw geometry through a camera, as a raster.
+Render — Draw a scene through a camera, as a raster.
 
 Runs on `portable`.
 
@@ -349,7 +416,7 @@ Runs on `portable`.
 
 | name | type | default | range |
 | --- | --- | --- | --- |
-| `geometry` | `geometry` |  |  |
+| `scene` | `scene` |  |  |
 | `camera` | `camera` |  |  |
 
 **Props**
@@ -424,6 +491,35 @@ Runs on `portable`.
 | `rotate` | `float` | `0` |  |
 | `scale` | `vec2` | `[1,1]` |  |
 | `pivot` | `vec2` | `[0,0]` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `geometry` | `geometry` |  |  |
+
+### `cascade.pop.FieldForce`
+
+POP Field Force — Pull particles along a field's gradient and around its contours. The calligraphy force.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `particles` | `geometry` |  |  |
+| `field` | `geometry` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `normal` | `float` | `0` | -100000…100000 |
+| `tangential` | `float` | `2600` | -100000…100000 |
+| `radius` | `float` | `20` | 0…10000 |
+| `level` | `float` | `0.28` | 0…1 |
+| `hold` | `float` | `5200` | 0…100000 |
 
 **Outputs**
 
@@ -597,6 +693,80 @@ Runs on `portable`.
 | --- | --- | --- | --- |
 | `geometry` | `geometry` |  |  |
 
+### `cascade.pop.Trail`
+
+POP Trail — Build trails from a Feedback container's history.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `history` | `array` |  |  |
+| `particles` | `geometry` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `result` | `string` | `"polylines"` |  |
+| `length` | `int` | `12` | 1…100000 |
+| `increment` | `int` | `1` | 1…1000 |
+| `velocityscale` | `float` | `1` | 0…100 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `geometry` | `geometry` |  |  |
+
+### `cascade.scene.Light`
+
+Light — A light, following Houdini's /obj/hlight. Nothing shades with lights yet — the viewport draws wireframe and points.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `translate` | `vec3` | `[0,0,5]` |  |
+| `direction` | `vec3` | `[0,0,-1]` |  |
+| `color` | `color` | `[1,1,1,1]` |  |
+| `intensity` | `float` | `1` |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `type` | `string` | `"point"` |  |
+| `coneangle` | `float` | `45` | 0…180 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `light` | `light` |  |  |
+
+### `cascade.scene.Scene`
+
+Scene — Geometry, a camera and lights, assembled into a scene. Attach anything to the input.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `inputs` | `any` |  |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `scene` | `scene` |  |  |
+
 ## Studio node libraries
 
 Class-based nodes, available in Studio. Their parameters are declared in the
@@ -614,7 +784,7 @@ under `src/nodes/<library>/nodes/`.
 
 ### Geometry — `cascade.geo.*`
 
-**Geometry.** `cascade.geo.Rectangle` (A closed four-point polygon, counter-clockwise from bottom-left.), `cascade.geo.Circle` (A closed circle, as one cubic Bezier chain or as a polygon of divisions segments.), `cascade.geo.Transform` (Translate, rotate and scale geometry about a pivot.), `cascade.geo.Merge` (Concatenate geometries, taking the union of their attributes.), `cascade.geo.CopyToPoints` (Instance one geometry onto every point of another.), `cascade.geo.SvgExport` (Write geometry as an SVG document, one group element per group.), `cascade.geo.Render` (Draw geometry through a camera, as a raster.)
+**Geometry.** `cascade.geo.Rectangle` (A closed four-point polygon, counter-clockwise from bottom-left.), `cascade.geo.Circle` (A closed circle, as one cubic Bezier chain or as a polygon of divisions segments.), `cascade.geo.Transform` (Translate, rotate and scale geometry about a pivot.), `cascade.geo.Merge` (Concatenate geometries, taking the union of their attributes.), `cascade.geo.CopyToPoints` (Instance one geometry onto every point of another.), `cascade.geo.SvgExport` (Write geometry as an SVG document, one group element per group.), `cascade.geo.Render` (Draw a scene through a camera, as a raster.)
 
 ### Image — `cascade.image.*`
 

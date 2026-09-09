@@ -19,9 +19,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createRuntime } from '../packages/runtime/src/index.js';
 import { createNodeRuntimeHost } from '../packages/runtime/src/node.js';
 import {
+  checkpointAtOrBefore,
   checkpointStats,
   clearCheckpoints,
+  offerCheckpoint,
 } from '../packages/runtime/src/pop/index.js';
+import { ParticleState } from '../packages/runtime/src/pop/state.js';
 import type { Geometry } from '@cascade/contracts';
 
 function document(frame: number, over: Record<string, unknown> = {}) {
@@ -60,6 +63,47 @@ async function cook(frame: number, over: Record<string, unknown> = {}): Promise<
   return geometry;
 }
 
+async function cookSimulation(frame: number, over: Record<string, unknown> = {}) {
+  const runtime = createRuntime({
+    host: createNodeRuntimeHost({ modules: { resolve: async () => null } }),
+  });
+  const graph = await runtime.load(document(frame, over));
+  const result = await graph.run();
+  expect(result.status).toBe('completed');
+  const geometry = graph.getOutput('sim', 'geometry') as Geometry;
+  const trails = graph.getOutput('sim', 'trails') as Geometry;
+  await graph.dispose();
+  await runtime.dispose();
+  return { geometry, trails };
+}
+
+function geometryValues(geometry: Geometry) {
+  const attributes = (owner: Geometry['point']) => Object.fromEntries(
+    Object.entries(owner).map(([name, attribute]) => [
+      name,
+      {
+        storage: attribute.storage,
+        size: attribute.size,
+        data: [...attribute.data],
+      },
+    ]),
+  );
+  return {
+    pointCount: geometry.pointCount,
+    vertexCount: geometry.vertexCount,
+    primitiveCount: geometry.primitiveCount,
+    topology: {
+      vertexPoints: [...geometry.topology.vertexPoints],
+      offsets: [...geometry.topology.offsets],
+      kinds: [...geometry.topology.kinds],
+      closed: [...geometry.topology.closed],
+    },
+    point: attributes(geometry.point),
+    vertex: attributes(geometry.vertex),
+    primitive: attributes(geometry.primitive),
+  };
+}
+
 function bytes(geometry: Geometry): number[] {
   return [...(geometry.point.P!.data as ArrayLike<number>)];
 }
@@ -84,6 +128,49 @@ describe('the checkpoint cache', () => {
     expect(warm.pointCount).toBe(cold.pointCount);
     expect([...(warm.point.id!.data as ArrayLike<number>)])
       .toEqual([...(cold.point.id!.data as ArrayLike<number>)]);
+  });
+
+  it('gives the same complete particle and trail outputs warm as cold', async () => {
+    await cookSimulation(40);
+    expect(checkpointStats().checkpoints).toBeGreaterThan(0);
+    const warm = await cookSimulation(40);
+
+    clearCheckpoints();
+    const cold = await cookSimulation(40);
+
+    expect(geometryValues(warm.geometry)).toEqual(geometryValues(cold.geometry));
+    expect(geometryValues(warm.trails)).toEqual(geometryValues(cold.trails));
+  });
+
+  it('bounds checkpoints for a single simulation key while retaining recent state', () => {
+    const state = ParticleState.empty();
+    for (let frame = 1; frame <= 1_000; frame += 1)
+      offerCheckpoint('only', 'same', frame, state, 1);
+
+    expect(checkpointStats()).toEqual({ keys: 1, checkpoints: 64 });
+    expect(checkpointAtOrBefore('only', 'same', 1_000)?.frame).toBe(1_000);
+  });
+
+  it('keeps cached snapshots isolated from offered and retrieved mutable state', () => {
+    const offered = ParticleState.of({
+      count: 1, size: 2,
+      position: new Float64Array([1, 2]), velocity: new Float32Array([3, 4]),
+      age: new Float32Array([5]), life: new Float32Array([6]),
+      id: new Int32Array([7]), nextId: 8,
+    });
+    offerCheckpoint('isolated', 'same', 8, offered);
+    offered.position[0] = 99;
+    offered.nextId = 99;
+
+    const first = checkpointAtOrBefore('isolated', 'same', 8)!.state;
+    expect(first.position[0]).toBe(1);
+    expect(first.nextId).toBe(8);
+    first.position[0] = 55;
+    first.nextId = 55;
+
+    const second = checkpointAtOrBefore('isolated', 'same', 8)!.state;
+    expect(second.position[0]).toBe(1);
+    expect(second.nextId).toBe(8);
   });
 
   it('keeps checkpoints as the frame advances', async () => {

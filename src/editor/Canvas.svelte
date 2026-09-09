@@ -31,7 +31,6 @@
   export let graph = new Graph();
   export let selectedAnnotation: string | null = null;
   export let transform: { x: number; y: number; zoom: number } | undefined = undefined;
-  export let onRecordHistory: (() => void) | undefined = undefined;
 
   const studioGraph = new StudioGraphController(() => graph);
 
@@ -641,219 +640,6 @@
   let isWheelPanning = false;
   let pointerPanStart: { x: number; y: number; pointers: Map<number, { x: number; y: number }> } | null = null;
   
-  // Code editor state - removed, now handled by WindowManager tabs
-  
-  /*
-  // Function to initialize default nodes
-  export function initializeDefaultNodes() {
-    // Clear existing nodes
-    graph.nodes.forEach(node => {
-      if (node.onDestroy) {
-        node.onDestroy();
-      }
-    });
-    graph.nodes = [];
-    graph.connections = [];
-    graph.annotations = [];
-    
-    // Add default nodes - arranged similar to the image
-    // Timer at top center, Color below and to the right, Checkers below and to the left, Composite at bottom center
-    const timer = graph.addNode('Timer', { x: 0, y: 100 });
-    const colorNode = graph.addNode('Color', { x: 200, y: 250 });
-    const checkersNode = graph.addNode('Checkers', { x: -200, y: 400 });
-    const compositeNode = graph.addNode('Composite', { x: 0, y: 550 });
-    const blurNode = graph.addNode('Blur', { x: 200, y: 750 });
-    const normalMapNode = graph.addNode('NormalMap', { x: 400, y: 950 });
-    // Only set cook flag on Composite node
-    compositeNode.setCook(true);
-    
-    // Add default annotations
-    const headlineAnnotation: any = {
-      id: `headline_${Date.now().toString(36)}`,
-      type: 'Text',
-      content: 'Hello World',
-      position: { x: -200, y: -200 },
-      size: { width: 540, height: 60 },
-      style: {
-        fontSize: 32,
-        fontWeight: '700',
-        fontStyle: 'normal',
-        textAlign: 'left',
-        color: '#ffffff',
-        padding: 0,
-        borderRadius: 0
-      }
-    };
-    
-    const copyAnnotation: any = {
-      id: `copy_${Date.now().toString(36)}`,
-      type: 'Text',
-      content: 'Cascade is a visual programming framework designed for creative coders who want to build interactive experiences without sacrificing the power of code. Every node is just a TypeScript function, fully inspectable and editable. The visual graph and code are equal partners, not abstractions of each other. This allows you to work visually when it makes sense, and dive into code when you need precision and control.',
-      position: { x: -200, y: -100 },
-      size: { width: 540, height: 200 },
-      style: {
-        fontSize: 14,
-        fontWeight: 'normal',
-        fontStyle: 'normal',
-        textAlign: 'left',
-        color: '#ffffff',
-        padding: 0,
-        borderRadius: 0
-      }
-    };
-    
-    graph.addAnnotation(headlineAnnotation);
-    graph.addAnnotation(copyAnnotation);
-    graph.annotations = [...graph.annotations];
-    
-    // Initialize timer node
-    tick().then(async () => {
-      timer.code = `
-const tick = node.out('tick', 'trigger');
-const time = node.out('time');
-
-let frame = 0;
-const intervalId = setInterval(() => {
-  time.setValue(frame++);
-  tick.trigger({ frame });
-}, 1000 / 60);
-
-// Cleanup interval when node is destroyed
-node.onDestroy = () => clearInterval(intervalId);
-      `;
-      
-      colorNode.code = `// Color node - creates a solid color canvas
-node.defineProp('color', {
-  value: '#87CEEB',
-  type: 'color',
-  displayName: 'Color'
-});
-
-node.defineProp('resolution', {
-  value: [512, 512],
-  params: {
-    min: [1, 1],
-    max: [4096, 4096],
-    integer: true
-  },
-  displayName: 'Resolution'
-});
-
-const output = node.out('image');
-
-function render() {
-  const [width, height] = node.props.resolution.value;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    ctx.fillStyle = node.props.color.value;
-    ctx.fillRect(0, 0, width, height);
-  }
-  output.setValue(canvas);
-  node.preview = canvas;
-}
-
-// Watch for prop changes
-node.watchProp('color', render);
-node.watchProp('resolution', render);
-
-// Initial render
-node.onReady = () => {
-  render();
-};
-      `;
-      
-      try {
-        const timerFunction = new Function('node', 'graph', timer.code);
-        timer.setFunction(timerFunction);
-        timer.execute();
-        
-        const colorFunction = new Function('node', 'graph', colorNode.code);
-        colorNode.setFunction(colorFunction);
-        colorNode.execute();
-        
-        // Get Checkers and Composite node templates
-        const checkersCode = getDefaultNodeCode('Checkers');
-        const compositeCode = getDefaultNodeCode('Composite');
-        
-        if (checkersCode) {
-          checkersNode.code = checkersCode;
-          const checkersFunction = new Function('node', 'graph', `return (async function(node, graph) {\n${checkersCode}\n})(node, graph);`);
-          checkersNode.setFunction(checkersFunction);
-          await checkersNode.execute();
-        }
-        
-        if (compositeCode) {
-          compositeNode.code = compositeCode;
-          const compositeFunction = new Function('node', 'graph', `return (async function(node, graph) {\n${compositeCode}\n})(node, graph);`);
-          compositeNode.setFunction(compositeFunction);
-          await compositeNode.execute();
-        }
-        
-        timer.inputs = [...timer.inputs];
-        timer.outputs = [...timer.outputs];
-        colorNode.inputs = [...colorNode.inputs];
-        colorNode.outputs = [...colorNode.outputs];
-        checkersNode.inputs = [...checkersNode.inputs];
-        checkersNode.outputs = [...checkersNode.outputs];
-        compositeNode.inputs = [...compositeNode.inputs];
-        compositeNode.outputs = [...compositeNode.outputs];
-        blurNode.inputs = [...blurNode.inputs];
-        blurNode.outputs = [...blurNode.outputs];
-        normalMapNode.inputs = [...normalMapNode.inputs];
-        normalMapNode.outputs = [...normalMapNode.outputs];
-        
-        // Connect Checkers output to Composite image1 input
-        const checkersImagePort = checkersNode.outputs.find(p => p.name === 'image');
-        const compositeImage1Port = compositeNode.inputs.find(p => p.name === 'image1');
-        
-        if (checkersImagePort && compositeImage1Port) {
-          graph.connect(checkersImagePort, compositeImage1Port);
-        }
-        
-        // Connect Color output to Composite image2 input
-        const colorImagePort = colorNode.outputs.find(p => p.name === 'image');
-        const compositeImage2Port = compositeNode.inputs.find(p => p.name === 'image2');
-        
-        if (colorImagePort && compositeImage2Port) {
-          graph.connect(colorImagePort, compositeImage2Port);
-        }
-        
-        // Connect Composite output to Blur input
-        const compositeImagePort = compositeNode.outputs.find(p => p.name === 'image');
-        const blurImagePort = blurNode.inputs.find(p => p.name === 'image');
-        
-        if (compositeImagePort && blurImagePort) {
-          graph.connect(compositeImagePort, blurImagePort);
-        }
-        
-        // Connect Blur output to NormalMap input
-        const blurOutputPort = blurNode.outputs.find(p => p.name === 'image');
-        const normalMapImagePort = normalMapNode.inputs.find(p => p.name === 'image');
-        
-        if (blurOutputPort && normalMapImagePort) {
-          graph.connect(blurOutputPort, normalMapImagePort);
-        }
-        
-        studioGraph.refresh({ connections: true });
-        
-        // Execute Composite node and its upstream dependencies to ensure outputs are ready
-        await graph.execute(compositeNode);
-      } catch (err) {
-        console.error('Failed to initialize nodes:', err);
-      }
-      
-      graph.nodes = [...graph.nodes];
-      
-      // Center canvas on nodes after initialization
-      tick().then(() => {
-        centerOnNodes();
-      });
-    });
-  }
-*/
 
 
   // Graph will be loaded from default.cascade file in App.svelte onMount
@@ -2131,7 +1917,7 @@ node.onReady = () => {
   }
   
   function handleNodeEdit(e: CustomEvent<{ node: Node }>) {
-    // Dispatch event to parent (WindowManager) to open tab
+    // The host opens the node's code panel.
     dispatch('nodeEdit', { node: e.detail.node });
   }
   
@@ -4403,7 +4189,6 @@ export function execute(node, graph) {
     if (graph.nodes.length > 0) {
       graph.nodes = [...graph.nodes];
     }
-    // Otherwise, initializeDefaultNodes() will be called automatically
 
     // Add keyboard listeners
     window.addEventListener('keydown', handleKeyDown);
@@ -4689,7 +4474,6 @@ export function execute(node, graph) {
     {/each}
   </div>
   
-  <!-- Code Editor is now handled by WindowManager tabs -->
 </div>
 
 <!--

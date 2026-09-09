@@ -11,6 +11,32 @@ const VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.met
 async function main() {
   const args = process.argv.slice(2);
 
+  if (args[0] === 'build' && !args.includes('--help') && !args.includes('-h')) {
+    const { buildPlayer } = await import('./webBuild.js');
+    if (!args[1] || args[1].startsWith('-')) throw new Error('cascade build requires a graph file');
+    let out: string | undefined;
+    const assets: string[] = [];
+    for (let index = 2; index < args.length; index += 2) {
+      const flag = args[index];
+      if (flag !== '--out' && flag !== '--asset') throw new Error(`Unknown build option: ${flag}`);
+      const value = args[index + 1];
+      if (!value || value.startsWith('-')) throw new Error(`${flag} requires a value`);
+      if (flag === '--out') {
+        if (out !== undefined) throw new Error('--out may only be supplied once');
+        out = value;
+      } else assets.push(value);
+    }
+    if (!out) throw new Error('cascade build requires --out <new-directory>');
+    try {
+      const result = await buildPlayer(args[1], { out, assets });
+      console.log(`Browser player built: ${result.directory}`);
+    } catch (error) {
+      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   // Project/Studio commands share the root executable. The server entry is
   // bundled into the published CLI, so installed projects never depend on the
   // private server package or workspace links.
@@ -40,6 +66,7 @@ Usage:
   cascade validate <graph-file> [options]
   cascade check <graph-file> [options]
   cascade inspect <graph-file>
+  cascade build <graph-file> --out <new-directory> [--asset <file>]...
 
 Commands:
   new       Create a Cascade project
@@ -49,6 +76,7 @@ Commands:
   validate  Validate a graph file without executing
   check     Statically check node definitions, types, and graph structure
   inspect   Print a machine-readable graph and node-definition summary
+  build     Export a standalone browser player for static hosting or embedding
 
 Options:
   --host <address>         Bind Studio to an address or hostname

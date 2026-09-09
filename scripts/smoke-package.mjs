@@ -43,7 +43,8 @@ try {
     import * as io from 'cascade/io';
     import * as net from 'cascade/net';
     import * as gpu from 'cascade/gpu';
-    for (const [name, value] of Object.entries({ contracts, schema, runtime, nodeHost, browserHost, extract, camera, scene, shell, stage, io, net, gpu })) {
+    import * as player from 'cascade/player';
+    for (const [name, value] of Object.entries({ contracts, schema, runtime, nodeHost, browserHost, extract, camera, scene, shell, stage, io, net, gpu, player })) {
       if (!Object.keys(value).length) throw new Error(name + ' has no exports');
     }
   `);
@@ -53,6 +54,7 @@ try {
     import { createRuntime } from 'cascade/runtime';
     import { createGpuHost } from 'cascade/runtime';
     import { readTexture } from 'cascade/gpu';
+    import { mountPlayer, type PlayerController } from 'cascade/player';
     import { run } from 'cascade/shell';
     import { runStage, stageAvailable } from 'cascade/stage';
     import { cameraBasis, horizontalFov, verticalFov, frameAspect, viewMatrix, projectionMatrix, lookAtRotation } from 'cascade/runtime/camera';
@@ -61,6 +63,8 @@ try {
     declare const definition: NodeDefinition;
     declare const api: ProjectPanelApi;
     declare const panel: ProjectPanelModule;
+    declare const player: PlayerController;
+    void mountPlayer; void player.seek; void player.downloadOutput;
     void definition; void api; void panel; void createRuntime; void createGpuHost; void readTexture; void run; void runStage; void stageAvailable;
     // Named one by one rather than as a namespace: the failure this catches is
     // a helper that exists in the source and never reaches the package, and a
@@ -80,6 +84,23 @@ try {
     '--noEmit', '--strict', '--target', 'ES2022', '--module', 'NodeNext',
     '--moduleResolution', 'NodeNext', join(consumerRoot, 'types.ts'),
   ], { cwd: consumerRoot, stdio: 'inherit' });
+
+  writeFileSync(join(consumerRoot, 'player.cascade'), JSON.stringify({ version: '0.2',
+    nodes: [{ id: 'rectangle', module: 'cascade.geo.Rectangle' }], connections: [] }));
+  execFileSync(process.execPath, [join(packageRoot, 'dist/cli/index.js'),
+    'build', 'player.cascade', '--out', 'player-web'], { cwd: consumerRoot, stdio: 'inherit' });
+  if (!readFileSync(join(consumerRoot, 'player-web', 'embed.js'), 'utf8').includes('player.html')) {
+    throw new Error('Packed player build is missing its relative embed entry');
+  }
+  if (!readFileSync(join(packageRoot, 'doc', 'WEB_PLAYER.md'), 'utf8').includes('cascade build')) {
+    throw new Error('Packed package is missing the browser player guide');
+  }
+  if (process.env.CASCADE_TEST_PLAYER === '1') {
+    execFileSync(process.execPath, [join(root, 'scripts', 'smoke-player.mjs')], {
+      cwd: consumerRoot, stdio: 'inherit', timeout: 120000,
+      env: { ...process.env, CASCADE_PLAYER_CLI: join(packageRoot, 'dist/cli/index.js') },
+    });
+  }
 
   const linkedConsumerRoot = join(temporary, 'linked-consumer');
   mkdirSync(join(linkedConsumerRoot, 'node_modules'), { recursive: true });

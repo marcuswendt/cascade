@@ -11,7 +11,7 @@ import type { DataType, ParamOptions } from '../../types/node.types.js';
 import { packagePathToType, registerNodeClasses, registerNodeMetadata, type NodeClass, type NodeFunction } from '../../utils/nodeTypeUtils.js';
 import type { Graph } from '../Graph.js';
 import { Node } from '../Node.js';
-import type { StudioGpuHost } from './gpuCapability';
+import { isGpuHost } from '../../../packages/runtime/src/gpu.js';
 
 const silentProgress: ProgressReporter = { report: () => {} };
 
@@ -61,23 +61,6 @@ function parameterOptions(definition: {
  * a fetch — the node already has a function by then, and that function is the
  * one that awaits this. One adapter, two arrival times.
  */
-/**
- * Is this installed `gpu` the Studio host, rather than a bare capability?
- *
- * The host carries `ensure` and `forNode`, which a node must never see: the
- * device is created asynchronously and a node is handed a resolved one, so the
- * cook has to await readiness first. A test or another host may install a
- * plain `GpuCapability`, and that still works — it simply has nothing to
- * prepare and no per-node scoping to do.
- */
-function asGpuHost(value: unknown): StudioGpuHost | null {
-  return value
-    && typeof (value as StudioGpuHost).ensure === 'function'
-    && typeof (value as StudioGpuHost).forNode === 'function'
-    ? value as StudioGpuHost
-    : null;
-}
-
 export function attachDefinition(
   node: Node,
   registration: DefinitionNodeRegistration,
@@ -185,8 +168,8 @@ export function attachDefinition(
     // .gpu.device` is not, and a cache keyed per node is what replaces the
     // module-level Map that gave every node its own device.
     let nodeCapabilities = capabilities;
-    const gpuHost = ((definition.capabilities ?? []) as readonly string[]).includes('gpu')
-      ? asGpuHost(capabilities.gpu)
+    const gpuHost = ((definition.capabilities ?? []) as readonly string[]).includes('gpu') && isGpuHost(capabilities.gpu)
+      ? capabilities.gpu
       : null;
     if (gpuHost) {
       await gpuHost.ensure();

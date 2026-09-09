@@ -1,45 +1,12 @@
-import type { ParticleState } from "./state.js";
+import { ParticleState } from "./state.js";
 
 /**
- * Checkpoints, so scrubbing a simulation is not quadratic.
- *
- * `PLAN particles.md`'s ruling, and the order it insists on: **re-simulation
- * from the start frame is the definition of correctness, and this is only an
- * accelerator.** It holds nothing re-simulation would not have produced, it can
- * be cleared at any moment without changing a single output, and the
- * discriminating test is that simulating forward to a frame and seeking cold to
- * the same frame give byte-identical results.
- *
- * The cost it removes is real and was measured: `Simulate` re-simulates from
- * zero on every cook, so rendering N frames does N(N+1)/2 steps. 110 frames of
- * `particle-type` is about 6,000, roughly a second a frame, which makes offline
- * rendering fine and interactive playback a slideshow.
- *
- * **The fingerprint is the whole safety argument.** A cache keyed on anything
- * less than *everything that determines the simulation* serves a stale state
- * that looks plausible — the worst failure available here, because a wrong
- * particle system is indistinguishable from a different-looking one. So the
- * key is computed by the caller from every prop that affects stepping and from
- * the content of every geometry it reads, and a mismatch **clears** rather than
- * reconciles. Reconciling a cache is where the bugs live; throwing it away
- * costs one re-simulation.
- *
- * **It only helps inside one process, and that is a real limit rather than a
- * detail.** Studio is long-lived, so a scrub gets the benefit: measured at
- * **4.5x** across a 60-frame walk, 1,399 ms down to 314 ms. Every `cascade
- * run` is a fresh process, so the CLI gains nothing from it — a sequence
- * renderer that loops the CLI once per frame is exactly as slow as before,
- * which is worth knowing before anyone reports the cache as broken. A
- * one-process sequence renderer would get the same 4.5x, and that is the
- * argument for building one.
- *
- * Module-level state, deliberately and with a caveat. `cascade check` refuses
- * module-level values in a *node module* because that is where per-cook state
- * hides, and the rule is right. This is runtime internals rather than a node
- * module — `nodeModuleLoader`'s compiled-module cache is the same shape — and
- * it is safe for one specific reason: **every entry is derived, so the worst a
- * corrupted cache can do is be slower once it is cleared.** That is not true of
- * most caches and it is why this one is allowed to live here.
+ * Bounded, process-local simulation checkpoints. Clearing them must not change
+ * outputs: cold simulation is the reference, including the full trail window.
+ * The caller fingerprints every stepping prop and wired geometry value; a
+ * mismatch invalidates that entry. Copies on both boundaries isolate mutable
+ * particle arrays. Studio and CLI frame sequences reuse these checkpoints;
+ * separate CLI processes do not share them.
  */
 
 /** Every `stride` frames, plus the newest. Sparse on purpose: a checkpoint per
@@ -67,6 +34,20 @@ interface Entry {
 const entries = new Map<string, Entry>();
 let clock = 0;
 
+function cloneState(state: ParticleState): ParticleState {
+  return ParticleState.of({
+    count: state.count,
+    size: state.size,
+    position: Float64Array.from(state.position),
+    velocity: Float32Array.from(state.velocity),
+    age: Float32Array.from(state.age),
+    life: Float32Array.from(state.life),
+    id: Int32Array.from(state.id),
+    ...(state.colour ? { colour: Float32Array.from(state.colour) } : {}),
+    nextId: state.nextId,
+  });
+}
+
 /**
  * The best checkpoint at or before `frame`, or null to start from scratch.
  *
@@ -93,7 +74,7 @@ export function checkpointAtOrBefore(
     if (checkpoint.frame > frame) break;
     best = checkpoint;
   }
-  return best;
+  return best ? { frame: best.frame, state: cloneState(best.state) } : null;
 }
 
 /** Offer a state for keeping. Ignored unless it lands on the stride, so a
@@ -114,19 +95,20 @@ export function offerCheckpoint(
   }
   if (entry.checkpoints.some((checkpoint) => checkpoint.frame === frame)) return;
 
-  entry.checkpoints.push({ frame, state });
+  entry.checkpoints.push({ frame, state: cloneState(state) });
   entry.checkpoints.sort((a, b) => a.frame - b.frame);
   entry.touched = clock += 1;
   evict();
 }
 
 /**
- * Drop the least recently used key until the total is under the cap.
+ * Drop the least recently used key, then the oldest checkpoints in the one
+ * remaining key, until the total is under the cap.
  *
- * Per key rather than per checkpoint: a key is one simulation, and dropping
- * half of one leaves a cache whose gaps are invisible to the caller. Coarse is
- * correct here — the caller's fallback is a re-simulation it was prepared to do
- * anyway.
+ * Whole-key eviction preserves the most useful simulation when several are
+ * active. The final key is trimmed from its oldest edge rather than exempted:
+ * checkpoints are independent snapshots and lookup already accepts gaps, so
+ * retaining the newest bounded window is correct and useful.
  */
 function evict(): void {
   let total = 0;
@@ -143,6 +125,11 @@ function evict(): void {
     if (oldest === null) return;
     total -= entries.get(oldest)!.checkpoints.length;
     entries.delete(oldest);
+  }
+  if (total > MAX_CHECKPOINTS) {
+    const remaining = entries.values().next().value as Entry | undefined;
+    if (!remaining) return;
+    remaining.checkpoints.splice(0, total - MAX_CHECKPOINTS);
   }
 }
 

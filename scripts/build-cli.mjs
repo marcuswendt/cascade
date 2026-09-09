@@ -1,7 +1,8 @@
 import { build } from 'esbuild';
-import { chmodSync, cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const outputDirectory = resolve('dist', 'cli');
 rmSync(outputDirectory, { recursive: true, force: true });
@@ -123,3 +124,45 @@ for (const name of readdirSync(resolve('server', 'src', 'runtime'))
 }
 
 chmodSync(resolve(outputDirectory, 'index.js'), 0o755);
+
+// The player is an application host, not another package or a Studio bundle.
+// Runtime/IO imports stay external here so the static project build resolves
+// one copy of each alongside its custom nodes.
+rmSync(resolve('dist', 'player'), { recursive: true, force: true });
+await build({
+  entryPoints: ['src/player/app.ts', 'src/player/embed.ts'],
+  outdir: resolve('dist', 'player'),
+  bundle: true,
+  platform: 'browser',
+  target: 'es2022',
+  format: 'esm',
+  plugins: [{
+    name: 'player-public-runtime',
+    setup(builder) {
+      builder.onResolve({ filter: /(?:packages\/(?:runtime|contracts)\/src\/|^@cascade\/|server\/src\/runtime\/io)/ }, args => {
+        if (args.path.includes('server/src/runtime/io')) return { path: '@field/cascade/io', external: true };
+        if (args.path.includes('contracts')) return { path: '@field/cascade/contracts', external: true };
+        const runtimePath = args.path.replace(/^.*packages\/runtime\/src\//, '').replace(/^@cascade\/runtime\/?/, '').replace(/\.(?:js|ts)$/, '');
+        const subpaths = { '': '', index: '', runtime: '', gpu: '', browser: '/browser', 'geometry/render': '/render', 'scene/index': '/scene', 'camera/index': '/camera', camera: '/camera', scene: '/scene', render: '/render' };
+        if (!(runtimePath in subpaths)) return { errors: [{ text: `Player needs a public runtime export for ${args.path}` }] };
+        return { path: `@field/cascade/runtime${subpaths[runtimePath]}`, external: true };
+      });
+    },
+  }],
+});
+
+const playerDeclarations = mkdtempSync(resolve(tmpdir(), 'cascade-player-types-'));
+try {
+  execFileSync(process.execPath, [
+    resolve('node_modules', 'typescript', 'bin', 'tsc'), '--ignoreConfig',
+    'src/player/embed.ts', '--declaration', '--emitDeclarationOnly',
+    '--rootDir', '.', '--outDir', playerDeclarations,
+    '--target', 'es2022', '--module', 'esnext', '--moduleResolution', 'bundler',
+    '--skipLibCheck', '--lib', 'es2022,dom',
+  ], { stdio: 'inherit' });
+  for (const name of readdirSync(resolve(playerDeclarations, 'src', 'player'))) {
+    if (name.endsWith('.d.ts')) cpSync(resolve(playerDeclarations, 'src', 'player', name), resolve('dist', 'player', name));
+  }
+} finally {
+  rmSync(playerDeclarations, { recursive: true, force: true });
+}

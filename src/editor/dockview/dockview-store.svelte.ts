@@ -933,7 +933,7 @@ class DockviewStore {
   }
 
   /**
-   * Default layout configuration - matches the original WindowManager layout
+   * Default Studio panel layout.
    */
   private getDefaultLayout(): SerializedDockview {
     return {

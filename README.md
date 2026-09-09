@@ -12,6 +12,8 @@ Created by Marcus Wendt at [FIELD.IO](https://www.field.io).
 - A Studio compatibility controller that already presents deterministic definitions alongside dynamic project nodes while its graph engine migrates to the neutral runtime.
 - Project-native `.cascade` files, assets, presets, and Git-backed version history.
 - Nested subnets with persistent hierarchy.
+- Geometry-native particles, explicit Feedback loops, bounded simulation checkpoints, and printable trail geometry.
+- Scenes with cameras and lights, a 3D Viewer, and shared CPU wireframe/point rendering.
 - Expressions on parameters, with Houdini's variables and functions: `$F`, `$FF`, `$T`, `$FPS`, and `ch()` to read another parameter.
 - Keyframe channels on parameters, edited through a timeline panel with transport, playhead, scrubbing, and a dope sheet.
 - Offline rendering with `cascade run`, including `--frames 1-100` for a numbered image sequence, rasterised through Skia rather than a browser.
@@ -124,6 +126,23 @@ cascade run index.cascade
 ```
 
 See [Project authoring](doc/PROJECT_AUTHORING.md) for project layout, nodes, `.cascade` files, capabilities, and headless embedding.
+
+## Publish a browser sketch
+
+The checkout's standalone player exports compatible definition-v1 graphs to
+static files, without Studio or a Cascade server:
+
+```bash
+cascade build index.cascade --out web-player
+```
+
+Serve the generated directory through a static HTTP server or hosting service.
+Open `index.html`, embed `player.html` in an iframe, or import `embed.js` for
+same-origin controls. Server/Python/shell-dependent graphs must first separate
+or replace those stages; export does not move them into the browser silently.
+See [Browser player](doc/WEB_PLAYER.md) for assets, inputs, animation and limits.
+This workflow is unreleased; use the built checkout rather than assuming the
+published package contains it.
 
 Projects may also provide trusted, dockable Studio panels as plain TypeScript modules under `panels/`. These extensions remain outside graph documents and are never loaded by headless execution.
 
@@ -351,6 +370,8 @@ trusted-host session; an untrusted remote bind does not expose them.
 - [Node reference](doc/NODE_REFERENCE.md) — every built-in node and its declared ports, generated from the definitions
 - [Design source of truth](DESIGN.md)
 - [Architecture](ARCHITECTURE.md)
+- [Browser player](doc/WEB_PLAYER.md)
+- [September quality review and sketch verification](doc/QUALITY_REVIEW_2026-09.md)
 - [Subnet and shell specification](spec/CASCADE_SUBNET_AND_SHELL_SPEC.md)
 
 Inspired by Nodes.io, SideFX Houdini, TouchDesigner, Maya, Cinder, openFrameworks, and Processing.

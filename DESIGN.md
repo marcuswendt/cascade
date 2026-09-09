@@ -3,9 +3,9 @@
 ## Source of truth
 
 - Status: Active
-- Last refreshed: 2026-09-08 (0.3.1)
-- Primary product surfaces: reusable graph runtime, optional Studio workbench, headless Node/browser hosts, Inspector, Viewer, Timeline, agent console, node ports, project-defined workbenches
-- Evidence reviewed: `VISION.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `spec/CASCADE_SUBNET_AND_SHELL_SPEC.md`, `src/types/coreTypes.ts`, `src/editor/Inspector.svelte`, `src/editor/Viewer.svelte`, `src/editor/panels/TimelinePanel.svelte`, `src/editor/panels/AgentPanel.svelte`, `src/editor/components/PortEditor.svelte`, `src/editor/components/typeRenderers.ts`, `src/nodes/definition/gpuCapability.ts`, `packages/runtime/src/runtime.ts`, `packages/runtime/src/params/`, `packages/runtime/src/expressions/`, `packages/runtime/src/animation/`, `server/src/agent/`, `server/src/security.ts`, and `server/src/cliCommands.ts`
+- Last refreshed: 2026-09-09 (0.4.0 checkout; player work is unreleased)
+- Primary product surfaces: reusable graph runtime, optional Studio workbench, headless Node/browser hosts, static browser player, Inspector, 2D/3D Viewer, Timeline, agent console, node ports, project-defined workbenches
+- Evidence reviewed: `VISION.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `spec/CASCADE_SUBNET_AND_SHELL_SPEC.md`, `src/types/coreTypes.ts`, `src/editor/Inspector.svelte`, `src/editor/Viewer.svelte`, `src/editor/panels/TimelinePanel.svelte`, `src/editor/panels/AgentPanel.svelte`, `src/editor/components/PortEditor.svelte`, `src/editor/components/typeRenderers.ts`, `src/browser/gpu.ts`, `src/player/`, `packages/runtime/src/runtime.ts`, `packages/runtime/src/params/`, `packages/runtime/src/expressions/`, `packages/runtime/src/animation/`, `server/src/agent/`, `server/src/security.ts`, and `server/src/cliCommands.ts`
 
 This document contains both current product rules and intended direction. Sections labelled **Current** describe implemented behavior in the repository. Sections labelled **Target** or **Planned** describe design direction and are not a release commitment. Open questions remain undecided until accepted in a specification or implementation plan.
 
@@ -31,6 +31,7 @@ This document contains both current product rules and intended direction. Sectio
 
 - Primary navigation: canvas selection determines Inspector and Viewer context
 - Core screens: Graph, Inspector, Viewer, Timeline, Definition, Agent console, Logs/diagnostics
+- The standalone player presents the artwork and minimal playback/error controls, not the graph editor. It launches as a static page or embeds in an iframe. Programmatic controls are same-origin; a cross-origin iframe is display/playback only.
 - Content hierarchy: value preview first, type and shape metadata second, expandable raw structure last
 
 ## Design principles
@@ -79,6 +80,7 @@ This document contains both current product rules and intended direction. Sectio
 - Registration is sealed after the first graph load. A loaded graph supports inspect, input/property/preset mutation, trigger, run, cancel, subscription, output retrieval, and disposal without editor dependencies.
 - A loaded deterministic graph owns an explicit caller-controlled clock. `setFrame()` and `setFps()` re-resolve animated props for inspection without cooking; `run({ frame, fps })` resolves the same bindings before execution. The runtime never reads ambient time.
 - One run is active per graph; there is no hidden run queue. API misuse rejects, while graph execution resolves to an explicit success/failure/cancelled result.
+- Browser-player playback coalesces requested frames; it must not queue unbounded work. Failure pauses playback and exposes its diagnostic. Static assets and generated images are realm-owned; immutable image references preserve Feedback history, and explicit resource limits prevent unbounded retention.
 - A graph may run wholly in a backend, wholly in a compatible browser, or across an explicitly designed bridge. The runtime never silently moves a stage between hosts.
 - File loading/saving, format versioning, presets, project paths, and workspace conveniences belong to stable platform services around the neutral runtime, not to individual generative algorithms.
 
@@ -106,8 +108,8 @@ This document contains both current product rules and intended direction. Sectio
 
 ## Components
 
-- **Current:** `PortEditor`, `JsonTree`, `ColorPicker`, `CoreValue`, `StructuredValue`, Viewer image zoom/pan behavior, and the type renderer registry.
-- **Planned:** a shared type-value presentation shell, structured JSON editing, richer image and asset inspection, geometry summaries/previews, a Viewer output list, and texture inspection after texture values exist.
+- **Current:** `PortEditor`, `JsonTree`, `ColorPicker`, `CoreValue`, `StructuredValue`, Viewer image zoom/pan, geometry summaries/previews, `SceneViewport` with orbit/track/dolly camera controls, and the type renderer registry. Scene rendering currently shows wireframes and points; lights are represented but do not imply shaded rendering.
+- **Planned:** a shared type-value presentation shell, structured JSON editing, richer image/asset inspection, a Viewer output list, and texture inspection after texture values exist.
 - Variants and states: `compact`, `inspect`, `view`; editable/read-only; empty/loading/error/stale; connected source; truncated/expanded
 - Token/component ownership: `coreTypes.ts` owns semantic type metadata; the presentation registry owns components; Inspector/Viewer only choose context and mode
 
@@ -141,6 +143,7 @@ This table defines the intended presentation contract. Individual rows may be on
 - Supported breakpoints/devices: desktop-first; Inspector remains usable from 240px width; Viewer adapts to Dockview panel size
 - Layout adaptations: vector/matrix fields wrap or scroll; Viewer metadata collapses beneath previews; structured trees virtualize or truncate large collections
 - Touch/hover differences: no essential information exists only in hover tooltips
+- Player embeds fit their container; resize changes the view size, not authored graph resolution. Start paused unless autoplay is requested. Controls need native keyboard semantics and errors remain readable over the artwork.
 
 ## Interaction states
 
@@ -167,6 +170,6 @@ This table defines the intended presentation contract. Individual rows may be on
 
 ## Open questions
 
-- [ ] Whether mesh Viewer should gain an interactive WebGL orbit view after the lightweight projected preview proves useful / product / medium impact
+- [ ] Whether scene rendering needs shaded GPU surfaces beyond the current CPU wireframe/point view / product / medium impact
 - [ ] Whether project packages can eventually ship Svelte renderers directly rather than app-side registration / architecture / high impact
 - [ ] Whether large structured values need virtualization beyond bounded initial expansion / performance / medium impact

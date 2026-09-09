@@ -210,6 +210,8 @@ The **dynamic** style — \`execute(node, graph)\` declaring ports with \`node.i
 
 Definition-v1 props support default \`expression\` values. An explicitly saved value overrides that default, even when equal to the numeric default. Both fully definition-v1 and supported dynamic graphs can render sequences with \`cascade run index.cascade --frames 1-100\`, subject to host capabilities.
 
+For a standalone browser page or embed, use \`cascade build index.cascade --out web-player\` with a new output directory. Add \`--asset assets/file.svg\` for each asset addressed from code; typed literal asset/image references in the document are included automatically. Serve the result over HTTP(S). This player supports definition-v1 browser/portable nodes with assets or GPU capabilities, not server operations or dynamic modules. See \`node_modules/cascade/doc/WEB_PLAYER.md\` for iframe and programmatic controls.
+
 Either way the module is a real ES module and the loader needs the \`execute\` export. Top-level side effects do not belong in it.
 
 ## Rendering
