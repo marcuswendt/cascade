@@ -265,3 +265,52 @@ test("triggered subnet nodes load and cook synthesized data ancestors", async ()
   assert.equal(graph.getOutput("triggered", "result"), 9);
   await runtime.dispose();
 });
+
+/**
+ * `cascade.core.Time` — the clock as a value.
+ *
+ * Built because scrubbing the timeline on `particle-type` moved nothing:
+ * `pop.Simulate` takes the frame on an input, its comment says to drive it with
+ * `$F`, and an input cannot carry an expression. So the graph had a constant in
+ * it and no node in the system could read the clock through a port.
+ *
+ * The node itself is a passthrough, and that is the property being tested: its
+ * `execute` reads props and touches no clock, so it stays deterministic and
+ * the time binding lives entirely in the props' declared default expressions.
+ */
+test("cascade.core.Time declares $F and $T as prop default expressions", async () => {
+  const { timeDefinition, timeRegistration } = await import(
+    "../dist/builtins/core/time.js"
+  );
+  assert.equal(timeRegistration.moduleId, "cascade.core.Time");
+  // The binding is here and nowhere else. Studio turns a prop `expression` into
+  // a `defaultExpression`, which is the one mechanism that already reads the
+  // clock and maintains a node's time dependency.
+  assert.equal(timeDefinition.props.frame.expression, "$F");
+  assert.equal(timeDefinition.props.time.expression, "$T");
+  // No inputs: it is a source. A frame input would be the thing it exists to
+  // provide.
+  assert.deepEqual(Object.keys(timeDefinition.inputs), []);
+  assert.deepEqual(Object.keys(timeDefinition.outputs), ["frame", "time"]);
+});
+
+test("cascade.core.Time passes its props through and calls no clock", async () => {
+  const { executeTime } = await import("../dist/builtins/core/time.js");
+  const values = {};
+  executeTime({
+    nodeId: "t",
+    inputs: {},
+    outputs: {
+      frame: { set: (value) => (values.frame = value) },
+      time: { set: (value) => (values.time = value) },
+    },
+    props: { frame: 47.5, time: 1.979 },
+    capabilities: {},
+    signal: { aborted: false, addEventListener() {}, removeEventListener() {} },
+    progress: { report() {} },
+  });
+  // Fractional on purpose: sub-frame time exists, and rounding here would make
+  // a 48 fps preview step in pairs.
+  assert.equal(values.frame, 47.5);
+  assert.equal(values.time, 1.979);
+});

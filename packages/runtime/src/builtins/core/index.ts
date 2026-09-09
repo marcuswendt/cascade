@@ -4,6 +4,7 @@ import { randomRegistration } from "./random.js";
 import { remapRegistration } from "./remap.js";
 import { mergeRegistration, nullRegistration, selectRegistration, switchRegistration } from "./routing.js";
 import { inputRegistration, outputRegistration, subnetRegistration } from "./structural.js";
+import { timeRegistration } from "./time.js";
 
 export {
   cameraRegistration,
@@ -16,6 +17,7 @@ export {
   selectRegistration,
   subnetRegistration,
   switchRegistration,
+  timeRegistration,
 };
 
 export const coreNodeRegistrations: readonly DefinitionNodeRegistration[] = Object.freeze([
@@ -29,6 +31,7 @@ export const coreNodeRegistrations: readonly DefinitionNodeRegistration[] = Obje
   randomRegistration,
   remapRegistration,
   cameraRegistration,
+  timeRegistration,
 ]);
 
 const registrationsById = new Map(

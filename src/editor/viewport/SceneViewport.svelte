@@ -39,7 +39,8 @@
   import { renderScene } from '@cascade/runtime/render';
   import { sceneBounds, sceneDimensionality } from '@cascade/runtime/scene';
 
-  import { DEFAULT_GRID_COLOURS, gridGeometry, gridPlaneFor } from './grid';
+  import { gridGeometry, gridPlaneFor } from './grid';
+  import { type ViewportTheme, viewportTheme } from './theme';
   import {
     type StandardView,
     type ViewState,
@@ -71,6 +72,7 @@
   let view: ViewState = defaultView(true);
   let scene: Scene = asScene(null);
   let pixelSize: [number, number] = [1, 1];
+  let theme: ViewportTheme = viewportTheme(null);
   let statusLine = '';
   let itemNote = '';
 
@@ -185,8 +187,20 @@
     }
 
     const perPixel = worldPerPixel(view, pixelSize);
+    // Re-read per draw rather than on mount: a theme switch changes the tokens
+    // under a mounted viewport, and nothing tells this component about it.
+    theme = viewportTheme(host);
     const layers = showGrid
-      ? [gridGeometry(view, perPixel, DEFAULT_GRID_COLOURS), ...drawn]
+      ? [
+          gridGeometry(view, perPixel, {
+            line: theme.grid,
+            ruler: theme.gridRuler,
+            axisX: [0.85, 0.3, 0.3, 0.75],
+            axisY: [0.35, 0.8, 0.4, 0.75],
+            axisZ: [0.35, 0.5, 0.9, 0.75],
+          }),
+          ...drawn,
+        ]
       : drawn;
 
     // The existing canvas as the surface. `renderScene` only ever asks the
@@ -195,7 +209,7 @@
     renderScene(layers, {
       camera,
       size: pixelSize,
-      stroke: [0.85, 0.87, 0.9, 1],
+      stroke: theme.stroke,
       strokeWidth: 1,
       opacity: 1,
       pointRadius: 1.5,
@@ -427,7 +441,9 @@
     width: 100%;
     height: 100%;
     outline: none;
-    background: var(--bg-canvas, #16181c);
+    /* The network panel's own background, per Marcus. The canvas above it is
+       left transparent, so there is exactly one place this colour is set. */
+    background: var(--surface-void);
   }
   canvas {
     display: block;
