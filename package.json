@@ -77,6 +77,10 @@
       "types": "./dist/runtime/camera/index.d.ts",
       "default": "./dist/runtime/camera/index.js"
     },
+    "./runtime/render": {
+      "types": "./dist/runtime/geometry/render.d.ts",
+      "default": "./dist/runtime/geometry/render.js"
+    },
     "./runtime/scene": {
       "types": "./dist/runtime/scene/index.d.ts",
       "default": "./dist/runtime/scene/index.js"

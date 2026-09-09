@@ -10,13 +10,24 @@
   import { inferCascadeType, mediaUrl } from './components/typePresentation';
   import { rasterizeGeometry, type GeometryKind } from '@/utils/geometryRaster';
   import { geometryRasterKey, valueFingerprint } from './viewerKeys';
+  import SceneViewport from './viewport/SceneViewport.svelte';
 
   export let graph: Graph | undefined;
   export let selectedNode: Node | null = null;
   export let selectedAnnotation: Annotation | null = null;
 
   let container: HTMLDivElement;
-  let currentViewer: 'canvas' | 'image' | 'text' | 'typed' | 'empty' = 'empty';
+  /**
+   * `scene` is the sixth mode, added 2026-09-09.
+   *
+   * Marcus's correction: *"I want any node that produces geometry (or svg as a
+   * variant of that) to display as a 3D viewport in the viewer panel."* It
+   * REPLACES the flat raster for geometry rather than sitting beside it — one
+   * way to look at geometry, not two — and `geometryRaster` stays as the
+   * fallback for a host with no canvas and for the moment before a scene has
+   * been cooked.
+   */
+  let currentViewer: 'canvas' | 'image' | 'text' | 'typed' | 'scene' | 'empty' = 'empty';
   let displayNode: Node | null = null;
   let displayAnnotation: Annotation | null = null;
   let activeOutputId: string | null = null;
@@ -200,12 +211,14 @@
           // The one string worth looking at rather than reading. Marcus's
           // screenshot of this node showed nine hundred lines of path data.
           currentViewer = 'image';
+        } else if (SCENE_KINDS.has(activeOutputType)) {
+          // The 3D viewport, and nothing waits for a draw: it renders from the
+          // value itself through the same `renderScene` the render node calls,
+          // so there is no intermediate raster to be ready or not ready.
+          currentViewer = 'scene';
         } else if (GEOMETRY_KINDS.has(activeOutputType) && geometryUrl) {
-          // Geometry is shown as an image because that is what it gets drawn
-          // to — which gives points and chains the same pan, zoom and Fit as
-          // every other stage rather than a second, worse viewport. Only once
-          // the draw has finished; until then it falls through to the typed
-          // view, which says what the value is.
+          // The remaining geometry-ish types — `mesh`, and anything the
+          // scene path cannot promote — still go through the flat raster.
           currentViewer = 'image';
         } else {
           currentViewer = 'typed';
@@ -221,6 +234,8 @@
         }
       } else if (findImagePath(displayNode)) {
         currentViewer = 'image';
+      } else if (SCENE_KINDS.has(activeOutputType)) {
+        currentViewer = 'scene';
       } else if (GEOMETRY_KINDS.has(activeOutputType)) {
         // Points, chains and segments are shown as an image because that is
         // what they are drawn to — which gets them the same pan and zoom as
@@ -290,6 +305,29 @@
   const GEOMETRY_KINDS = new Set(['geometry', 'points', 'lines', 'polyline', 'rects']);
 
   /**
+   * The types the 3D viewport can draw: a scene, and the geometry that promotes
+   * to one.
+   *
+   * Narrower than `GEOMETRY_KINDS` on purpose. `points`, `lines`, `polyline`
+   * and `rects` are the older interchange shapes, not `Geometry` — they carry
+   * no attributes and `asScene` cannot promote them — so they keep the raster
+   * path until something converts them. Sending them to the viewport would draw
+   * an empty frame, which is worse than a flat picture.
+   */
+  const SCENE_KINDS = new Set(['scene', 'geometry']);
+
+  /**
+   * What scopes a remembered viewport camera.
+   *
+   * Node ids are only unique within a graph — two projects both have a
+   * `node-1` — so a per-node view keyed on the node alone would hand one
+   * project's camera to another project's first node. Studio serves one project
+   * per server, so the origin and path identify it without a project store
+   * being threaded down here for the sake of a cache key.
+   */
+  const viewScope = typeof location === 'undefined' ? 'studio' : `${location.host}${location.pathname}`;
+
+  /**
    * Geometry drawn to an image, so it can use the same viewport as everything
    * else — pan, zoom, Fit, 1:1.
    *
@@ -318,7 +356,9 @@
   // `portsVersion` is read here rather than inside refreshGeometry so the
   // dependency is a real Svelte one: it advances on every cook of the displayed
   // node, and a cook is the evidence the geometry may have changed.
-  $: if (activeOutput && GEOMETRY_KINDS.has(activeOutputType)) {
+  // Not for the types the 3D viewport draws: rasterizing thousands of marks to
+  // an image nothing mounts is pure cost, and this ran on every cook.
+  $: if (activeOutput && GEOMETRY_KINDS.has(activeOutputType) && !SCENE_KINDS.has(activeOutputType)) {
     refreshGeometry(activeOutput, activeOutputType as GeometryKind, portsVersion);
   }
 
@@ -1070,7 +1110,19 @@
   {/if}
 
   <!-- Container for canvas/image/text rendering (manipulated via innerHTML) -->
-  <div class="viewer" bind:this={container} class:hidden={currentViewer === 'typed'}></div>
+  <div class="viewer" bind:this={container} class:hidden={currentViewer === 'typed' || currentViewer === 'scene'}></div>
+
+  {#if currentViewer === 'scene' && activeOutput}
+    <div class="scene-viewer">
+      <SceneViewport
+        value={activeOutput.value}
+        version={portsVersion}
+        projectId={viewScope}
+        nodeId={displayNode?.id ?? null}
+        portId={activeOutput.id}
+      />
+    </div>
+  {/if}
 
   {#if currentViewer === 'typed' && activeOutput}
     <div class="typed-viewer">
@@ -1095,6 +1147,11 @@
     height: 100%;
     overflow: hidden;
     background: var(--surface-void);
+  }
+
+  .scene-viewer {
+    position: absolute;
+    inset: 0;
   }
 
   .viewer.hidden {
