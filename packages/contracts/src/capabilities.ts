@@ -84,13 +84,13 @@ export interface PythonCapability {
  * anything a graph author would recognise. So a shared device is not a
  * preference, it is the precondition for a chain of GPU nodes at all.
  *
- * **Stage 0 deliberately carries three members and no textures.** Ports still
- * pass `image`, so every picture is byte-identical to before; what this buys is
+ * **The capability carries a device/cache contract, not graph textures.** Ports
+ * still pass `image`; what this buys is
  * one device instead of one per node module, an owner for `device.lost`, and
  * somewhere legitimate to keep a pipeline — which is what lets the
  * `architecture/ambient-state` rule stay strict. The texture store, the
- * generation-stamped handles and the readback are Stage 1, and the shape of
- * this interface is meant to be lived with for a few days first.
+ * generation-stamped handles remain future work. Explicit RGBA8 readback is a
+ * helper in `cascade/gpu`, shared by browser and native hosts without encoding.
  *
  * The `GPUDevice` type comes from `@webgpu/types`, added to this package's
  * `tsconfig.json` as its only `types` entry. Contracts compiles with
@@ -109,7 +109,7 @@ export interface PythonCapability {
  */
 export interface GpuCapability {
   /**
-   * The one device for this page. Shared by every node declaring `gpu`, which
+   * The one device for this host. Shared by every node declaring `gpu`, which
    * is the whole point — see the note above on why two would be useless.
    */
   readonly device: GPUDevice;
@@ -135,7 +135,7 @@ export interface GpuCapability {
    * right answer again.
    *
    * `create` runs once per key. `destroy` is called when the entry is dropped:
-   * when the device is lost, or when the graph disposes. This is the member
+   * when the device is lost, or when the owning host disposes. This is the member
    * that makes `architecture/module-state` keepable — it was previously
    * forbidding the only available way to hold a pipeline.
    */

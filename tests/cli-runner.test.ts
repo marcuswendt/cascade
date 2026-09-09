@@ -226,6 +226,27 @@ describe('CLI Runner', () => {
       });
       expect(fetcher).toHaveBeenCalledWith('/api/nodes/after-run/compiled');
     });
+
+    it('removes process-wide compilers after a deterministic run', async () => {
+      vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify({
+        version: '0.2',
+        nodes: [{ id: 'pass', module: 'cascade.core.Null' }],
+        connections: [],
+      }));
+      const fetcher = vi.fn().mockResolvedValue(new Response(
+        'export function execute() {}',
+        { status: 200 },
+      ));
+      vi.stubGlobal('fetch', fetcher);
+
+      await runGraph({ file: path.resolve('deterministic-scope-test.cascade') });
+
+      await expect(stageAvailable()).resolves.toBe(false);
+      await expect(loadProjectModule('project.after-deterministic-run')).resolves.toMatchObject({
+        execute: expect.any(Function),
+      });
+      expect(fetcher).toHaveBeenCalledWith('/api/nodes/after-deterministic-run/compiled');
+    });
   });
 
   describe('RunOptions interface', () => {

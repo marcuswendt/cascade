@@ -1,6 +1,6 @@
 {
   "name": "@field/cascade",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Visual programming for generative art",
   "license": "MIT",
   "author": "FIELD.IO <marcus@field.io>",
@@ -33,6 +33,7 @@
     "DESIGN.md",
     "doc/NODE_REFERENCE.md",
     "doc/PROJECT_AUTHORING.md",
+    "doc/HEADLESS_GPU.md",
     "README.md",
     "LICENSE"
   ],
@@ -154,6 +155,7 @@
     "dompurify": "$dompurify"
   },
   "optionalDependencies": {
-    "@napi-rs/canvas": "^1.0.8"
+    "@napi-rs/canvas": "^1.0.8",
+    "webgpu": "0.6.0"
   }
 }

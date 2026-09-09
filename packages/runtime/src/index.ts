@@ -1,8 +1,10 @@
 export { CascadeRuntimeError } from "./error.js";
 export * from "./animation/index.js";
 export * from "./camera/index.js";
+export * from "./series/index.js";
 export * from "./expressions/index.js";
 export * from "./geometry/index.js";
+export * from "./gpu.js";
 export * from "./params/index.js";
 export { createRuntime, PREFLIGHT_WARNING_CODES } from "./runtime.js";
 export type * from "./types.js";

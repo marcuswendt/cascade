@@ -26,20 +26,15 @@ Confirm scope and acceptance criteria against a real project before implementati
 
 ## GPU pipeline
 
-- Add generation-stamped texture handles, graph texture transport, explicit
-  readback, and lifecycle accounting on top of the shared Studio GPU device.
+- Add generation-stamped texture handles, graph texture transport, handle
+  readback, and lifecycle accounting on top of the shared GPU device.
 - Prove GPU-to-GPU composition and visual parity in a representative sketch,
   measuring full parameter-to-picture latency rather than render-pass time.
-- Evaluate optional Dawn support in the Node host for headless GPU rendering
-  and agent-driven image inspection. The [Dawn Node bindings](https://github.com/dawn-gpu/node-webgpu)
-  support texture rendering/readback but do not supply browser canvas or media
-  integration. First prove one shared WGSL renderer in Studio and CLI, explicit
-  image output, measured parity tolerances, cancellation, resource cleanup,
-  and clean process exit. The current browser-only `gpu` contract and host
-  checks need an explicit portability change before this can run.
-  [Upstream testing guidance](https://dawn.googlesource.com/dawn/+/refs/heads/main/src/dawn/node/README.md)
-  includes software Vulkan backends for suitable CI environments. Dawn is not
-  installed or supported by Cascade yet.
+- Extend the [optional Dawn headless path](doc/HEADLESS_GPU.md) beyond its first
+  RGBA8 image-rendering proof: validate the team's Windows/Linux machines and
+  explicit software CI backends, measure larger workloads, and add representative
+  browser/native visual baselines. Improve Windows supervisor process-tree
+  termination before relying on it for project code that spawns children.
 
 ## Distribution and cloud
 

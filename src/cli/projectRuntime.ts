@@ -14,6 +14,7 @@ import type { DefinitionNodeRegistration, LoadedCascadeGraph, RuntimeHost } from
 import { ProjectRoot } from '../../server/src/project.js';
 import { createNodeAssetCapability } from './nodeAssets.js';
 import { imagePath, sequenceFileName, sequenceWidth } from './sequence.js';
+import { createDawnGpuHost } from './headlessGpu.js';
 
 interface ProjectNode {
   id: string;
@@ -55,6 +56,7 @@ function createProjectHost(file: string, registrations: DefinitionNodeRegistrati
     // `validate` and `check` and then refused to run. See ./nodeAssets.ts
     // for where the file lands and why.
     assets: createNodeAssetCapability(project),
+    gpu: createDawnGpuHost(),
   });
 }
 
@@ -86,9 +88,9 @@ async function preflightAgainstRunHost(
   try {
     const graph = await runtime.load(document);
     if (checkable) diagnostics = graph.preflight();
-    await graph.dispose();
   } finally {
     await runtime.dispose();
+    await disposeProjectGpu(host);
   }
   if (!diagnostics.length) return;
   const { errors, warnings } = classifyPreflight(diagnostics);
@@ -268,8 +270,8 @@ export async function runDeterministicProjectGraph(
     }
     return true;
   } finally {
-    await graph?.dispose();
-    await runtime.dispose();
+    try { await runtime.dispose(); }
+    finally { await disposeProjectGpu(host); }
   }
 }
 
@@ -291,6 +293,9 @@ export interface DeterministicFrameRenderResult {
   /** Written files, project-relative, in the order they were written. */
   files: string[];
   aborted: boolean;
+  fps: number;
+  durationMs: number;
+  gpu?: { renderer: 'dawn'; adapter: Readonly<{ vendor: string; architecture: string; device: string; description: string }> };
 }
 
 /**
@@ -331,18 +336,19 @@ export async function renderDeterministicProjectFrames(
     host,
     nodes: prepared.registrations,
   });
-  const graph = await runtime.load(document);
-  reportPreflightWarnings(host, classifyPreflight(graph.preflight()).warnings);
-
-  const outDirectory = project.resolve(options.out);
-  await fs.mkdir(outDirectory, { recursive: true });
-
+  let graph: LoadedCascadeGraph | undefined;
   const width = sequenceWidth(options.end);
   const frames: number[] = [];
   const files: string[] = [];
   let aborted = false;
+  let gpu: DeterministicFrameRenderResult['gpu'];
+  const started = performance.now();
 
   try {
+    graph = await runtime.load(document);
+    reportPreflightWarnings(host, classifyPreflight(graph.preflight()).warnings);
+    const outDirectory = project.resolve(options.out);
+    await fs.mkdir(outDirectory, { recursive: true });
     for (const frame of frameRange(options.start, options.end, options.step ?? 1)) {
       if (options.signal?.aborted) {
         aborted = true;
@@ -376,12 +382,19 @@ export async function renderDeterministicProjectFrames(
       frames.push(frame);
       if (options.verbose) console.log(`  frame ${frame}`);
     }
+    // CPU graphs never initialize the lazy optional GPU host.
+    try { gpu = { renderer: 'dawn', adapter: host.capabilities.gpu!.adapterInfo }; }
+    catch { /* No GPU node was executed. */ }
   } finally {
-    await graph.dispose();
-    await runtime.dispose();
+    try { await runtime.dispose(); }
+    finally { await disposeProjectGpu(host); }
   }
 
-  return { frames, files, aborted };
+  return { frames, files, aborted, fps: graph!.getFps(), durationMs: performance.now() - started, ...(gpu ? { gpu } : {}) };
+}
+
+async function disposeProjectGpu(host: RuntimeHost): Promise<void> {
+  await (host.capabilities.gpu as ReturnType<typeof createDawnGpuHost> | undefined)?.dispose();
 }
 
 /** The image outputs a frame should be saved from: an explicit entry node's, or

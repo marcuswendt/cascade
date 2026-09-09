@@ -35,6 +35,7 @@ export interface RunOptions {
   fps?: number;
   /** Sequence directory, project-relative. Default `renders/`. */
   out?: string;
+  json?: boolean;
 }
 
 /**
@@ -133,12 +134,25 @@ export async function runGraph(options: RunOptions): Promise<void> {
 
   const frameSpec = frames ? parseFrameSpec(frames) : null;
 
+  let hostReleased = false;
   const releaseHost = () => {
-    disposeStageBridge?.();
-    disposeIoBridge?.();
-    canvasHost?.dispose();
+    if (hostReleased) return;
+    hostReleased = true;
+    const errors: unknown[] = [];
+    for (const dispose of [
+      disposeStageBridge,
+      disposeIoBridge,
+      canvasHost ? () => canvasHost.dispose() : undefined,
+      () => setProjectModuleCompiler(null),
+      () => setEmbeddedCompiler(null),
+    ]) {
+      try { dispose?.(); }
+      catch (error) { errors.push(error); }
+    }
+    if (errors.length) throw errors[0];
   };
 
+  try {
   if (frameSpec) {
     // A definition-v1 graph renders its sequence through the deterministic
     // runtime, which resolves each bound parameter at the frame the run states.
@@ -154,13 +168,19 @@ export async function runGraph(options: RunOptions): Promise<void> {
     });
     if (rendered) {
       releaseHost();
-      console.log(`Rendered ${rendered.frames.length} frames, ${rendered.files.length} files -> ${out ?? 'renders'}/`);
+      if (options.json) process.stdout.write(JSON.stringify({ status: 'completed', graph: path.resolve(file), ...rendered }) + '\n');
+      else console.log(`Rendered ${rendered.frames.length} frames, ${rendered.files.length} files -> ${out ?? 'renders'}/`);
       return;
     }
+    if (options.json) throw new Error('--json rendering requires a fully definition-v1 graph');
   } else if (await runDeterministicProjectGraph(file, graphData, entryNode)) {
     if (verbose) console.log('Graph execution completed');
     releaseHost();
     return;
+  }
+  } catch (error) {
+    releaseHost();
+    throw error;
   }
 
   // A dynamic graph reaches here, and until now it died trying to fetch its
@@ -320,7 +340,5 @@ export async function runGraph(options: RunOptions): Promise<void> {
   } finally {
     activeGraph?.scheduler?.dispose?.();
     releaseHost();
-    setProjectModuleCompiler(null);
-    setEmbeddedCompiler(null);
   }
 }

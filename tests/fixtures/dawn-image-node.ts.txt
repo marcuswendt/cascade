@@ -1,0 +1,27 @@
+import type { NodeDefinition, NodeExecutionContext } from 'cascade/contracts';
+import { TextureUsage, readTexture } from 'cascade/gpu';
+import { saveImage, cachePath } from 'cascade/io';
+
+export const definition = {
+  apiVersion: 1, runsOn: 'portable', capabilities: ['gpu'],
+  props: { red: { type: 'float', default: 0.5, expression: '$F / 4' } },
+  outputs: { image: { kind: 'data', type: 'image' } },
+} as const satisfies NodeDefinition;
+
+export async function execute(context: NodeExecutionContext<typeof definition>) {
+  const gpu = context.capabilities.gpu;
+  const texture = gpu.cache('target', (device) => device.createTexture({
+    size: [65, 3], format: 'rgba8unorm', usage: TextureUsage.RENDER_ATTACHMENT | TextureUsage.COPY_SRC,
+  }), (texture) => texture.destroy());
+  const encoder = gpu.device.createCommandEncoder();
+  const pass = encoder.beginRenderPass({ colorAttachments: [{ view: texture.createView(),
+    clearValue: { r: context.props.red, g: 0.5, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store' }] });
+  pass.end();
+  gpu.device.queue.submit([encoder.finish()]);
+  const pixels = await readTexture(gpu.device, texture, { signal: context.signal });
+  const canvas = new OffscreenCanvas(pixels.width, pixels.height);
+  const ctx = canvas.getContext('2d')!;
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels.data.buffer), pixels.width, pixels.height), 0, 0);
+  const path = await saveImage(canvas, cachePath(context.nodeId, '.png'));
+  context.outputs.image.set({ path, size: [pixels.width, pixels.height], channels: 'rgba', depth: 'u8', space: 'srgb' });
+}

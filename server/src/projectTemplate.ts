@@ -216,11 +216,11 @@ Either way the module is a real ES module and the loader needs the \`execute\` e
 
 Prefer Canvas 2D, WebGL, and WebGPU for interactive rendering. Use Python or another server stage for libraries and tools that require it. Transport, serialization, and cold starts can affect parameter-drag latency; persistent workers can avoid repeated process/model startup.
 
-Definition-v1 image nodes can use \`saveImage(canvas, cachePath(context.nodeId, '.png'))\` from \`cascade/io\`. The instance ID provides a cache namespace, not graph access. Final artefacts may instead use an explicit filename. With optional Skia installed, the Node host supplies Canvas APIs; that does not make DOM or GPU code portable.
+Definition-v1 image nodes can use \`saveImage(canvas, cachePath(context.nodeId, '.png'))\` from \`cascade/io\`. The instance ID provides a cache namespace, not graph access. Final artefacts may instead use an explicit filename. Optional Skia supplies Canvas2D APIs; optional Dawn separately supplies WebGPU. Neither overrides a browser-only declaration or supplies the DOM.
 
 Use \`browser\` only for code that genuinely needs the page, such as the DOM or WebGL. Prefer \`new OffscreenCanvas(width, height)\` to \`document.createElement('canvas')\` when both hosts can run the same node.
 
-WebGPU nodes declare \`capabilities: ['gpu']\` and use \`context.capabilities.gpu\` for the shared device and per-node cache. Import usage constants from \`cascade/gpu\`. This capability currently supports image-based stages; GPU texture exchange remains future work.
+WebGPU nodes declare \`capabilities: ['gpu']\` and use \`context.capabilities.gpu\` for the shared device and per-node cache. Portable GPU nodes run in Studio or the optional Dawn CLI host. Import usage constants and explicit RGBA8 \`readTexture\` from \`cascade/gpu\`, then encode through the image/IO host. Graph texture exchange remains future work. For agent image feedback use \`cascade run index.cascade --frames 1 --json --timeout 60000\`; see \`node_modules/cascade/doc/HEADLESS_GPU.md\` for limitations.
 
 ## Finding out what exists
 

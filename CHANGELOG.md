@@ -42,6 +42,21 @@ Notable changes to Cascade. Newest first.
 
 - **The CLI build resolves `@cascade/runtime/params`.** `src/nodes/Node.ts` imports `resolvePropBinding` from it, the browser build resolved it through `vite.config.ts`, and the CLI build had no alias — so the CLI, which is what the sketches actually run, was the broken half.
 
+## 0.3.2 — 2026-09-09
+
+### Headless GPU
+
+- Optional pinned Dawn (`webgpu@0.6.0`) in the CLI, loaded only for GPU execution.
+  Browser and Node hosts reuse shared device/cache lifecycle; portable and server
+  definitions may declare `gpu`. Browser-only nodes remain browser-only.
+- Explicit `cascade/gpu` RGBA8 texture readback, with padded-row removal and
+  cancellation cleanup. Graph texture transport remains outside this stage.
+- `run --frames ... --json` returns an image manifest and adapter metadata;
+  `--timeout <ms>` runs a supervised render process for agent/test callers.
+  Dedicated opt-in hardware and packed-package gates exercise real GPU output.
+- Documented the decision, local/unreleased status, CLI manifest contract,
+  verification evidence and platform limits in [Headless GPU](doc/HEADLESS_GPU.md).
+
 ## 0.3.1
 
 ### Fixed

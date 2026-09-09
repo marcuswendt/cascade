@@ -118,7 +118,7 @@ export const nodeDefinitionSchema = {
     ["apiVersion", "runsOn"],
   ),
   allOf: [
-    environmentCapabilities("portable", ["assets", "media"]),
+    environmentCapabilities("portable", ["assets", "media", "gpu"]),
     environmentCapabilities("browser", ["assets", "media", "gpu"]),
     environmentCapabilities("server", [
       "files",
@@ -126,6 +126,7 @@ export const nodeDefinitionSchema = {
       "media",
       "python",
       "shell",
+      "gpu",
     ]),
   ],
 } as const;

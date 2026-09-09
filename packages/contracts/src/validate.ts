@@ -28,9 +28,9 @@ export const CAPABILITIES_BY_ENVIRONMENT: Record<
   RuntimeEnvironment,
   readonly NodeCapabilityName[]
 > = {
-  portable: ["assets", "media"],
+  portable: ["assets", "media", "gpu"],
   browser: ["assets", "media", "gpu"],
-  server: ["files", "assets", "media", "python", "shell"],
+  server: ["files", "assets", "media", "python", "shell", "gpu"],
 };
 const ALLOWED = CAPABILITIES_BY_ENVIRONMENT;
 const fields = (names: string) => new Set(names.split(" "));

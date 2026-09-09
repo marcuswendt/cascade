@@ -295,8 +295,7 @@ export interface LoadedCascadeGraph {
   getOutputs(nodeId: string): ReadonlyMap<string, unknown>;
   dispose(): Promise<void>;
 }
-export interface NodeRuntimeHostOptions
-  extends Omit<RuntimeCapabilities, "gpu"> {
+export interface NodeRuntimeHostOptions extends RuntimeCapabilities {
   readonly modules: RuntimeHost["modules"];
   readonly legacyShell?: LegacyShellBindingFactory &
     Readonly<{ kind: "server-direct" }>;

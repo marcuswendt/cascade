@@ -30,7 +30,7 @@ Randomness is a pure function of an authored seed, never ambient process state.
 
 Hosts adapt the neutral runtime to an environment:
 
-- Node: files, assets, media, Python, and shell.
+- Node: files, assets, media, Python, shell, and optional Dawn WebGPU in the CLI.
 - Browser: assets, media, and the `gpu` capability when WebGPU is available.
 - Mixed application: an explicit bridge for serializable server stages.
 
@@ -44,12 +44,13 @@ resize, composite, and encode when both Canvas/WebGL and native implementations
 exist. Both executors must obey the same definition and should share golden
 parity tests for geometry, metadata, and edge cases.
 
-Studio currently implements the first GPU stage. It creates one WebGPU
-`GPUDevice` for the page, gives each declaring node its own keyed resource
-cache, and owns device-loss cleanup and recreation. The contract deliberately
-has no texture store yet: graph ports still exchange `image` values, so
-GPU-resident intermediate connections and explicit texture readback remain
-future work.
+`packages/runtime/src/gpu.ts` owns shared device/cache lifecycle with an injected
+acquisition function. Studio acquires browser WebGPU; `src/cli/headlessGpu.ts`
+loads optional Dawn lazily. The runtime awaits readiness and supplies a per-node
+view; the application owns disposal. `cascade/gpu` supplies explicit RGBA8
+readback without encoding or colour conversion. Graph ports still exchange
+images; GPU-resident intermediate connections remain future work. See
+[headless GPU rendering](doc/HEADLESS_GPU.md).
 
 `server/` is the project-scoped Node application host. It owns project paths, compilation, HTTP transport, media serving, Python workers, shell policy, and credentials. It is separately manifested and is not a third contracts/runtime workspace.
 

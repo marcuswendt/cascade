@@ -317,11 +317,16 @@ The runtime refuses unsupported host/capability combinations before executing th
 
 ### GPU nodes today
 
-A definition-v1 browser node may declare `capabilities: ['gpu']`. Studio then
-provides one shared `GPUDevice` for the page, adapter identity and limits, plus
+A definition-v1 node may declare `capabilities: ['gpu']`. Studio and the optional
+Dawn CLI host provide one shared `GPUDevice`, adapter identity and limits, plus
 a cache scoped to each node instance for pipelines, samplers, and other
-resources that outlive one cook. The host clears cached resources on graph
+resources that outlive one cook. The host clears cached resources on host
 disposal or device loss and requests a fresh device on a later cook.
+
+Use `runsOn: 'portable'` for shared WebGPU code without browser APIs. Render into
+a texture and use `readTexture` from `cascade/gpu` for explicit RGBA8 pixels,
+then encode through the image/IO host. See [headless GPU rendering](HEADLESS_GPU.md)
+for CLI/agent commands, restrictions and tests.
 
 This is the first GPU capability stage. Texture connections are not available:
 GPU nodes still publish images, so an image must be encoded or read back before

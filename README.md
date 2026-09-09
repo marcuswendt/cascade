@@ -295,7 +295,7 @@ a second set of node algorithms.
 | Studio authoring | Supports dynamic and definition-v1 nodes in one document through the compatibility controller. |
 | Headless CLI | Executes all-definition-v1 or all-dynamic documents; mixed documents are rejected. Both styles can render frame sequences. |
 | Embedded runtime | `cascade/runtime` is the neutral definition-v1 API for Node and browser hosts. It does not load Studio or interpret dynamic nodes. |
-| GPU | Studio provides one shared WebGPU device, adapter metadata, limits, and per-node resource caches to definition-v1 browser nodes declaring `gpu`. Graph texture transport and readback are not implemented yet; ports still carry images. |
+| GPU | Studio and the optional Dawn CLI host provide a shared device, adapter metadata, limits, and per-node caches. Portable GPU nodes render offscreen and explicitly read RGBA8 pixels through `cascade/gpu`; graph ports still carry images. See [headless GPU rendering](doc/HEADLESS_GPU.md). |
 | Standalone HTML export | The existing Studio exporter uses a separate minimal runtime and supports only a subset of graph behavior. Treat it as an experimental convenience, not as a universal deployment artifact. |
 | External services | Project-owned and optional. Cascade itself requires no paid provider or model subscription. |
 

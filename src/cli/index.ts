@@ -4,6 +4,7 @@ import { runGraph } from './runner.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { readFileSync } from 'node:fs';
+import { superviseProcess } from './supervise.js';
 
 const VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version as string;
 
@@ -58,6 +59,8 @@ Options:
   --frames <range>   Render a frame sequence: 1-100, 1-100x2 (step), or 42
   --fps <number>     Frame rate to evaluate the range at
   --out <dir>        Sequence directory, project-relative (default: renders)
+  --json             Return a JSON render manifest (requires run --frames)
+  --timeout <ms>     Bound a run in a supervised child process (exit 124 on timeout)
   --validate-only   Validate only (same as 'validate' command)
   --verbose, -v      Show verbose output
   --version          Show version
@@ -116,6 +119,7 @@ image output nothing downstream consumes, or per output of --entry-node.
     frames?: string;
     fps?: number;
     out?: string;
+    json?: boolean;
   } = {
     file: fileArg,
     validateOnly: command === 'validate',
@@ -163,8 +167,28 @@ image output nothing downstream consumes, or per output of --entry-node.
   const out = valueOf('--out');
   if (out) options.out = out;
 
+  if (args.includes('--json')) {
+    if (command !== 'run' || !options.frames) throw new Error('--json requires run --frames (use --frames 1 for a still)');
+    options.json = true;
+  }
+  const timeout = valueOf('--timeout');
+  if (timeout !== undefined) {
+    const ms = Number(timeout);
+    if (command !== 'run' || !Number.isSafeInteger(ms) || ms <= 0 || ms > 2_147_483_647) {
+      throw new Error('--timeout requires run and a positive integer number of milliseconds up to 2147483647');
+    }
+    const index = args.indexOf('--timeout');
+    const childArgs = [...args.slice(0, index), ...args.slice(index + 2)];
+    if (childArgs.includes('--timeout')) throw new Error('--timeout may only be specified once');
+    process.exitCode = await superviseProcess(process.execPath, [...process.execArgv, process.argv[1], ...childArgs], ms);
+    return;
+  }
+
   // Run graph
   try {
+    // Preserve stdout as a machine-readable channel, even when trusted nodes
+    // log during execution. The final manifest writes stdout directly.
+    if (options.json) console.log = console.error;
     await runGraph(options);
   } catch (error: any) {
     console.error(`Error: ${error.message}`);

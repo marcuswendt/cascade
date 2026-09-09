@@ -55,12 +55,15 @@ Use one vector type for one vector value: `vec2`, `vec3`, `vec4`, or their integ
 | --- | --- | --- |
 | `assets` | portable | Read/write asset references and optionally resolve URLs |
 | `media` | portable | Decode and encode media through the host |
-| `gpu` | browser | Shared WebGPU device, adapter information, limits, and resource cache |
+| `gpu` | portable, browser, server | Shared WebGPU device, adapter information, limits, and resource cache; CLI uses optional Dawn |
 | `files` | server | Project-confined byte reads, writes, lists, and stats |
 | `python` | server | Invoke a configured operation with JSON and assets |
 | `shell` | server | Run an allowlisted executable without a shell command string |
 
-The current GPU capability does not provide graph texture transport or readback. Ports still exchange images, and server definitions cannot declare browser-only texture values.
+The GPU capability does not provide graph texture transport. `cascade/gpu` exports
+`readTexture(device, texture, { signal? })` for explicit RGBA8 readback; ports still
+exchange images. Server/portable definitions cannot declare browser-only texture
+ports. See [the headless GPU contract](../doc/HEADLESS_GPU.md).
 
 ## Embed the runtime
 

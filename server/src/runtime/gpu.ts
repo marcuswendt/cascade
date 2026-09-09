@@ -74,3 +74,74 @@ export const ColorWrite = {
   ALPHA: 0x8,
   ALL: 0xf,
 } as const;
+
+/** Read one single-sample rgba8unorm 2D texture into owned, tightly packed
+ * top-left RGBA bytes. No colour conversion, PNG encoding or graph transport.
+ * The caller owns the source texture and must give it COPY_SRC usage.
+ */
+export async function readTexture(
+  device: GPUDevice,
+  texture: GPUTexture,
+  options: { signal?: {
+    readonly aborted: boolean;
+    addEventListener(type: 'abort', listener: () => void, options?: { once?: boolean }): void;
+    removeEventListener(type: 'abort', listener: () => void): void;
+  } } = {},
+): Promise<{ data: Uint8Array<ArrayBuffer>; width: number; height: number }> {
+  const { signal } = options;
+  if (signal?.aborted) throw new Error('GPU readback aborted');
+  if (texture.format !== 'rgba8unorm' || texture.dimension !== '2d'
+    || texture.depthOrArrayLayers !== 1 || texture.sampleCount !== 1
+    || !(texture.usage & TextureUsage.COPY_SRC)) {
+    throw new Error('GPU readback requires a single-sample rgba8unorm 2D texture with COPY_SRC usage');
+  }
+  const { width, height } = texture;
+  const rowBytes = width * 4;
+  const bytesPerRow = Math.ceil(rowBytes / 256) * 256;
+  let buffer: GPUBuffer | undefined;
+  let mapped = false;
+  let abort: (() => void) | undefined;
+  let errorScopeOpen = false;
+  try {
+    device.pushErrorScope('validation');
+    errorScopeOpen = true;
+    buffer = device.createBuffer({
+      label: 'Cascade RGBA readback', size: bytesPerRow * height,
+      usage: BufferUsage.COPY_DST | BufferUsage.MAP_READ,
+    });
+    const encoder = device.createCommandEncoder();
+    encoder.copyTextureToBuffer({ texture }, { buffer, bytesPerRow }, [width, height]);
+    device.queue.submit([encoder.finish()]);
+    const validation = device.popErrorScope();
+    errorScopeOpen = false;
+    const completion = Promise.allSettled([buffer.mapAsync(MapMode.READ), validation]);
+    let completed: Awaited<typeof completion>;
+    if (signal) {
+      completed = await Promise.race([completion, new Promise<never>((_, reject) => {
+        abort = () => reject(new Error('GPU readback aborted'));
+        signal.addEventListener('abort', abort, { once: true });
+        if (signal.aborted) abort();
+      })]);
+    } else completed = await completion;
+    const mappingResult = completed[0];
+    const validationResult = completed[1];
+    if (validationResult.status === 'rejected') throw validationResult.reason;
+    const validationError = validationResult.value;
+    if (validationError) throw new Error(`GPU readback validation failed: ${validationError.message}`);
+    if (mappingResult.status === 'rejected') throw mappingResult.reason;
+    mapped = true;
+    if (signal?.aborted) throw new Error('GPU readback aborted');
+    const source = new Uint8Array(buffer.getMappedRange());
+    const data = new Uint8Array(rowBytes * height);
+    for (let y = 0; y < height; y++) data.set(source.subarray(y * bytesPerRow, y * bytesPerRow + rowBytes), y * rowBytes);
+    return { data, width, height };
+  } finally {
+    if (abort) signal?.removeEventListener('abort', abort);
+    if (errorScopeOpen) {
+      try { await device.popErrorScope(); }
+      catch { /* Preserve the operation's original failure. */ }
+    }
+    if (mapped) buffer?.unmap();
+    buffer?.destroy();
+  }
+}

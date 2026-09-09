@@ -18,6 +18,7 @@ import { deserializeChannel, isEmptyChannel } from "./animation/channel.js";
 import { PropAnimator, isBoundProp } from "./params/index.js";
 import type { PropBinding } from "./params/index.js";
 import { DEFAULT_FPS, MIN_FRAME } from "./expressions/time.js";
+import { isGpuHost } from "./gpu.js";
 import type {
   CascadeDocument,
   CascadeDocumentConnection,
@@ -975,16 +976,22 @@ class Graph implements LoadedCascadeGraph {
         ],
       ),
     );
-    const capabilities = Object.freeze(
-      Object.fromEntries(
-        (node.definition.capabilities ?? []).map((name) => [
+    const capabilityEntries: [NodeCapabilityName, unknown][] = [];
+    for (const name of node.definition.capabilities ?? []) {
+      const installed = this.host.capabilities[name];
+      if (name === "gpu" && isGpuHost(installed)) {
+        await installed.ensure();
+        capabilityEntries.push([name, installed.forNode(node.id)]);
+      } else {
+        capabilityEntries.push([
           name,
           name === "shell"
             ? bindShellToRun(this.host.capabilities.shell, signal)
-            : this.host.capabilities[name],
-        ]),
-      ),
-    );
+            : installed,
+        ]);
+      }
+    }
+    const capabilities = Object.freeze(Object.fromEntries(capabilityEntries));
     const props = Object.freeze({ ...node.props });
     const progress = {
       report: (event: {
