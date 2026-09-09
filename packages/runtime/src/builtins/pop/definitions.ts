@@ -2,6 +2,9 @@ import type { Geometry, NodeDefinition, NodeExecutionContext } from "@cascade/co
 
 import {
   ParticleState,
+  accumulateForce,
+  clearForce,
+  forceAttribute,
   checkpointAtOrBefore,
   offerCheckpoint,
   attract,
@@ -167,14 +170,26 @@ export function executeSolver(
 
   const state = ParticleState.fromGeometry(incoming);
   const forces: ParticleForce[] = [];
+  /**
+   * Whatever the force nodes upstream accumulated, first.
+   *
+   * This is the half that makes a network of forces work: they add to a `force`
+   * attribute and move nothing, and integration happens **once**, here. The
+   * solver then clears the attribute, so a step never inherits the previous
+   * step's forces — a leak there would make a simulation accelerate for
+   * reasons nothing in the graph explains.
+   */
+  forces.push(forceAttribute(incoming));
   if (props.force[0] !== 0 || props.force[1] !== 0) forces.push(gravity(props.force));
   if (props.airresist > 0) forces.push(drag(props.airresist));
 
   context.outputs.geometry.set(
-    step(state, forces, {
-      timestep: props.timestep,
-      ...(props.maxspeed > 0 ? { maxSpeed: props.maxspeed } : {}),
-    }).toGeometry(),
+    clearForce(
+      step(state, forces, {
+        timestep: props.timestep,
+        ...(props.maxspeed > 0 ? { maxSpeed: props.maxspeed } : {}),
+      }).toGeometry(),
+    ),
   );
 }
 
@@ -195,6 +210,16 @@ const noiseForceDefinition = {
   },
 } as const satisfies NodeDefinition;
 
+/**
+ * Accumulates into `force` and moves nothing — Houdini's POP model.
+ *
+ * Changed 2026-09-09, and it is a correctness fix rather than a refinement.
+ * This node used to call `step()`, which integrates. Chain two force nodes
+ * inside a `cascade.core.Feedback` and time then advances **twice per step**:
+ * the particles travel further than the timestep says, reordering nodes that
+ * ought to commute changes the result, and nothing reports anything. That is
+ * unreadable from a picture, so the model has to be right rather than tested.
+ */
 export function executeNoiseForce(
   context: NodeExecutionContext<typeof noiseForceDefinition>,
 ): void {
@@ -204,17 +229,18 @@ export function executeNoiseForce(
     return;
   }
   const props = context.props;
+  const state = ParticleState.fromGeometry(incoming);
   context.outputs.geometry.set(
-    step(
-      ParticleState.fromGeometry(incoming),
-      [noiseField({
+    accumulateForce(
+      incoming,
+      noiseField({
         seed: props.seed,
         frequency: props.frequency,
         amplitude: props.amplitude,
         evolve: props.evolve,
-      })],
-      { timestep: props.timestep },
-    ).toGeometry(),
+      }).accelerate(state, state.size),
+      state.size,
+    ),
   );
 }
 
@@ -242,12 +268,16 @@ export function executeSeparate(
     return;
   }
   const props = context.props;
+  const state = ParticleState.fromGeometry(incoming);
   context.outputs.geometry.set(
-    step(
-      ParticleState.fromGeometry(incoming),
-      [separation({ radius: props.radius, strength: props.strength })],
-      { timestep: props.timestep },
-    ).toGeometry(),
+    accumulateForce(
+      incoming,
+      separation({ radius: props.radius, strength: props.strength }).accelerate(
+        state,
+        state.size,
+      ),
+      state.size,
+    ),
   );
 }
 

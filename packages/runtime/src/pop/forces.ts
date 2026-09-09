@@ -1,3 +1,5 @@
+import type { Geometry } from "@cascade/contracts";
+
 import type { ParticleForce, ParticleState } from "./state.js";
 
 /**
@@ -514,4 +516,94 @@ export function flowField(options: {
       return out;
     },
   };
+}
+
+/**
+ * Houdini's POP convention: a force node **accumulates into a `force`
+ * attribute**, and the solver integrates once.
+ *
+ * Added 2026-09-09, when `pop.Simulate` was rebuilt as a network Marcus can
+ * dive into. It is not a refinement — it is the difference between a chain of
+ * force nodes that works and one that is silently wrong.
+ *
+ * The nodes as first written each called `step()` themselves, which integrates.
+ * Chain two of them inside a container and time advances **twice per step**:
+ * the particles move further than the timestep says, the result changes when
+ * you reorder nodes that should commute, and nothing reports an error. Reading
+ * that from a picture is close to impossible, which is why the model has to be
+ * right rather than tested.
+ *
+ * So: `accumulateForce` adds an acceleration to the geometry's `force`
+ * attribute and moves nothing. `forceAttribute` is the force the solver reads
+ * back. The solver integrates and clears it, exactly as a POP network does.
+ */
+export function accumulateForce(
+  geometry: Geometry,
+  contribution: Float32Array,
+  size: number,
+): Geometry {
+  const count = geometry.pointCount;
+  if (contribution.length !== count * size)
+    throw new Error(
+      `force contribution has ${contribution.length} values for ${count} particles of size ${size}`,
+    );
+  const existing = geometry.point.force;
+  const total = new Float32Array(count * size);
+  if (existing && existing.storage !== "string" && existing.size === size)
+    for (let index = 0; index < total.length; index += 1)
+      total[index] = Number((existing.data as ArrayLike<number>)[index] ?? 0);
+  for (let index = 0; index < total.length; index += 1)
+    total[index] = total[index]! + contribution[index]!;
+  return {
+    ...geometry,
+    point: {
+      ...geometry.point,
+      force: { storage: "f32", size, data: total },
+    },
+  };
+}
+
+/**
+ * The accumulated `force` on a geometry, as a force the solver can sum with the
+ * rest.
+ *
+ * Takes the geometry rather than reading through `ParticleState`, because the
+ * state deliberately carries only the attributes the contract makes mandatory —
+ * adding a slot for every attribute a force node might invent is how a state
+ * object becomes a bag. The solver reads this off the geometry it was handed.
+ *
+ * Zero when the attribute is absent, which is the correct reading of "no force
+ * node ran": a solver with nothing wired into it should hold the particles
+ * still rather than refuse to cook.
+ */
+export function forceAttribute(geometry: Geometry): ParticleForce {
+  const stored = geometry.point.force;
+  const data =
+    stored && stored.storage !== "string"
+      ? (stored.data as ArrayLike<number>)
+      : undefined;
+  const storedSize = stored?.size ?? 0;
+  return {
+    label: "force",
+    accelerate: (state, size) => {
+      const out = new Float32Array(state.count * size);
+      if (!data) return out;
+      // Component-wise rather than a straight copy, so a 3-component `force`
+      // on a 2D system contributes its x and y instead of throwing or
+      // scrambling the stride.
+      const shared = Math.min(size, storedSize);
+      for (let point = 0; point < state.count; point += 1)
+        for (let axis = 0; axis < shared; axis += 1)
+          out[point * size + axis] = Number(data[point * storedSize + axis] ?? 0);
+      return out;
+    },
+  };
+}
+
+/** Drop the accumulated force. The solver calls this after integrating, so a
+ *  step never inherits the previous step's forces. */
+export function clearForce(geometry: Geometry): Geometry {
+  if (!geometry.point.force) return geometry;
+  const { force: _dropped, ...rest } = geometry.point;
+  return { ...geometry, point: rest };
 }
