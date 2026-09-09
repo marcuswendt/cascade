@@ -1,7 +1,9 @@
-import type { NodeDefinition, NodeExecutionContext } from "@cascade/contracts";
+import type { Geometry, NodeDefinition, NodeExecutionContext } from "@cascade/contracts";
 
 import {
   ParticleState,
+  checkpointAtOrBefore,
+  offerCheckpoint,
   attract,
   buildTrails,
   flowField,
@@ -402,6 +404,65 @@ const simulateDefinition = {
   },
 } as const satisfies NodeDefinition;
 
+/**
+ * Everything that determines this simulation, as one string.
+ *
+ * **The whole safety argument for the checkpoint cache is here.** A key on
+ * anything less than everything serves a stale state that looks plausible, and
+ * a wrong particle system is indistinguishable from a different-looking one. So
+ * this covers every prop the stepping reads and the *content* of every geometry
+ * it reads, and it deliberately does not try to be clever: a fingerprint that
+ * is cheap and complete beats one that is minimal and subtle.
+ *
+ * The geometries are hashed rather than counted. Counting points would miss a
+ * field whose word changed from "Cascade" to "Cascada" at the same resolution —
+ * same point count, different letters, and the cache would happily replay the
+ * old word. Hashing is O(n) once per cook against O(n·frames) of stepping, so
+ * it is not the cost that matters.
+ *
+ * `frame` is NOT in it, because the frame is what the cache is indexed by.
+ * Putting it in the key would give every frame its own entry and no reuse,
+ * which is a cache that stores everything and accelerates nothing.
+ */
+function simulationFingerprint(
+  props: Record<string, unknown>,
+  geometries: readonly (Geometry | undefined)[],
+): string {
+  const parts: string[] = [];
+  for (const [name, value] of Object.entries(props)) {
+    // trail_length and trail_increment change what is DRAWN, not what is
+    // simulated, so they are excluded — including them would throw away a
+    // perfectly good simulation every time the trail length was dragged,
+    // which is exactly the parameter someone drags while watching.
+    if (name === "trail_length" || name === "trail_increment") continue;
+    parts.push(`${name}=${JSON.stringify(value)}`);
+  }
+  for (const geometry of geometries) {
+    parts.push(geometry ? geometryFingerprint(geometry) : "none");
+  }
+  return parts.join("|");
+}
+
+/** A cheap content hash: counts, then every numeric attribute folded in. */
+function geometryFingerprint(geometry: Geometry): string {
+  let hash = 2166136261;
+  const fold = (value: number) => {
+    hash ^= value | 0;
+    hash = Math.imul(hash, 16777619);
+  };
+  fold(geometry.pointCount);
+  fold(geometry.primitiveCount);
+  for (const [name, attribute] of Object.entries(geometry.point)) {
+    for (let index = 0; index < name.length; index += 1) fold(name.charCodeAt(index));
+    if (attribute.storage === "string") continue;
+    const data = attribute.data as ArrayLike<number>;
+    // Every value, because a field's whole meaning is its values — and this is
+    // the input that changes when the word does.
+    for (let index = 0; index < data.length; index += 1) fold(Math.round(Number(data[index]) * 4096));
+  }
+  return (hash >>> 0).toString(36);
+}
+
 export function executeSimulate(
   context: NodeExecutionContext<typeof simulateDefinition>,
 ): void {
@@ -414,6 +475,7 @@ export function executeSimulate(
   // smaller than the simulation, so keeping every frame would give up the
   // property that makes trails cheaper than a state cache.
   const history: TrailFrame[] = [];
+  let startFrame = 1;
   const available = from ? from.pointCount : 0;
   const source = from?.point.P;
   // Read once for the whole replay: none of these change within a cook.
@@ -429,7 +491,30 @@ export function executeSimulate(
     ? ([props.wrap[0], props.wrap[1], props.wrap[2], props.wrap[3]] as const)
     : undefined;
 
-  for (let frame = 1; frame <= frames; frame += 1) {
+  /**
+   * Resume from the nearest checkpoint at or before this frame.
+   *
+   * An accelerator and nothing more: with the cache cleared this loop starts at
+   * frame 1 and produces exactly the same result, which is what
+   * `tests/pop-cache.test.ts` asserts by seeking cold and comparing bytes.
+   *
+   * The trail history is NOT restored, and that is a decision rather than an
+   * omission. A resumed cook has no history before its checkpoint, so its
+   * trails are short until the window refills — visibly different from a cold
+   * cook. The alternative is caching the window too, which makes the cache as
+   * large as the state it exists to avoid re-deriving. So trails are rebuilt
+   * from the frames actually stepped, and a scrub shows shorter trails for
+   * `trail_length` frames afterwards. Worth knowing; not worth the memory to
+   * hide.
+   */
+  const fingerprint = simulationFingerprint(props as Record<string, unknown>, [from, targets, flow]);
+  const resumed = checkpointAtOrBefore(context.nodeId, fingerprint, frames);
+  if (resumed) {
+    state = resumed.state;
+    startFrame = resumed.frame + 1;
+  }
+
+  for (let frame = startFrame; frame <= frames; frame += 1) {
     if (canBirth && props.impulse > 0) {
       const born = scatter ? props.impulse : Math.min(props.impulse, available);
       const position = new Float64Array(born * 2);
@@ -537,6 +622,8 @@ export function executeSimulate(
     });
     const keep = props.trail_length * props.trail_increment;
     if (history.length > keep) history.splice(0, history.length - keep);
+
+    offerCheckpoint(context.nodeId, fingerprint, frame, state);
   }
 
   const geometry = state.toGeometry();
