@@ -396,6 +396,162 @@ Runs on `portable`.
 | --- | --- | --- | --- |
 | `geometry` | `geometry` |  |  |
 
+### `cascade.pop.NoiseForce`
+
+POP Noise Force — Push particles along a heading read from a noise field.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `particles` | `geometry` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `amplitude` | `float` | `6` | 0…500 |
+| `frequency` | `float` | `0.3` | 0.001…10 |
+| `evolve` | `float` | `0` | -1000…1000 |
+| `timestep` | `float` | `0.041666666666666664` | 0.004166666666666667…1 |
+| `seed` | `int` | `7` | 0…999999 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `geometry` | `geometry` |  |  |
+
+### `cascade.pop.Separate`
+
+POP Separate — Push neighbours apart within a radius.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `particles` | `geometry` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `radius` | `float` | `0.5` | 0…100 |
+| `strength` | `float` | `4` | 0…500 |
+| `timestep` | `float` | `0.041666666666666664` | 0.004166666666666667…1 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `geometry` | `geometry` |  |  |
+
+### `cascade.pop.Simulate`
+
+POP Simulate — Re-simulate a particle system from frame zero to this frame.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `geometry` | `geometry` |  |  |
+| `frame` | `float` | `1` |  |
+| `attract` | `geometry` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `trail_length` | `int` | `14` | 1…500 |
+| `trail_increment` | `int` | `1` | 1…32 |
+| `substeps` | `int` | `1` | 1…32 |
+| `timestep` | `float` | `0.041666666666666664` | 0.004166666666666667…1 |
+| `impulse` | `int` | `6` | 0…100000 |
+| `life` | `float` | `4` | 0…3600 |
+| `lifevar` | `float` | `0.4` | 0…1 |
+| `force` | `vec2` | `[0,0]` |  |
+| `airresist` | `float` | `0.4` | 0…20 |
+| `noise_amplitude` | `float` | `14` | 0…500 |
+| `noise_frequency` | `float` | `0.02` | 0.001…10 |
+| `noise_evolve` | `float` | `0.08` | -10…10 |
+| `attract_amplitude` | `float` | `0` | 0…20000 |
+| `attract_radius` | `float` | `60` | 0…5000 |
+| `separate_radius` | `float` | `0` | 0…500 |
+| `separate_strength` | `float` | `12` | 0…500 |
+| `maxspeed` | `float` | `60` | 0…10000 |
+| `wrap` | `vec4` | `[0,0,0,0]` |  |
+| `seed` | `int` | `7` | 0…999999 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `geometry` | `geometry` |  |  |
+| `trails` | `geometry` |  |  |
+
+### `cascade.pop.Solver`
+
+POP Solver — Advance a particle system by one timestep.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `particles` | `geometry` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `timestep_mode` | `string` | `"fixed"` |  |
+| `timestep` | `float` | `0.041666666666666664` | 0.004166666666666667…1 |
+| `maxspeed` | `float` | `0` | 0…10000 |
+| `force` | `vec2` | `[0,0]` |  |
+| `airresist` | `float` | `0` | 0…20 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `geometry` | `geometry` |  |  |
+
+### `cascade.pop.Source`
+
+POP Source — Birth particles from a geometry's points.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `geometry` | `geometry` |  |  |
+| `particles` | `geometry` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `impulse` | `int` | `8` | 0…100000 |
+| `life` | `float` | `3` | 0…3600 |
+| `lifevar` | `float` | `0.3` | 0…1 |
+| `velocity` | `vec2` | `[0,0]` |  |
+| `seed` | `int` | `7` | 0…999999 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `geometry` | `geometry` |  |  |
+
 ## Studio node libraries
 
 Class-based nodes, available in Studio. Their parameters are declared in the

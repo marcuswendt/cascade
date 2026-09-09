@@ -2,6 +2,7 @@ import type { NodeDefinition, NodeExecutionContext } from "@cascade/contracts";
 
 import {
   ParticleState,
+  attract,
   buildTrails,
   drag,
   emptyParticleGeometry,
@@ -242,6 +243,24 @@ const simulateDefinition = {
      *  a prop because the whole node is a function of it, and because a node
      *  that read the clock itself would be the thing `AGENTS.md` forbids. */
     frame: { kind: "data", type: "float", default: 1 },
+    /**
+     * Points particles are drawn toward. Houdini's POP Attract.
+     *
+     * **Geometry rather than an image, and that was a correction.** The
+     * original piece renders its word to a canvas, blurs it, reads the pixels
+     * back and takes central differences — so its target really is a raster
+     * field, and an `image` input was the first thing tried here. It was wrong
+     * for this node: decoding an image needs a capability, the media
+     * capability hands back a host-specific lease rather than a portable
+     * raster, and a POP node doing IO stops being the pure arithmetic that
+     * makes it cook identically in both hosts.
+     *
+     * So the rasterising belongs upstream, in whatever node knows about text
+     * or photographs, and what reaches the solver is a set of target points.
+     * `fieldForce` in `pop/forces.ts` still takes a sampled raster for a node
+     * that has one; this input is the composable half.
+     */
+    attract: { kind: "data", type: "geometry" },
   },
   outputs: {
     /** The particles, one point each. */
@@ -293,6 +312,11 @@ const simulateDefinition = {
     noise_frequency: { type: "float", default: 0.02, min: 0.001, max: 10, step: 0.001 },
     /** Turns per second of field evolution. */
     noise_evolve: { type: "float", default: 0.08, min: -10, max: 10, step: 0.01 },
+    /** How hard the targets pull. Houdini's POP Attract strength. */
+    attract_amplitude: { type: "float", default: 0, min: 0, max: 20000, step: 1 },
+    /** Beyond this distance a target is ignored, which is what keeps the pull
+     *  local and the cost bounded. 0 means every target pulls every particle. */
+    attract_radius: { type: "float", default: 60, min: 0, max: 5000, step: 1 },
     separate_radius: { type: "float", default: 0, min: 0, max: 500, step: 0.5 },
     separate_strength: { type: "float", default: 12, min: 0, max: 500, step: 0.5 },
     maxspeed: { type: "float", default: 60, min: 0, max: 10000, step: 1 },
@@ -317,6 +341,8 @@ export function executeSimulate(
   const history: TrailFrame[] = [];
   const available = from ? from.pointCount : 0;
   const source = from?.point.P;
+  // Read once for the whole replay: the targets do not change within a cook.
+  const targets = context.inputs.attract;
   const wrap = props.wrap.some((value) => value !== 0)
     ? ([props.wrap[0], props.wrap[1], props.wrap[2], props.wrap[3]] as const)
     : undefined;
@@ -350,6 +376,15 @@ export function executeSimulate(
         // Derived from the frame the caller stated, not from a clock — which
         // is what keeps the whole node a pure function of `frame`.
         evolve: frame * props.timestep * props.noise_evolve,
+      }));
+    }
+    if (targets && targets.pointCount > 0 && props.attract_amplitude > 0) {
+      forces.push(attract({
+        targets: targets.point.P!.data as ArrayLike<number>,
+        targetSize: targets.point.P!.size,
+        targetCount: targets.pointCount,
+        amplitude: props.attract_amplitude,
+        radius: props.attract_radius,
       }));
     }
     if (props.separate_radius > 0) {
