@@ -332,6 +332,18 @@ const simulateDefinition = {
     /** Field samples beyond this are ignored, and it is the grid's cell size. */
     field_radius: { type: "float", default: 24, min: 0.5, max: 2000, step: 0.5 },
     /**
+     * The contour to hold, as a field level 0..1, with `field_hold` as how
+     * firmly.
+     *
+     * Marcus: *"the lines flow tangentially around the letters in a bundle …
+     * loosely describing the type."* A bundle is a contour, so holding a level
+     * and letting the tangent carry particles round it is the mechanism —
+     * pulling them to the spine instead collapses each letter to a point, and
+     * pure tangential flow lets every particle converge onto one level set.
+     */
+    field_level: { type: "float", default: 0.35, min: 0, max: 1, step: 0.01 },
+    field_hold: { type: "float", default: 0, min: 0, max: 40000, step: 10 },
+    /**
      * Scatter births across this box instead of on the source geometry's
      * points, `[minX, minY, maxX, maxY]`. All zero uses the points.
      *
@@ -433,10 +445,15 @@ export function executeSimulate(
         positions: flow.point.P!.data as ArrayLike<number>,
         positionSize: flow.point.P!.size,
         directions: flow.point.N.data as ArrayLike<number>,
+        ...(flow.point.level && flow.point.level.storage !== "string"
+          ? { levels: flow.point.level.data as ArrayLike<number> }
+          : {}),
         count: flow.pointCount,
         normal: props.field_normal,
         tangential: props.field_tangential,
         radius: props.field_radius,
+        level: props.field_level,
+        hold: props.field_hold,
       }));
     }
     if (targets && targets.pointCount > 0 && props.attract_amplitude > 0) {

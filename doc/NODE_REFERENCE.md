@@ -484,6 +484,8 @@ Runs on `portable`.
 | `field_normal` | `float` | `0` | -20000…20000 |
 | `field_tangential` | `float` | `0` | -20000…20000 |
 | `field_radius` | `float` | `24` | 0.5…2000 |
+| `field_level` | `float` | `0.35` | 0…1 |
+| `field_hold` | `float` | `0` | 0…40000 |
 | `birth_area` | `vec4` | `[0,0,0,0]` |  |
 | `attract_amplitude` | `float` | `0` | 0…20000 |
 | `attract_radius` | `float` | `60` | 0…5000 |

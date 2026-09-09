@@ -406,15 +406,37 @@ export function flowField(options: {
   /** The gradient at each sample, same count, 2 components — pointing uphill,
    *  toward the spine. */
   readonly directions: ArrayLike<number>;
+  /** The field's value at each sample, 0..1. Optional; without it `hold` can
+   *  do nothing, because there is no level to hold. */
+  readonly levels?: ArrayLike<number>;
   readonly count: number;
   /** Along `N`, toward the spine. */
   readonly normal: number;
   /** Perpendicular to `N`, around the outline. Sign picks the direction. */
   readonly tangential: number;
+  /**
+   * Hold this level, rather than climb to the peak.
+   *
+   * Marcus's sharper description, 2026-09-09: *"the lines flow tangentially
+   * around the letters in a bundle … loosely describing the type."* A bundle
+   * is a **contour**, and a contour is a level set — so the way to get one is
+   * not to pull particles toward the spine but to hold them at a chosen
+   * distance from it and let the tangent carry them round.
+   *
+   * Without this, pure tangential flow does produce a bundle and then every
+   * particle converges onto the same level set: measured, and it came out as
+   * one line along the baseline of the whole word rather than a contour per
+   * letter. `hold` is what keeps a particle on the contour it started near.
+   */
+  readonly level?: number;
+  readonly hold?: number;
   /** Samples beyond this are ignored, and it is also the grid's cell size. */
   readonly radius: number;
 }): ParticleForce {
-  const { positions, positionSize, directions, count, normal, tangential, radius } = options;
+  const {
+    positions, positionSize, directions, levels, count,
+    normal, tangential, radius, level = 0, hold = 0,
+  } = options;
 
   // Built once, for the reason the attract index exists: the field does not
   // change between steps, and rebuilding it per step is the same mistake one
@@ -450,6 +472,7 @@ export function flowField(options: {
         // nearest one — snapping is visible as the sampling grid.
         let gx = 0;
         let gy = 0;
+        let levelSum = 0;
         let weightSum = 0;
 
         for (let ox = -1; ox <= 1; ox += 1) {
@@ -465,6 +488,7 @@ export function flowField(options: {
               if (weight <= 0) continue;
               gx += Number(directions[sample * 2]) * weight;
               gy += Number(directions[sample * 2 + 1]) * weight;
+              if (levels) levelSum += Number(levels[sample]) * weight;
               weightSum += weight;
             }
           }
@@ -474,10 +498,18 @@ export function flowField(options: {
         gx /= weightSum;
         gy /= weightSum;
 
+        // Held toward a level: uphill when below it, downhill when above, so a
+        // particle settles onto that contour and the tangent then carries it
+        // around. The sign of the error IS the direction, which is why this is
+        // one multiply rather than a branch.
+        const climb = levels && hold !== 0
+          ? normal + (level - levelSum / weightSum) * hold
+          : normal;
+
         // Rotating the gradient by a quarter turn gives the tangent, which is
         // the direction the field's level sets run — along the outline.
-        out[index * size] = gx * normal - gy * tangential;
-        out[index * size + 1] = gy * normal + gx * tangential;
+        out[index * size] = gx * climb - gy * tangential;
+        out[index * size + 1] = gy * climb + gx * tangential;
       }
       return out;
     },
