@@ -1,6 +1,7 @@
 import type { DefinitionNodeRegistration } from "../types.js";
 import { coreNodeRegistrations } from "./core/index.js";
 import { geoNodeRegistrations } from "./geo/index.js";
+import { mathNodeRegistrations } from "./math/index.js";
 import { popNodeRegistrations } from "./pop/index.js";
 import { sceneNodeRegistrations } from "./scene/index.js";
 
@@ -16,6 +17,7 @@ export const builtinNodeRegistrations: readonly DefinitionNodeRegistration[] =
   Object.freeze([
     ...coreNodeRegistrations,
     ...geoNodeRegistrations,
+    ...mathNodeRegistrations,
     ...popNodeRegistrations,
     ...sceneNodeRegistrations,
   ]);

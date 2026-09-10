@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { canStartConnection, resolveConnection } from './connectionDirection';
   import { onMount, onDestroy, tick, createEventDispatcher } from 'svelte';
   import { Graph, type CanvasAnnotation } from '@/nodes/Graph';
   import { Annotation } from '@/nodes/annotations/Annotation';
@@ -618,7 +619,21 @@
   let justCompletedSelection = false;
   
   // Connection state
-  let connectingFrom: { nodeId: string; portId: string; portType: 'input' | 'output' } | null = null;
+  /**
+   * The port a connection drag began on.
+   *
+   * `variadicBase` is carried because a drag can now start on an INPUT and end
+   * on an output — a user asked for it on 2026-09-10, having noticed that
+   * *"you often expand in both directions as you build out"* — and in that
+   * case the variadic target is the port we started from, whose
+   * `data-variadic-base` is no longer available at the drop.
+   */
+  let connectingFrom: {
+    nodeId: string;
+    portId: string;
+    portType: 'input' | 'output';
+    variadicBase?: string | null;
+  } | null = null;
   let connectingPosition: { x: number; y: number } | null = null;
   let mousePosition: { x: number; y: number } = { x: 0, y: 0 };
   let draggingFromConnectedPort: { nodeId: string; portId: string; portType: 'input' | 'output'; connectionIds: string[] } | null = null;
@@ -1311,16 +1326,35 @@
       
       if (portElement) {
         // Extract port information from data attributes
-        const toNodeId = portElement.getAttribute('data-node-id');
+        let toNodeId = portElement.getAttribute('data-node-id');
         let toPortId = portElement.getAttribute('data-port-id');
-        const toPortType = portElement.getAttribute('data-port-type') as 'input' | 'output' | null;
-        const variadicBase = portElement.getAttribute('data-variadic-base');
+        let toPortType = portElement.getAttribute('data-port-type') as 'input' | 'output' | null;
+        let variadicBase = portElement.getAttribute('data-variadic-base');
 
         if (toNodeId && toPortId && toPortType) {
-          const from = connectingFrom;
+          /**
+           * Decide which end is the source before anything below runs.
+           *
+           * `resolveConnection` puts the output first whichever way the drag
+           * went, so everything after this point — variadic fan-in, the
+           * subnet's auto-created Input, multi-select fan-in — is unchanged and
+           * has one direction to think about. See `connectionDirection.ts`.
+           */
+          const resolved = resolveConnection(connectingFrom, {
+            nodeId: toNodeId,
+            portId: toPortId,
+            portType: toPortType,
+            variadicBase,
+          });
+          const from = resolved?.source ?? connectingFrom;
+          if (resolved) {
+            toNodeId = resolved.target.nodeId;
+            toPortId = resolved.target.portId;
+            toPortType = resolved.target.portType;
+            variadicBase = resolved.target.variadicBase ?? null;
+          }
 
-          // Only allow output -> input connections
-          if (from.portType === 'output' && toPortType === 'input' && from.nodeId !== toNodeId) {
+          if (resolved) {
             // Unified connection handling - works for any element type
             const fromElement = graph.getElement(from.nodeId);
             const toElement = graph.getElement(toNodeId);
@@ -3641,11 +3675,12 @@ export function execute(node, graph) {
         };
       }
       
-      // Start connection (only from output ports on mousedown)
-      if (portType === 'output' && !connectingFrom) {
+      // Either direction: a drag may begin on an output, or on an input that
+      // has no wire yet. See `connectionDirection.ts`.
+      if (!connectingFrom) {
         const pos = getPortPosition(nodeId, portId, portType);
         if (pos) {
-          connectingFrom = { nodeId, portId, portType };
+          connectingFrom = { nodeId, portId, portType, variadicBase: variadicBaseOf(e) };
           connectingPosition = pos;
           const rect = canvas.getBoundingClientRect();
           mousePosition = {
@@ -3676,11 +3711,23 @@ export function execute(node, graph) {
       };
     }
     
-    // Start connection (only from output ports on mousedown)
-    if (portType === 'output' && !connectingFrom) {
+    /**
+     * A drag begins on an output, or on an UNCONNECTED input.
+     *
+     * The asymmetry that used to be here was not a decision: outputs started a
+     * connection, and an input started one only when it already had a wire,
+     * which is the gesture for pulling that wire off. So dragging from an empty
+     * input pin did nothing at all, and the branch below is why — it claimed
+     * inputs for disconnection only.
+     *
+     * A connected input keeps the disconnect meaning, because pulling a wire
+     * off is the more useful reading of that gesture and there is no other way
+     * to do it.
+     */
+    if (canStartConnection(portType, port.connections.length) && !connectingFrom) {
       const pos = getPortPosition(nodeId, portId, portType);
       if (pos) {
-        connectingFrom = { nodeId, portId, portType };
+        connectingFrom = { nodeId, portId, portType, variadicBase: variadicBaseOf(e) };
         connectingPosition = pos;
         const rect = canvas.getBoundingClientRect();
         mousePosition = {
@@ -3705,13 +3752,21 @@ export function execute(node, graph) {
     }
   }
   
+  /** The `data-variadic-base` of the port element an event came from, if any. */
+  function variadicBaseOf(e: MouseEvent): string | null {
+    const element = (e.target as HTMLElement | null)?.closest('.port');
+    return element?.getAttribute('data-variadic-base') ?? null;
+  }
+
   function handlePortClick(nodeId: string, portId: string, portType: 'input' | 'output', e: MouseEvent) {
     e.stopPropagation();
     
-    const node = graph.getNode(nodeId);
+    // `let`, because completing a BACKWARDS click-connection swaps which of the
+    // two clicked ports is the target — see the normalisation below.
+    let node = graph.getNode(nodeId);
     if (!node) return;
     
-    const port = portType === 'output' 
+    let port = portType === 'output' 
       ? node.outputs.find(p => p.id === portId)
       : node.inputs.find(p => p.id === portId);
     
@@ -3722,13 +3777,33 @@ export function execute(node, graph) {
       const from = connectingFrom;
       if (from.nodeId !== nodeId && from.portType !== portType) {
         const fromElement = graph.getElement(from.nodeId);
-        const fromPort = from.portType === 'output'
+        const startedPort = from.portType === 'output'
           ? fromElement?.outputs.find((p: any) => p.id === from.portId)
           : fromElement?.inputs.find((p: any) => p.id === from.portId);
 
+        /**
+         * Click-to-connect, either direction.
+         *
+         * The same normalisation as the drag path: whichever of the two clicked
+         * ports is the output becomes the source. `fromPort` and the target
+         * (`port`, `node`, `nodeId`) are rebound so everything below — variadic
+         * fan-in, the subnet's auto-created Input — is untouched.
+         */
+        // The same resolver the drag path uses, so the two gestures cannot
+        // disagree about direction.
+        const resolved = resolveConnection(from, { nodeId, portId, portType });
+        const fromPort = resolved?.reversed ? port : startedPort;
+        if (resolved?.reversed) {
+          const startedNode = graph.getNode(from.nodeId);
+          if (!startedNode || !startedPort) return;
+          port = startedPort;
+          node = startedNode;
+          nodeId = from.nodeId;
+          portType = 'input';
+        }
+
         if (fromPort && port) {
-          // Only allow output -> input connections
-          if (from.portType === 'output' && portType === 'input') {
+          if (resolved) {
             recordHistory();
 
             // Check if connecting to a variadic port and there are multiple selected elements

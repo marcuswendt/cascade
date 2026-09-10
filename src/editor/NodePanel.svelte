@@ -660,6 +660,23 @@
       // Only close if not moving to a submenu or dialog
       setTimeout(() => {
         if (showCustomNodeDialog) return;
+        /**
+         * Never close on mouseleave while there is a search query.
+         *
+         * Reported by a user on 2026-09-10, the first thing they hit after
+         * installing from npm: *"if the search lands on 1 result, it closes
+         * the dialogue."* The pointer had not left — **the panel shrank away
+         * from underneath it.** Narrowing to one result makes the list its
+         * shortest, the box follows, and a stationary cursor ends up outside
+         * it, which fires `mouseleave` and closes the panel just as you were
+         * about to pick the thing you searched for.
+         *
+         * Leave-to-close is the right idiom for a hover menu, and this panel
+         * is one until you type. Typing makes it a keyboard interaction, where
+         * where the pointer happens to rest means nothing. Escape and clicking
+         * away still close it.
+         */
+        if (searchQuery) return;
         const activeHover = document.querySelector('.menu-column:hover');
         const dialogOpen = document.querySelector('.dialog-overlay');
         if (!activeHover && !dialogOpen) {

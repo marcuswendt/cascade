@@ -24,6 +24,7 @@ export async function initializeNodeLibraries(): Promise<void> {
     // each class's source in with Vite's `?raw` and these have no class.
     import('./core/definitions'),
     import('./geo/index'),
+    import('./math/index'),
     import('./pop/index'),
     import('./image/index')
   ]);

@@ -2,6 +2,48 @@
 
 Notable changes to Cascade. Newest first.
 
+## 0.6.0 — 2026-09-10
+
+All three items from a user's first day with the npm package.
+
+### Added
+
+- **`cascade.math.*` — arithmetic as nodes.** `Binary` (add, subtract,
+  multiply, divide, power, modulo, min, max, atan2), `Unary` (abs, negate,
+  floor, ceil, round, sqrt, sign, sin, cos, tan, asin, acos, exp, log, radians,
+  degrees, fract), `Clamp`, `Mix` and `Compare`.
+
+  The maths already existed as expressions — every parameter field takes
+  `sin($T)`, `clamp`, `lerp`, `fit`. So these are not a second way to compute
+  but a second way to *place* a computation: an expression is private to one
+  parameter, and a value you want to look at, reuse, or wire into three places
+  has to be a node.
+
+  Grouped with an operation to pick rather than one node per operation, which
+  is Houdini's form and would be about twenty-five nodes. Inputs are `any` and
+  every operation is component-wise with scalar broadcast, so multiplying a
+  `vec2` by a scalar and adding two `vec3`s both work. There is no `Fit`:
+  `cascade.core.Remap` already is one.
+
+  Division and modulo by zero give zero rather than `Infinity`, and `sqrt` of a
+  negative gives zero rather than `NaN` — a non-finite number flows into a
+  position and the geometry silently vanishes, which is a blank frame with no
+  error anywhere.
+
+- **Connections can be made backwards.** A drag or click may begin on an
+  unconnected input pin and end on an output; the endpoints are normalised
+  before the connection is built, so variadic fan-in, the `Input` node a subnet
+  auto-creates, and multi-select fan-in all behave identically in either
+  direction. A *connected* input keeps the disconnect gesture.
+
+### Fixed
+
+- **The node search panel no longer closes when the search narrows to one
+  result.** The pointer had not left it — the panel shrank away from underneath
+  a stationary cursor, which fired `mouseleave` at the exact moment you were
+  about to click the thing you searched for. Leave-to-close now applies only
+  while the panel is being browsed by hover, not once you have typed.
+
 ## 0.5.2 — 2026-09-10
 
 ### Fixed
