@@ -95,7 +95,22 @@ describe('startPlayer', () => {
     expect(frames.at(-1)).toBe(1);
     player.play();
     await player.seek(100);
-    await vi.waitFor(() => expect(frames.at(-1)).toBeGreaterThan(100));
+    /**
+     * Waiting on a real playback clock, so the timeout has to be generous.
+     *
+     * `vi.waitFor`'s default of one second is not enough when vitest is running
+     * this file in parallel with everything else — playback advances on a timer,
+     * and a timer on a busy machine can miss a second easily. This was one of
+     * three tests failing at random in the full suite on 2026-09-10 while
+     * passing every time in isolation.
+     *
+     * Five seconds is not a performance claim. It is the point past which
+     * playback is genuinely broken rather than merely descheduled.
+     */
+    await vi.waitFor(() => expect(frames.at(-1)).toBeGreaterThan(100), {
+      timeout: 5000,
+      interval: 20,
+    });
     expect(Number(root.querySelector('input')!.value)).toBeGreaterThan(100);
     await player.dispose();
   });
@@ -123,7 +138,7 @@ describe('startPlayer', () => {
     const player = await startPlayer({ document: source, registrations: [slow], assets: {}, root: document.createElement('main') });
 
     player.play();
-    await vi.waitFor(() => expect(executions).toBe(2));
+    await vi.waitFor(() => expect(executions).toBe(2), { timeout: 5000, interval: 20 });
     const seeking = player.seek(10);
     player.pause();
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -143,7 +158,7 @@ describe('startPlayer', () => {
       player.subscribe(event => { if (event.type === 'frame') frames.push(event.frame); });
       player.play();
       tick!(0);
-      await vi.waitFor(() => expect(frames.length).toBe(1));
+      await vi.waitFor(() => expect(frames.length).toBe(1), { timeout: 5000, interval: 20 });
       expect(frames[0]).toBeGreaterThanOrEqual(20);
     } finally { await player.dispose(); raf.mockRestore(); }
   });
