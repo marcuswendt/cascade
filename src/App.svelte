@@ -703,6 +703,14 @@
       // pass that bound its last connection, and that pass adds a connection
       // without yet adding an output.
       if (resolved === previous && pending === previousPending) {
+        /**
+         * The warm-up is over, so an edge that has not bound is unbindable
+         * rather than pending. Until this is said, the scheduler holds back
+         * every node such an edge targets — which is right during the passes
+         * above and wrong afterwards, where it would mean the node never cooks
+         * at all.
+         */
+        graph.markConnectionsSettled();
         console.log(`[Cook] settled after ${pass + 1} passes: ${resolved} outputs` +
           (pending ? `, ${pending} connections unresolved (bypassed or unrunnable upstream)` : ''));
         if (pending) {

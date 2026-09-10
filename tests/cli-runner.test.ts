@@ -174,6 +174,7 @@ describe('CLI Runner', () => {
         nodes: [brokenNode],
         connections: [],
         restoreConnections: vi.fn(),
+        markConnectionsSettled: vi.fn(),
         validate: vi.fn(() => ({ errors: [], warnings: [] })),
         execute: vi.fn(async () => {
           brokenNode.error = new Error('deliberate failure');
@@ -208,6 +209,7 @@ describe('CLI Runner', () => {
         nodes: [],
         connections: [],
         restoreConnections: vi.fn(),
+        markConnectionsSettled: vi.fn(),
         validate: vi.fn(() => ({ errors: [], warnings: [] })),
         execute: vi.fn(),
       } as any;

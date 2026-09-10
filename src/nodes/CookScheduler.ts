@@ -206,8 +206,38 @@ export class CookScheduler {
       });
 
       const blocked = new Set<string>();
+      /**
+       * Nodes a loaded file wires an input to, whose edge has not bound yet.
+       *
+       * Read once per pass rather than per node: it shrinks as ports appear,
+       * and a node that becomes ready mid-pass is picked up by the next one —
+       * which is already how this loop handles everything else.
+       */
+      const notReady = this.graph.pendingConnectionTargets();
       let superseded = false;
       for (const node of ordered) {
+        /**
+         * An input that is about to be connected is not an input that is
+         * missing, and cooking it anyway is what produced permanent false
+         * errors in the log — a node throwing its own "nothing wired to my
+         * image input" during the load warm-up, then succeeding on a later
+         * pass while the log kept the throw forever.
+         *
+         * Skipped as *blocked* rather than errored, so everything downstream
+         * waits with it instead of each node discovering the same missing
+         * input for itself.
+         */
+        if (notReady.has(node.id)) {
+          node.setCookState('stale');
+          blocked.add(node.id);
+          this.setStatus({
+            ...this._status,
+            completed: this._status.completed + 1,
+            currentNode: null,
+            elapsed: performance.now() - startedAt
+          });
+          continue;
+        }
         const upstreamBlocked = node.inputs.some(input => input.connections.some(connection =>
           staleIds.has(connection.from.nodeId) &&
           (blocked.has(connection.from.nodeId) || this.graph.getNode(connection.from.nodeId)?.cookState === 'error')

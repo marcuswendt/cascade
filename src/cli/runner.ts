@@ -254,6 +254,10 @@ export async function runGraph(options: RunOptions): Promise<void> {
 
     // Restore connections now that ports exist (either from metadata or execution)
     graph.restoreConnections();
+    // And say so, or the scheduler holds back every node an unbindable edge
+    // targets. The CLI has one restore pass rather than Studio's sixteen, so
+    // whatever has not bound here is not going to.
+    graph.markConnectionsSettled();
 
     // Validate graph (now that ports and connections exist)
     const validation = graph.validate();

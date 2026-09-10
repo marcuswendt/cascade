@@ -2,6 +2,27 @@
 
 Notable changes to Cascade. Newest first.
 
+## 0.5.2 — 2026-09-10
+
+### Fixed
+
+- **The load warm-up no longer reports false errors.** A node's ports are
+  created by running its code, so on load a connection into a node that has
+  never executed has no port to attach to, and Studio cooks the graph
+  repeatedly until the wiring settles. Early passes reached nodes whose
+  upstream edge had not bound, those nodes ran with `undefined` on that input
+  and threw their own "nothing wired to my image input", and a later pass then
+  succeeded — leaving a correct graph and a log full of errors that never
+  cleared. Reported against the `volume-field` sketch by someone who had
+  verified from the cache files that the render was in fact right.
+
+  The scheduler now distinguishes an input that is *pending* from one that is
+  *missing*: a node with an unbound inbound edge is held back as not-ready
+  rather than cooked and failed. Once the warm-up stops making progress the
+  graph says so, and an edge that still has not bound is treated as unbindable
+  — so a genuinely unwired node errors as it always did, rather than silently
+  never cooking.
+
 ## 0.5.1 — 2026-09-09
 
 - Prepared the 0.5 browser-player release for npm, with updated README and

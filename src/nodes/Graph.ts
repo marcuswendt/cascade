@@ -2054,6 +2054,60 @@ export class Graph {
    * still unresolved stays pending, so calling this again after another cook
    * finishes the job.
    */
+  /**
+   * Node ids that a loaded file wires an input to, and whose connection has
+   * not bound yet.
+   *
+   * The reason this is public: **an input that is about to be connected is not
+   * an input that is missing**, and until now nothing could tell the two
+   * apart. On load a node's ports only exist once its code has run, so the
+   * first cook passes reach a node whose upstream edge has no port to attach
+   * to — the node runs with `undefined` on that input, throws whatever its
+   * author wrote for the unwired case, and a later pass then succeeds.
+   *
+   * The graph ends up correct and the log does not: those warm-up throws are
+   * real errors from the node's point of view, they are recorded, and they
+   * never clear. A user reported `volume-field` as broken on exactly this,
+   * having verified from the cache files that the output was in fact right.
+   *
+   * So the scheduler asks this before cooking, and treats a node with a
+   * pending inbound edge as *not ready* rather than as failed.
+   */
+  pendingConnectionTargets(): ReadonlySet<string> {
+    const pending = (this as any)._connectionsToRestore;
+    const targets = new Set<string>();
+    // Once the load has settled, an unbound edge is unbindable rather than
+    // pending — a bypassed or unrunnable upstream — and blocking on it forever
+    // would be worse than the errors this exists to prevent: the node would
+    // simply never cook, which nothing in the interface explains. So after
+    // settle a node cooks and throws honestly if it really has no input.
+    if (this.connectionsSettled) return targets;
+    if (!Array.isArray(pending)) return targets;
+    for (const connection of pending) {
+      // `[[fromId, index, port], [toId, index, port]]` — the shape fromJSON
+      // stores and `tryRestoreConnection` reads.
+      const target = Array.isArray(connection?.[1]) ? connection[1][0] : undefined;
+      if (typeof target === "string") targets.add(target);
+    }
+    return targets;
+  }
+
+  /**
+   * Whether the load-time connection restore has stopped making progress.
+   *
+   * Set by whoever drives the warm-up passes — Studio's `cookGraph`, the CLI's
+   * runner — when the pending list stops shrinking. The pending list itself is
+   * kept, so a connection can still bind later if a bypass is lifted or a
+   * module finally compiles; what ends is treating it as a reason to hold a
+   * node back.
+   */
+  connectionsSettled = false;
+
+  /** Called when the warm-up passes stop making progress. */
+  markConnectionsSettled(): void {
+    this.connectionsSettled = true;
+  }
+
   restoreConnections(): void {
     const connectionsToRestore = (this as any)._connectionsToRestore || [];
     if (connectionsToRestore.length === 0) return;
@@ -2061,6 +2115,16 @@ export class Graph {
     const stillPending = connectionsToRestore.filter(
       (connData: any) => !this.tryRestoreConnection(connData, true)
     );
+
+    /**
+     * Progress reopens the question, a fruitless retry does not.
+     *
+     * Resetting the flag on every call would be wrong: this runs once per
+     * warm-up pass and again on later graph edits, so an unconditional reset
+     * would re-block nodes whose edge is permanently unbindable every time
+     * anything touched the graph.
+     */
+    if (stillPending.length < connectionsToRestore.length) this.connectionsSettled = false;
 
     if (stillPending.length > 0) {
       (this as any)._connectionsToRestore = stillPending;
