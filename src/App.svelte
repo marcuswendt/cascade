@@ -22,7 +22,16 @@
   let ExportDialog: any = null;
   let SettingsDialog: any = null;
   let VersionHistoryDialog: any = null;
+  let OpenGraphDialog: any = null;
+  let openGraphOpen = false;
   let ProjectSettings: any = null;
+
+  async function loadOpenGraphDialog() {
+    if (!OpenGraphDialog) {
+      const module = await import('./editor/OpenGraphDialog.svelte');
+      OpenGraphDialog = module.default;
+    }
+  }
 
   async function loadVersionHistoryDialog() {
     if (!VersionHistoryDialog) {
@@ -228,7 +237,16 @@
         handleNewProject();
         break;
       case 'open':
-        handleOpenProject();
+        /**
+         * The server's graphs first, the laptop's second.
+         *
+         * This used to go straight to the browser's file picker, which lists
+         * the machine in front of you — and Marcus opened it from Goa while
+         * the project sat in London, with three of his four graphs
+         * unreachable. `handleOpenProject` is still here, behind "Open from
+         * this computer…", because a graph that really is local is a real case.
+         */
+        loadOpenGraphDialog().then(() => openGraphOpen = true);
         break;
       case 'save':
         handleSave();
@@ -452,6 +470,35 @@
         hasUnsavedChanges = false;
         updateWindowTitle();
       }
+    }
+  }
+
+  /**
+   * Load one of the server's graphs, the way startup loads the default.
+   *
+   * Deliberately the same path `loadProjectGraph` uses rather than a second
+   * one: it sets `projectGraphFile`, which is what makes Save write back to
+   * the project file instead of offering a download, and what makes Version
+   * History work. Opening a project graph through the local-file path would
+   * have silently demoted it to a detached document.
+   */
+  async function handleOpenProjectGraph(filename: string) {
+    openGraphOpen = false;
+    try {
+      const response = await fetch(`/api/graph/${encodeURIComponent(filename)}`);
+      if (!response.ok) throw new Error(await response.text());
+      const json = await response.json();
+      const candidate = await prepareGraphCandidate(json);
+      await replaceGraph(candidate, true);
+      documentName = removeExtension(filename);
+      currentFilePath = filename;
+      projectGraphFile = filename;
+      hasUnsavedChanges = false;
+      updateWindowTitle();
+      await cookGraph().catch(err => console.warn('Graph execution failed:', err));
+      setTimeout(() => dockviewContainerRef?.centerOnNodes?.(), 100);
+    } catch (error) {
+      alert(`Failed to open ${filename}: ` + (error as Error).message);
     }
   }
 
@@ -1508,6 +1555,17 @@
     on:choose={(e) => { applyNodeColor(e.detail); colorPaletteOpen = false; }}
     on:close={() => (colorPaletteOpen = false)}
   />
+
+  {#if OpenGraphDialog}
+    <svelte:component
+      this={OpenGraphDialog}
+      bind:open={openGraphOpen}
+      current={projectGraphFile}
+      on:choose={(event: CustomEvent<{ filename: string }>) => handleOpenProjectGraph(event.detail.filename)}
+      on:local={() => { openGraphOpen = false; handleOpenProject(); }}
+      on:close={() => openGraphOpen = false}
+    />
+  {/if}
 
   {#if VersionHistoryDialog}
     <svelte:component

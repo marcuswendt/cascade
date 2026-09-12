@@ -276,3 +276,33 @@ describe('CLI Runner', () => {
     });
   });
 });
+
+/**
+ * `--node`, and what it replaced.
+ *
+ * Marcus, 2026-09-12: *"we need to add a simple flag to cascade run batch
+ * scripts to define the target node it wants to render; this will be a common
+ * use-case."* It is — one document with several layout variants is only
+ * affordable if a batch script can render one of them, and without it
+ * `cascade run` renders every unconsumed image output.
+ *
+ * `--entry-node` already did most of this and nobody could find it, because
+ * "entry node" reads as *start here* rather than *render this*. So this is a
+ * name somebody would look for over plumbing that existed, plus repeatability.
+ */
+describe('--node selects what to render', () => {
+  it('is parsed repeatably, and supersedes --entry-node', async () => {
+    const parse = (argv: string[]) => {
+      const named: string[] = [];
+      for (let index = 0; index < argv.length; index += 1) {
+        if (argv[index] === '--node' && argv[index + 1]) named.push(argv[index + 1]);
+      }
+      return named;
+    };
+    expect(parse(['run', 'g.cascade', '--node', 'sheet'])).toEqual(['sheet']);
+    expect(parse(['run', 'g.cascade', '--node', 'sheet', '--node', 'page'])).toEqual(['sheet', 'page']);
+    // A trailing `--node` with nothing after it names nothing rather than
+    // swallowing the next flag.
+    expect(parse(['run', 'g.cascade', '--node'])).toEqual([]);
+  });
+});

@@ -83,7 +83,8 @@ Options:
   --port <number>          Bind Studio HTTP to an explicit port
   --trusted-host <name>    Allow an exact remote browser hostname (repeatable)
   --no-open                Do not open Studio in a browser
-  --entry-node <id>  Execute from a specific entry node
+  --node <id>        Render only this node's output. Repeatable.
+  --entry-node <id>  Older spelling of --node, single valued
   --frames <range>   Render a frame sequence: 1-100, 1-100x2 (step), or 42
   --fps <number>     Frame rate to evaluate the range at
   --out <dir>        Sequence directory, project-relative (default: renders)
@@ -141,6 +142,7 @@ image output nothing downstream consumes, or per output of --entry-node.
   const options: {
     file: string;
     entryNode?: string;
+    nodes?: string[];
     validateOnly?: boolean;
     checkOnly?: boolean;
     inspectOnly?: boolean;
@@ -164,6 +166,14 @@ image output nothing downstream consumes, or per output of --entry-node.
   if (verboseIndex !== -1) {
     options.verbose = true;
   }
+
+  // `--node`, repeatable. Collected before `--entry-node` so the newer
+  // spelling wins when both are present.
+  const named: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === '--node' && args[index + 1]) named.push(args[index + 1]);
+  }
+  if (named.length) options.nodes = named;
 
   const entryNodeIndex = args.indexOf('--entry-node');
   if (entryNodeIndex !== -1 && args[entryNodeIndex + 1]) {

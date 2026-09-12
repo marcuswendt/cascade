@@ -23,6 +23,21 @@ import { parseFrameSpec } from './frames.js';
 export interface RunOptions {
   file: string;
   entryNode?: string;
+  /**
+   * `--node <id>`, repeatable: which output nodes to render.
+   *
+   * Marcus asked for it on 2026-09-12 — *"a simple flag to cascade run batch
+   * scripts to define the target node it wants to render; this will be a
+   * common use-case"* — and he is right that it is common. It is what makes one
+   * document with several layout variants affordable: without it `cascade run`
+   * renders every unconsumed image output, so a four-wall document is four
+   * full renders per invocation.
+   *
+   * `--entry-node` did most of this already and was unfindable, because "entry
+   * node" reads as *start here* rather than *render this*. Same plumbing, a
+   * name somebody would look for, and now repeatable.
+   */
+  nodes?: readonly string[];
   validateOnly?: boolean;
   checkOnly?: boolean;
   inspectOnly?: boolean;
@@ -63,7 +78,7 @@ function reportMissingCanvas(messages: string[], canvasError: Error | null): voi
 }
 
 export async function runGraph(options: RunOptions): Promise<void> {
-  const { file, entryNode, validateOnly, checkOnly, inspectOnly, strict, verbose, frames, fps, out } = options;
+  const { file, entryNode, nodes, validateOnly, checkOnly, inspectOnly, strict, verbose, frames, fps, out } = options;
 
   if (verbose) {
     console.log(`Loading graph from: ${file}`);
@@ -203,6 +218,7 @@ export async function runGraph(options: RunOptions): Promise<void> {
       ...(fps === undefined ? {} : { fps }),
       out: out ?? 'renders',
       ...(entryNode ? { entryNode } : {}),
+      ...(nodes?.length ? { nodes } : {}),
       ...(verbose ? { verbose } : {}),
     });
     if (rendered) {
@@ -212,7 +228,7 @@ export async function runGraph(options: RunOptions): Promise<void> {
       return;
     }
     if (options.json) throw new Error('--json rendering requires a fully definition-v1 graph');
-  } else if (await runDeterministicProjectGraph(file, graphData, entryNode)) {
+  } else if (await runDeterministicProjectGraph(file, graphData, nodes?.[0] ?? entryNode)) {
     if (verbose) console.log('Graph execution completed');
     releaseHost();
     return;

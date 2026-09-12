@@ -334,6 +334,8 @@ export interface DeterministicFrameRenderOptions {
   /** Sequence directory, project-relative. */
   out: string;
   entryNode?: string;
+  /** `--node`, repeatable. Supersedes `entryNode` when both are given. */
+  nodes?: readonly string[];
   verbose?: boolean;
   signal?: { readonly aborted: boolean };
 }
@@ -392,6 +394,10 @@ export async function renderDeterministicProjectFrames(
   try {
     graph = await runtime.load(document);
     reportPreflightWarnings(host, classifyPreflight(graph.preflight()).warnings);
+    /** `--node`, repeatable. `entryNode` is the older single-valued spelling. */
+    const targets = options.nodes?.length
+      ? options.nodes
+      : options.entryNode ? [options.entryNode] : [];
     const outDirectory = project.resolve(options.out);
     await fs.mkdir(outDirectory, { recursive: true });
     for (const frame of frameRange(options.start, options.end, options.step ?? 1)) {
@@ -402,7 +408,16 @@ export async function renderDeterministicProjectFrames(
       const result = await graph.run({
         frame,
         ...(options.fps === undefined ? {} : { fps: options.fps }),
-        ...(options.entryNode ? { target: { kind: 'node' as const, nodeId: options.entryNode } } : {}),
+        /**
+         * One named node narrows the COOK as well as the output, because the
+         * runtime can walk back from a single target. Several cannot be
+         * expressed as one target, so the graph cooks whole and only the saving
+         * narrows — which is still the bulk of the win when the outputs are
+         * 18 MB PNGs.
+         */
+        ...(targets.length === 1
+          ? { target: { kind: 'node' as const, nodeId: targets[0]! } }
+          : {}),
       });
       if (result.status !== 'completed') {
         throw new Error(
@@ -410,11 +425,13 @@ export async function renderDeterministicProjectFrames(
         );
       }
 
-      const outputs = imageOutputs(graph, options.entryNode);
+      const outputs = imageOutputs(graph, targets);
       if (!outputs.length) {
         throw new Error(
-          'No image output to save: the graph has no unconsumed image port. ' +
-          'Name the node to render with --entry-node.',
+          targets.length
+            ? `No image output on ${targets.join(', ')} — check the node id, and that it has an image output.`
+            : 'No image output to save: the graph has no unconsumed image port. '
+              + 'Name the node to render with --node.',
         );
       }
       for (const { nodeId, value } of outputs) {
@@ -442,19 +459,27 @@ async function disposeProjectGpu(host: RuntimeHost): Promise<void> {
   await (host.capabilities.gpu as ReturnType<typeof createDawnGpuHost> | undefined)?.dispose();
 }
 
-/** The image outputs a frame should be saved from: an explicit entry node's, or
- *  every image output nothing downstream consumes. The same rule the dynamic
- *  path uses, read off the runtime's inspection rather than off port objects. */
+/**
+ * The image outputs a frame should be saved from: the named nodes', or every
+ * image output nothing downstream consumes.
+ *
+ * **Naming nodes also lifts the "unconsumed" rule**, which is the point of it:
+ * a wall you want to render is usually wired into something else, and an
+ * intermediate output is exactly what you ask for by name.
+ *
+ * Read off the runtime's inspection rather than off port objects.
+ */
 function imageOutputs(
   graph: LoadedCascadeGraph,
-  entryNode?: string,
+  nodes: readonly string[] = [],
 ): { nodeId: string; value: unknown }[] {
+  const wanted = new Set(nodes);
   const found: { nodeId: string; value: unknown }[] = [];
   for (const node of graph.inspect().nodes) {
-    if (entryNode && node.id !== entryNode) continue;
+    if (wanted.size && !wanted.has(node.id)) continue;
     for (const port of Object.values(node.outputs)) {
       if (port.type !== 'image') continue;
-      if (!entryNode && port.connected) continue;
+      if (!wanted.size && port.connected) continue;
       if (port.value === undefined) continue;
       found.push({ nodeId: node.id, value: port.value });
     }
