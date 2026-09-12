@@ -2094,7 +2094,31 @@ export class Node {
       }
       // Still update cook info on error
       this.updateCookInfo(startTime, startMemory);
-      if (!err.message.includes('timeout')) {
+      /**
+       * A superseded cook is a cancellation, not a failure, and must not be
+       * logged as one.
+       *
+       * Marcus, 2026-09-12, on `particle-type`: hundreds of `Error executing
+       * node ink: superseded` with nothing rendering. Every one of them was the
+       * scheduler doing its job — `invalidateCook` aborts the work in flight
+       * when a newer frame arrives — and the catch below could not tell that
+       * from a node that actually broke. The generation check already routes a
+       * superseded cook to `stale` rather than `error`, so the state was right
+       * and only the console was lying.
+       *
+       * The test is the generation, not the word "superseded". A message check
+       * was written first and removed: every cancellation path already moves
+       * the generation on, so matching the string proved nothing the generation
+       * did not, and a clause no test can justify is a clause that will be
+       * wrong later.
+       *
+       * Worth the comment because a log that cries wolf several times a second
+       * is worse than no log — it buried whatever the real failure would have
+       * been.
+       */
+      const cancelled = err.message.includes('timeout')
+        || generation !== this.cookGeneration;
+      if (!cancelled) {
         // The message, not the object: a log panel or console forwarder that
         // serialises the second argument is exactly what lost it before.
         console.error(`Error executing node ${this.id}: ${err.message}`, err);

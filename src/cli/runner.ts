@@ -1,8 +1,3 @@
-import { Graph } from '../nodes/Graph.js';
-import { Node } from '../nodes/Node.js';
-import { AssetManager } from '../engine/AssetManager.js';
-import { NodeAssetLoader } from '../engine/NodeAssetLoader.js';
-import { PackageManager } from '../engine/PackageManager.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { checkProjectGraph, inspectProjectGraph, renderDeterministicProjectFrames, runDeterministicProjectGraph, validateProjectGraph } from './projectRuntime.js';
@@ -13,14 +8,17 @@ import { runProjectStage } from '../../server/src/stageRunner.js';
 import { installStageBridge } from '../../server/src/runtime/stage.js';
 import { installProjectIo } from './headlessIo.js';
 import { installHeadlessCanvas, MISSING_CANVAS_MESSAGE, type CanvasHost } from './headlessCanvas.js';
-import { cookUntilSettled, parseFrameSpec, renderFrameRange } from './frames.js';
-import { registerStandardNodes } from '../nodes/registerStandardNodes.js';
-
-// The class-based standard library, registered before any graph is read. Studio
-// does this through `initializeNodeLibraries()`, which a Node process cannot
-// import — see `registerStandardNodes` for why — so this was simply missing,
-// and every `cascade.image.*` node failed at load as an unknown type.
-registerStandardNodes();
+import { parseFrameSpec } from './frames.js';
+/**
+ * The class-based standard library used to be registered here, because the
+ * dynamic executor built a Studio `Graph` and needed the class registry to
+ * resolve `cascade.image.*`. With that executor gone nothing in the CLI reads
+ * the registry, and esbuild proved it: the bundled CLI no longer contains
+ * `cascade.image.Color` at all.
+ *
+ * Removed rather than left as a harmless call. A registration nobody reads is
+ * an invitation to assume the CLI has a class path when it does not.
+ */
 
 export interface RunOptions {
   file: string;
@@ -84,9 +82,6 @@ export async function runGraph(options: RunOptions): Promise<void> {
 
   // Create environment-specific managers
   const projectRoot = path.dirname(path.resolve(file));
-  const assetLoader = new NodeAssetLoader(fs);
-  const assetManager = new AssetManager(projectRoot, assetLoader);
-  const packageManager = new PackageManager();
 
   if (validateOnly || checkOnly) {
     const unresolved = checkOnly
@@ -227,166 +222,33 @@ export async function runGraph(options: RunOptions): Promise<void> {
     throw error;
   }
 
-  // A dynamic graph reaches here, and until now it died trying to fetch its
-  // modules from `/api/nodes/...` — a relative URL, with no server behind it and
-  // no origin to resolve it against. Compiling them in-process with the same
-  // esbuild pass the server uses is what makes `cascade run` work on the graphs
-  // people actually have, rather than only on fully migrated ones.
-
-  // Held outside the try so the finally can stop the scheduler before the host
-  // goes away. A debounced re-cook that fires after the canvas globals are
-  // removed prints "OffscreenCanvas is not defined" underneath a run that
-  // already succeeded, which reads like a failed render and is not one.
-  let activeGraph: Graph | undefined;
-
-  try {
-    // Create graph from JSON
-    let graph: Graph;
-    try {
-      graph = Graph.fromJSON(graphData, assetManager, packageManager);
-    } catch (error: any) {
-      console.error(`Failed to create graph: ${error.message}`);
-      process.exit(1);
-    }
-
-    activeGraph = graph;
-
-    // Ports should already be restored from JSON metadata (if available)
-    // Only execute computations if ports weren't restored from metadata
-    // This avoids unnecessary execution just for port discovery
-    const nodesNeedingExecution: Node[] = [];
-    for (const element of graph.elements.filter(e => !(e as any).isAnnotation)) {
-      const node = element as Node;
-      // Check if computation has ports (restored from metadata)
-      // If not, we may need to execute to create them
-      const hasPorts = node.inputs.length > 0 || node.outputs.length > 0;
-      // Gate on the source as well as on node.code, for the same reason
-      // Graph.fromJSON does: a project module's code lives on disk, so node.code
-      // is empty for it. Checking only node.code meant no project node was ever
-      // initialised headlessly, so no ports existed, so no connections could be
-      // restored — and every graph "completed" while doing nothing at all.
-      const isProject = (node as any).sourceType === 'project'
-        || String((node as any).modulePath ?? '').startsWith('project.');
-      if (!hasPorts && (node.code || isProject)) {
-        nodesNeedingExecution.push(node);
-      }
-    }
-
-    // Only execute nodes that don't have ports from metadata
-    for (const node of nodesNeedingExecution) {
-      try {
-        // Execute to initialize ports and props
-        // The node's execute() method handles initialization properly
-        // Suppress browser API errors in Node.js environment
-        await node.execute();
-      } catch (err: any) {
-        // Ignore execution errors during initialization - they'll be caught during actual execution
-        // Browser API errors (like document is not defined) are expected in CLI for browser-only nodes
-        const errMsg = err.message || String(err);
-        const isBrowserAPIError =
-          errMsg.includes('document is not defined') ||
-          errMsg.includes('window is not defined') ||
-          errMsg.includes('HTMLCanvasElement') ||
-          errMsg.includes('HTMLImageElement');
-
-        if (verbose && !isBrowserAPIError) {
-          console.warn(`Warning: Node ${node.id} failed to initialize: ${errMsg}`);
-        }
-        // Browser API errors are expected and can be ignored - these nodes are designed for browser execution
-      }
-    }
-
-    // Restore connections now that ports exist (either from metadata or execution)
-    graph.restoreConnections();
-    // And say so, or the scheduler holds back every node an unbindable edge
-    // targets. The CLI has one restore pass rather than Studio's sixteen, so
-    // whatever has not bound here is not going to.
-    graph.markConnectionsSettled();
-
-    // Validate graph (now that ports and connections exist)
-    const validation = graph.validate();
-
-    if (validation.errors.length > 0) {
-      console.error('Graph validation failed:');
-      validation.errors.forEach(error => {
-        console.error(`  - ${error.type}: ${error.message}`);
-        if (error.nodeIds) {
-          console.error(`    Nodes: ${error.nodeIds.join(', ')}`);
-        }
-      });
-      process.exit(1);
-    }
-
-    if (validation.warnings.length > 0) {
-      console.warn('Graph validation warnings:');
-      validation.warnings.forEach(warning => {
-        console.warn(`  - ${warning.type}: ${warning.message}`);
-      });
-    }
-
-    if (verbose) {
-      const nodeCount = graph.elements.filter(e => !(e as any).isAnnotation).length;
-      console.log(`Graph loaded: ${nodeCount} nodes, ${graph.connections.length} connections`);
-    }
-
-    // Execute graph
-    try {
-      if (frameSpec) {
-        if (!project) throw new Error('A frame range needs a project directory around the graph file');
-        const entry = entryNode ? graph.getNode(entryNode) ?? undefined : undefined;
-        if (entryNode && !entry) {
-          console.error(`Entry node not found: ${entryNode}`);
-          process.exit(1);
-        }
-        const rendered = await renderFrameRange({
-          graph,
-          project,
-          entryNode: entry,
-          out: out ?? 'renders',
-          fps,
-          ...frameSpec,
-          verbose,
-        });
-        console.log(`Rendered ${rendered.frames.length} frames, ${rendered.files.length} files -> ${out ?? 'renders'}/`);
-      } else if (entryNode) {
-        const node = graph.getNode(entryNode);
-        if (!node) {
-          console.error(`Entry node not found: ${entryNode}`);
-          process.exit(1);
-        }
-        if (verbose) {
-          console.log(`Executing from entry node: ${entryNode}`);
-        }
-        await cookUntilSettled(graph, node, { fixpoint: true });
-      } else {
-        if (verbose) {
-          console.log('Executing all entry points...');
-        }
-        await cookUntilSettled(graph, undefined, { fixpoint: true });
-      }
-
-      const failedNodes = graph.nodes.filter(node => node.error !== null);
-      if (failedNodes.length > 0) {
-        console.error('Graph execution failed:');
-        const messages = failedNodes.map(node => node.error?.message ?? 'Unknown cook error');
-        failedNodes.forEach((node, index) => console.error(`  - node/cook-failed [${node.id}]: ${messages[index]}`));
-        reportMissingCanvas(messages, canvasError);
-        process.exit(1);
-      }
-
-      if (verbose) {
-        console.log('Graph execution completed');
-      }
-    } catch (error: any) {
-      console.error(`Graph execution failed: ${error.message}`);
-      reportMissingCanvas([String(error.message)], canvasError);
-      if (verbose && error.stack) {
-        console.error(error.stack);
-      }
-      process.exit(1);
-    }
-  } finally {
-    activeGraph?.scheduler?.dispose?.();
-    releaseHost();
-  }
+  /**
+   * Nothing reaches here any more, and that is the point.
+   *
+   * This was the dynamic path: a second executor that built a Studio `Graph`
+   * in the CLI, compiled each node's TypeScript with esbuild and cooked it
+   * through the class-based scheduler — about a hundred and sixty lines of
+   * second implementation, reached whenever the deterministic runtime declined
+   * a graph.
+   *
+   * Deleted 2026-09-12 on Marcus's confirmation, and on a measurement rather
+   * than on a grep. MW-OBSERVATORY-ART ran `check` and a headless
+   * `run --frames 1` over all nine graphs in six sketches: every one of them
+   * either renders through the deterministic runtime or is refused by the
+   * runtime's own `runtime/preflight-environment` for declaring
+   * `runsOn: 'browser'`. Seventy-two nodes, none dynamic. The one risk worth
+   * checking was whether the preflight refusal lived in this branch — it does
+   * not; it is raised in `packages/runtime/src/runtime.ts`, so the two sketches
+   * that cannot render headlessly keep exactly the message they had.
+   *
+   * What replaces it is a sentence. A graph the deterministic runtime declines
+   * is one with no definition-v1 nodes in it, and saying so is more useful than
+   * running it through an executor whose behaviour differed from the one every
+   * other surface uses.
+   */
+  releaseHost();
+  throw new Error(
+    `${path.resolve(file)} has no definition-v1 nodes, and the dynamic executor was removed in 0.7. `
+    + 'Every node needs a static `export const definition` — see doc/NODE_AUTHORING.md.',
+  );
 }

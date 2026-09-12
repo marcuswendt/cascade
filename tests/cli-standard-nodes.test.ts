@@ -118,6 +118,21 @@ describe('the Node-safe standard library registration', () => {
       tsconfig: path.resolve('tsconfig.json'),
     });
     expect(result.errors).toEqual([]);
-    expect(result.outputFiles[0].text).toContain('cascade.image.Color');
+    /**
+     * The bundle no longer CONTAINS the class library, and that is the point
+     * since the dynamic executor was deleted in 0.7.
+     *
+     * This asserted `toContain('cascade.image.Color')` because the CLI used to
+     * build a Studio `Graph` and needed the class registry to resolve it. With
+     * that executor gone nothing in the CLI reads the registry, esbuild tree-
+     * shook it out, and `registerStandardNodes()` was removed from the runner
+     * rather than left as a call nobody reads.
+     *
+     * What survives is the reason the test exists at all: `?raw` imports do not
+     * resolve outside Vite, so the CLI must never pull a library's `index.ts`
+     * in. A clean esbuild bundle is exactly that check, and it is stronger now
+     * than when it also demanded the library be present.
+     */
+    expect(result.outputFiles[0].text).not.toContain('?raw');
   }, 60_000);
 });

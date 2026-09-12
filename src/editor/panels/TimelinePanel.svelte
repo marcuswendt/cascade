@@ -55,12 +55,27 @@
     // Through the store, so every panel showing a time-dependent value knows
     // the frame moved — not just this one.
     setCurrentFrame(target);
-    cascade.markTimeDependentDirty();
     if (cooking) {
+      /**
+       * Deliberately NOT marking dirty here, and this is the whole bug.
+       *
+       * `markTimeDependentDirty` aborts whatever is in flight. Doing it before
+       * the guard meant every scrubbed frame killed the cook already running
+       * and then immediately deferred — so a graph slower than the mouse never
+       * finished a single cook, and `particle-type` rendered nothing at all
+       * while logging `superseded` several times a second.
+       *
+       * The coalescing below is what makes this correct: the running cook is
+       * left alone to finish, and the newest frame is picked up the moment it
+       * does. Aborting and restarting from the newest frame sounds like the
+       * responsive choice and is the opposite of it when the cook is slower
+       * than the input — you get all of the cost and none of the frames.
+       */
       pendingFrame = target;
       return;
     }
     cooking = true;
+    cascade.markTimeDependentDirty();
     try {
       await graph?.execute();
     } catch (error) {

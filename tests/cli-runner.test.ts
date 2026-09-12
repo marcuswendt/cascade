@@ -165,43 +165,42 @@ describe('CLI Runner', () => {
       mockConsoleLog.mockRestore();
     });
 
-    it('should exit with structured diagnostics when a legacy node cook fails', async () => {
+    /**
+     * The dynamic executor was deleted in 0.7, so there is no longer a second
+     * cook path to report failures from — and a graph it would have run is now
+     * refused by name.
+     *
+     * This used to assert the legacy path's diagnostics: `Graph execution
+     * failed:` and `node/cook-failed [broken]`. Both belonged to the executor
+     * that is gone. What is worth asserting now is that the refusal SAYS what
+     * is wrong, because a graph that used to run and now does not is exactly
+     * the case where a bare failure would be infuriating.
+     */
+    it('refuses a graph with no definition-v1 nodes, and names what it needs', async () => {
       const mockGraphData = { version: '0.2', nodes: [{ id: 'broken' }], connections: [] };
       vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(mockGraphData));
-      const brokenNode = { id: 'broken', error: null, inputs: [{}], outputs: [] } as any;
-      const graph = {
-        elements: [brokenNode],
-        nodes: [brokenNode],
-        connections: [],
-        restoreConnections: vi.fn(),
-        markConnectionsSettled: vi.fn(),
-        validate: vi.fn(() => ({ errors: [], warnings: [] })),
-        execute: vi.fn(async () => {
-          brokenNode.error = new Error('deliberate failure');
-        })
-      } as any;
-      vi.spyOn(Graph, 'fromJSON').mockReturnValue(graph);
-      const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => {
-        throw new Error('process.exit called');
-      });
-      const mockConsoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       const mockConsoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       await expect(runGraph({ file: path.resolve('legacy.cascade'), verbose: true }))
-        .rejects.toThrow('process.exit called');
-      expect(mockConsoleError).toHaveBeenCalledWith('Graph execution failed:');
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        '  - node/cook-failed [broken]: deliberate failure'
-      );
+        .rejects.toThrow(/has no definition-v1 nodes/);
+      // And it points somewhere, rather than only saying no.
+      await expect(runGraph({ file: path.resolve('legacy.cascade'), verbose: true }))
+        .rejects.toThrow(/export const definition/);
       expect(mockConsoleLog).not.toHaveBeenCalledWith('Graph execution completed');
+      // The stage bridge is still torn down on the way out.
       await expect(stageAvailable()).resolves.toBe(false);
 
-      mockExit.mockRestore();
-      mockConsoleError.mockRestore();
       mockConsoleLog.mockRestore();
     });
 
-    it('removes process-wide compilers and the stage bridge after a legacy run', async () => {
+    /**
+     * Still worth having after the dynamic executor went: the compilers and the
+     * stage bridge are installed process-wide before either path runs, and a
+     * run that REFUSES must tear them down as thoroughly as one that succeeds.
+     * Leaving them installed would leak a project's compiler into whatever ran
+     * next in the same process.
+     */
+    it('removes process-wide compilers and the stage bridge after a refused run', async () => {
       const mockGraphData = { version: '0.2', nodes: [], connections: [] };
       vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(mockGraphData));
       const graph = {
@@ -220,7 +219,8 @@ describe('CLI Runner', () => {
       ));
       vi.stubGlobal('fetch', fetcher);
 
-      await runGraph({ file: path.resolve('scope-test.cascade') });
+      await expect(runGraph({ file: path.resolve('scope-test.cascade') }))
+        .rejects.toThrow(/has no definition-v1 nodes/);
 
       await expect(stageAvailable()).resolves.toBe(false);
       await expect(loadProjectModule('project.after-run')).resolves.toMatchObject({
