@@ -2,6 +2,27 @@
 
 Notable changes to Cascade. Newest first.
 
+## 0.7.1 — 2026-09-12
+
+### Added
+
+- **File > Open lists the graphs on the machine running the server.** It called
+  the browser's file picker, which lists the machine in front of you — opened
+  from Goa while the project sat in London, three of four graphs were
+  unreachable. `GET /api/graph` already returned them; the menu had never caught
+  up. The local picker remains, behind "Open from this computer…".
+- **`cascade run --node <id>`**, repeatable, naming which output nodes to
+  render. `--entry-node` did most of this and was unfindable, because "entry
+  node" reads as *start here* rather than *render this*. One named node narrows
+  the cook as well as the saving; several narrow the saving.
+
+### Fixed
+
+- **The `files` capability resolves symlinks before deciding a path is inside
+  the project.** `path.resolve` normalises `..` and does not follow links, so a
+  project containing `cache -> /somewhere/else` read outside itself. Containment
+  rather than a ban: a link that stays inside the project still works.
+
 ## 0.7.0 — 2026-09-12
 
 ### Removed
