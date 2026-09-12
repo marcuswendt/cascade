@@ -310,7 +310,9 @@ export async function execute(context) {
 }
 `);
     await expect(validateProjectGraph(fixture.file, fixture.document)).rejects.toThrow(/Missing capability media for project\.Multiply \(node multiply\)/);
-    await expect(checkProjectGraph(fixture.file, fixture.document)).rejects.toThrow(/the server host provides assets, gpu, shell/);
+    // The list of what the host DOES provide, which is how the message tells
+    // you whether you mistyped a capability or asked for one nobody installs.
+    await expect(checkProjectGraph(fixture.file, fixture.document)).rejects.toThrow(/the server host provides assets, files, gpu, shell/);
     // And the run it was blind to fails for the same reason, which is the point.
     await expect(runDeterministicProjectGraph(fixture.file, fixture.document)).rejects.toThrow(/Missing capability media/);
   });
