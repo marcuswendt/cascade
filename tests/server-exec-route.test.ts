@@ -28,6 +28,8 @@ async function fixture() {
     'args = parser.parse_args()',
     "payload = json.load(__import__('sys').stdin) if args.args == '-' else json.loads(args.args)",
     "if args.stage == 'fail': print(json.dumps({'error': 'visible failure'})); raise SystemExit(1)",
+    "if args.stage == 'chatty': print('working on it'); print('still going')",
+    "if args.stage == 'chatty': __import__('sys').stderr.write('a warning\\n')",
     "print(json.dumps({'stage': args.stage, 'args': payload, 'transport': 'stdin' if args.args == '-' else 'argv'}))",
   ].join('\n'));
   fs.writeFileSync(path.join(root, 'cascade.json'), JSON.stringify({
@@ -140,6 +142,39 @@ describe('/api/exec security and project boundary', () => {
     }));
 
     expect(() => readStageConfig(project)).toThrow('project-relative executable');
+  });
+
+  /**
+   * A stage could log and nobody could read it: `stderr` was consulted only on
+   * failure and `stdout` only for its last line, while `runProjectStage`'s own
+   * comment promises that logging on the way through is supported.
+   *
+   * Found by MW-OBSERVATORY-ART adding a diagnostic for an invisible cache hit
+   * and discovering the diagnostic was itself invisible.
+   */
+  it('forwards what a successful stage printed, without its result', async () => {
+    const { project } = await fixture();
+    const seen: Array<[string, string]> = [];
+    const result = await runProjectStage(project, 'chatty', {}, {
+      onOutput: (stream, text) => seen.push([stream, text]),
+    });
+
+    // The result still arrives intact — the forwarding must not eat it.
+    expect(result).toMatchObject({ stage: 'chatty' });
+    const out = seen.find(([stream]) => stream === 'stdout')?.[1];
+    expect(out).toBe('working on it\nstill going');
+    // And explicitly NOT the last line, which is the result: echoing a JSON
+    // blob at anyone who asked for verbose output makes the flag useless.
+    expect(out).not.toContain('"stage"');
+    // stderr on SUCCESS, which is the case that was silent. A failure
+    // announces itself anyway.
+    expect(seen.find(([stream]) => stream === 'stderr')?.[1]).toBe('a warning');
+  });
+
+  it('stays silent when nobody is listening', async () => {
+    // No `onOutput` means discard, so a quiet run stays quiet.
+    const { project } = await fixture();
+    await expect(runProjectStage(project, 'chatty', {})).resolves.toMatchObject({ stage: 'chatty' });
   });
 
   it('surfaces dispatcher errors written to stdout', async () => {

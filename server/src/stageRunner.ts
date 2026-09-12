@@ -23,6 +23,20 @@ export interface StageRunOptions {
   readonly env?: NodeJS.ProcessEnv;
   readonly timeout?: number;
   readonly signal?: AbortSignal;
+  /**
+   * Where a stage's own output goes when it succeeds.
+   *
+   * Until now: nowhere. `stderr` was read only on failure and `stdout` only for
+   * its last line, so **a stage could log and nobody could ever read it** —
+   * while the comment below promises that logging on the way through is
+   * supported. MW-OBSERVATORY-ART found this the hard way, by adding a
+   * `[cache] served from cache` line to diagnose an invisible staleness bug and
+   * then discovering the diagnostic was itself invisible.
+   *
+   * Absent means discard, which keeps a quiet run quiet. `cascade run
+   * --verbose` supplies one.
+   */
+  readonly onOutput?: (stream: 'stdout' | 'stderr', text: string) => void;
 }
 
 function resolveProjectExecutable(project: ProjectRoot, configuredPath: string): string {
@@ -120,11 +134,28 @@ export async function runProjectStage(
           const output = err?.trim() || out.trim().split('\n').pop() || error.message;
           return reject(new Error(`stage "${stage}" failed: ${output}`));
         }
+        // On success too, not only on failure. A stage that writes a warning to
+        // stderr and then succeeds was silent, which is the case worth hearing
+        // about — a failure announces itself anyway.
+        if (err?.trim()) options.onOutput?.('stderr', err.trim());
         resolve(out);
       },
     );
     child.stdin?.end(payload);
   });
+  /**
+   * Everything but the last line is the stage talking, so that is what gets
+   * forwarded.
+   *
+   * Excluding the last line matters: it is the result, and echoing a JSON blob
+   * at anyone who asked for verbose output would make the flag useless for the
+   * thing it is for.
+   */
+  if (options.onOutput) {
+    const lines = stdout.trim().split('\n');
+    const chatter = lines.slice(0, -1).join('\n').trim();
+    if (chatter) options.onOutput('stdout', chatter);
+  }
   const lastLine = stdout.trim().split('\n').pop() || '{}';
   let parsed: unknown;
   try {

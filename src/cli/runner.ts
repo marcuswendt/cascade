@@ -134,7 +134,28 @@ export async function runGraph(options: RunOptions): Promise<void> {
     setEmbeddedCompiler(async (code) => (await compileEmbedded(project!, code)).code);
     // A node importing `cascade/stage` posts to the server in the page and
     // calls this in a headless run, so one Python-backed node renders either way.
-    disposeStageBridge = installStageBridge((stage, args) => runProjectStage(project!, stage, args));
+    disposeStageBridge = installStageBridge((stage, args) => runProjectStage(project!, stage, args, {
+      /**
+       * A stage can log, and until now nobody could read it.
+       *
+       * `stderr` was consulted only when a stage failed and `stdout` only for
+       * its last line, so anything a stage printed on a successful run was
+       * dropped — while `runProjectStage`'s own comment says logging on the way
+       * through is supported. The case that exposed it: a diagnostic added to
+       * explain an invisible cache hit, which was itself invisible.
+       *
+       * Behind `--verbose` rather than on by default, because a stage that
+       * prints per mark would bury the render it is part of. Prefixed with the
+       * stage name, because a graph runs several and an unattributed line is
+       * only slightly better than no line.
+       */
+      onOutput: verbose
+        ? (stream, text) => {
+            const write = stream === 'stderr' ? console.warn : console.log;
+            for (const line of text.split('\n')) write(`[${stage}] ${line}`);
+          }
+        : undefined,
+    }));
     // And the same for files: `cascade/io` reads and writes over `/api/media`
     // in the page and against the directory here, so a node that saves an image
     // works under both hosts without knowing which it has.
