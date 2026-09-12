@@ -19,6 +19,7 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { ProjectRoot } from '../server/src/project';
 import { createNodeFileCapability } from '../src/cli/nodeFiles';
 
 const signal = { aborted: false, addEventListener() {}, removeEventListener() {} } as never;
@@ -29,10 +30,16 @@ let files: ReturnType<typeof createNodeFileCapability>;
 
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'cascade-files-'));
-  // The two methods this capability uses off ProjectRoot, and nothing else.
-  files = createNodeFileCapability({
-    resolve: (relative: string) => path.join(root, relative),
-  } as never);
+  /**
+   * The REAL `ProjectRoot`, and that is the point of this line.
+   *
+   * An earlier version stubbed it as `path.join`, which bypassed
+   * `pathSafety.resolveWithinRoot` — so the suite "proved" a symlink escape
+   * that production never had, and a duplicate containment check was written to
+   * close a hole in the stub. Containment is the thing these tests are for; a
+   * double that does not contain cannot test it.
+   */
+  files = createNodeFileCapability(new ProjectRoot(root));
 });
 
 afterEach(async () => {
