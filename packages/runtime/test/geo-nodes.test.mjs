@@ -107,6 +107,7 @@ test("every geo node registers once, under one namespace", () => {
       "cascade.geo.CopyToPoints",
       "cascade.geo.Render",
       "cascade.geo.SvgExport",
+      "cascade.geo.FromRects",
     ],
   );
   for (const registration of geoNodeRegistrations) {

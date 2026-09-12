@@ -17,6 +17,7 @@ export * from "./matrix.js";
 export * from "./merge.js";
 export * from "./primitives.js";
 export * from "./promote.js";
+export * from "./rects.js";
 export * from "./resample.js";
 export * from "./svg.js";
 export * from "./transform.js";

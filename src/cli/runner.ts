@@ -28,6 +28,16 @@ export interface RunOptions {
   validateOnly?: boolean;
   checkOnly?: boolean;
   inspectOnly?: boolean;
+  /**
+   * Turn the missing-module warning into a failure.
+   *
+   * Off by default while the dynamic path exists, because an unconverted sketch
+   * has to keep validating — working in mixed graphs all day is what converting
+   * them means. On, a module with no file fails the command, which is what a CI
+   * job or anyone who has finished converting wants. The default flips when the
+   * dynamic path is deleted.
+   */
+  strict?: boolean;
   verbose?: boolean;
   /** `--frames 1-100`, `1-100x2`, or a single frame. Renders a sequence. */
   frames?: string;
@@ -55,7 +65,7 @@ function reportMissingCanvas(messages: string[], canvasError: Error | null): voi
 }
 
 export async function runGraph(options: RunOptions): Promise<void> {
-  const { file, entryNode, validateOnly, checkOnly, inspectOnly, verbose, frames, fps, out } = options;
+  const { file, entryNode, validateOnly, checkOnly, inspectOnly, strict, verbose, frames, fps, out } = options;
 
   if (verbose) {
     console.log(`Loading graph from: ${file}`);
@@ -79,9 +89,22 @@ export async function runGraph(options: RunOptions): Promise<void> {
   const packageManager = new PackageManager();
 
   if (validateOnly || checkOnly) {
-    if (checkOnly) await checkProjectGraph(file, graphData);
-    else await validateProjectGraph(file, graphData);
-    console.log(checkOnly ? 'Static check passed!' : 'Graph validation passed!');
+    const unresolved = checkOnly
+      ? await checkProjectGraph(file, graphData, strict)
+      : await validateProjectGraph(file, graphData, strict);
+    /**
+     * Say what passed, not just that something did.
+     *
+     * An unqualified "passed" printed directly under a list of modules with no
+     * file is the thing that made a typo and a legacy node indistinguishable —
+     * the warning was there and the conclusion contradicted it.
+     */
+    const headline = checkOnly ? 'Static check passed' : 'Graph validation passed';
+    console.log(
+      unresolved > 0
+        ? `${headline} with ${unresolved} unresolved ${unresolved === 1 ? 'module' : 'modules'} — run with --strict to fail on these`
+        : `${headline}!`,
+    );
     return;
   }
 

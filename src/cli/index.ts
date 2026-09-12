@@ -90,6 +90,7 @@ Options:
   --json             Return a JSON render manifest (requires run --frames)
   --timeout <ms>     Bound a run in a supervised child process (exit 124 on timeout)
   --validate-only   Validate only (same as 'validate' command)
+  --strict          Fail when a node names a module with no file (default: warn)
   --verbose, -v      Show verbose output
   --version          Show version
   --help, -h         Show this help message
@@ -143,6 +144,8 @@ image output nothing downstream consumes, or per output of --entry-node.
     validateOnly?: boolean;
     checkOnly?: boolean;
     inspectOnly?: boolean;
+    /** Fail rather than warn when a node names a module with no file. */
+    strict?: boolean;
     verbose?: boolean;
     frames?: string;
     fps?: number;
@@ -151,6 +154,7 @@ image output nothing downstream consumes, or per output of --entry-node.
   } = {
     file: fileArg,
     validateOnly: command === 'validate',
+    strict: args.includes('--strict'),
     checkOnly: command === 'check',
     inspectOnly: command === 'inspect'
   };

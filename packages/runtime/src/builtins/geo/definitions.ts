@@ -1,4 +1,7 @@
-import type { NodeDefinition } from "@cascade/contracts";
+import type { NodeDefinition, NodeExecutionContext } from "@cascade/contracts";
+
+import { rectsToGeometry } from "../../geometry/rects.js";
+import type { DefinitionNodeRegistration } from "../../types.js";
 
 export const rectangleDefinition = {
   apiVersion: 1,
@@ -251,6 +254,89 @@ export const renderDefinition = {
   },
 } as const satisfies NodeDefinition;
 
+/**
+ * `cascade.geo.FromRects` — the conversion, as a node.
+ *
+ * Named for what it does rather than for Houdini, which has no equivalent:
+ * `Rects` would read as a node that *produces* them, and `Convert` would be a
+ * general node with one mode in it.
+ *
+ * The whole point is that this is the only place `rects` is understood.
+ * `SvgExport`, `Render` and the viewport keep taking `geometry` and learn
+ * nothing — which is the argument MW-OBSERVATORY-ART made as owner of the
+ * consuming code, against adding a second input to the exporter.
+ *
+ * There is deliberately **no implicit `rects` → `geometry` conversion** in the
+ * type table. It would let a rects output wire straight into a geometry input,
+ * and the flip below would then happen invisibly or not at all — a picture
+ * silently mirrored is exactly the failure this node's `origin` prop exists to
+ * make a decision.
+ */
+export const fromRectsDefinition = {
+  apiVersion: 1,
+  label: "From Rects",
+  description: "Convert rects into geometry, one closed polygon each, keeping the tag.",
+  icon: "Frame",
+  runsOn: "portable",
+  inputs: {
+    rects: { kind: "data", type: "rects" },
+    /** The frame the rects were measured against, for the flip. */
+    height: {
+      kind: "data",
+      type: "float",
+      default: 0,
+      min: 0,
+      description: "Image height, for Top Left. Zero means no flip.",
+    },
+  },
+  outputs: { geometry: { kind: "data", type: "geometry" } },
+  props: {
+    origin: {
+      type: "string",
+      default: "top-left",
+      control: "select",
+      options: [
+        { value: "top-left", label: "Top Left - raster, needs a height" },
+        { value: "bottom-left", label: "Bottom Left - already +Y up" },
+      ],
+      label: "Origin",
+      description:
+        "Where y is measured from. Raster rects need flipping or the SVG comes out mirrored.",
+    },
+  },
+} as const satisfies NodeDefinition;
+
+export function executeFromRects(
+  context: NodeExecutionContext<typeof fromRectsDefinition>,
+): void {
+  const incoming = context.inputs.rects;
+  const origin = context.props.origin === "bottom-left" ? "bottom-left" : "top-left";
+  const height = context.inputs.height ?? 0;
+  // A raster conversion with no height is the one mistake worth refusing: it
+  // produces a mirrored picture that looks plausible, and a silently upside
+  // down poster is harder to notice than a red node.
+  if (origin === "top-left" && height <= 0 && rectCount(incoming) > 0)
+    throw new Error(
+      "cascade.geo.FromRects needs the image height to flip raster rects — wire it, or set Origin to Bottom Left if the rects are already +Y up",
+    );
+  context.outputs.geometry.set(
+    rectsToGeometry(incoming as never, { origin, height }),
+  );
+}
+
+function rectCount(value: unknown): number {
+  if (Array.isArray(value)) return value.length;
+  const rects = (value as { rects?: unknown })?.rects;
+  return Array.isArray(rects) ? rects.length : 0;
+}
+
+export const fromRectsRegistration = {
+  kind: "definition-v1",
+  moduleId: "cascade.geo.FromRects",
+  definition: fromRectsDefinition,
+  loadExecute: async () => executeFromRects,
+} satisfies DefinitionNodeRegistration<typeof fromRectsDefinition>;
+
 export const geoNodeDefinitions = Object.freeze([
   ["cascade.geo.Rectangle", rectangleDefinition],
   ["cascade.geo.Circle", circleDefinition],
@@ -259,4 +345,5 @@ export const geoNodeDefinitions = Object.freeze([
   ["cascade.geo.CopyToPoints", copyToPointsDefinition],
   ["cascade.geo.SvgExport", svgExportDefinition],
   ["cascade.geo.Render", renderDefinition],
+  ["cascade.geo.FromRects", fromRectsDefinition],
 ] as const);

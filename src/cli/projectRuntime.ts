@@ -194,13 +194,41 @@ function environmentOwning(capability: string): string {
  * validator, so an unconverted sketch leaves by a door that never printed
  * anything.
  */
-function reportUnresolved(prepared: PreparedGraph): void {
-  if (!prepared.unresolved.length) return;
+/**
+ * Report the nodes naming a module with no file, and say whether that is fatal.
+ *
+ * The warning itself is not new — what was missing is that it did not reach the
+ * *outcome*. `validate` printed the list and then said "Graph validation
+ * passed!", so a typo and a legacy node were indistinguishable in the one thing
+ * a script reads: the exit code. Marcus asked for this to be fixed on
+ * 2026-09-12.
+ *
+ * It stays a warning by default and `--strict` makes it an error, which is the
+ * shape `runtime/stray-params` took and the shape that worked. The reasoning
+ * from 2026-09-08 still holds while the cutover runs: an unconverted sketch
+ * must keep validating, because working in mixed graphs all day is exactly what
+ * converting them means. **When the dynamic path is deleted, the default
+ * flips** — at that point a module with no file can only be a typo.
+ *
+ * Returns the count so the caller can qualify its own success line rather than
+ * contradict the warning it just printed.
+ */
+function reportUnresolved(prepared: PreparedGraph, strict = false): number {
+  if (!prepared.unresolved.length) return 0;
   const count = prepared.unresolved.length;
-  console.warn([
-    `${count === 1 ? 'One node names a module' : `${count} nodes name modules`} with no file:`,
+  /**
+   * Modules, not nodes — `prepare` dedupes by module id, so two nodes of the
+   * same missing module are one entry. The old wording said "2 nodes name
+   * modules" while counting one, which is a small lie in the one message whose
+   * whole job is to be exact about what is missing.
+   */
+  const summary = [
+    `${count === 1 ? 'One module has no file' : `${count} modules have no file`}:`,
     ...prepared.unresolved.map(line),
-  ].join('\n'));
+  ].join('\n');
+  if (strict) throw new Error(summary);
+  console.warn(summary);
+  return count;
 }
 
 function usesDeterministicHost(document: any, prepared: PreparedGraph): boolean {
@@ -213,20 +241,29 @@ function usesDeterministicHost(document: any, prepared: PreparedGraph): boolean 
   return true;
 }
 
-export async function validateProjectGraph(file: string, document: any): Promise<void> {
+export async function validateProjectGraph(
+  file: string,
+  document: any,
+  strict = false,
+): Promise<number> {
   const prepared = await prepare(file, document, false);
-  reportUnresolved(prepared);
+  const unresolved = reportUnresolved(prepared, strict);
   const nodes = document.nodes as ProjectNode[];
   if (nodes.some((node) => !prepared.deterministic.has(moduleId(node)))) {
     validateDynamicDocument(document);
-    return;
+    return unresolved;
   }
   await preflightAgainstRunHost(file, prepared.registrations, document);
+  return unresolved;
 }
 
-export async function checkProjectGraph(file: string, document: any): Promise<void> {
+export async function checkProjectGraph(
+  file: string,
+  document: any,
+  strict = false,
+): Promise<number> {
   const prepared = await prepare(file, document, false);
-  reportUnresolved(prepared);
+  const unresolved = reportUnresolved(prepared, strict);
   const nodes = document.nodes as ProjectNode[];
   const dynamic = [...new Set(nodes
     .map(moduleId)
@@ -235,6 +272,7 @@ export async function checkProjectGraph(file: string, document: any): Promise<vo
     throw new Error(`Static check requires definition-v1 modules; dynamic modules: ${dynamic.join(', ')}`);
   }
   await preflightAgainstRunHost(file, prepared.registrations, document);
+  return unresolved;
 }
 
 export async function runDeterministicProjectGraph(

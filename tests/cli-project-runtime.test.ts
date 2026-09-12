@@ -52,7 +52,7 @@ describe('deterministic CLI runtime', () => {
     await validateProjectGraph(fixture.file, typo);
 
     const printed = warn.mock.calls.map((call) => String(call[0])).join('\n');
-    expect(printed).toContain('One node names a module with no file');
+    expect(printed).toContain('One module has no file');
     expect(printed).toContain('project/module-not-found');
     expect(printed).toContain(path.join('nodes', 'Multply', 'index.ts'));
     warn.mockRestore();
@@ -215,7 +215,9 @@ export function execute(context) { context.outputs.result.set(1); }
       ],
     } as any;
 
-    await expect(checkProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
+    // Resolves, and reports no unresolved modules — the count is the return
+    // value now, so this asserts the outcome rather than the absence of one.
+    await expect(checkProjectGraph(fixture.file, fixture.document)).resolves.toBe(0);
     await expect(runDeterministicProjectGraph(fixture.file, fixture.document)).resolves.toBe(true);
     await expect(inspectProjectGraph(fixture.file, fixture.document)).resolves.toMatchObject({
       deterministic: true,
@@ -245,7 +247,10 @@ export function execute(context) { context.outputs.result.set(1); }
     const fixture = project(validSource);
     fixture.document.nodes.push({ id: 'legacy', module: 'cascade.core.Freeze' });
 
-    await expect(validateProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
+    // One unresolved module, reported and not fatal — the legacy case the
+    // warning exists to tolerate. `--strict` is what turns this into a failure,
+    // and the default flips when the dynamic path is deleted.
+    await expect(validateProjectGraph(fixture.file, fixture.document)).resolves.toBe(1);
     await expect(checkProjectGraph(fixture.file, fixture.document)).rejects.toThrow(/dynamic modules: cascade\.core\.Freeze/);
   });
 
@@ -276,7 +281,10 @@ export function execute(context) { context.outputs.result.set(1); }
       connections: [[['source', 0, 'value'], ['target', 0, 'value']]],
     } as any;
 
-    await expect(validateProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
+    // Two legacy NODES but one missing module: `prepare` dedupes by module id,
+    // so the count is modules. The tuple connection between them still
+    // validates, which is what this test is actually about.
+    await expect(validateProjectGraph(fixture.file, fixture.document)).resolves.toBe(1);
     fixture.document.connections[0][1][0] = 'missing';
     await expect(validateProjectGraph(fixture.file, fixture.document)).rejects.toThrow(/unknown node/);
   });
@@ -323,8 +331,10 @@ export async function execute(context) {
   context.outputs.out.set(result.stdout);
 }
 `);
-    await expect(validateProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
-    await expect(checkProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
+    await expect(validateProjectGraph(fixture.file, fixture.document)).resolves.toBe(0);
+    // Resolves, and reports no unresolved modules — the count is the return
+    // value now, so this asserts the outcome rather than the absence of one.
+    await expect(checkProjectGraph(fixture.file, fixture.document)).resolves.toBe(0);
   });
 
   // A node that says it only runs in the browser is not defective because
@@ -344,8 +354,10 @@ export async function execute(context) {
 `);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      await expect(validateProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
-      await expect(checkProjectGraph(fixture.file, fixture.document)).resolves.toBeUndefined();
+      await expect(validateProjectGraph(fixture.file, fixture.document)).resolves.toBe(0);
+      // Resolves, and reports no unresolved modules — the count is the return
+    // value now, so this asserts the outcome rather than the absence of one.
+    await expect(checkProjectGraph(fixture.file, fixture.document)).resolves.toBe(0);
       expect(warn.mock.calls.flat().join('\n')).toMatch(/one node in this graph targets another host/);
       warn.mockClear();
       await expect(runDeterministicProjectGraph(fixture.file, fixture.document)).rejects.toThrow(

@@ -164,6 +164,7 @@ describe('definition-v1 nodes in Studio', () => {
       'cascade.geo.CopyToPoints',
       'cascade.geo.SvgExport',
       'cascade.geo.Render',
+      'cascade.geo.FromRects',
     ]);
     expect(getNodePathShort('cascade.geo.Transform')).toBe('geo.Transform');
   });
@@ -174,7 +175,8 @@ describe('definition-v1 nodes in Studio', () => {
       { status: 200, headers: { 'content-type': 'application/json' } },
     ));
     const graph = new Graph();
-    const exporter = graph.addNode('cascade.geo.SvgExport', { x: 0, y: 0 });
+    const exporter = graph.addNode('cascade.geo.SvgExport',
+      'cascade.geo.FromRects', { x: 0, y: 0 });
 
     await graph.execute(exporter);
 
