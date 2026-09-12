@@ -39,18 +39,37 @@ import type { ProjectRoot } from '../../server/src/project.js';
  * outside its project is a worse thing to have than no `files` capability.
  */
 export function createNodeFileCapability(project: ProjectRoot): FileCapability {
-  const root = path.resolve(project.resolve('.'));
+  const rootPromise = realOrSelf(path.resolve(project.resolve('.')));
 
-  /** Inside the project, or an error naming what was refused. */
-  const within = (relative: string, what: string): string => {
+  /**
+   * Inside the project **after symlinks are resolved**, or an error naming what
+   * was refused.
+   *
+   * The first version used `path.resolve` alone, which normalises `..` and does
+   * not follow symlinks — so a project containing `cache -> /somewhere/else`
+   * passed the containment check and read outside. Measured on 2026-09-12 with
+   * a symlink to a directory holding a file called `secret`: it was returned.
+   *
+   * That defeats the only promise this capability makes. The reason it is
+   * scoped at all is that **a graph is a document that can arrive from
+   * anywhere**, and a project carrying a symlink to `~/.ssh` would have read it.
+   *
+   * `realpath` on the nearest existing ancestor rather than on the target,
+   * because a write names a file that does not exist yet — resolving the target
+   * would fail on every first write, and resolving nothing would leave the hole
+   * open for exactly the path a write creates.
+   */
+  const within = async (relative: string, what: string): Promise<string> => {
     const clean = relative.replace(/^\.?\//, '');
     const full = path.resolve(project.resolve(clean));
-    if (full !== root && !full.startsWith(`${root}${path.sep}`))
+    const root = await rootPromise;
+    const real = await realOrSelf(full);
+    if (real !== root && !real.startsWith(`${root}${path.sep}`))
       throw new Error(`files: ${what} outside the project is refused — ${relative}`);
     return full;
   };
 
-  const cacheOnly = (relative: string): string => {
+  const cacheOnly = async (relative: string): Promise<string> => {
     const clean = relative.replace(/^\.?\//, '');
     if (!clean.startsWith('.cascade-cache/'))
       throw new Error(
@@ -73,19 +92,19 @@ export function createNodeFileCapability(project: ProjectRoot): FileCapability {
   return {
     async read(relative, options) {
       live(options);
-      return new Uint8Array(await fs.readFile(within(relative, 'reading')));
+      return new Uint8Array(await fs.readFile(await within(relative, 'reading')));
     },
 
     async write(relative, data, options) {
       live(options);
-      const full = cacheOnly(relative);
+      const full = await cacheOnly(relative);
       await fs.mkdir(path.dirname(full), { recursive: true });
       await fs.writeFile(full, data);
     },
 
     async list(relative, options) {
       live(options);
-      const full = within(relative, 'listing');
+      const full = await within(relative, 'listing');
       try {
         const entries = await fs.readdir(full, { withFileTypes: true });
         // Names, sorted, directories marked with a trailing slash so a caller
@@ -105,7 +124,7 @@ export function createNodeFileCapability(project: ProjectRoot): FileCapability {
     async stat(relative, options) {
       live(options);
       try {
-        const stats = await fs.stat(within(relative, 'reading'));
+        const stats = await fs.stat(await within(relative, 'reading'));
         return { size: stats.size, modifiedAt: stats.mtimeMs };
       } catch (error) {
         // `null` for absent, which is what the contract's `| null` is for — a
@@ -115,4 +134,32 @@ export function createNodeFileCapability(project: ProjectRoot): FileCapability {
       }
     },
   };
+}
+
+/**
+ * The real path of the nearest existing ancestor, with the rest appended.
+ *
+ * `fs.realpath` throws for a path that does not exist, which every first write
+ * is. Walking up to something that does exist gives the containment check a
+ * resolved answer for the part of the path that can lie, and the part that
+ * cannot lie yet is appended unresolved — a directory that does not exist
+ * cannot be a symlink to anywhere.
+ */
+async function realOrSelf(full: string): Promise<string> {
+  let current = full;
+  const tail: string[] = [];
+  // Bounded by the path's own depth: each step removes one segment, and the
+  // root always exists.
+  for (let depth = 0; depth < 64; depth += 1) {
+    try {
+      const real = await fs.realpath(current);
+      return tail.length ? path.join(real, ...tail.reverse()) : real;
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return full;
+      tail.push(path.basename(current));
+      current = parent;
+    }
+  }
+  return full;
 }

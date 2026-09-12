@@ -13,7 +13,7 @@
  * source material, is a worse thing to have than none — and both are one
  * relaxation away at every call site.
  */
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -72,6 +72,60 @@ describe('reading', () => {
     await mkdir(path.join(root, 'etc'), { recursive: true });
     await writeFile(path.join(root, 'etc/hosts'), 'inside');
     expect(new TextDecoder().decode(await files.read('/etc/hosts', options))).toBe('inside');
+  });
+});
+
+describe('symlinks', () => {
+  it('refuses a symlink that leaves the project', async () => {
+    /**
+     * The first version checked containment with `path.resolve`, which
+     * normalises `..` and does NOT follow symlinks — so a project containing
+     * `cache -> /somewhere/else` passed the check and read outside. Measured
+     * on 2026-09-12 against a file called `secret`: it came back.
+     *
+     * That defeats the only promise this capability makes, and the reason it
+     * is scoped at all is that a graph is a document that can arrive from
+     * anywhere. A project carrying a symlink to `~/.ssh` would have read it.
+     */
+    const outside = await mkdtemp(path.join(tmpdir(), 'cascade-outside-'));
+    try {
+      await writeFile(path.join(outside, 'secret.txt'), 'secret');
+      await symlink(outside, path.join(root, 'cache'));
+      await expect(files.read('cache/secret.txt', options)).rejects.toThrow(
+        /outside the project is refused/,
+      );
+      await expect(files.list('cache', options)).rejects.toThrow(/outside the project is refused/);
+      await expect(files.stat('cache/secret.txt', options)).rejects.toThrow(
+        /outside the project is refused/,
+      );
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('allows a symlink that stays inside the project', async () => {
+    // Containment, not a ban on symlinks. A link within the tree reaches
+    // nothing the capability would not have reached anyway.
+    await mkdir(path.join(root, 'real'), { recursive: true });
+    await writeFile(path.join(root, 'real/note.txt'), 'inside');
+    await symlink(path.join(root, 'real'), path.join(root, 'linked'));
+    expect(new TextDecoder().decode(await files.read('linked/note.txt', options))).toBe('inside');
+  });
+
+  it('refuses a write through a symlink that leaves the project', async () => {
+    // The write path resolves the nearest EXISTING ancestor, because the file
+    // itself does not exist yet — resolving the target would fail on every
+    // first write and leave exactly this case open.
+    const outside = await mkdtemp(path.join(tmpdir(), 'cascade-outside-'));
+    try {
+      await mkdir(path.join(root, '.cascade-cache'), { recursive: true });
+      await symlink(outside, path.join(root, '.cascade-cache/escape'));
+      await expect(
+        files.write('.cascade-cache/escape/out.bin', new Uint8Array([1]), options),
+      ).rejects.toThrow(/outside the project is refused/);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });
 
