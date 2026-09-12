@@ -12,6 +12,7 @@ import { validateNodeModuleArchitecture } from '../../packages/runtime/src/defin
 import { frameRange } from '../../packages/runtime/src/animation/index.js';
 import type { DefinitionNodeRegistration, LoadedCascadeGraph, RuntimeHost } from '../../packages/runtime/src/types.js';
 import { ProjectRoot } from '../../server/src/project.js';
+import { createNodeFileCapability } from './nodeFiles.js';
 import { createNodeAssetCapability } from './nodeAssets.js';
 import { imagePath, sequenceFileName, sequenceWidth } from './sequence.js';
 import { createDawnGpuHost } from './headlessGpu.js';
@@ -56,6 +57,12 @@ function createProjectHost(file: string, registrations: DefinitionNodeRegistrati
     // `validate` and `check` and then refused to run. See ./nodeAssets.ts
     // for where the file lands and why.
     assets: createNodeAssetCapability(project),
+    // Same reason as `assets` above, found the same way: `files` was valid in
+    // the contract and installed by nobody, so a node declaring it ran with
+    // `undefined` — and the workaround that worked was an undeclared `node:fs`
+    // import, which is the invisible version of the thing declarations exist
+    // to make visible. See ./nodeFiles.ts for the containment rules.
+    files: createNodeFileCapability(project),
     gpu: createDawnGpuHost(),
   });
 }
