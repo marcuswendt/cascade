@@ -2,6 +2,55 @@
 
 Notable changes to Cascade. Newest first.
 
+## 0.7.0 — 2026-09-12
+
+### Removed
+
+- **The dynamic executor.** `cascade run` had a second execution path: when the
+  deterministic runtime declined a graph, the CLI built a Studio `Graph`,
+  compiled each node with esbuild and cooked it through the class-based
+  scheduler. About 160 lines of second implementation, with behaviour that
+  differed from the one every other surface uses.
+
+  Removed on a measurement: all nine graphs across six sketches either render
+  through the deterministic runtime or are refused by the runtime's own
+  `runtime/preflight-environment` for declaring `runsOn: 'browser'`. 72 nodes,
+  none dynamic. A graph with no definition-v1 nodes is now refused by name
+  rather than run through the other path.
+
+  Nothing in the CLI reads the class registry any more, so
+  `registerStandardNodes()` is gone from the runner and the bundled CLI no
+  longer carries the class-based standard library.
+
+### Added
+
+- **`cascade.geo.FromRects`** and `rectsToGeometry`. `rects` was a declared core
+  type with no consumers; it converts to geometry as one closed polygon per
+  rect, with the tag preserved as a primitive string attribute. Raster rects
+  need their frame height, and the node refuses rather than guessing it — an
+  unflipped raster rect renders mirrored and plausible.
+- **A `files` capability on the CLI host.** Declaring `files` previously got a
+  node `undefined`, which pushed authors towards an undeclared `node:fs` import
+  — the invisible version of the thing declarations exist to make visible.
+  Reads resolve inside the project, writes are confined to `.cascade-cache/`.
+- **Stage output reaches the operator.** A stage could log and nobody could read
+  it: `stderr` was consulted only on failure and `stdout` only for its last
+  line. `cascade run --verbose` now forwards both.
+- **`--strict`** fails `validate` and `check` when a node names a module with no
+  file, and the summary says how many were unresolved rather than reporting
+  "passed" directly under the list.
+
+### Fixed
+
+- **Scrubbing no longer kills the cook it is waiting for.** The timeline marked
+  time-dependent nodes dirty *before* its own already-cooking guard, so every
+  scrubbed frame aborted the cook in flight and then deferred — a graph slower
+  than the mouse never finished one. The coalescing that was already there is
+  what makes leaving the running cook alone correct.
+- **A cancelled cook is no longer logged as a failure.** The node's state was
+  already right; only the console was lying, several times a second, which
+  buries the real failure when one arrives.
+
 ## 0.6.0 — 2026-09-10
 
 All three items from a user's first day with the npm package.
