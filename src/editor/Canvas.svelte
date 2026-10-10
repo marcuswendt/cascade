@@ -2,7 +2,8 @@
   import { captureGroupDrag, moveGroupDrag, findDropGroup, type GroupDrag } from './groupDrag';
   import { canStartConnection, resolveConnection } from './connectionDirection';
   import { computeGraphFocus, wireRole, nodeEmphasis } from './graphFocus';
-  import { onMount, onDestroy, tick, createEventDispatcher } from 'svelte';
+  import { onMount, onDestroy, tick, createEventDispatcher, setContext } from 'svelte';
+  import { PortGeometry, PORT_GEOMETRY_CONTEXT, annotationPortOffset } from './portGeometry';
   import { Graph, type CanvasAnnotation } from '@/nodes/Graph';
   import { Annotation } from '@/nodes/annotations/Annotation';
   import { TextAnnotation } from '@/nodes/annotations/Text';
@@ -70,6 +71,7 @@
     if (cookFrame !== null) cancelAnimationFrame(cookFrame);
     if (selectionFrame !== null) cancelAnimationFrame(selectionFrame);
     if (dragFrame !== null) cancelAnimationFrame(dragFrame);
+    portGeometry.destroy();
   });
 
   onMount(() => {
@@ -95,6 +97,12 @@
   let canvas: HTMLDivElement;
   // Use transform prop if provided, otherwise use internal state
   let internalTransform = transform ? { ...transform } : { x: 0, y: 0, zoom: 1 };
+
+  // Port offsets measured per node when its size or port set changes, so
+  // wire ends are arithmetic in the hot path. See ./portGeometry.
+  const portGeometry = new PortGeometry(() => internalTransform.zoom);
+  setContext(PORT_GEOMETRY_CONTEXT, portGeometry);
+  const portGeometryRevision = portGeometry.revision;
   
   // Track last known prop value to detect external changes
   let lastPropTransform = transform ? { ...transform } : null;
@@ -729,11 +737,21 @@
     const moving = new Set(groupDrag.items.map(item => item.id));
     return groupDrag.roots.map(id => {
       const element = graph.getElement(id)!;
-      const nodeEl = Array.from(canvas.querySelectorAll<HTMLElement>('.node[data-node-id], .annotation[data-annotation-id]'))
-        .find(el => el.dataset.nodeId === id || el.dataset.annotationId === id);
-      const bounds = nodeEl?.getBoundingClientRect();
-      const width = bounds ? bounds.width / internalTransform.zoom : 120;
-      const height = bounds ? bounds.height / internalTransform.zoom : 80;
+      // A node's box comes from the port-geometry cache: no layout read per
+      // drag frame. Annotations carry their own size.
+      let size = portGeometry.size(id);
+      if (!size && (element as any).isAnnotation) {
+        const declared = (element as any).size;
+        if (typeof declared?.width === 'number' && typeof declared?.height === 'number') size = declared;
+      }
+      if (!size) {
+        const nodeEl = Array.from(canvas.querySelectorAll<HTMLElement>('.node[data-node-id], .annotation[data-annotation-id]'))
+          .find(el => el.dataset.nodeId === id || el.dataset.annotationId === id);
+        const bounds = nodeEl?.getBoundingClientRect();
+        if (bounds) size = { width: bounds.width / internalTransform.zoom, height: bounds.height / internalTransform.zoom };
+      }
+      const width = size?.width ?? 120;
+      const height = size?.height ?? 80;
       const center = { x: element.position.x + width / 2, y: element.position.y + height / 2 };
       return { id, target: findDropGroup(graph, id, center, moving) };
     });
@@ -1157,8 +1175,8 @@
     const hitThreshold = 8 / internalTransform.zoom; // 8 pixels tolerance, adjusted for zoom
     
     for (const conn of connections) {
-      const fromPos = getPortPosition(conn.from.nodeId, conn.from.portId, 'output');
-      const toPos = getPortPosition(conn.to.nodeId, conn.to.portId, 'input');
+      const fromPos = wireEnd(conn.from.nodeId, conn.from.portId, 'output');
+      const toPos = wireEnd(conn.to.nodeId, conn.to.portId, 'input');
       
       if (!fromPos || !toPos) continue;
       
@@ -1398,6 +1416,12 @@
     }
     
     flushDragMove();
+    if (import.meta.env.DEV && dragMoved) {
+      requestAnimationFrame(() => {
+        const result = (window as any).__cascadeVerifyPorts?.();
+        if (result && result.worstPx > 1) console.warn('[portGeometry] wire ends disagree with the DOM', result);
+      });
+    }
     // Only deliberate drops change ownership; moving a frame never captures bystanders.
     if (dragMoved && groupDrag) {
       for (const {id, target} of groupDropAssignments()) studioGraph.assignToGroup([id], target);
@@ -3429,6 +3453,41 @@ export function execute(node, graph) {
     return null;
   }
   
+  /**
+   * A wire end in graph space, without reading layout.
+   *
+   * Nodes: position plus the port's measured offset (./portGeometry).
+   * Annotations: position plus the bottom-centre offset their templates use.
+   * Only a node that has never been measured, which is the first render
+   * after it mounts, falls back to the DOM; its ResizeObserver report then
+   * measures it and re-derives the wires. The trailing arguments are unused
+   * here and exist so the template re-evaluates when they change.
+   */
+  function wireEnd(nodeId: string, portId: string, portType: 'input' | 'output', ..._deps: unknown[]): { x: number; y: number } | null {
+    const element = graph.getElement(nodeId);
+    if (!element) return null;
+    if ((element as any).isAnnotation === true) {
+      const annotation = element as Annotation;
+      if (!annotation.outputs?.some(p => p.id === portId)) return null;
+      const offset = annotationPortOffset(annotation as any);
+      return { x: annotation.position.x + offset.dx, y: annotation.position.y + offset.dy };
+    }
+    const offset = portGeometry.offset(nodeId, portId);
+    if (offset) return { x: element.position.x + offset.dx, y: element.position.y + offset.dy };
+    return getPortPosition(nodeId, portId, portType);
+  }
+
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    // Debug assertion: computed wire ends against the DOM, in screen pixels.
+    (window as any).__cascadeVerifyPorts = () => {
+      const rect = canvas.getBoundingClientRect();
+      return portGeometry.verify(
+        id => graph.getElement(id)?.position ?? null,
+        p => ({ x: rect.left + internalTransform.x + p.x * internalTransform.zoom, y: rect.top + internalTransform.y + p.y * internalTransform.zoom }),
+      );
+    };
+  }
+
   function getPortPosition(nodeId: string, portId: string, portType: 'input' | 'output'): { x: number; y: number } | null {
     // Check if this is an annotation by looking up the element
     const element = graph.getElement(nodeId);
@@ -4274,8 +4333,10 @@ export function execute(node, graph) {
       {@const toNodePos = nodePositionById.get(conn.to.nodeId)}
       <!-- {@const fromAnnPos = annotationPositions.find(ap => `ann_${ap.id}` === conn.from.nodeId)}
       {@const toAnnPos = annotationPositions.find(ap => `ann_${ap.id}` === conn.to.nodeId)} -->
-      {@const fromPos = getPortPosition(conn.from.nodeId, conn.from.portId, 'output')}
-      {@const toPos = getPortPosition(conn.to.nodeId, conn.to.portId, 'input')}
+      <!-- Pure arithmetic: node position plus a cached port offset. The
+           extra arguments are the reactive inputs the ends depend on. -->
+      {@const fromPos = wireEnd(conn.from.nodeId, conn.from.portId, 'output', fromNodePos, annotations, $portGeometryRevision)}
+      {@const toPos = wireEnd(conn.to.nodeId, conn.to.portId, 'input', toNodePos, annotations, $portGeometryRevision)}
       {#if fromPos && toPos}
         {@const fromElement = graph.getElement(conn.from.nodeId)}
         {@const toElement = graph.getElement(conn.to.nodeId)}

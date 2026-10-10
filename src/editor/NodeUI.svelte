@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, getContext, onMount } from 'svelte';
   import type { Node } from '@/nodes/Node';
   import { getNodeIcon } from './nodeTemplates';
   import Icon from './Icon.svelte';
@@ -11,6 +11,7 @@
   import { ensureNodePreviewSetting, nodePreviews } from './stores/nodePreview';
   import CoreValue from './components/CoreValue.svelte';
   import type { NodeEmphasis } from './graphFocus';
+  import { PORT_GEOMETRY_CONTEXT, trackPorts, type PortGeometry } from './portGeometry';
 
   export let node: Node;
   export let selected = false;
@@ -20,6 +21,10 @@
   export let cookRevision = 0;
 
   const dispatch = createEventDispatcher();
+  // Canvas computes wire ends from this node's measured port offsets; see
+  // ./portGeometry. A resize re-measures by itself; this key covers a port
+  // set that changes without the node changing size.
+  const portGeometry = getContext<PortGeometry | undefined>(PORT_GEOMETRY_CONTEXT) ?? null;
 
   onMount(() => {
     void ensureNodePreviewSetting();
@@ -76,6 +81,7 @@
   $: previewVersion = afterStructureChange(cookRevision, node.cookInfo?.cookCount ?? 0);
   $: hasPreview = $nodePreviews && previewPort !== null;
   $: position = afterStructureChange($graphStructure, node.position);
+  $: portLayoutKey = `${inputs.map(p => p.id).join(',')}|${outputs.map(p => p.id).join(',')}|${hasPreview}`;
 
   // Group variadic inputs by base name, showing only one pill per group
   // Non-variadic inputs are shown individually
@@ -398,6 +404,7 @@
   data-cook-state={cookState}
   style="left: {position.x}px; top: {position.y}px; opacity: {node.bypass ? 0.5 : 1}"
   data-node-id={node.id}
+  use:trackPorts={{ geometry: portGeometry, id: node.id, key: portLayoutKey }}
   on:click={(e) => {
     e.stopPropagation();
     dispatch('nodeClick', { event: e });
