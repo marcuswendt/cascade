@@ -38,6 +38,14 @@
   import { ownsKeyboard } from '../panelScope';
   import { writeCascadeClipboard } from '../clipboard';
   import { renderMarkdown } from '../utils/renderMarkdown';
+  import { sharedContextStore } from '../dockview/renderer';
+  import {
+    agentPrompt,
+    drainAgentDrafts,
+    mergeAgentDraft,
+    pendingAgentDrafts,
+    selectedNodePromptContext,
+  } from '../agentDraft';
 
 
   type EntryKind = 'you' | 'agent' | 'tool' | 'result' | 'system' | 'error' | 'detail';
@@ -92,6 +100,19 @@
   let inputEl: HTMLTextAreaElement | null = null;
   let dropActive = false;
   let consoleEl: HTMLDivElement | null = null;
+  let useSelectedNode = false;
+
+  $: selectedNode = $sharedContextStore?.selectedNode ?? null;
+  $: if (!selectedNode) useSelectedNode = false;
+
+  onMount(() => pendingAgentDrafts.subscribe((drafts) => {
+    if (drafts.length === 0) return;
+    prompt = mergeAgentDraft(prompt, drainAgentDrafts());
+    void tick().then(() => {
+      autoGrow();
+      inputEl?.focus();
+    });
+  }));
 
   /**
    * Text zoom, on the standard keys. A transcript is the one panel you read
@@ -369,6 +390,8 @@
 
     const file = await saveFirst();
     if (!file) return;
+    const graphContext = useSelectedNode ? selectedNodePromptContext($sharedContextStore) : null;
+    const outboundPrompt = agentPrompt(file, text, graphContext);
 
     // This panel becomes the run's reader through the prompt stream, so any
     // attach reader it is holding would double every line.
@@ -385,7 +408,7 @@
       await sendAgentPrompt({
         agent,
         sketch: file,
-        prompt: text,
+        prompt: outboundPrompt,
         signal: controller.signal,
         onEvent: handleEvent,
       });
@@ -635,24 +658,36 @@
   </div>
 
   <div class="composer">
-    <textarea
-      bind:this={inputEl}
-      bind:value={prompt}
-      on:keydown={onKeydown}
-      on:input={autoGrow}
-      rows="2"
-      spellcheck="false"
-      placeholder="Prompt the sketch"
-      disabled={working}
-    ></textarea>
-    <button
-      type="button"
-      class="send"
-      on:click={send}
-      disabled={working || !prompt.trim() || !launchable}
-      title="Send (⌘↵)"
-      aria-label="Send prompt"
-    >↑</button>
+    <div class="composer-context">
+      <button
+        type="button"
+        class:active={useSelectedNode}
+        aria-pressed={useSelectedNode}
+        disabled={!selectedNode || working}
+        on:click={() => (useSelectedNode = !useSelectedNode)}
+      >Use selected node</button>
+      {#if useSelectedNode && selectedNode}<span>{selectedNode.id}</span>{/if}
+    </div>
+    <div class="composer-row">
+      <textarea
+        bind:this={inputEl}
+        bind:value={prompt}
+        on:keydown={onKeydown}
+        on:input={autoGrow}
+        rows="2"
+        spellcheck="false"
+        placeholder="Prompt the sketch"
+        disabled={working}
+      ></textarea>
+      <button
+        type="button"
+        class="send"
+        on:click={send}
+        disabled={working || !prompt.trim() || !launchable}
+        title="Send (⌘↵)"
+        aria-label="Send prompt"
+      >↑</button>
+    </div>
   </div>
 </div>
 
@@ -847,11 +882,51 @@
 
   .composer {
     display: flex;
+    flex-direction: column;
     gap: 8px;
-    align-items: flex-end;
     padding: 10px;
     border-top: 1px solid var(--border-divider);
     background: var(--surface-panel-alt);
+  }
+
+  .composer-context,
+  .composer-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .composer-context button {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface-control);
+    color: var(--text-secondary);
+    padding: 3px 7px;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .composer-context button.active {
+    border-color: var(--accent);
+    color: var(--text-primary);
+    background: var(--accent-tint);
+  }
+
+  .composer-context button:disabled {
+    color: var(--text-disabled);
+    cursor: default;
+  }
+
+  .composer-context span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .composer-row {
+    align-items: flex-end;
   }
 
   .composer textarea {

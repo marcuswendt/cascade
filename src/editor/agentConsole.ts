@@ -239,6 +239,38 @@ export function describeStreamLine(line: string): { kind: 'text' | 'tool' | 'res
     return text ? { kind: 'result', text } : null;
   }
 
+  // Codex JSONL wraps conversational and tool output in item events. Started
+  // commands show what is running; completed commands add their final output.
+  // Assistant prose is rendered only when complete to avoid duplicate text.
+  if (value?.type === 'item.completed' || value?.type === 'item.started') {
+    const item = value?.item;
+    if (item?.type === 'agent_message' && typeof item.text === 'string' && item.text.trim()) {
+      return value.type === 'item.completed' ? { kind: 'text', text: item.text.trim() } : null;
+    }
+    if (item?.type === 'command_execution') {
+      if (value.type === 'item.started' && typeof item.command === 'string' && item.command.trim()) {
+        return { kind: 'tool', text: `· Command ${item.command.trim()}` };
+      }
+      if (value.type === 'item.completed') {
+        const output = typeof item.aggregated_output === 'string' ? item.aggregated_output.trim() : '';
+        const status = typeof item.status === 'string' ? item.status : 'completed';
+        const command = typeof item.command === 'string' ? item.command.trim() : '';
+        const summary = `· Command ${command || status}`;
+        return { kind: output ? 'result' : 'tool', text: output ? `${summary}\n${output}` : summary };
+      }
+    }
+    if (item?.type === 'file_change') {
+      const changes = Array.isArray(item.changes) ? item.changes : [];
+      const files = changes
+        .map((change: any) => change?.path)
+        .filter((path: unknown): path is string => typeof path === 'string' && Boolean(path));
+      return { kind: 'tool', text: `· File change${files.length ? ` ${files.join(', ')}` : ''}` };
+    }
+  }
+
+  // Lifecycle events carry no prose. The thread id is consumed server-side.
+  if (value?.type === 'thread.started' || value?.type === 'turn.started' || value?.type === 'turn.completed') return null;
+
   // Parsed JSON carrying a type we do not render — rate_limit_event and
   // whatever the stream format grows next. Not swallowed, because a line the
   // console silently drops is one nobody can debug; classified as detail so the

@@ -2,6 +2,7 @@ import type { PanelContext } from './dockview/types';
 import { mediaUrl } from './components/typePresentation';
 import { setStudioParameter } from './StudioParameterController';
 import type { ProjectPanelApi, ProjectPanelMeta, ProjectPanelModule } from '@/studio/panel';
+import { queueAgentDraft } from './agentDraft';
 export type { ProjectPanelApi, ProjectPanelMeta, ProjectPanelModule, ProjectValueRenderer, ProjectValueRendererInstance, ProjectValueRendererProps } from '@/studio/panel';
 
 export async function discoverProjectPanels(fetcher: typeof fetch = fetch): Promise<ProjectPanelMeta[]> {
@@ -103,6 +104,10 @@ export function createProjectPanelApi(options: {
         throw new Error(`Unknown node ${cookOptions.nodeId}`);
       }
       await graph.scheduler.flush(entry ?? undefined);
+    },
+    openAgent(prompt) {
+      queueAgentDraft(prompt);
+      options.context()?.onAction?.('focusAgent');
     },
     selectedNodeId() {
       return options.context()?.selectedNode?.id ?? null;

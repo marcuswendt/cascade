@@ -180,8 +180,15 @@ describe('headless launch arguments', () => {
 
   it('uses codex exec for the other agent', () => {
     expect(codexArgs('do the thing')).toEqual(['exec', '--json', 'do the thing']);
-    expect(argsFor('codex', 'do the thing', 'ignored')).toEqual(['exec', '--json', 'do the thing']);
+    expect(codexArgs('continue', 'thread-123')).toEqual(['exec', 'resume', '--json', 'thread-123', 'continue']);
+    expect(argsFor('codex', 'do the thing', 'thread-123')).toEqual(['exec', 'resume', '--json', 'thread-123', 'do the thing']);
     expect(argsFor('claude', 'do the thing', null)[0]).toBe('-p');
+  });
+
+  it('puts Codex project flags before positional arguments and normalises sandbox for resume', () => {
+    expect(argsFor('codex', 'continue', 'thread-123', ['--sandbox', 'workspace-write', '--skip-git-repo-check'])).toEqual([
+      'exec', 'resume', '--json', '-c', 'sandbox_mode="workspace-write"', '--skip-git-repo-check', 'thread-123', 'continue',
+    ]);
   });
 
   it('permits headless edits by default, because the allowlist is the real consent', () => {
@@ -242,6 +249,7 @@ describe('headless launch arguments', () => {
   it('reads the session id out of a stream line', () => {
     expect(sessionIdFrom('{"type":"system","subtype":"init","session_id":"s-1"}')).toBe('s-1');
     expect(sessionIdFrom('{"type":"result","session_id":"s-1"}')).toBe('s-1');
+    expect(sessionIdFrom('{"type":"thread.started","thread_id":"0199-thread"}')).toBe('0199-thread');
     expect(sessionIdFrom('not json')).toBeNull();
     expect(sessionIdFrom('{"type":"assistant"}')).toBeNull();
   });
@@ -265,6 +273,20 @@ describe('transcript rendering', () => {
     expect(describeStreamLine(JSON.stringify({ type: 'system', subtype: 'init', session_id: 's-1' }))).toBeNull();
     expect(describeStreamLine(JSON.stringify({ type: 'user', message: {} }))).toBeNull();
     expect(describeStreamLine(JSON.stringify({ type: 'result', result: 'Done.' }))).toEqual({ kind: 'result', text: 'Done.' });
+  });
+
+  it('renders Codex assistant and command events', () => {
+    expect(describeStreamLine(JSON.stringify({
+      type: 'item.completed', item: { id: 'item_1', type: 'agent_message', text: 'Connected the evidence nodes.' },
+    }))).toEqual({ kind: 'text', text: 'Connected the evidence nodes.' });
+    expect(describeStreamLine(JSON.stringify({
+      type: 'item.started', item: { id: 'item_2', type: 'command_execution', command: 'npm test', status: 'in_progress' },
+    }))).toEqual({ kind: 'tool', text: '· Command npm test' });
+    expect(describeStreamLine(JSON.stringify({
+      type: 'item.completed', item: { id: 'item_2', type: 'command_execution', command: 'npm test', aggregated_output: '12 passed', status: 'completed' },
+    }))).toEqual({ kind: 'result', text: '· Command npm test\n12 passed' });
+    expect(describeStreamLine('{"type":"thread.started","thread_id":"0199-thread"}')).toBeNull();
+    expect(describeStreamLine('{"type":"turn.completed","usage":{}}')).toBeNull();
   });
 
   it('never silently swallows a line it does not recognise', () => {

@@ -8,6 +8,7 @@ import { createProjectPanelApi, discoverProjectPanels } from '@/editor/projectPa
 import { Graph } from '@/nodes/Graph';
 import { Node } from '@/nodes/Node';
 import PanelIcon from '@/editor/components/PanelIcon.svelte';
+import { drainAgentDrafts } from '@/editor/agentDraft';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -50,6 +51,20 @@ describe('project panels', () => {
     expect(api.sourceNodeId).toBe('source');
     expect(record).toHaveBeenCalledOnce();
     expect(node.cookState).toBe('stale');
+  });
+
+  it('opens the Agent panel with a reviewable draft', () => {
+    drainAgentDrafts();
+    const action = vi.fn();
+    const api = createProjectPanelApi({
+      context: () => ({ graph: undefined, selectedNode: null, selectedAnnotation: null, activeTool: 'select', activeLibrary: null, documentName: 'test', presentationMode: false, onAction: action }),
+      close: vi.fn(),
+    });
+
+    api.openAgent('Challenge this observation');
+
+    expect(action).toHaveBeenCalledWith('focusAgent');
+    expect(drainAgentDrafts()).toEqual(['Challenge this observation']);
   });
 
   it('runs a project stage through capability-protected generic transport', async () => {

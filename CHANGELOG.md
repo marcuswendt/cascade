@@ -4,6 +4,16 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+### Added
+
+- **The Agent console keeps a Codex conversation, and panels can hand it a
+  draft.** A Codex console resumes the thread id from `thread.started`, so
+  later prompts continue one conversation per sketch as Claude's do; project
+  `--sandbox` flags are normalised for `exec resume`. Codex item events
+  (assistant messages, commands with their output, file changes) render in the
+  console. Project panels get `api.openAgent(prompt)`, which opens the Agent
+  panel with a draft to review and send, never sending it.
+
 ### Changed
 
 - **Identical output stops invalidating the graph below it.** A node that

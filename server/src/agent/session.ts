@@ -90,31 +90,61 @@ export function claudeArgs(prompt: string, sessionId: string | null): string[] {
   return args;
 }
 
-/** Codex's non-interactive form. It has no resume flag of this shape, so a
- *  Codex console is one-shot per prompt and says so in the panel. */
-export function codexArgs(prompt: string): string[] {
-  return ['exec', '--json', prompt];
+/** Codex's non-interactive form. A later prompt resumes the exact thread id
+ *  reported by `thread.started`, keeping one conversation per sketch just as
+ *  the Claude console does. */
+export function codexArgs(prompt: string, sessionId: string | null = null): string[] {
+  return sessionId
+    ? ['exec', 'resume', '--json', sessionId, prompt]
+    : ['exec', '--json', prompt];
 }
 
 export function argsFor(agent: string, prompt: string, sessionId: string | null, extra: readonly string[] = []): string[] {
-  const base = agent === 'codex' ? codexArgs(prompt) : claudeArgs(prompt, sessionId);
-  // Project-declared flags go last so they can override a default, and after
-  // the prompt because both CLIs take the prompt positionally or via -p.
+  if (agent === 'codex') {
+    const base = sessionId ? ['exec', 'resume', '--json'] : ['exec', '--json'];
+    // Codex accepts options before its positional thread id and prompt. Its
+    // resume subcommand does not expose `--sandbox`, though it does accept the
+    // equivalent config override, so normalise that one project flag here.
+    const flags = codexExtraArgs(extra);
+    return sessionId
+      ? [...base, ...flags, sessionId, prompt]
+      : [...base, ...flags, prompt];
+  }
+  const base = claudeArgs(prompt, sessionId);
+  // Claude's project-declared flags go last so they can override a default.
   return [...base, ...extra];
+}
+
+function codexExtraArgs(extra: readonly string[]): string[] {
+  const result: string[] = [];
+  for (let index = 0; index < extra.length; index += 1) {
+    const arg = extra[index];
+    if (arg === '--sandbox' && extra[index + 1]) {
+      result.push('-c', `sandbox_mode=${JSON.stringify(extra[index + 1])}`);
+      index += 1;
+    } else if (arg.startsWith('--sandbox=')) {
+      result.push('-c', `sandbox_mode=${JSON.stringify(arg.slice('--sandbox='.length))}`);
+    } else {
+      result.push(arg);
+    }
+  }
+  return result;
 }
 
 /**
  * The session id inside one stream-json line, if it carries one.
  *
- * Claude reports it on the `init` system event and repeats it on the result
- * event; either will do, and anything unparseable is just output.
+ * Claude reports it on the `init` system event and repeats it on the result;
+ * Codex reports a `thread_id` on `thread.started`. Any unparseable line is just
+ * output.
  */
 export function sessionIdFrom(line: string): string | null {
   const trimmed = line.trim();
   if (!trimmed.startsWith('{')) return null;
   try {
     const value = JSON.parse(trimmed);
-    const id = value?.session_id ?? value?.sessionId;
+    const id = value?.session_id ?? value?.sessionId
+      ?? (value?.type === 'thread.started' ? value?.thread_id : null);
     return typeof id === 'string' && id ? id : null;
   } catch {
     return null;

@@ -78,6 +78,8 @@ export interface ProjectPanelApi {
    * through the series API instead.
    */
   cook(options?: { readonly nodeId?: string }): Promise<void>;
+  /** Open the Agent panel with a draft for the user to review and send. */
+  openAgent(prompt: string): void;
   selectedNodeId(): string | null;
   readonly sourceNodeId: string | null;
   readonly signal: AbortSignal;
