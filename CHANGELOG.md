@@ -2,6 +2,21 @@
 
 Notable changes to Cascade. Newest first.
 
+## Unreleased
+
+### Fixed
+
+- **The workspace stays as you left it.** Panel layout, every Viewer and what
+  each one is pinned to are saved with the project, beside the graph as
+  `<name>.workspace.json`, on every change rather than every 30 s. Before, one
+  browser key held the layout for every project on the same host and port, so
+  opening another project unpinned your Viewers, a reload soon after arranging
+  lost the arrangement, and `localhost`, `127.0.0.1` and a Tailscale name each
+  had their own layout. A pinned node that is not in the loaded graph now shows
+  as missing and keeps the pin, instead of the Viewer quietly following the
+  selection. A layout that fails to restore is kept as
+  `<name>.workspace.failed.json`.
+
 ## 0.8.0 — 2026-10-10
 
 ### Added

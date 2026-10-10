@@ -45,6 +45,9 @@ export interface PanelLockState {
   /** The locked node's id as last seen: what the layout persists, and how a
    *  lock re-binds when the graph rebuilds its node objects (undo, reload). */
   lockedNodeId?: string | null;
+  /** The node's path (`/parent/id`) as last seen: the fallback when the id
+   *  alone does not find it, e.g. a node inside a subnet. */
+  lockedNodePath?: string | null;
   /** The graph the node was found in. A node missing from that same graph
    *  was deleted; missing from a different one may simply not be loaded yet. */
   graph?: Graph;
@@ -72,6 +75,7 @@ export function togglePanelLock(panelId: string): void {
       lockedNode: context.selectedNode,
       lockedAnnotationId: context.selectedAnnotation,
       lockedNodeId: context.selectedNode?.id ?? null,
+      lockedNodePath: context.selectedNode?.path() ?? null,
       graph: context.graph,
     });
   }
@@ -79,44 +83,51 @@ export function togglePanelLock(panelId: string): void {
 
 /** Pin a panel to one node — the drop of a node dragged out of the graph. */
 export function lockPanelToNode(panelId: string, node: Node, graph?: Graph): void {
-  setLock(panelId, { isLocked: true, lockedNode: node, lockedAnnotationId: null, lockedNodeId: node.id, graph });
+  setLock(panelId, { isLocked: true, lockedNode: node, lockedAnnotationId: null, lockedNodeId: node.id, lockedNodePath: node.path(), graph });
 }
 
 export function unlockPanel(panelId: string): void {
   if (get(panelLockStore).has(panelId)) setLock(panelId, null);
 }
 
-/** A lock read back from a saved layout: only the id is known until the
- *  graph that holds it has loaded. */
-export function restorePanelLock(panelId: string, nodeId: string): void {
+/** A lock read back from a saved layout: only the id (and path) are known
+ *  until the graph that holds it has loaded. */
+export function restorePanelLock(panelId: string, nodeId: string, nodePath: string | null = null): void {
   if (get(panelLockStore).get(panelId)?.isLocked) return;
-  setLock(panelId, { isLocked: true, lockedNode: null, lockedAnnotationId: null, lockedNodeId: nodeId });
+  setLock(panelId, { isLocked: true, lockedNode: null, lockedAnnotationId: null, lockedNodeId: nodeId, lockedNodePath: nodePath });
 }
 
 export type LockResolution =
   | { kind: 'node'; node: Node }
+  /** No graph yet, or an empty one: the project is still loading. */
   | { kind: 'pending' }
+  /** A loaded graph without the node: kept, and shown as missing. */
+  | { kind: 'missing' }
+  /** Deleted from the very graph it was bound in, this session. */
   | { kind: 'gone' };
 
 /**
  * Where a node lock points in `graph` right now. The object wins (a rename
  * keeps it); failing that the id (a rebuilt graph has new objects under the
- * same ids). A node missing from the very graph it was locked in was deleted.
- * A lock restored from a saved layout waits only while the graph is empty.
+ * same ids), then the path. Only a node deleted from the graph it was bound
+ * in is `gone`. Anything else absent is `missing` and the lock is kept: a
+ * reload, a graph rewritten on disk or a different project open on the same
+ * origin must never unpin a viewer (that is how Marcus's pinned viewers kept
+ * coming back as plain Viewers, 2026-10-10).
  */
 export function resolveLockedNode(lock: PanelLockState, graph: Graph | undefined): LockResolution {
   if (!graph) return { kind: 'pending' };
   if (lock.lockedNode && graph.nodes.includes(lock.lockedNode)) return { kind: 'node', node: lock.lockedNode };
   const byId = lock.lockedNodeId ? graph.getNode(lock.lockedNodeId) : null;
   if (byId) return { kind: 'node', node: byId };
-  if (lock.graph === graph) return { kind: 'gone' };
-  // A restored lock (no object yet) on a graph that has loaded nodes, none of
-  // them the one it names: the node was deleted or never saved.
-  if (!lock.lockedNode && graph.nodes.length > 0) return { kind: 'gone' };
-  return { kind: 'pending' };
+  const byPath = lock.lockedNodePath ? graph.nodeByPath(lock.lockedNodePath) : null;
+  if (byPath) return { kind: 'node', node: byPath };
+  if (lock.lockedNode && lock.graph === graph) return { kind: 'gone' };
+  return graph.nodes.length > 0 ? { kind: 'missing' } : { kind: 'pending' };
 }
 
-/** Apply `resolveLockedNode` to the store: re-bind, or drop a deleted lock. */
+/** Apply `resolveLockedNode` to the store: re-bind, or drop a lock whose node
+ *  was deleted in this session. A missing node keeps its lock. */
 export function reconcilePanelLock(panelId: string, graph: Graph | undefined): void {
   const lock = get(panelLockStore).get(panelId);
   if (!lock?.isLocked || lock.lockedAnnotationId) return;
@@ -126,8 +137,9 @@ export function reconcilePanelLock(panelId: string, graph: Graph | undefined): v
     setLock(panelId, null);
   } else if (resolved.kind === 'node') {
     const node = resolved.node;
-    if (node !== lock.lockedNode || node.id !== lock.lockedNodeId || lock.graph !== graph) {
-      setLock(panelId, { ...lock, lockedNode: node, lockedNodeId: node.id, graph });
+    const nodePath = node.path();
+    if (node !== lock.lockedNode || node.id !== lock.lockedNodeId || nodePath !== lock.lockedNodePath || lock.graph !== graph) {
+      setLock(panelId, { ...lock, lockedNode: node, lockedNodeId: node.id, lockedNodePath: nodePath, graph });
     }
   }
 }

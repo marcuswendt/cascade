@@ -29,8 +29,19 @@ import {
   type FoldRecord,
   type ResizeAxis as FoldAxis,
 } from './fold';
+import {
+  flushWorkspace,
+  foldCacheKey,
+  isStoredWorkspace,
+  layoutCacheKey,
+  persistWorkspace,
+  preserveFailedWorkspace,
+  takeRestoredWorkspace,
+  type StoredWorkspace,
+} from './workspacePersistence';
 
-const STORAGE_KEY = 'cascade-dockview-layout';
+// The layout and fold keys are per project and graph now, and only a cache of
+// the server's `<name>.workspace.json` — see workspacePersistence.ts.
 /**
  * The fold records live beside the layout rather than inside it.
  *
@@ -41,7 +52,6 @@ const STORAGE_KEY = 'cascade-dockview-layout';
  * with no memory of what it was. See adoptOrphanFolds for the case where the
  * layout still arrives without them.
  */
-const FOLD_STORAGE_KEY = 'cascade-dockview-folds';
 type ResizeAxis = FoldAxis;
 type MinimizedGroup = FoldRecord;
 
@@ -121,6 +131,11 @@ class DockviewStore {
    *  does not expose `element`), and `closest('.dv-groupview')` from it gives
    *  the group root the folded class belongs on. */
   private _groupChrome = new Map<string, HTMLElement>();
+  /** True while `fromJSON` replays a layout: its change events are the
+   *  restore itself, not an edit to save. */
+  private _restoring = false;
+  /** Fold records that arrived with the workspace being restored. */
+  private _incomingFolds: unknown = undefined;
 
   // Getters
   get api() { return this._api; }
@@ -352,6 +367,11 @@ class DockviewStore {
 
     // Load saved layout or default
     this.loadLayout();
+
+    // Save on change: a split, a resize, a panel added, moved or closed. Not
+    // on a timer, so an idle tab never writes its stale layout over a newer
+    // one, and a reload straight after arranging keeps the arrangement.
+    api.onDidLayoutChange(() => this.saveLayout());
 
     this._isReady = true;
   }
@@ -665,8 +685,8 @@ class DockviewStore {
   private saveFolds(): void {
     try {
       const map = get(foldedGroups);
-      if (map.size === 0) localStorage.removeItem(FOLD_STORAGE_KEY);
-      else localStorage.setItem(FOLD_STORAGE_KEY, JSON.stringify(serializeFolds(map)));
+      if (map.size === 0) localStorage.removeItem(foldCacheKey());
+      else localStorage.setItem(foldCacheKey(), JSON.stringify(serializeFolds(map)));
     } catch (error) {
       console.warn('Failed to save folded groups:', error);
     }
@@ -686,8 +706,13 @@ class DockviewStore {
     if (!this._api) return;
     let map: FoldMap = new Map();
     try {
-      const saved = localStorage.getItem(FOLD_STORAGE_KEY);
-      if (saved) map = deserializeFolds(JSON.parse(saved));
+      const incoming = this._incomingFolds;
+      this._incomingFolds = undefined;
+      if (incoming !== undefined && incoming !== null) map = deserializeFolds(incoming as any);
+      else {
+        const saved = localStorage.getItem(foldCacheKey());
+        if (saved) map = deserializeFolds(JSON.parse(saved));
+      }
     } catch (error) {
       console.warn('Failed to parse folded groups:', error);
     }
@@ -784,13 +809,14 @@ class DockviewStore {
   }
 
   /**
-   * Save current layout to localStorage
+   * Save the workspace: the browser cache at once, the project's
+   * `<name>.workspace.json` debounced. Called on every layout change.
    */
   saveLayout(): void {
-    if (!this._api) return;
+    if (!this._api || this._restoring) return;
     try {
-      const layout = this._api.toJSON();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+      const map = get(foldedGroups);
+      persistWorkspace(this._api.toJSON(), map.size ? serializeFolds(map) : undefined);
     } catch (error) {
       console.warn('Failed to save layout:', error);
     }
@@ -806,21 +832,17 @@ class DockviewStore {
     let isFromStorage = false;
 
     if (!layoutToLoad) {
-      try {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          layoutToLoad = JSON.parse(saved);
-          isFromStorage = true;
+      // The project's saved workspace (fetched before the dock was built),
+      // else this browser's cache of it.
+      const saved: StoredWorkspace | null = takeRestoredWorkspace() ?? this.readCachedWorkspace();
+      if (saved) {
+        layoutToLoad = structuredClone(saved.layout);
+        this._incomingFolds = saved.folds;
+        isFromStorage = true;
 
-          // Remove code panels from saved layout - they don't preserve nodeId params
-          // and should be opened on-demand when user double-clicks a node
-          if (layoutToLoad) {
-            this.filterCodePanelsFromLayout(layoutToLoad);
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to parse saved layout:', error);
-        localStorage.removeItem(STORAGE_KEY);
+        // Remove code panels from saved layout - they don't preserve nodeId params
+        // and should be opened on-demand when user double-clicks a node
+        this.filterCodePanelsFromLayout(layoutToLoad);
       }
     }
 
@@ -829,14 +851,20 @@ class DockviewStore {
     }
 
     try {
-      this._api.fromJSON(layoutToLoad);
-      this.restoreFolds(layoutToLoad);
+      this._restoring = true;
+      try {
+        this._api.fromJSON(layoutToLoad);
+        this.restoreFolds(layoutToLoad);
+      } finally {
+        this._restoring = false;
+      }
     } catch (error) {
       console.warn('Failed to load layout:', error);
+      this._incomingFolds = undefined;
 
-      // If the saved layout failed, clear it and try default
+      // If the saved layout failed, keep it recoverable, then try default
       if (isFromStorage) {
-        localStorage.removeItem(STORAGE_KEY);
+        preserveFailedWorkspace(layoutToLoad, error);
         try {
           this._api.fromJSON(this.getDefaultLayout());
         } catch (defaultError) {
@@ -850,6 +878,23 @@ class DockviewStore {
         this.createDefaultPanels();
       }
     }
+  }
+
+  /** This browser's cached workspace for the current project, or null. */
+  private readCachedWorkspace(): StoredWorkspace | null {
+    try {
+      const raw = localStorage.getItem(layoutCacheKey());
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (isStoredWorkspace(parsed)) return parsed;
+      if (parsed && typeof parsed === 'object' && 'grid' in parsed) {
+        return { version: 1, layout: parsed, savedAt: new Date(0).toISOString() };
+      }
+    } catch (error) {
+      console.warn('Failed to parse saved layout:', error);
+      try { localStorage.setItem(`${layoutCacheKey()}:failed`, localStorage.getItem(layoutCacheKey()) ?? ''); } catch { /* blocked */ }
+    }
+    return null;
   }
 
   /**
@@ -1101,6 +1146,7 @@ class DockviewStore {
    */
   dispose(): void {
     this.saveLayout();
+    void flushWorkspace();
     this._api?.dispose();
     this._api = null;
     this._activePanel = null;

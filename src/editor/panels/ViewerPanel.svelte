@@ -12,6 +12,7 @@
     reconcilePanelLock,
     resolveLockedNode,
     restorePanelLock,
+    unlockPanel,
   } from '../dockview/renderer';
   import { graphStructure } from '../stores/graphStructure';
   import { dockviewStore } from '../dockview/dockview-store.svelte';
@@ -28,7 +29,7 @@
 
   // A lock saved with the layout comes back as an id; the node binds once
   // the graph holding it has loaded.
-  if (panelParams?.lockedNodeId) restorePanelLock(panelId, panelParams.lockedNodeId);
+  if (panelParams?.lockedNodeId) restorePanelLock(panelId, panelParams.lockedNodeId, panelParams.lockedNodePath ?? null);
 
   // The node to actually display (locked or selected)
   $: lockState = $panelLockStore.get(panelId);
@@ -40,6 +41,13 @@
       })())
     : null;
   $: displayNode = isLocked ? lockedNode : selectedNode;
+  // Pinned to a node the loaded graph does not have: say so, and keep the pin
+  // (it binds again if the node comes back), rather than quietly falling back
+  // to the selection.
+  $: missingNodeId = isLocked && !lockedNode && !lockState?.lockedAnnotationId
+    && resolveLockedNode(lockState!, graph).kind === 'missing'
+    ? (lockState?.lockedNodeId ?? null)
+    : null;
 
   // Follow a rename or a rebuilt graph; drop the lock when its node is
   // deleted. Subscriptions rather than a `$:` block, because a store written
@@ -56,13 +64,15 @@
 
   // Persist the lock with the layout (the layout autosaves panel params).
   let persistedLockId: string | undefined = panelParams?.lockedNodeId;
+  let persistedLockPath: string | undefined = panelParams?.lockedNodePath;
   $: {
-    const nextId = lockState?.isLocked && !lockState.lockedAnnotationId
-      ? (lockState.lockedNode?.id ?? lockState.lockedNodeId ?? undefined)
-      : undefined;
-    if (nextId !== persistedLockId && panelApi?.updateParameters) {
+    const pinned = lockState?.isLocked && !lockState.lockedAnnotationId;
+    const nextId = pinned ? (lockState!.lockedNode?.id ?? lockState!.lockedNodeId ?? undefined) : undefined;
+    const nextPath = pinned ? (lockState!.lockedNodePath ?? undefined) : undefined;
+    if ((nextId !== persistedLockId || nextPath !== persistedLockPath) && panelApi?.updateParameters) {
       persistedLockId = nextId;
-      panelApi.updateParameters({ lockedNodeId: nextId });
+      persistedLockPath = nextPath;
+      panelApi.updateParameters({ lockedNodeId: nextId, lockedNodePath: nextPath });
       // The layout otherwise autosaves every 30 s; a lock should survive a
       // reload straight after it was set.
       dockviewStore.saveLayout();
@@ -100,6 +110,12 @@
 
 <div class="panel-wrapper" data-viewer-drop={panelId}>
   <Viewer {graph} selectedNode={displayNode} selectedAnnotation={resolvedAnnotation} />
+  {#if missingNodeId}
+    <div class="missing-node" role="status">
+      <span>Pinned to <code>{missingNodeId}</code>, which is not in this graph.</span>
+      <button type="button" on:click={() => unlockPanel(panelId)}>Unpin</button>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -119,6 +135,35 @@
     border: 2px solid var(--accent);
     background: color-mix(in oklch, var(--accent) 10%, transparent);
     pointer-events: none;
+  }
+
+  .missing-node {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-subtle);
+    background: var(--surface-void);
+  }
+
+  .missing-node code {
+    color: var(--text-primary);
+  }
+
+  .missing-node button {
+    font: inherit;
+    color: var(--text-secondary);
+    background: var(--surface-panel-alt);
+    border: 1px solid var(--border-subtle);
+    border-radius: 3px;
+    padding: 2px 10px;
+    cursor: pointer;
   }
 
   :global(.cascade-tab.cascade-viewer-drop-target) {

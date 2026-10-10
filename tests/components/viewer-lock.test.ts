@@ -98,10 +98,32 @@ describe('viewer node locks', () => {
     expect(get(panelLockStore).get('v')?.lockedNode).toBe(b);
   });
 
-  it('a restored lock whose node did not survive the reload unlocks', () => {
+  it('a restored lock whose node is not in the loaded graph is kept as missing, and binds when it appears', () => {
+    // Marcus, 2026-10-10: pinned viewers kept coming back as plain Viewers.
+    // Another project on the same origin, or a graph rewritten on disk, must
+    // never unpin a viewer.
     restorePanelLock('v', 'never-saved');
-    reconcilePanelLock('v', sketch().graph);
-    expect(get(panelLockStore).has('v')).toBe(false);
+    const { graph } = sketch();
+    reconcilePanelLock('v', graph);
+    const lock = get(panelLockStore).get('v')!;
+    expect(lock.isLocked).toBe(true);
+    expect(lock.lockedNodeId).toBe('never-saved');
+    expect(resolveLockedNode(lock, graph).kind).toBe('missing');
+
+    const late = new Node('never-saved', 'project.noise', graph);
+    graph.addElement(late);
+    reconcilePanelLock('v', graph);
+    expect(get(panelLockStore).get('v')?.lockedNode).toBe(late);
+  });
+
+  it('a lock bound in one graph is kept when a different graph without it replaces it', () => {
+    const first = sketch();
+    lockPanelToNode('v', first.a, first.graph);
+    const other = new Graph();
+    other.addElement(new Node('unrelated', 'project.noise', other));
+    reconcilePanelLock('v', other);
+    expect(get(panelLockStore).get('v')?.lockedNodeId).toBe('render-composite');
+    expect(resolveLockedNode(get(panelLockStore).get('v')!, other).kind).toBe('missing');
   });
 
   it('titles the tab with what it shows', () => {
@@ -126,7 +148,7 @@ describe('ViewerPanel', () => {
     lockPanelToNode('v', a, graph);
     await tick();
     expect(api.setTitle).toHaveBeenLastCalledWith('Viewer · render-composite');
-    expect(api.updateParameters).toHaveBeenLastCalledWith({ lockedNodeId: 'render-composite' });
+    expect(api.updateParameters).toHaveBeenLastCalledWith({ lockedNodeId: 'render-composite', lockedNodePath: '/render-composite' });
 
     setSharedContext(context(graph, b));
     await tick();
@@ -135,7 +157,7 @@ describe('ViewerPanel', () => {
     unlockPanel('v');
     await tick();
     expect(api.setTitle).toHaveBeenLastCalledWith('Viewer · noise');
-    expect(api.updateParameters).toHaveBeenLastCalledWith({ lockedNodeId: undefined });
+    expect(api.updateParameters).toHaveBeenLastCalledWith({ lockedNodeId: undefined, lockedNodePath: undefined });
   });
 
   it('restores a lock from its saved panel params', async () => {
@@ -148,7 +170,39 @@ describe('ViewerPanel', () => {
     await tick();
     expect(get(panelLockStore).get('v')?.lockedNode).toBe(a);
     expect(api.setTitle).toHaveBeenLastCalledWith('Viewer · render-composite');
-    expect(api.updateParameters).not.toHaveBeenCalledWith({ lockedNodeId: undefined });
+    expect(api.updateParameters).not.toHaveBeenCalledWith(expect.objectContaining({ lockedNodeId: undefined }));
+  });
+
+  it('shows a pinned node the graph does not have as missing, keeps the pin, and can unpin', async () => {
+    const { graph, b } = sketch();
+    setSharedContext(context(graph, b));
+    const api = panelApi();
+    const { container } = render(ViewerPanel, {
+      props: { panelId: 'v', panelApi: api, panelParams: { id: 'v', type: 'viewer', title: 'Viewer', lockedNodeId: 'gone-node' } },
+    });
+    await tick();
+    expect(container.querySelector('.missing-node')?.textContent).toContain('gone-node');
+    expect(get(panelLockStore).get('v')?.isLocked).toBe(true);
+    expect(api.updateParameters).not.toHaveBeenCalledWith(expect.objectContaining({ lockedNodeId: undefined }));
+    (container.querySelector('.missing-node button') as HTMLButtonElement).click();
+    await tick();
+    expect(get(panelLockStore).has('v')).toBe(false);
+    expect(container.querySelector('.missing-node')).toBeNull();
+  });
+
+  it('waits, without unpinning, while the graph has not loaded yet', async () => {
+    sharedContextStore.set(null);
+    const api = panelApi();
+    const { container } = render(ViewerPanel, {
+      props: { panelId: 'v', panelApi: api, panelParams: { id: 'v', type: 'viewer', title: 'Viewer', lockedNodeId: 'noise' } },
+    });
+    await tick();
+    expect(container.querySelector('.missing-node')).toBeNull();
+    const { graph, b } = sketch();
+    setSharedContext(context(graph, null));
+    await tick();
+    expect(get(panelLockStore).get('v')?.lockedNode).toBe(b);
+    expect(api.setTitle).toHaveBeenLastCalledWith('Viewer · noise');
   });
 
   it('unlocks without a crash when the locked node is deleted', async () => {

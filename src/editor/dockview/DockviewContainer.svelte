@@ -28,6 +28,7 @@
 
   // Import Dockview styles
   import 'dockview/dist/styles/dockview.css';
+  import { prepareWorkspace } from './workspacePersistence';
 
   const dispatch = createEventDispatcher();
 
@@ -49,7 +50,6 @@
   export let onRecordHistory: (() => void) | undefined = undefined;
 
   let containerEl: HTMLElement;
-  let saveInterval: ReturnType<typeof setInterval> | null = null;
 
   // Create shared context for panels
   $: context = {
@@ -207,22 +207,20 @@
       setProjectPanelTypes([]);
     }
 
+    // The project's saved workspace (its `<name>.workspace.json`) is fetched
+    // before the dock is built, so the first layout is the saved one.
+    await prepareWorkspace();
+
     // Set callback for add panel button
     dockviewStore.onAddPanelClick = handleAddPanelClick;
 
     // Initialize Dockview
     dockviewStore.initialize(containerEl);
 
-    // Auto-save layout on changes
-    saveInterval = setInterval(() => {
-      dockviewStore.saveLayout();
-    }, 30000); // Save every 30 seconds
+    // The layout saves itself on every change (dockviewStore.initialize).
   });
 
   onDestroy(() => {
-    if (saveInterval) {
-      clearInterval(saveInterval);
-    }
     dockviewStore.onAddPanelClick = null;
     dockviewStore.dispose();
   });

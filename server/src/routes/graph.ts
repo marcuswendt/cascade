@@ -10,6 +10,8 @@ import type { ProjectRoot } from '../project.js';
 import { PathSafetyError } from '../pathSafety.js';
 import { formatCompactJSON } from '../formatCascadeJson.js';
 import { autoCommit, listFileVersions, isFileDirty, readFileAtVersion } from '../git.js';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 function handleError(res: import('express').Response, err: unknown) {
   if (err instanceof PathSafetyError) {
@@ -71,6 +73,41 @@ export function createGraphRouter(project: ProjectRoot): Router {
     }
   });
 
+  // The Studio workspace for one graph: panel layout, which viewers exist and
+  // what each is pinned to. A sidecar beside the document
+  // (`<name>.workspace.json`) rather than browser storage, which is keyed by
+  // origin: kuro, localhost and 127.0.0.1 are three different stores, and every
+  // project served on the same host:port shared one. Never auto-committed —
+  // it is how the desk is arranged, not part of the work.
+  router.get('/:filename/workspace', async (req, res) => {
+    try {
+      const content = await fs.readFile(workspacePath(project, req.params.filename), 'utf-8');
+      res.type('application/json').send(content);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  router.put('/:filename/workspace', async (req, res) => {
+    try {
+      const body = req.body;
+      if (!body || typeof body !== 'object' || Array.isArray(body) || !body.layout || typeof body.layout !== 'object') {
+        res.status(400).json({ error: 'a workspace is an object with a layout' });
+        return;
+      }
+      // `?slot=failed` keeps a workspace that could not be restored, so the
+      // default layout that replaces it never overwrites the only copy.
+      const slot = req.query.slot === 'failed' ? 'failed' : null;
+      const target = workspacePath(project, req.params.filename, slot);
+      const temporary = `${target}.${process.pid}.tmp`;
+      await fs.writeFile(temporary, JSON.stringify(body, null, 1), 'utf-8');
+      await fs.rename(temporary, target);
+      res.json({ ok: true, file: path.basename(target) });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
   // Version history for one graph — every commit that touched it, newest
   // first, plus whether the file on disk has changes no version holds yet.
   router.get('/:filename/versions', async (req, res) => {
@@ -116,6 +153,15 @@ export function createGraphRouter(project: ProjectRoot): Router {
   });
 
   return router;
+}
+
+/** `<stem>.workspace.json` beside `<stem>.cascade`, confined to the project. */
+export function workspacePath(project: ProjectRoot, filename: string, slot: 'failed' | null = null): string {
+  if (!filename.endsWith('.cascade') || filename !== path.basename(filename)) {
+    throw new PathSafetyError(`not a .cascade file: ${filename}`);
+  }
+  const stem = filename.slice(0, -'.cascade'.length);
+  return project.resolve(`${stem}.workspace${slot ? `.${slot}` : ''}.json`);
 }
 
 /**

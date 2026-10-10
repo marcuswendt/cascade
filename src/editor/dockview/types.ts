@@ -22,6 +22,8 @@ export interface CascadePanelParams {
   sourceNodeId?: string;
   /** A viewer pinned to one node; persisted with the layout. */
   lockedNodeId?: string;
+  /** That node's path, the fallback when the id alone does not find it. */
+  lockedNodePath?: string;
 }
 
 // Shared context passed to all panels
