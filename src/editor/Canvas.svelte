@@ -39,22 +39,33 @@
   let subscribedScheduler: typeof graph.scheduler | undefined;
   let unsubscribeScheduler: (() => void) | undefined;
   let cookRevision = 0;
+  let cookFrame: number | null = null;
 
   // The scheduler owns cook state. This subscription only invalidates the
   // presentation when that state changes; it does not mirror or reinterpret it.
+  //
+  // A cook of N nodes emits two or three transitions per node, and every bump
+  // of cookRevision re-renders the whole canvas, every wire included. So the
+  // bumps are folded into one per animation frame: at 100 nodes the unfolded
+  // version was a 2.5 s stall at startup and 1.4-2.8 s on a selection that
+  // cooked its upstream chain. Nothing is drawn between frames anyway.
   $: {
     const scheduler = graph.scheduler;
     if (scheduler !== subscribedScheduler) {
       unsubscribeScheduler?.();
       subscribedScheduler = scheduler;
       unsubscribeScheduler = scheduler.subscribe(() => {
-        cookRevision += 1;
+        cookFrame ??= requestAnimationFrame(() => {
+          cookFrame = null;
+          cookRevision += 1;
+        });
       });
     }
   }
 
   onDestroy(() => {
     unsubscribeScheduler?.();
+    if (cookFrame !== null) cancelAnimationFrame(cookFrame);
     if (selectionFrame !== null) cancelAnimationFrame(selectionFrame);
   });
 
@@ -734,6 +745,8 @@
   }
 
   $: nodePositions = positionsAfterStructureChange($graphStructure, nodes);
+  // Read by every wire so it re-measures when a node moves; a Map, not a find per wire.
+  $: nodePositionById = new Map(nodePositions.map(position => [position.id, position]));
   
   // Track annotation positions to force connection re-renders when annotations move or load
   // Create independent objects to prevent any reference sharing issues
@@ -1282,26 +1295,20 @@
       };
     }
     
-    // Check for connection hover (for scissors icon)
-    if (!connectingFrom && !draggingNode && !draggingAnnotation && !isSelecting) {
+    // Connection hover, for the scissors icon. The hit test measures every
+    // wire, and its result is only used with Ctrl/Cmd held, so it runs only
+    // then and never during a pan: unconditionally it was 60 % of a pan's JS
+    // and 2.9 ms of every mousemove at 180 wires.
+    const isCtrlPressed = e.ctrlKey || e.metaKey; // from the event: more reliable than tracking
+    if (isCtrlPressed && !isPanning && !connectingFrom && !draggingNode && !draggingAnnotation && !isSelecting) {
       const rect = canvas.getBoundingClientRect();
       const mouseX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
       const mouseY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
-      
-      // Check Ctrl key state from event (more reliable than tracking)
-      const isCtrlPressed = e.ctrlKey || e.metaKey;
-      
-      // Check if mouse is over any connection
       const hovered = findConnectionAtPoint(mouseX, mouseY);
-      if (hovered && isCtrlPressed) {
-        hoveredConnection = {
-          connectionId: hovered.id,
-          position: { x: mouseX, y: mouseY }
-        };
-      } else {
-        hoveredConnection = null;
-      }
-    } else {
+      hoveredConnection = hovered
+        ? { connectionId: hovered.id, position: { x: mouseX, y: mouseY } }
+        : null;
+    } else if (hoveredConnection !== null) {
       hoveredConnection = null;
     }
   }
@@ -3557,12 +3564,34 @@ export function execute(node, graph) {
     dispatch('openNodePanel', { x: e.clientX, y: e.clientY });
   }
   
+  /**
+   * Port elements by `nodeId\u0000portId`, filled on first lookup.
+   *
+   * Every wire asks for two port elements on every canvas render, and a
+   * canvas-wide attribute querySelector per end was ~690 ms of the 2.5 s
+   * startup stall at 100 nodes. An entry is trusted only while the element is
+   * still in this canvas and still carries the same ids; a port that unmounted
+   * or was re-pointed falls through to the query and is re-cached.
+   */
+  const portElements = new Map<string, HTMLElement>();
+
   function getPortElement(nodeId: string, portId: string): HTMLElement | null {
     if (!canvas) return null;
 
+    const key = `${nodeId}\u0000${portId}`;
+    const cached = portElements.get(key);
+    if (cached && cached.isConnected && cached.dataset.nodeId === nodeId
+        && cached.dataset.portId === portId && canvas.contains(cached)) {
+      return cached;
+    }
+
     // First try to find the element directly
     let element = canvas.querySelector(`[data-node-id="${nodeId}"][data-port-id="${portId}"]`) as HTMLElement;
-    if (element) return element;
+    if (element) {
+      portElements.set(key, element);
+      return element;
+    }
+    portElements.delete(key);
 
     // If not found, check if this is a variadic port - look for a variadic group that contains this port
     // The portId would be in the data-variadic-ports attribute
@@ -4418,8 +4447,8 @@ export function execute(node, graph) {
          at full brightness drawn first still ends up under every dimmed one
          crossing it, which is the opposite of the point. -->
     {#each orderedConnections as conn (conn.id)}
-      {@const fromNodePos = nodePositions.find(np => np.id === conn.from.nodeId)}
-      {@const toNodePos = nodePositions.find(np => np.id === conn.to.nodeId)}
+      {@const fromNodePos = nodePositionById.get(conn.from.nodeId)}
+      {@const toNodePos = nodePositionById.get(conn.to.nodeId)}
       <!-- {@const fromAnnPos = annotationPositions.find(ap => `ann_${ap.id}` === conn.from.nodeId)}
       {@const toAnnPos = annotationPositions.find(ap => `ann_${ap.id}` === conn.to.nodeId)} -->
       {@const fromPos = getPortPosition(conn.from.nodeId, conn.from.portId, 'output')}
