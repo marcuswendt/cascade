@@ -47,7 +47,9 @@ const workspace = { version: 1, layout: { grid: {}, panels: { 'viewer-red': { pa
 describe('graph workspace sidecar', () => {
   it('is absent until saved, then round-trips beside the graph without touching it', async () => {
     const { base, root } = await serve();
-    expect((await fetch(`${base}/api/graph/art.cascade/workspace`)).status).toBe(404);
+    const absent = await fetch(`${base}/api/graph/art.cascade/workspace`);
+    expect(absent.status).toBe(200);
+    expect(await absent.json()).toBeNull();
     const put = await fetch(`${base}/api/graph/art.cascade/workspace`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(workspace),
     });
@@ -55,6 +57,13 @@ describe('graph workspace sidecar', () => {
     expect(fs.existsSync(path.join(root, 'art.workspace.json'))).toBe(true);
     expect(await (await fetch(`${base}/api/graph/art.cascade/workspace`)).json()).toEqual(workspace);
     expect(JSON.parse(fs.readFileSync(path.join(root, 'art.cascade'), 'utf-8')).nodes).toEqual([]);
+  });
+
+  it('still answers 404 for a graph that does not exist', async () => {
+    const { base } = await serve();
+    const missing = await fetch(`${base}/api/graph/ghost.cascade/workspace`);
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: 'not found' });
   });
 
   it('keeps a failed restore in its own slot', async () => {

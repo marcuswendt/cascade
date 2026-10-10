@@ -24,7 +24,7 @@ function server(saved: unknown, root = '/projects/a') {
     calls.push({ url, init });
     if (url === '/api/graph') return new Response(JSON.stringify({ root, default: 'art.cascade' }));
     if (url.startsWith('/api/graph/art.cascade/workspace') && !init?.method) {
-      return saved ? new Response(JSON.stringify(saved)) : new Response('{}', { status: 404 });
+      return new Response(JSON.stringify(saved ?? null));
     }
     return new Response('{"ok":true}');
   }) as unknown as typeof fetch;
@@ -56,6 +56,36 @@ describe('studio workspace persistence', () => {
     const { fetcher } = server(null);
     localStorage.setItem(LEGACY_LAYOUT_KEY, JSON.stringify(layoutB));
     expect((await prepareWorkspace(fetcher))?.layout).toEqual(layoutB);
+  });
+
+  it('treats "nothing saved yet" as a normal state: no warning, the default layout', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { fetcher } = server(null);
+      expect(await prepareWorkspace(fetcher)).toBeNull();
+      const legacy = vi.fn(async (url: string) => url === '/api/graph'
+        ? new Response(JSON.stringify({ root: '/projects/a', default: 'art.cascade' }))
+        : new Response('{"error":"not found"}', { status: 404 })) as unknown as typeof fetch;
+      expect(await prepareWorkspace(legacy)).toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('warns when the server fails for real, and falls back to the cache', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      localStorage.setItem(`${LEGACY_LAYOUT_KEY}:/projects/a/art.cascade`,
+        JSON.stringify({ version: 1, layout: layoutB, savedAt: '2026-10-10T11:00:00.000Z' }));
+      const broken = vi.fn(async (url: string) => url === '/api/graph'
+        ? new Response(JSON.stringify({ root: '/projects/a', default: 'art.cascade' }))
+        : new Response('{"error":"boom"}', { status: 500 })) as unknown as typeof fetch;
+      expect((await prepareWorkspace(broken))?.layout).toEqual(layoutB);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('HTTP 500'));
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('saves on change: cache at once, one debounced PUT to the sidecar', async () => {

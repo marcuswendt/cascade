@@ -79,9 +79,22 @@ export function createGraphRouter(project: ProjectRoot): Router {
   // origin: kuro, localhost and 127.0.0.1 are three different stores, and every
   // project served on the same host:port shared one. Never auto-committed —
   // it is how the desk is arranged, not part of the work.
+  //
+  // No sidecar yet is the normal state of every graph until its first save, so
+  // it answers 200 with `null` rather than 404: a 404 prints red in the
+  // browser console on every first open. 404 stays for a graph that does not
+  // exist.
   router.get('/:filename/workspace', async (req, res) => {
     try {
-      const content = await fs.readFile(workspacePath(project, req.params.filename), 'utf-8');
+      const target = workspacePath(project, req.params.filename);
+      await fs.access(project.resolve(req.params.filename));
+      let content: string;
+      try {
+        content = await fs.readFile(target, 'utf-8');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') { res.json(null); return; }
+        throw err;
+      }
       res.type('application/json').send(content);
     } catch (err) {
       handleError(res, err);

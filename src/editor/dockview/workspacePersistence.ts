@@ -130,9 +130,13 @@ export async function prepareWorkspace(fetcher: typeof fetch = fetch): Promise<S
   if (scope) {
     try {
       const response = await fetcher(endpoint(scope));
+      // 200 `null` is "nothing saved yet" (the graph's first open). A 404 is
+      // the same from a server older than that answer, so neither warns.
       if (response.ok) {
         const value = await response.json();
         if (isStoredWorkspace(value)) remote = value;
+      } else if (response.status !== 404) {
+        console.warn(`[workspace] could not fetch the saved workspace (HTTP ${response.status}); using the cache`);
       }
     } catch (error) {
       console.warn('[workspace] could not fetch the saved workspace; using the cache:', error);
