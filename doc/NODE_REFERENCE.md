@@ -173,6 +173,54 @@ Runs on `portable`.
 | --- | --- | --- | --- |
 | `output` | `any` |  |  |
 
+### `cascade.core.Pack`
+
+Pack — Collects inputs into a bundle, one named field each
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `inputs` | `any` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `names` | `string` | `""` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `bundle` | `bundle` |  |  |
+
+### `cascade.core.Pick`
+
+Pick — Reads one field of a bundle
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `bundle` | `bundle` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `field` | `string` | `""` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `any` |  |  |
+
 ### `cascade.core.Previous`
 
 Previous — The previous step's state, inside a Feedback container. The first step gets the container's initial value.

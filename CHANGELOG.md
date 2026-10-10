@@ -6,6 +6,18 @@ Notable changes to Cascade. Newest first.
 
 ### Added
 
+- **Bundle ports.** A node can export one `bundle` port carrying named fields
+  instead of a dozen loose outputs. A producer declares `fields` (name to type)
+  and an optional `schema`; a consumer declares the `fields` it reads, sees only
+  those, and in Studio re-cooks only when one of them changed (per-field
+  versions on top of early cutoff). Expressions read a wired bundle's fields
+  with `ch("format.dpi")`. `cascade.core.Pick` and `cascade.core.Pack` convert
+  between bundles and single values. `cascade check` reports unknown fields with
+  the nearest declared name, and refuses an absolute read of another node's
+  bundle. Studio draws a bundle as one neutral port whose hover and Inspector
+  list its fields and values. Bundles reach Python stages as dicts. See
+  "Bundle ports" in `doc/PROJECT_AUTHORING.md`.
+
 - **Node previews on the canvas.** A project that sets
   `settings.nodePreviews: true` in `cascade.json` shows each node's first
   output as a readable preview card on the graph, refreshed per node cook. The
@@ -31,6 +43,11 @@ Notable changes to Cascade. Newest first.
   panel with a draft to review and send, never sending it.
 
 ### Changed
+
+- **Dragging a node re-renders only what moved.** Each node reads its position
+  through its own motion store, and the graph is published once when the drag
+  ends rather than copied every frame. At 100 nodes a pointer move costs 1.6 ms
+  of script instead of 8.9 (5.6 ms of task time instead of 13.1).
 
 - **Node drags apply once per frame.** Moving a node or a selection batches
   pointer moves to one update per animation frame instead of one per event.

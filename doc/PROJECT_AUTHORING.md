@@ -269,6 +269,58 @@ The reason is not tidiness. Two floats cannot connect to a `vec2` output, take t
 
 Keep them separate only when the components differ in kind or in range — a `width` and a `depth` that mean different things are two props, not a `vec2`.
 
+#### Bundle ports
+
+When a node would fan out more than three or four outputs that travel together, export one `bundle` instead: a single port carrying named fields. Each field is any Cascade type; an image or cache entry travels as its reference (`ImageRef`, `AssetRef`), never its pixels.
+
+```ts
+// Producer: declares the fields it carries, and optionally a schema name.
+outputs: {
+  format: {
+    kind: 'data', type: 'bundle', schema: 'format',
+    fields: {
+      size: 'vec2i',
+      size_mm: 'vec2',
+      dpi: { type: 'float', description: 'Resolution of the working canvas' },
+      paper: 'string',
+    },
+  },
+},
+// in execute:
+context.outputs.format.set({ size, size_mm, dpi, paper });
+```
+
+```ts
+// Consumer: declares the fields it reads.
+inputs: {
+  format: { kind: 'data', type: 'bundle', schema: 'format', fields: ['size', 'paper'] },
+},
+// in execute:
+const { size, paper } = context.inputs.format ?? {};
+```
+
+- **`fields` on an output** maps each field to its type. A producer may set only declared fields; a declared field may be left unset. Without `fields` the bundle is untyped and nothing can check it.
+- **`fields` on an input** lists the fields the node reads. The node then sees only those, and Studio re-cooks it only when one of them changed: a change to `dpi` does not re-cook a consumer that reads `size` and `paper`. Without `fields` a consumer depends on the whole bundle. Field access is not tracked at run time, so declare the selection when the node is expensive.
+- **`schema`** names the bundle's shape. Two named schemas must match to connect; a port without one takes any bundle.
+- **Expressions** read a field of a wired bundle input with a dotted path: `ch("format.dpi")`, `chv("format.size_mm")`, `chs("format.paper")`. The path names an input on the same node, not another node's output, so the wire is the dependency and the producer always cooks first. `ch("/spread-format/format.dpi")` is refused by `cascade check`, which says which wire to add. A field read in an expression counts as a declared field for caching.
+- **`cascade.core.Pick`** reads one field (`field` prop) for a node that wants a single value, and **`cascade.core.Pack`** builds a bundle from loose values, one name per input in its comma-separated `names` prop. Pick is cheap and its output only changes when the picked field does, so it is also how a node that cannot declare fields depends on one.
+- **`cascade check`** reports a field that the producer does not declare, in a consumer's `fields`, in an expression, or on a Pick, with the nearest declared name: `dot-layer.radius reads unknown bundle field "dpu" — did you mean "dpi"?`.
+- **Studio** draws a bundle as one port in the neutral wire colour. Hovering it lists every field with its type and current value, and the Inspector shows each field with its own control.
+
+A bundle passed to a Python stage is an ordinary JSON object, so the worker receives a `dict`; reference fields arrive as their small JSON form, e.g. `args["format"]["preview"]["path"]`. A stage that returns a dict can be set straight onto a bundle output:
+
+```ts
+const result = await runStage('signals', { format: context.inputs.format });
+context.outputs.signals.set(result as Record<string, unknown>);
+```
+
+```python
+def signals(args):
+    fmt = args["format"]            # a dict
+    w, h = fmt["size"]
+    return {"brightness": {"path": cache_png(...), "size": [w, h], ...}, "edge_count": 412}
+```
+
 ### dynamic
 
 A dynamic module declares its interface imperatively, inside `execute`, which runs once to discover the interface and again on every cook. There is no `definition` export; `runsOn` and `icon` are plain exports.
