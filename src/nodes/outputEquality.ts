@@ -23,6 +23,16 @@ export function sameOutputValue(previous: unknown, next: unknown, budget = 2_000
   return same(previous, next, state, true);
 }
 
+/**
+ * One bundle field against its previous value. A field is nested inside the
+ * bundle, so a shared plain value counts as the same — a producer that spreads
+ * its previous bundle and changes one field leaves the others' references
+ * alone, and those must not read as changed.
+ */
+export function sameBundleField(previous: unknown, next: unknown, budget = 2_000_000): boolean {
+  return same(previous, next, { remaining: budget }, false);
+}
+
 function isPlain(value: object): boolean {
   const proto = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null || proto === Array.prototype;

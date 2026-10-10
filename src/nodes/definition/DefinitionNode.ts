@@ -12,6 +12,7 @@ import { packagePathToType, registerNodeClasses, registerNodeMetadata, type Node
 import type { Graph } from '../Graph.js';
 import { Node } from '../Node.js';
 import { isGpuHost } from '../../../packages/runtime/src/gpu.js';
+import { bundleValueProblem, selectBundleFields, type BundleFieldDefinitions } from '../../../packages/contracts/src/bundle.js';
 
 const silentProgress: ProgressReporter = { report: () => {} };
 
@@ -47,6 +48,17 @@ function parameterOptions(definition: {
       )),
     } : {}),
     promotable: false,
+  };
+}
+
+/** A bundle port's schema and fields, in the shape Studio's ports carry. */
+function bundlePortOptions(port: { readonly type?: string; readonly schema?: string; readonly fields?: unknown }) {
+  if (port.type !== 'bundle') return {};
+  return {
+    ...(port.schema ? { schema: port.schema } : {}),
+    ...(Array.isArray(port.fields)
+      ? { fieldSelection: port.fields as readonly string[] }
+      : port.fields ? { bundleFields: port.fields as BundleFieldDefinitions } : {}),
   };
 }
 
@@ -111,6 +123,7 @@ export function attachDefinition(
         choices: input.options.map(value => ({ value, label: String(value) })),
       } : {}),
       ...(input.description ? { description: input.description } : {}),
+      ...bundlePortOptions(input),
     });
   }
 
@@ -119,7 +132,7 @@ export function attachDefinition(
       name,
       output.kind === 'trigger' ? 'trigger' : 'param',
       output.kind === 'data'
-        ? { type: output.type as DataType, description: output.description }
+        ? { type: output.type as DataType, description: output.description, ...bundlePortOptions(output) }
         : { description: output.description },
     );
   }
@@ -151,7 +164,10 @@ export function attachDefinition(
         ? pendingTriggers.get(name)
         : input.variadic
           ? node.getVariadicInputs().map(port => port.value ?? undefined)
-          : node.inputs.find(port => port.name === name)?.value;
+          : input.type === 'bundle' && input.fields
+            // Declared fields are the dependency, so they are all it sees.
+            ? selectBundleFields(node.inputs.find(port => port.name === name)?.value, input.fields)
+            : node.inputs.find(port => port.name === name)?.value;
     }
     pendingTriggers.clear();
 
@@ -160,7 +176,15 @@ export function attachDefinition(
       if (!port) throw new Error(`Missing output ${registration.moduleId}.${name}`);
       return [name, output.kind === 'trigger'
         ? { trigger: (payload?: unknown) => port.trigger(payload) }
-        : { set: (value: unknown) => port.setValue(value) }];
+        : {
+          set: (value: unknown) => {
+            if (output.type === 'bundle') {
+              const problem = bundleValueProblem(value, output.fields as BundleFieldDefinitions | undefined);
+              if (problem) throw new Error(`${node.id}.${name} ${problem}`);
+            }
+            port.setValue(value);
+          },
+        }];
     }));
 
     // A GPU node gets a device that is already up, and its own cache scope.

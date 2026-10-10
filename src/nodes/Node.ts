@@ -14,7 +14,8 @@ import {
 import type { Channel, Interpolation, Keyframe, SerializedChannel } from '@cascade/runtime/animation';
 import { resolvePropBinding } from '@cascade/runtime/params';
 import { asError } from '../utils/thrownError.js';
-import { sameOutputValue } from './outputEquality.js';
+import { sameBundleField, sameOutputValue } from './outputEquality.js';
+import { bundleFieldReferences } from '../../packages/runtime/src/expressions/bundlePaths.js';
 
 export type { Channel as ParamChannel, Interpolation, Keyframe };
 
@@ -379,6 +380,62 @@ export class Node {
 
   private bumpOutputVersion(portId: string): void {
     this.outputVersions.set(portId, (this.outputVersions.get(portId) ?? 0) + 1);
+    // Without field-level knowledge, every field may have changed.
+    const fields = this.bundleFieldVersions.get(portId);
+    if (fields) fields.epoch += 1;
+  }
+
+  /**
+   * Per bundle output: a version per field, plus an epoch bumped whenever a
+   * change could not be attributed to fields (an output the cook did not set,
+   * the same object committed twice). A consumer that declares the fields it
+   * reads compares these instead of the port's version, so a change to one
+   * field does not re-cook the consumers of the others.
+   */
+  private bundleFieldVersions = new Map<string, { epoch: number; fields: Map<string, number> }>();
+
+  /** @internal The version of one field of a bundle output. */
+  outputFieldVersion(portId: string, field: string): string {
+    const entry = this.bundleFieldVersions.get(portId);
+    return entry ? `${entry.epoch}.${entry.fields.get(field) ?? 0}` : `0.0`;
+  }
+
+  /** Bump the versions of the fields a bundle commit changed. */
+  private bumpBundleFields(portId: string, previous: unknown, next: unknown): void {
+    let entry = this.bundleFieldVersions.get(portId);
+    if (!entry) {
+      entry = { epoch: 0, fields: new Map() };
+      this.bundleFieldVersions.set(portId, entry);
+    }
+    const prev = previous !== null && typeof previous === 'object' ? previous as Record<string, unknown> : null;
+    const curr = next !== null && typeof next === 'object' ? next as Record<string, unknown> : null;
+    if (!prev || !curr || prev === curr) {
+      entry.epoch += 1;
+      return;
+    }
+    const has = Object.prototype.hasOwnProperty;
+    for (const field of new Set([...Object.keys(prev), ...Object.keys(curr)])) {
+      const changed = has.call(prev, field) !== has.call(curr, field)
+        || !sameBundleField(prev[field], curr[field]);
+      if (changed) entry.fields.set(field, (entry.fields.get(field) ?? 0) + 1);
+    }
+  }
+
+  /**
+   * The fields of a bundle input this node depends on, or null for the whole
+   * bundle. Declared by the node (`fieldSelection`), plus whatever its
+   * parameter expressions read through `ch("port.field")`. A node that does
+   * not declare its fields may read any of them, so it depends on all.
+   */
+  bundleFieldsRead(input: InputPort): string[] | null {
+    if (input.dataType !== 'bundle' || !input.options?.fieldSelection) return null;
+    const fields = new Set(input.options.fieldSelection);
+    for (const prop of Object.values(this.props)) {
+      if (!prop?.expression) continue;
+      for (const reference of bundleFieldReferences(prop.expression))
+        if (reference.port === input.name) fields.add(reference.field);
+    }
+    return [...fields].sort();
   }
 
   /** @internal The scheduler calls this on the node an invalidation started at. */
@@ -396,10 +453,14 @@ export class Node {
         parts.push(`${input.id}=${this.getValueFingerprint(input.value)}`);
         continue;
       }
+      const fields = this.bundleFieldsRead(input);
       for (const connection of input.connections) {
         const upstream = this.graph.getNode(connection.from.nodeId);
         if (!upstream) return null;
-        parts.push(`${input.id}<${connection.from.nodeId}:${connection.from.portId}@${upstream.outputVersion(connection.from.portId)}`);
+        const source = `${input.id}<${connection.from.nodeId}:${connection.from.portId}`;
+        parts.push(fields
+          ? `${source}{${fields.map(field => `${field}@${upstream.outputFieldVersion(connection.from.portId, field)}`).join(',')}}`
+          : `${source}@${upstream.outputVersion(connection.from.portId)}`);
       }
     }
     return parts.join('|');
@@ -663,7 +724,14 @@ export class Node {
   }
 
   private commitOutputValue<T>(port: OutputPort<T>, value: T): void {
-    if (!sameOutputValue(port.value, value)) this.bumpOutputVersion(port.id);
+    if (!sameOutputValue(port.value, value)) {
+      if (port.dataType === 'bundle') {
+        this.outputVersions.set(port.id, (this.outputVersions.get(port.id) ?? 0) + 1);
+        this.bumpBundleFields(port.id, port.value, value);
+      } else {
+        this.bumpOutputVersion(port.id);
+      }
+    }
     port.value = value;
     for (const connection of port.connections) {
       const targetNode = this.graph.getNode(connection.to.nodeId);

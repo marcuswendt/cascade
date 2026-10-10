@@ -158,6 +158,13 @@ export interface PortOptions {
   hidden?: boolean;
   published?: boolean;
   multiline?: boolean;
+  /** Bundle ports: the schema name, if any (`format`, `signals`). */
+  schema?: string;
+  /** Bundle outputs: the fields the bundle carries, name to type. */
+  bundleFields?: Readonly<Record<string, string | Readonly<{ type: string; description?: string }>>>;
+  /** Bundle inputs: the fields this node reads. Declared, the node sees only
+   *  these and re-cooks only when one of them changed. */
+  fieldSelection?: readonly string[];
 }
 
 export interface InputPort<T = any> {

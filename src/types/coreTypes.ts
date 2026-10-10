@@ -61,7 +61,7 @@ export const GEOMETRY_TYPES = ['geometry', 'points', 'lines', 'polyline', 'mesh'
 
 /** Colour is kept apart from vec4: it means something different, it wants a
  *  swatch rather than four number fields, and it carries a colour space. */
-export const OTHER_TYPES = ['color', 'camera', 'scene', 'light', 'asset', 'array', 'object', 'any'] as const;
+export const OTHER_TYPES = ['color', 'camera', 'scene', 'light', 'asset', 'array', 'object', 'bundle', 'any'] as const;
 
 export const CORE_TYPES = CONTRACT_CORE_TYPES;
 
@@ -162,6 +162,9 @@ export const TYPE_COLORS: Record<string, string> = {
   color: 'var(--type-color)',
   array: 'var(--type-array)',
   object: 'var(--type-object)',
+  // Neutral on purpose: a bundle is a container, and its colour should not
+  // compete with the types travelling inside it.
+  bundle: 'var(--type-any)',
   any: 'var(--type-any)',
 };
 

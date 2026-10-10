@@ -26,6 +26,8 @@ import { loadProjectModule, loadEmbeddedModule } from '../engine/nodeModuleLoade
 import { moduleNodeFunction } from './definition/projectDefinition.js';
 import { normalizeColor, isColorValue } from '../utils/colorUtils.js';
 import { canConnect, normalizeType } from '../types/coreTypes.js';
+import { bundleSchemasCompatible, unknownFieldMessage } from '../../packages/contracts/src/bundle.js';
+import { parseBundleFieldPath, remoteBundlePath } from '../../packages/runtime/src/expressions/bundlePaths.js';
 import { CookScheduler } from './CookScheduler.js';
 
 // Current file format version
@@ -693,7 +695,13 @@ export class Graph {
     // vec2i feeds vec2 because nothing is lost; vec2 into vec2i would silently
     // drop the fraction, and texture into image is a GPU readback — both are
     // real operations and belong in the graph rather than happening invisibly.
-    if (canConnect(fromType, toType)) return null;
+    if (canConnect(fromType, toType)) {
+      if (fromType === 'bundle' && toType === 'bundle'
+        && !bundleSchemasCompatible(fromPort.options?.schema, toPort.options?.schema)) {
+        return `Schema mismatch: connecting a ${fromPort.options.schema} bundle to an input that takes ${toPort.options.schema}`;
+      }
+      return null;
+    }
 
     // Legacy pairs from before the core set existed, kept so old graphs load.
     const legacy: Record<string, string[]> = {
@@ -1162,6 +1170,11 @@ export class Graph {
 
         for (const match of matches) {
           const referencedPath = match[1];
+          const bundleWarning = this.bundlePathWarning(node, referencedPath);
+          if (bundleWarning !== undefined) {
+            if (bundleWarning) warnings.push({ location, expression: prop.expression, brokenPath: referencedPath, suggestion: bundleWarning });
+            continue;
+          }
           const resolvedNode = this.resolvePathFromNode(node, referencedPath);
 
           if (!resolvedNode.node) {
@@ -1188,6 +1201,37 @@ export class Graph {
       valid: warnings.length === 0,
       warnings
     };
+  }
+
+  /**
+   * A bundle field path in an expression: undefined when the path is not one,
+   * null when it is and reads a field the producer declares (or one that
+   * cannot be checked), and the problem otherwise.
+   */
+  private bundlePathWarning(node: Node, path: string): string | null | undefined {
+    const remote = remoteBundlePath(path);
+    if (remote) {
+      const owner = this.getNode(remote.node);
+      const output = owner?.outputs.find(port => port.name === remote.port);
+      if (output?.dataType !== 'bundle') return undefined;
+      return `Expressions read bundle fields through a wire: connect ${remote.node}.${remote.port} to a bundle input here and read "${remote.port}.${remote.field}"`;
+    }
+    const reference = parseBundleFieldPath(path);
+    if (!reference) return undefined;
+    const input = node.inputs.find(port => port.name === reference.port);
+    if (!input || input.dataType !== 'bundle') return undefined;
+    const known = this.bundleFieldsFeeding(input);
+    if (!known || known.includes(reference.field)) return null;
+    return unknownFieldMessage(reference.field, known, `${node.id}.${reference.port}`);
+  }
+
+  /** The field names declared by whatever feeds a bundle input, or null. */
+  bundleFieldsFeeding(input: { connections: { from: { nodeId: string; portId: string } }[] }): string[] | null {
+    const connection = input.connections[0];
+    if (!connection) return null;
+    const port = this.getNode(connection.from.nodeId)?.getPort(connection.from.portId);
+    const fields = port?.options?.bundleFields;
+    return fields ? Object.keys(fields) : null;
   }
 
   /**

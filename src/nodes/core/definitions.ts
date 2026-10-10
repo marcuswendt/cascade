@@ -11,7 +11,7 @@
  * had used it in Studio yet. A capability that is present but not reachable —
  * the shape this project keeps rediscovering.
  *
- * Only the four are listed. Switch, Merge, Subnet, Input, Output, Random,
+ * Only these are listed (Pick and Pack, the bundle adapters, joined later). Switch, Merge, Subnet, Input, Output, Random,
  * Remap, Select, Null and Freeze are class-based in Studio and those classes
  * are what every saved graph resolves to; handing the same names to the adapter
  * would swap a working implementation for an untested one.
@@ -19,6 +19,8 @@
 import {
   cameraRegistration,
   feedbackRegistration,
+  packRegistration,
+  pickRegistration,
   previousRegistration,
   timeRegistration,
 } from '../../../packages/runtime/src/builtins/core/index.js';
@@ -29,4 +31,6 @@ registerDefinitionNodes([
   timeRegistration,
   feedbackRegistration,
   previousRegistration,
+  pickRegistration,
+  packRegistration,
 ]);

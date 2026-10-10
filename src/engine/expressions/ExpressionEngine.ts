@@ -22,6 +22,7 @@ import type {
   PathWarning
 } from '@cascade/runtime/expressions';
 import type { Node } from '../../nodes/Node.js';
+import { parseBundleFieldPath } from '../../../packages/runtime/src/expressions/bundlePaths.js';
 import type { Graph } from '../../nodes/Graph.js';
 
 /** Expression context passed to evaluated expressions */
@@ -66,7 +67,8 @@ export class ExpressionEngine extends ExpressionEvaluator<Node> {
       // Relative to current node - it's a param name
       const paramName = path.replace('./', '');
       const prop = fromNode.props[paramName];
-      return prop ? { value: prop.value } : null;
+      if (prop) return { value: prop.value };
+      return this.resolveBundleField(fromNode, paramName);
     }
 
     // Try to resolve as node/param
@@ -78,6 +80,22 @@ export class ExpressionEngine extends ExpressionEvaluator<Node> {
 
     const prop = targetNode.props[paramName];
     return prop ? { value: prop.value } : null;
+  }
+
+  /**
+   * `format.dpi`: field `dpi` of the bundle wired into this node's `format`
+   * input. Read off the input port, so it is whatever the producer committed
+   * on its last cook, which the wire guarantees came first.
+   */
+  private resolveBundleField(node: Node, name: string): { value: unknown } | null {
+    const reference = parseBundleFieldPath(name);
+    if (!reference) return null;
+    const port = node.inputs.find(input => input.name === reference.port);
+    if (!port || port.dataType !== 'bundle') return null;
+    const bundle = port.value;
+    if (bundle === null || typeof bundle !== 'object') return null;
+    if (!Object.prototype.hasOwnProperty.call(bundle, reference.field)) return null;
+    return { value: (bundle as Record<string, unknown>)[reference.field] };
   }
 
   /**
