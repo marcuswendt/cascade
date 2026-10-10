@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
-import { activePanelId, groupResizeAxis, mountPanelTypeIcon, setProjectPanelTypes } from '@/editor/dockview/dockview-store.svelte';
+import { describe, expect, it, vi } from 'vitest';
+import { activePanelId, dockviewStore, groupResizeAxis, mountPanelTypeIcon, setProjectPanelTypes } from '@/editor/dockview/dockview-store.svelte';
 import { createSvelteRenderer, resolvePanelParams } from '@/editor/dockview/renderer';
 
 describe('Dockview v8 integration', () => {
@@ -69,5 +69,30 @@ describe('Dockview v8 integration', () => {
       projectPanelName: 'assets',
       sourceNodeId: 'source',
     });
+  });
+
+  it('uses a project workspace only when the browser has no saved layout', () => {
+    const fromJSON = vi.fn();
+    const projectWorkspace = {
+      grid: { root: { type: 'branch', data: [] }, width: 1000, height: 800, orientation: 'HORIZONTAL' },
+      panels: {},
+    } as never;
+    const savedWorkspace = {
+      grid: { root: { type: 'branch', data: [] }, width: 900, height: 700, orientation: 'HORIZONTAL' },
+      panels: {},
+    } as never;
+    const store = dockviewStore as any;
+    store._api = { fromJSON, getGroup: () => undefined, groups: [] };
+
+    localStorage.removeItem('cascade-dockview-layout');
+    dockviewStore.loadLayout(undefined, projectWorkspace);
+    expect(fromJSON).toHaveBeenLastCalledWith(projectWorkspace);
+
+    localStorage.setItem('cascade-dockview-layout', JSON.stringify(savedWorkspace));
+    dockviewStore.loadLayout(undefined, projectWorkspace);
+    expect(fromJSON).toHaveBeenLastCalledWith(savedWorkspace);
+
+    localStorage.removeItem('cascade-dockview-layout');
+    store._api = null;
   });
 });

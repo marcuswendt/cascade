@@ -28,6 +28,7 @@
 
   // Import Dockview styles
   import 'dockview/dist/styles/dockview.css';
+  import { ensureProjectStudioPreferences } from '../stores/nodePreview';
   import { prepareWorkspace } from './workspacePersistence';
 
   const dispatch = createEventDispatcher();
@@ -209,13 +210,13 @@
 
     // The project's saved workspace (its `<name>.workspace.json`) is fetched
     // before the dock is built, so the first layout is the saved one.
-    await prepareWorkspace();
+    const [{ workspace }] = await Promise.all([ensureProjectStudioPreferences(), prepareWorkspace()]);
 
     // Set callback for add panel button
     dockviewStore.onAddPanelClick = handleAddPanelClick;
 
     // Initialize Dockview
-    dockviewStore.initialize(containerEl);
+    dockviewStore.initialize(containerEl, workspace);
 
     // The layout saves itself on every change (dockviewStore.initialize).
   });

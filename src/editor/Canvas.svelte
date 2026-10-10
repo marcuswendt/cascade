@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { captureGroupDrag, moveGroupDrag, findDropGroup, type GroupDrag } from './groupDrag';
   import { canStartConnection, resolveConnection } from './connectionDirection';
   import { computeGraphFocus, wireRole, nodeEmphasis } from './graphFocus';
   import { onMount, onDestroy, tick, createEventDispatcher } from 'svelte';
@@ -9,6 +10,7 @@
   import NodeUI from './NodeUI.svelte';
   import { StudioGraphController } from './StudioGraphController';
   import { graphStructure } from './stores/graphStructure';
+  import { nodePreviews } from './stores/nodePreview';
   import { ownsKeyboard } from './panelScope';
   import type { Node } from '@/nodes/Node';
   import type { Connection } from '@/types/node.types';
@@ -67,6 +69,22 @@
     unsubscribeScheduler?.();
     if (cookFrame !== null) cancelAnimationFrame(cookFrame);
     if (selectionFrame !== null) cancelAnimationFrame(selectionFrame);
+    if (dragFrame !== null) cancelAnimationFrame(dragFrame);
+  });
+
+  onMount(() => {
+    const moveOutside = (event: MouseEvent) => {
+      if (groupDrag && !canvas.contains(event.target as globalThis.Node)) handleMouseMove(event);
+    };
+    const finishDrag = (event: MouseEvent) => {
+      if (groupDrag) handleMouseUp(event);
+    };
+    window.addEventListener('mousemove', moveOutside);
+    window.addEventListener('mouseup', finishDrag);
+    return () => {
+      window.removeEventListener('mousemove', moveOutside);
+      window.removeEventListener('mouseup', finishDrag);
+    };
   });
 
   // Helper to record history using Canvas's graph reference directly
@@ -691,12 +709,36 @@
   
   // Node dragging state
   let draggingNode: { nodeId: string; offset: { x: number; y: number } } | null = null;
-  let draggingMultiple: { 
-    nodes: Array<{ nodeId: string; startPos: { x: number; y: number } }>;
-    annotations: Array<{ annotationId: string; startPos: { x: number; y: number } }>;
-    offset: { x: number; y: number };
-  } | null = null;
-  
+  let groupDrag: GroupDrag | null = null;
+  let dragMoved = false;
+  let dropTargets = new Set<string>();
+  // The latest pointer of a node drag, applied at most once a frame. Each
+  // application copies graph.nodes and re-measures the drop targets, which at
+  // 100 nodes cost ~19 ms: more than a frame, once per pointer event.
+  let dragFrame: number | null = null;
+  let dragPointer: { clientX: number; clientY: number } | null = null;
+
+  function startGroupDrag(ids: string[]) {
+    groupDrag = captureGroupDrag(graph, ids);
+    dragMoved = false;
+    dropTargets = new Set();
+  }
+
+  function groupDropAssignments() {
+    if (!groupDrag) return [];
+    const moving = new Set(groupDrag.items.map(item => item.id));
+    return groupDrag.roots.map(id => {
+      const element = graph.getElement(id)!;
+      const nodeEl = Array.from(canvas.querySelectorAll<HTMLElement>('.node[data-node-id], .annotation[data-annotation-id]'))
+        .find(el => el.dataset.nodeId === id || el.dataset.annotationId === id);
+      const bounds = nodeEl?.getBoundingClientRect();
+      const width = bounds ? bounds.width / internalTransform.zoom : 120;
+      const height = bounds ? bounds.height / internalTransform.zoom : 80;
+      const center = { x: element.position.x + width / 2, y: element.position.y + height / 2 };
+      return { id, target: findDropGroup(graph, id, center, moving) };
+    });
+  }
+
   // Two-finger panning state
   let touchPanStart: { x: number; y: number; touches: TouchList } | null = null;
   let isWheelPanning = false;
@@ -949,6 +991,32 @@
     }
   }
   
+  /** Apply the pending drag pointer. Also called on mouseup, so the drop
+   *  lands exactly where the pointer was released. */
+  function flushDragMove() {
+    if (dragFrame !== null) cancelAnimationFrame(dragFrame);
+    dragFrame = null;
+    const pointer = dragPointer;
+    dragPointer = null;
+    const drag = draggingNode || (resizingAnnotation ? null : draggingAnnotation);
+    const draggedId = draggingNode?.nodeId || draggingAnnotation?.annotationId;
+    if (!pointer || !drag || !draggedId || !groupDrag || !canvas) return;
+    const start = groupDrag.items.find(item => item.id === draggedId);
+    if (!start) return;
+    const rect = canvas.getBoundingClientRect();
+    const delta = {
+      x: (pointer.clientX - rect.left - internalTransform.x) / internalTransform.zoom - drag.offset.x - start.position.x,
+      y: (pointer.clientY - rect.top - internalTransform.y) / internalTransform.zoom - drag.offset.y - start.position.y,
+    };
+    if (Math.hypot(delta.x, delta.y) * internalTransform.zoom > 3) dragMoved = true;
+    if (dragMoved) {
+      moveGroupDrag(graph, groupDrag, delta);
+      graph.nodes = [...graph.nodes];
+      graph.annotations = [...graph.annotations];
+      dropTargets = new Set(groupDropAssignments().flatMap(({target}) => target ? [target] : []));
+    }
+  }
+
   function handleMouseMove(e: MouseEvent) {
     if (isPanning) {
       internalTransform.x += e.movementX;
@@ -963,226 +1031,13 @@
       selectionFrame ??= requestAnimationFrame(flushSelectionMove);
     }
     
-    // Handle node dragging (single or multiple)
-    if (draggingNode) {
-      const node = graph.getNode(draggingNode.nodeId);
-      if (node) {
-        const rect = canvas.getBoundingClientRect();
-        const newX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom - draggingNode.offset.x;
-        const newY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom - draggingNode.offset.y;
-        
-        // If multiple nodes or annotations are selected, move all of them
-        if ((selectedNodes.length > 1 || selectedAnnotations.length > 0) && draggingMultiple && draggingNode) {
-          const draggedNodeData = draggingMultiple.nodes.find(n => n.nodeId === draggingNode!.nodeId);
-          if (!draggedNodeData) {
-            // Fallback to single drag if node not found in draggingMultiple
-            node.position = { x: newX, y: newY };
-            graph.nodes = [...graph.nodes];
-            return;
-          }
-          const deltaX = newX - draggedNodeData.startPos.x;
-          const deltaY = newY - draggedNodeData.startPos.y;
-          
-          // Move all selected nodes
-          draggingMultiple.nodes.forEach(({ nodeId, startPos }) => {
-            const n = graph.getNode(nodeId);
-            if (n) {
-              n.position = { x: startPos.x + deltaX, y: startPos.y + deltaY };
-            }
-          });
-          
-          // Move all selected annotations - create new objects instead of mutating
-          graph.annotations = graph.annotations.map(ann => {
-            const draggedData = draggingMultiple?.annotations.find(a => a.annotationId === ann.id);
-            if (!draggedData) {
-              // Not being dragged, return unchanged
-              return ann;
-            }
-
-            // Create new position object for this annotation
-            const newX = draggedData.startPos.x + deltaX;
-            const newY = draggedData.startPos.y + deltaY;
-
-            return {
-              ...ann,
-              position: { x: newX, y: newY },
-              style: ann.style ? { ...ann.style } : undefined,
-              outputs: ann.outputs ? ann.outputs.map(port => ({ ...port })) : undefined
-            } as CanvasAnnotation;
-          });
-        } else {
-          // Single node drag
-          node.position = { x: newX, y: newY };
-        }
-        
-        // Force reactivity
-        graph.nodes = [...graph.nodes];
-        graph.annotations = [...graph.annotations];
-      }
+    // A drag owns a fixed, deduplicated set, including selected groups' contents.
+    // Applied at most once a frame (see flushDragMove).
+    if ((draggingNode || (resizingAnnotation ? null : draggingAnnotation)) && groupDrag) {
+      dragPointer = { clientX: e.clientX, clientY: e.clientY };
+      dragFrame ??= requestAnimationFrame(flushDragMove);
     }
-    
-    // Handle annotation dragging (single or multiple)
-    if (draggingAnnotation && !resizingAnnotation) {
-      const annotation = graph.getAnnotation(draggingAnnotation.annotationId);
-      if (annotation) {
-        const rect = canvas.getBoundingClientRect();
-        const newX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom - draggingAnnotation.offset.x;
-        const newY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom - draggingAnnotation.offset.y;
-        
-        // If multiple annotations or nodes are selected, move all of them
-        if ((selectedAnnotations.length > 1 || selectedNodes.length > 0) && draggingMultiple && draggingAnnotation) {
-          const draggedAnnotationData = draggingMultiple.annotations.find(a => a.annotationId === draggingAnnotation!.annotationId);
-          if (!draggedAnnotationData) {
-            // Fallback to single drag if annotation not found in draggingMultiple
-            // Don't mutate - create new object in map
-            graph.annotations = graph.annotations.map((ann): CanvasAnnotation => {
-              if (ann.id !== annotation.id) {
-                return ann;
-              }
-              const oldX = ann.position.x;
-              const oldY = ann.position.y;
-              const deltaX = newX - oldX;
-              const deltaY = newY - oldY;
 
-              if (ann.type === 'Line') {
-                return {
-                  ...ann,
-                  position: { x: newX, y: newY },
-                  endPosition: ann.endPosition ? {
-                    x: ann.endPosition.x + deltaX,
-                    y: ann.endPosition.y + deltaY
-                  } : undefined
-                } as CanvasAnnotation;
-              } else if (ann.type === 'Polyline') {
-                return {
-                  ...ann,
-                  position: { x: newX, y: newY },
-                  points: ann.points ? ann.points.map(p => ({
-                    x: p.x + deltaX,
-                    y: p.y + deltaY
-                  })) : undefined
-                } as CanvasAnnotation;
-              } else {
-                return {
-                  ...ann,
-                  position: { x: newX, y: newY }
-                } as CanvasAnnotation;
-              }
-            });
-            return;
-          }
-          const deltaX = newX - draggedAnnotationData.startPos.x;
-          const deltaY = newY - draggedAnnotationData.startPos.y;
-          
-          // Move all selected nodes
-          draggingMultiple.nodes.forEach(({ nodeId, startPos }) => {
-            const n = graph.getNode(nodeId);
-            if (n) {
-              n.position = { x: startPos.x + deltaX, y: startPos.y + deltaY };
-            }
-          });
-          
-          // Move all selected annotations - create new objects instead of mutating
-          graph.annotations = graph.annotations.map((ann): CanvasAnnotation => {
-            const draggedData = draggingMultiple?.annotations.find(a => a.annotationId === ann.id);
-            if (!draggedData) {
-              // Not being dragged, return unchanged
-              return ann;
-            }
-
-            // Create new position object for this annotation
-            const newX = draggedData.startPos.x + deltaX;
-            const newY = draggedData.startPos.y + deltaY;
-            const oldX = ann.position.x;
-            const oldY = ann.position.y;
-            const annotationDeltaX = newX - oldX;
-            const annotationDeltaY = newY - oldY;
-
-            // Handle line and polyline annotations specially
-            if (ann.type === 'Line') {
-              return {
-                ...ann,
-                position: { x: newX, y: newY },
-                endPosition: ann.endPosition ? {
-                  x: ann.endPosition.x + annotationDeltaX,
-                  y: ann.endPosition.y + annotationDeltaY
-                } : undefined
-              } as CanvasAnnotation;
-            } else if (ann.type === 'Polyline') {
-              return {
-                ...ann,
-                position: { x: newX, y: newY },
-                points: ann.points ? ann.points.map(p => ({
-                  x: p.x + annotationDeltaX,
-                  y: p.y + annotationDeltaY
-                })) : undefined
-              } as CanvasAnnotation;
-            } else {
-              return {
-                ...ann,
-                position: { x: newX, y: newY }
-              } as CanvasAnnotation;
-            }
-          });
-          
-          // Force reactivity after multi-drag update
-          graph.nodes = [...graph.nodes];
-          return;
-        } else {
-          // Single annotation drag - don't mutate, create new object in map below
-        }
-        
-        // Create new annotation object directly without mutating the original
-        // This ensures other annotations are completely unaffected
-        // Use the annotation from the array, not the one we retrieved (which might be stale)
-        graph.annotations = graph.annotations.map((ann): CanvasAnnotation => {
-          if (ann.id !== annotation.id) {
-            // Return the exact same object reference for unchanged annotations
-            return ann;
-          }
-
-          // Create new object for the annotation being dragged
-          // Use ann (from array) not annotation (which might be stale)
-          const oldX = ann.position.x;
-          const oldY = ann.position.y;
-          const deltaX = newX - oldX;
-          const deltaY = newY - oldY;
-
-          if (ann.type === 'Line') {
-            return {
-              ...ann,
-              position: { x: newX, y: newY },
-              endPosition: ann.endPosition ? {
-                x: ann.endPosition.x + deltaX,
-                y: ann.endPosition.y + deltaY
-              } : undefined,
-              style: ann.style ? { ...ann.style } : undefined,
-              outputs: ann.outputs ? ann.outputs.map(port => ({ ...port })) : undefined
-            } as CanvasAnnotation;
-          } else if (ann.type === 'Polyline') {
-            return {
-              ...ann,
-              position: { x: newX, y: newY },
-              points: ann.points ? ann.points.map(p => ({
-                x: p.x + deltaX,
-                y: p.y + deltaY
-              })) : undefined,
-              style: ann.style ? { ...ann.style } : undefined,
-              outputs: ann.outputs ? ann.outputs.map(port => ({ ...port })) : undefined
-            } as CanvasAnnotation;
-          } else {
-            return {
-              ...ann,
-              position: { x: newX, y: newY },
-              style: ann.style ? { ...ann.style } : undefined,
-              outputs: ann.outputs ? ann.outputs.map(port => ({ ...port })) : undefined
-            } as CanvasAnnotation;
-          }
-        });
-        graph.nodes = [...graph.nodes];
-      }
-    }
-    
     // Handle annotation resizing
     if (resizingAnnotation) {
       const resizing = resizingAnnotation; // Capture for type narrowing
@@ -1219,25 +1074,9 @@
         }
         
         // Create new annotation object directly without mutating the original
-        // This ensures other annotations are completely unaffected
-        // Use the annotation from the array, not the one we retrieved (which might be stale)
-        graph.annotations = graph.annotations.map(ann => {
-          if (ann.id !== resizing.annotationId) {
-            // Return the exact same object reference for unchanged annotations
-            return ann;
-          }
-          // Create a completely new object for the resized annotation
-          // Explicitly copy all properties to avoid any shared references
-          return {
-            ...ann,
-            position: { x: newX, y: newY },
-            size: { width: newWidth, height: newHeight },
-            style: ann.style ? { ...ann.style } : undefined,
-            outputs: ann.outputs ? ann.outputs.map(port => ({ ...port })) : ann.outputs,
-            points: ann.points ? ann.points.map(p => ({ ...p })) : undefined,
-            endPosition: ann.endPosition ? { ...ann.endPosition } : undefined
-          } as CanvasAnnotation;
-        });
+        annotation.position = { x: newX, y: newY };
+        annotation.size = { width: newWidth, height: newHeight };
+        graph.annotations = [...graph.annotations];
       }
     }
     
@@ -1558,10 +1397,18 @@
       }
     }
     
+    flushDragMove();
+    // Only deliberate drops change ownership; moving a frame never captures bystanders.
+    if (dragMoved && groupDrag) {
+      for (const {id, target} of groupDropAssignments()) studioGraph.assignToGroup([id], target);
+      graph.annotations = [...graph.annotations];
+    }
     // Stop dragging
     draggingNode = null;
     draggingAnnotation = null;
-    draggingMultiple = null;
+    groupDrag = null;
+    dropTargets = new Set();
+    dragMoved = false;
     resizingAnnotation = null;
     
     // Finish line drawing
@@ -1904,23 +1751,22 @@
         }
       }
 
-      // Duplicate annotations
+      // Duplicate annotations after reserving every id, so nested groups remap safely.
+      const annotationIdMap = new Map(annotationsToDuplicate.map(id => [id, `annotation_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`]));
       for (const oldAnnotationId of annotationsToDuplicate) {
         const sourceAnnotation = graph.getAnnotation(oldAnnotationId);
         if (!sourceAnnotation) continue;
-
-        const newId = `${sourceAnnotation.type}_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 5)}`;
-        const newAnnotation: any = {
+        const newId = annotationIdMap.get(oldAnnotationId)!;
+        graph.addAnnotation({
           ...sourceAnnotation,
           id: newId,
-          position: { ...sourceAnnotation.position }
-        };
-
-        if (currentNetwork) {
-          graph.reparentElement(newAnnotation, currentNetwork);
-        }
-
-        graph.addAnnotation(newAnnotation);
+          position: { ...sourceAnnotation.position },
+          containedElements: sourceAnnotation.containedElements?.flatMap(id => {
+            const mapped = nodeIdMap.get(id) || annotationIdMap.get(id);
+            return mapped ? [mapped] : [];
+          }),
+        });
+        if (currentNetwork) addChildToNetwork(currentNetwork, graph.getAnnotation(newId)!);
         newAnnotationIds.push(newId);
       }
 
@@ -1948,25 +1794,24 @@
 
           draggingNode = { nodeId: newClickedNodeId, offset };
 
-          if (newNodeIds.length > 1 || newAnnotationIds.length > 0) {
-            draggingMultiple = {
-              nodes: newNodeIds.map(id => {
-                const n = graph.getNode(id);
-                return { nodeId: id, startPos: n ? { ...n.position } : { x: 0, y: 0 } };
-              }),
-              annotations: newAnnotationIds.map(id => {
-                const ann = graph.getAnnotation(id);
-                return { annotationId: id, startPos: ann ? { ...ann.position } : { x: 0, y: 0 } };
-              }),
-              offset
-            };
-          }
+          startGroupDrag([...newNodeIds, ...newAnnotationIds]);
         }
       }
 
       e.stopPropagation();
       return;
     }
+
+    // Preserve a multi-selection only when dragging one of its members.
+    if (!selectedNodes.includes(nodeId)) {
+      selectedNodes = e.shiftKey ? [...selectedNodes, nodeId] : [nodeId];
+      if (!e.shiftKey) {
+        selectedAnnotations = [];
+        selectedAnnotation = null;
+      }
+    }
+    selectedNode = node;
+    dispatch('nodeSelect', { node });
 
     // Normal drag (no alt key)
     const offset = {
@@ -1977,19 +1822,7 @@
     draggingNode = { nodeId, offset };
 
     // If multiple items are selected, prepare to drag all of them
-    if (selectedNodes.length > 1 || selectedAnnotations.length > 0) {
-      draggingMultiple = {
-        nodes: selectedNodes.map(id => {
-          const n = graph.getNode(id);
-          return { nodeId: id, startPos: n ? { ...n.position } : { x: 0, y: 0 } };
-        }),
-        annotations: selectedAnnotations.map(id => {
-          const ann = graph.getAnnotation(id);
-          return { annotationId: id, startPos: ann ? { ...ann.position } : { x: 0, y: 0 } };
-        }),
-        offset
-      };
-    }
+    startGroupDrag([...selectedNodes, ...selectedAnnotations]);
 
     e.stopPropagation();
   }
@@ -2015,6 +1848,8 @@
         } else {
           // Single select
           selectedNodes = [nodeId];
+          selectedAnnotations = [];
+          selectedAnnotation = null;
         }
         selectedNode = node;
         dispatch('nodeSelect', { node });
@@ -2300,19 +2135,7 @@
         draggingAnnotation = { annotationId, offset };
         
         // If multiple items are selected, prepare to drag all of them
-        if (selectedNodes.length > 0 || selectedAnnotations.length > 1) {
-          draggingMultiple = {
-            nodes: selectedNodes.map(id => {
-              const n = graph.getNode(id);
-              return { nodeId: id, startPos: n ? { ...n.position } : { x: 0, y: 0 } };
-            }),
-            annotations: selectedAnnotations.map(id => {
-              const ann = graph.getAnnotation(id);
-              return { annotationId: id, startPos: ann ? { ...ann.position } : { x: 0, y: 0 } };
-            }),
-            offset
-          };
-        }
+        startGroupDrag([...selectedNodes, ...selectedAnnotations]);
       }
     }
   }
@@ -2490,7 +2313,7 @@
       type: 'cascade/cut',
       nodes: nodeData,
       connections: connectionsToCut,
-      annotations: annotationsToCut
+      annotations: graph.toJSON().annotations?.filter((annotation: any) => annotationsToCut.some(item => item.id === annotation.id))
     };
     
     try {
@@ -2576,7 +2399,7 @@
       type: 'cascade/copy',
       nodes: nodeData,
       connections: connectionsToCopy,
-      annotations: annotationsToCopy
+      annotations: graph.toJSON().annotations?.filter((annotation: any) => annotationsToCopy.some(item => item.id === annotation.id))
     };
 
     try {
@@ -2708,26 +2531,26 @@
         }
       }
 
-      // Paste annotations
-      if (clipboardData.annotations && clipboardData.annotations.length > 0) {
-        for (const annotationData of clipboardData.annotations) {
-          const newId = `${annotationData.type}_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 5)}`;
-          const newAnnotation: any = {
-            ...annotationData,
-            id: newId,
-            position: {
-              x: annotationData.position.x + pasteOffset,
-              y: annotationData.position.y + pasteOffset
-            }
-          };
-
-          // Set parent to current network level
-          if (currentNetwork) {
-            graph.reparentElement(newAnnotation, currentNetwork);
-          }
-
-          graph.addAnnotation(newAnnotation);
-        }
+      // Paste frame membership through the same id map as its copied contents.
+      const annotationCopies = clipboardData.annotations || [];
+      const annotationIdMap = new Map<string, string>(annotationCopies.map((item: any) => [item.id, `annotation_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`]));
+      for (const annotationData of annotationCopies) {
+        const newId = annotationIdMap.get(annotationData.id)!;
+        const position = annotationData.position;
+        const translate = (point: {x: number; y: number} | [number, number]) => ({x: (Array.isArray(point) ? point[0] : point.x) + pasteOffset, y: (Array.isArray(point) ? point[1] : point.y) + pasteOffset});
+        graph.addAnnotation({
+          ...annotationData,
+          id: newId,
+          parent: undefined,
+          position: translate(Array.isArray(position) ? {x: position[0], y: position[1]} : position),
+          endPosition: annotationData.endPosition ? translate(annotationData.endPosition) : undefined,
+          points: annotationData.points?.map(translate),
+          containedElements: annotationData.containedElements?.flatMap((id: string) => {
+            const mapped = nodeIdMap.get(id) || annotationIdMap.get(id);
+            return mapped ? [mapped] : [];
+          }),
+        });
+        if (currentNetwork) addChildToNetwork(currentNetwork, graph.getAnnotation(newId)!);
       }
 
       // Update graph reactivity
@@ -3173,8 +2996,8 @@ export function execute(node, graph) {
 
     // Calculate bounding box of visible nodes and annotations
     // Approximate node size: 120px width, 80px height (can be adjusted)
-    const nodeWidth = 120;
-    const nodeHeight = 80;
+    const nodeWidth = $nodePreviews ? 240 : 120;
+    const nodeHeight = $nodePreviews ? 180 : 80;
 
     let minX = Infinity;
     let minY = Infinity;
@@ -3256,8 +3079,8 @@ export function execute(node, graph) {
     const viewportHeight = rect.height;
 
     // Calculate bounding box of visible nodes and annotations
-    const nodeWidth = 120;
-    const nodeHeight = 80;
+    const nodeWidth = $nodePreviews ? 240 : 120;
+    const nodeHeight = $nodePreviews ? 180 : 80;
 
     let minX = Infinity;
     let minY = Infinity;
@@ -3311,8 +3134,8 @@ export function execute(node, graph) {
     const bboxWidth = maxX - minX;
     const bboxHeight = maxY - minY;
 
-    // Add padding (20% on each side)
-    const padding = 0.2;
+    // Preview cards need less surrounding space to remain legible when framing.
+    const padding = $nodePreviews ? 0.06 : 0.2;
     const paddedWidth = bboxWidth * (1 + padding * 2);
     const paddedHeight = bboxHeight * (1 + padding * 2);
 
@@ -4488,7 +4311,7 @@ export function execute(node, graph) {
         <path
           d="M {fromPos.x} {fromPos.y} C {fromPos.x} {fromPos.y + curveOffset} {toPos.x} {toPos.y - curveOffset} {toPos.x} {toPos.y}"
           fill="none"
-          style="stroke: {isHighlighted ? connectionColor : 'var(--graph-wire-idle)'};"
+          style="stroke: {isHighlighted ? connectionColor : 'var(--graph-wire-idle)'};{$nodePreviews && role === 'idle' ? ' stroke-opacity: 0.4;' : ''}"
           stroke-dasharray={isProcessing ? "8 6" : (isTrigger ? "3 3" : "none")}
           class="connection"
           class:wire-focus={role === 'focus'}
@@ -4561,6 +4384,7 @@ export function execute(node, graph) {
           {isSelected}
           {isEditing}
           {isDragging}
+          isDropTarget={dropTargets.has(annotation.id)}
           on:click={(e: CustomEvent<{id: string; event: MouseEvent}>) => handleAnnotationClick(e.detail.id, e.detail.event)}
           on:dblclick={(e: CustomEvent<{id: string; event: MouseEvent}>) => handleAnnotationDoubleClick(e.detail.id, e.detail.event)}
           on:mousedown={(e: CustomEvent<{id: string; event: MouseEvent; width?: number; height?: number}>) => {
@@ -4614,6 +4438,7 @@ export function execute(node, graph) {
     {#each nodes as node (node.id)}
       <NodeUI
         {node}
+        {cookRevision}
         selected={selectedNodes.includes(node.id)}
         emphasis={nodeEmphasis(node.id, graphFocus)}
         canvasTransform={internalTransform}

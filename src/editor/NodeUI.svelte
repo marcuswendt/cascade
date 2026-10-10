@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
   import type { Node } from '@/nodes/Node';
   import { getNodeIcon } from './nodeTemplates';
   import Icon from './Icon.svelte';
@@ -8,6 +8,8 @@
   import { propUpdateCounters } from './stores/propUpdateStore';
   import { runsOnByModule, iconByModule, moduleName, type RunsOn } from './stores/executionLocus';
   import { graphStructure } from './stores/graphStructure';
+  import { ensureNodePreviewSetting, nodePreviews } from './stores/nodePreview';
+  import CoreValue from './components/CoreValue.svelte';
   import type { NodeEmphasis } from './graphFocus';
 
   export let node: Node;
@@ -15,8 +17,13 @@
   /** Set by Canvas from the selection or hover; see ./graphFocus. */
   export let emphasis: NodeEmphasis = 'none';
   export let canvasTransform: { x: number; y: number; zoom: number } = { x: 0, y: 0, zoom: 1 };
+  export let cookRevision = 0;
 
   const dispatch = createEventDispatcher();
+
+  onMount(() => {
+    void ensureNodePreviewSetting();
+  });
 
   // Where this node's work happens. Server-side nodes hand their work to the
   // Python bridge; browser-side nodes do it in the page; portable nodes have
@@ -59,6 +66,15 @@
 
   $: inputs = afterStructureChange($graphStructure, node.inputs);
   $: outputs = afterStructureChange($graphStructure, node.outputs);
+  // Canvas derives this revision from the graph scheduler. A successful cook
+  // commits output values before the scheduler publishes its final state, so
+  // re-reading the mutable port here always reflects the latest result.
+  $: previewPort = afterStructureChange(cookRevision, outputs[0] ?? null);
+  // The preview's cache key is this node's own cook count, not the canvas-wide
+  // revision: that one moves on every cook anywhere, and re-fetched every
+  // preview on the canvas each time.
+  $: previewVersion = afterStructureChange(cookRevision, node.cookInfo?.cookCount ?? 0);
+  $: hasPreview = $nodePreviews && previewPort !== null;
   $: position = afterStructureChange($graphStructure, node.position);
 
   // Group variadic inputs by base name, showing only one pill per group
@@ -218,10 +234,13 @@
   }
   
   function handleMouseDown(e: MouseEvent) {
-    // Don't dispatch if clicking on a port or name input
-    if ((e.target as HTMLElement).closest('.port') || 
-        (e.target as HTMLElement).closest('.node-name-input') ||
-        (e.target as HTMLElement).closest('.node-name')) {
+    const target = e.target as HTMLElement;
+    // Ports and names own their own gestures. A preview card is otherwise a
+    // drag surface, except where its renderer exposes a real control.
+    if (target.closest('.port') ||
+        target.closest('.node-name-input') ||
+        target.closest('.node-name') ||
+        (target.closest('.node-preview') && target.closest('button, input, textarea, select, a, summary, [role="button"], [contenteditable="true"]'))) {
       return;
     }
     
@@ -373,6 +392,7 @@
   class:stale={cookState === 'stale'}
   class:queued={cookState === 'queued'}
   class:cooking={isCooking}
+  class:previewing={hasPreview}
   class:focus-neighbour={emphasis === 'neighbour'}
   class:focus-faded={emphasis === 'faded'}
   data-cook-state={cookState}
@@ -387,7 +407,7 @@
   on:mouseleave={handleMouseUp}
   on:dblclick={handleDoubleClick}
 >
-  <div class="node-container">
+  <div class="node-container" class:previewing={hasPreview}>
       <div class="node-content">
         <!-- Input ports (top) -->
         <div class="port-row inputs">
@@ -438,7 +458,7 @@
         </div>
 
         <!-- Variadic connections list (between pill and body) -->
-        {#if hasVariadicInputs && variadicConnections.length > 0}
+        {#if hasVariadicInputs && variadicConnections.length > 0 && (!hasPreview || selected)}
           <div class="variadic-list" role="list" on:mousedown|stopPropagation>
             {#each variadicConnections as conn}
               <div class="variadic-item">
@@ -499,6 +519,26 @@
           </button>
         </div>
 
+        {#if hasPreview && previewPort}
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div
+            class="node-preview"
+            role="region"
+            aria-label="Preview of {previewPort.name}"
+            on:dblclick|stopPropagation
+          >
+            <CoreValue
+              type={previewPort.dataType || 'any'}
+              value={previewPort.value}
+              port={previewPort}
+              {node}
+              mode="compact"
+              version={previewVersion}
+              readOnly
+            />
+          </div>
+        {/if}
+
         <!-- Output ports (bottom) -->
         <div class="port-row outputs">
           {#each outputs as port}
@@ -522,7 +562,8 @@
         </div>
       </div>
 
-    <div class="label">
+    {#if !hasPreview || selected || isEditingName}
+    <div class="label" class:preview-label={hasPreview}>
       {#if isEditingName}
         <input
           type="text"
@@ -556,6 +597,7 @@
         </span>
       {/if}
     </div>
+    {/if}
   </div>
   
   {#if node.comment}
@@ -666,12 +708,37 @@
     gap: 8px;
     position: relative;
   }
+
+  .node-container.previewing {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
   
   .node-content {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 0;
+  }
+
+  .node.previewing .node-content {
+    position: relative;
+    width: 240px;
+  }
+
+  .node-preview {
+    width: 240px;
+    max-height: 360px;
+    box-sizing: border-box;
+    overflow: auto;
+    padding: 0;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    cursor: move;
+    user-select: none;
   }
   
   .port-row {
@@ -681,6 +748,26 @@
     align-items: center;
     justify-content: center;
     height: 12px;
+  }
+
+  .node.previewing .port-row {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    z-index: 4;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s ease;
+  }
+
+  .node.previewing .port-row.inputs { top: -6px; }
+  .node.previewing .port-row.outputs { bottom: -6px; }
+
+  .node.previewing:hover .port-row,
+  .node.previewing.selected .port-row,
+  .node.previewing:focus-within .port-row {
+    opacity: 1;
+    pointer-events: auto;
   }
   
   .port {
@@ -807,6 +894,62 @@
     padding: 0;
     gap: 0;
     margin: 0;
+  }
+
+  .node.previewing .body {
+    position: absolute;
+    z-index: 3;
+    top: 0;
+    left: 0;
+    width: 240px;
+    min-width: 240px;
+    height: 20px;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: 6px 6px 0 0;
+    background: transparent;
+    pointer-events: none;
+  }
+
+  .node.previewing .node-icon {
+    display: none;
+  }
+
+  .node.previewing .locus-badge {
+    display: none;
+  }
+
+  .node.previewing .node-button {
+    width: 14px;
+    height: 20px;
+    opacity: 0;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--surface-panel) 88%, transparent);
+  }
+
+  .node.previewing:hover .node-button,
+  .node.previewing.selected .node-button,
+  .node.previewing .node-button:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .node.previewing.selected .body {
+    border: 0;
+    box-shadow: none;
+  }
+
+  .node.previewing.selected .node-preview {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent), 0 0 12px var(--accent-tint-strong);
+  }
+
+  .node.previewing .variadic-list {
+    position: absolute;
+    z-index: 5;
+    top: -4px;
+    left: 50%;
+    transform: translate(-50%, -100%);
   }
 
   /* Cook feedback is its own visual channel. The pseudo-element leaves both
@@ -950,6 +1093,15 @@
       0 0 2px var(--surface-void),
       0 0 2px var(--surface-void),
       0 0 4px var(--surface-void);
+  }
+
+  .label.preview-label {
+    align-self: flex-end;
+    max-width: 240px;
+    padding-right: 2px;
+    font-size: 8px;
+    color: var(--text-faintest);
+    opacity: 0.75;
   }
   
   .node-name {

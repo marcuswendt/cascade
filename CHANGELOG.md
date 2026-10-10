@@ -6,6 +6,13 @@ Notable changes to Cascade. Newest first.
 
 ### Added
 
+- **Node previews on the canvas.** A project that sets
+  `settings.nodePreviews: true` in `cascade.json` shows each node's first
+  output as a readable preview card on the graph, refreshed per node cook. The
+  same settings can carry a `workspace` used as the first-open dock layout when
+  the browser has none saved; a layout that fails to load falls back to the
+  built-in one.
+
 - **Groups own their contents.** A group frame keeps an explicit
   `containedElements` list, separate from subnet parenting. Drag the frame
   header to move its members (nested contents move once); drop an item's
@@ -24,6 +31,9 @@ Notable changes to Cascade. Newest first.
   panel with a draft to review and send, never sending it.
 
 ### Changed
+
+- **Node drags apply once per frame.** Moving a node or a selection batches
+  pointer moves to one update per animation frame instead of one per event.
 
 - **Identical output stops invalidating the graph below it.** A node that
   re-cooks and commits the same values (compared structurally; the same

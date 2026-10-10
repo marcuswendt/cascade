@@ -150,7 +150,7 @@ class DockviewStore {
   /**
    * Initialize Dockview in a container element
    */
-  initialize(container: HTMLElement): void {
+  initialize(container: HTMLElement, projectWorkspace: SerializedDockview | null = null): void {
     const self = this;
 
     const options: DockviewComponentOptions = {
@@ -366,7 +366,7 @@ class DockviewStore {
     });
 
     // Load saved layout or default
-    this.loadLayout();
+    this.loadLayout(undefined, projectWorkspace);
 
     // Save on change: a split, a resize, a panel added, moved or closed. Not
     // on a timer, so an idle tab never writes its stale layout over a newer
@@ -825,11 +825,12 @@ class DockviewStore {
   /**
    * Load layout from localStorage or use default
    */
-  loadLayout(layout?: SerializedDockview): void {
+  loadLayout(layout?: SerializedDockview, projectWorkspace: SerializedDockview | null = null): void {
     if (!this._api) return;
 
     let layoutToLoad = layout;
     let isFromStorage = false;
+    let isFromProjectWorkspace = false;
 
     if (!layoutToLoad) {
       // The project's saved workspace (fetched before the dock was built),
@@ -847,7 +848,10 @@ class DockviewStore {
     }
 
     if (!layoutToLoad) {
-      layoutToLoad = this.getDefaultLayout();
+      layoutToLoad = projectWorkspace
+        ? structuredClone(projectWorkspace)
+        : this.getDefaultLayout();
+      isFromProjectWorkspace = projectWorkspace !== null;
     }
 
     try {
@@ -870,6 +874,15 @@ class DockviewStore {
         } catch (defaultError) {
           console.error('Failed to load default layout:', defaultError);
           // As a last resort, manually create panels
+          this.createDefaultPanels();
+        }
+      } else if (isFromProjectWorkspace) {
+        // A project can suggest a first-open workspace, but it must never make
+        // Studio unusable. The built-in workspace remains the recovery path.
+        try {
+          this._api.fromJSON(this.getDefaultLayout());
+        } catch (defaultError) {
+          console.error('Default layout failed, creating panels manually', defaultError);
           this.createDefaultPanels();
         }
       } else {
