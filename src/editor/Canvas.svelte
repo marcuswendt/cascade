@@ -11,6 +11,7 @@
   import NodeUI from './NodeUI.svelte';
   import { StudioGraphController } from './StudioGraphController';
   import { graphStructure } from './stores/graphStructure';
+  import { bumpNodeMotion } from './stores/nodeMotion';
   import { nodePreviews } from './stores/nodePreview';
   import { ownsKeyboard } from './panelScope';
   import type { Node } from '@/nodes/Node';
@@ -725,9 +726,15 @@
   // 100 nodes cost ~19 ms: more than a frame, once per pointer event.
   let dragFrame: number | null = null;
   let dragPointer: { clientX: number; clientY: number } | null = null;
+  // Bumped per drag frame so the wires re-read positions. The nodes themselves
+  // move through their own motion stores (stores/nodeMotion.ts), and the graph
+  // is published once, at the end of the drag.
+  let dragRevision = 0;
+  let dragMovesAnnotations = false;
 
   function startGroupDrag(ids: string[]) {
     groupDrag = captureGroupDrag(graph, ids);
+    dragMovesAnnotations = groupDrag.items.some(item => !!graph.getAnnotation(item.id));
     dragMoved = false;
     dropTargets = new Set();
   }
@@ -804,7 +811,7 @@
     }));
   }
 
-  $: nodePositions = positionsAfterStructureChange($graphStructure, nodes);
+  $: nodePositions = positionsAfterStructureChange($graphStructure + dragRevision, nodes);
   // Read by every wire so it re-measures when a node moves; a Map, not a find per wire.
   $: nodePositionById = new Map(nodePositions.map(position => [position.id, position]));
   
@@ -867,8 +874,10 @@
   // Also filter out duplicates and depend on nodePositions/nodePorts for reactivity
   $: {
     cookRevision;
-    // Reference nodePositions, nodePorts, annotations to make connections reactive to changes
-    nodePositions;
+    // Structure, ports and annotations decide which wires exist. Positions do
+    // not: a drag moves wires through nodePositionById in the each block, and
+    // re-filtering every connection once a drag frame was wasted work.
+    $graphStructure;
     nodePorts;
     annotations;
     // Get IDs of visible nodes AND annotations for filtering connections
@@ -1029,8 +1038,12 @@
     if (Math.hypot(delta.x, delta.y) * internalTransform.zoom > 3) dragMoved = true;
     if (dragMoved) {
       moveGroupDrag(graph, groupDrag, delta);
-      graph.nodes = [...graph.nodes];
-      graph.annotations = [...graph.annotations];
+      // Only what moved: the dragged nodes, their wires, and the frames when
+      // frames are being carried. Copying graph.nodes here re-rendered every
+      // node on the canvas once a frame.
+      bumpNodeMotion(groupDrag.items.map(item => item.id));
+      dragRevision += 1;
+      if (dragMovesAnnotations) annotations = annotations;
       dropTargets = new Set(groupDropAssignments().flatMap(({target}) => target ? [target] : []));
     }
   }
@@ -1421,6 +1434,11 @@
         const result = (window as any).__cascadeVerifyPorts?.();
         if (result && result.worstPx > 1) console.warn('[portGeometry] wire ends disagree with the DOM', result);
       });
+    }
+    // The drag moved nodes without publishing the graph; publish it once now.
+    if (dragMoved && groupDrag) {
+      graph.nodes = [...graph.nodes];
+      graph.annotations = [...graph.annotations];
     }
     // Only deliberate drops change ownership; moving a frame never captures bystanders.
     if (dragMoved && groupDrag) {

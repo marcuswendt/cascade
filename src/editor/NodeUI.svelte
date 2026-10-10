@@ -8,6 +8,7 @@
   import { propUpdateCounters } from './stores/propUpdateStore';
   import { runsOnByModule, iconByModule, moduleName, type RunsOn } from './stores/executionLocus';
   import { graphStructure } from './stores/graphStructure';
+  import { nodeMotion } from './stores/nodeMotion';
   import { ensureNodePreviewSetting, nodePreviews } from './stores/nodePreview';
   import CoreValue from './components/CoreValue.svelte';
   import type { NodeEmphasis } from './graphFocus';
@@ -80,7 +81,10 @@
   // preview on the canvas each time.
   $: previewVersion = afterStructureChange(cookRevision, node.cookInfo?.cookCount ?? 0);
   $: hasPreview = $nodePreviews && previewPort !== null;
-  $: position = afterStructureChange($graphStructure, node.position);
+  // A drag moves this node through its own motion store, without touching the
+  // rest of the canvas. See stores/nodeMotion.ts.
+  $: motion = nodeMotion(node.id);
+  $: position = afterStructureChange($graphStructure + $motion, node.position);
   $: portLayoutKey = `${inputs.map(p => p.id).join(',')}|${outputs.map(p => p.id).join(',')}|${hasPreview}`;
 
   // Group variadic inputs by base name, showing only one pill per group
