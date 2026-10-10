@@ -53,7 +53,10 @@
     }
   }
 
-  onDestroy(() => unsubscribeScheduler?.());
+  onDestroy(() => {
+    unsubscribeScheduler?.();
+    if (selectionFrame !== null) cancelAnimationFrame(selectionFrame);
+  });
 
   // Helper to record history using Canvas's graph reference directly
   // This ensures we capture the correct graph state
@@ -618,6 +621,38 @@
   let selectionStartScreen: { x: number; y: number } | null = null;
   let selectionScreenPos: { x: number; y: number } | null = null;
   let justCompletedSelection = false;
+  /**
+   * The marquee's per-move work, kept to one rectangle write per frame.
+   *
+   * The canvas rect is read once when the drag starts rather than on every
+   * move: a read straight after the previous move's style write forced a
+   * layout each time. Moves are folded into one animation frame, and the
+   * canvas carries `marquee` while dragging so nodes, ports and wires stop
+   * hit-testing under the sweep. Without that, crossing a node set the graph
+   * hover focus, which restyled every wire and re-measured every port.
+   */
+  let selectionCanvasRect: DOMRect | null = null;
+  let selectionFrame: number | null = null;
+  let selectionPointer: { clientX: number; clientY: number } | null = null;
+
+  function flushSelectionMove() {
+    selectionFrame = null;
+    const rect = selectionCanvasRect;
+    const pointer = selectionPointer;
+    if (!isSelecting || !rect || !pointer) return;
+    mousePosition = {
+      x: (pointer.clientX - rect.left - internalTransform.x) / internalTransform.zoom,
+      y: (pointer.clientY - rect.top - internalTransform.y) / internalTransform.zoom
+    };
+    selectionScreenPos = { x: pointer.clientX - rect.left, y: pointer.clientY - rect.top };
+  }
+
+  function endSelectionMoves() {
+    if (selectionFrame !== null) cancelAnimationFrame(selectionFrame);
+    selectionFrame = null;
+    selectionPointer = null;
+    selectionCanvasRect = null;
+  }
   
   // Connection state
   /**
@@ -819,6 +854,7 @@
         };
         mousePosition = { ...selectionStart };
         selectionScreenPos = { ...selectionStartScreen };
+        selectionCanvasRect = rect;
         isSelecting = true;
         justCompletedSelection = false; // Reset flag when starting new selection
         // Clear current selection when starting new selection
@@ -907,18 +943,11 @@
       internalTransform = { ...internalTransform };
     }
     
-    // Update selection rectangle
+    // Update selection rectangle, at most once a frame (see flushSelectionMove)
     if (isSelecting && selectionStart) {
-      const rect = canvas.getBoundingClientRect();
-      // Store both canvas coordinates (for selection logic) and screen coordinates (for rendering)
-      const currentX = (e.clientX - rect.left - internalTransform.x) / internalTransform.zoom;
-      const currentY = (e.clientY - rect.top - internalTransform.y) / internalTransform.zoom;
-      mousePosition = { x: currentX, y: currentY };
-      // Also store screen coordinates for the selection rectangle rendering
-      selectionScreenPos = {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
-      };
+      selectionCanvasRect ??= canvas.getBoundingClientRect();
+      selectionPointer = { clientX: e.clientX, clientY: e.clientY };
+      selectionFrame ??= requestAnimationFrame(flushSelectionMove);
     }
     
     // Handle node dragging (single or multiple)
@@ -1677,6 +1706,7 @@
       }
       
       isSelecting = false;
+      endSelectionMoves();
       justCompletedSelection = true;
       selectionStart = null;
       selectionStartScreen = null;
@@ -4293,6 +4323,7 @@ export function execute(node, graph) {
   tabindex="0"
   class:select-tool={activeTool === 'select'}
   class:hand-tool={activeTool === 'hand'}
+  class:marquee={isSelecting}
   bind:this={canvas}
   on:mousedown={handleMouseDown}
   on:mousemove={handleMouseMove}
@@ -4815,6 +4846,11 @@ export function execute(node, graph) {
     z-index: 15;
   }
   
+  /* No hit-testing under a marquee sweep: see selectionCanvasRect. */
+  .canvas.marquee :global(*) {
+    pointer-events: none !important;
+  }
+
   .selection-rectangle {
     position: absolute;
     border: 1px dashed var(--accent);
