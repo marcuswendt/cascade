@@ -57,6 +57,8 @@ export class CookScheduler {
    *  progress stops after the node it is on, so the edit is cooked next rather
    *  than after everything that happened to be queued before it. */
   private invalidatedDuringRun = false;
+  /** Nodes on display, by id, counted because two Viewers can show one node. */
+  private watched = new Map<string, number>();
   private _status: CookStatus = {
     phase: 'idle',
     pass: 0,
@@ -82,6 +84,35 @@ export class CookScheduler {
     this.listeners.add(listener);
     listener(this._status);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Declare that a node is on display, so it and everything it depends on cook
+   * before anything else in a pass. Returns the release.
+   *
+   * Viewer-first order: a pass used to run strictly in topological order, so a
+   * sink nobody was looking at (an export, a plot plan) could sit in front of
+   * the node on screen. With a node watched, its upstream closure goes first
+   * and the unwatched remainder runs after it in the same pass, still in
+   * topological order. The closure is upstream-closed, so the order stays
+   * valid. With nothing watched — the CLI, a test, cook-all — nothing changes.
+   */
+  watch(node: Node): () => void {
+    const id = node.id;
+    this.watched.set(id, (this.watched.get(id) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const count = (this.watched.get(id) ?? 1) - 1;
+      if (count <= 0) this.watched.delete(id);
+      else this.watched.set(id, count);
+    };
+  }
+
+  /** The ids of nodes currently on display. */
+  get watchedNodeIds(): ReadonlySet<string> {
+    return new Set(this.watched.keys());
   }
 
   /** @internal Called by Node whenever its sole cook state changes. */
@@ -210,6 +241,7 @@ export class CookScheduler {
         .filter((node): node is Node => !!node && staleIds.has(node.id));
       const orderedIds = new Set(ordered.map(node => node.id));
       for (const node of stale) if (!orderedIds.has(node.id)) ordered.push(node);
+      this.viewerFirst(ordered);
 
       for (const node of ordered) node.setCookState('queued');
       const startedAt = performance.now();
@@ -428,6 +460,27 @@ export class CookScheduler {
         }
       });
     });
+  }
+
+  /** Stable-partition `ordered` in place: what a watched node needs, first. */
+  private viewerFirst(ordered: Node[]): void {
+    if (this.watched.size === 0) return;
+    const needed = new Set<string>();
+    const visit = (id: string): void => {
+      if (needed.has(id)) return;
+      const node = this.graph.getNode(id);
+      if (!node) return;
+      needed.add(id);
+      for (const input of node.inputs) {
+        for (const connection of input.connections) visit(connection.from.nodeId);
+      }
+    };
+    for (const id of this.watched.keys()) visit(id);
+    if (needed.size === 0) return;
+    const first = ordered.filter(node => needed.has(node.id));
+    if (first.length === 0 || first.length === ordered.length) return;
+    const rest = ordered.filter(node => !needed.has(node.id));
+    ordered.splice(0, ordered.length, ...first, ...rest);
   }
 
   private collectDownstream(entryNode: Node): Set<string> {

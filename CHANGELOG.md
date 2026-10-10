@@ -6,6 +6,14 @@ Notable changes to Cascade. Newest first.
 
 ### Changed
 
+- **What a Viewer shows cooks first.** A pass ran in plain topological order,
+  so a sink nobody was looking at (an export, a plot check, the mockup) could
+  run ahead of the node on screen. Now the selected or pinned node of each open
+  Viewer and everything it depends on cook first, and the rest of the pass runs
+  after, in the same order as before. With no Viewer (the CLI, tests, cook-all)
+  nothing changes. On cloud-plots, a Viewer on `hatch-curves` showed its result
+  after 3.4 s instead of 7.4 s on a cold cook.
+
 - **An edit cancels the stage it supersedes.** Changing a parameter while a
   long Python stage runs used to wait for that stage, and then for every
   request queued behind it. Now the superseded cook is aborted: its request is

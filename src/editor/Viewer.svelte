@@ -64,6 +64,29 @@
     }
   }
 
+  /**
+   * Tell the scheduler what is on screen, so the selected or pinned node and
+   * its inputs cook before sinks nobody is looking at. Only a node chosen for
+   * display counts: the "first cooking node" fallback changes every node and
+   * would reorder the queue by whatever happened to be running.
+   */
+  let releaseWatch: (() => void) | null = null;
+  let watchedGraph: Graph | undefined;
+  let watchedNode: Node | null = null;
+  $: {
+    const target = displayNode && displayNode === selectedNode ? displayNode : null;
+    if (graph !== watchedGraph || target !== watchedNode) {
+      releaseWatch?.();
+      releaseWatch = graph && target ? graph.scheduler.watch(target) : null;
+      watchedGraph = graph;
+      watchedNode = target;
+    }
+  }
+  onDestroy(() => {
+    releaseWatch?.();
+    releaseWatch = null;
+  });
+
   // Watch for cooking nodes changes
   $: if (graph) {
     // Force reactivity when cooking nodes change
