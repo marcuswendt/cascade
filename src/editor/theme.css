@@ -25,6 +25,26 @@
      blue reads as a hole punched in the graph. See NodeUI's .body.tinted. */
   --node-tint-strength: 100%;
   color-scheme: dark;
+
+  /* Graph focus: the one place to tune how the graph steps back.
+     Read by Canvas.svelte (wires) and NodeUI.svelte (nodes); roles come from
+     src/editor/graphFocus.ts. Levels, not colours, so they hold in both
+     themes and are not repeated in the theme blocks below.
+       idle    nothing selected: nodes full, wires calm
+       focus   the selected nodes and their own wires
+       faded   everything unrelated to a selection
+       hover-  the same focus previewed on hover, stepping back less far */
+  --graph-wire-idle: var(--text-muted);
+  --graph-wire-width: 1.5px;
+  --graph-wire-width-focus: 2px;
+  --graph-wire-opacity-idle: 0.5;
+  --graph-wire-opacity-focus: 1;
+  --graph-wire-opacity-faded: 0.22;
+  --graph-wire-opacity-hover-faded: 0.32;
+  --graph-node-opacity-neighbour: 0.9;
+  --graph-node-opacity-faded: 0.5;
+  --graph-node-opacity-hover-faded: 0.72;
+  --graph-focus-fade: 120ms;
   /* Port and wire colours, one per type family.
    *
    * A reader should tell a vector from an image at a glance without learning

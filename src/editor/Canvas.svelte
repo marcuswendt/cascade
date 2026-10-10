@@ -1,5 +1,6 @@
 <script lang="ts">
   import { canStartConnection, resolveConnection } from './connectionDirection';
+  import { computeGraphFocus, wireRole, nodeEmphasis } from './graphFocus';
   import { onMount, onDestroy, tick, createEventDispatcher } from 'svelte';
   import { Graph, type CanvasAnnotation } from '@/nodes/Graph';
   import { Annotation } from '@/nodes/annotations/Annotation';
@@ -714,27 +715,33 @@
   let connections: Connection[] = [];
 
   /**
-   * Wires sit at half brightness until they concern the selected node.
+   * Focus: which nodes and wires are lifted, and which step back.
    *
-   * Marcus's own reading of a full graph: the wires were brighter than the
-   * nodes, so the picture read as a tangle of colour with the boxes behind it.
-   * Halving them puts the nodes in front, and lifting only the selected node's
-   * own wires back to full turns selection into the answer to "what goes in
-   * and what comes out" — which is the question you actually select a node to
-   * ask.
-   *
-   * A hovered wire lifts too, so the ctrl-to-cut affordance still finds you.
+   * The roles come from ./graphFocus; the levels are the `--graph-*` custom
+   * properties in theme.css. A role only changes when the selection or the
+   * hovered node changes, so this costs nothing while the graph is idle.
+   * Hover is ignored while a wire is being dragged, where fading the graph
+   * would hide the port you are aiming for.
    */
-  const DIMMED_WIRE_OPACITY = 0.5;
+  let hoveredNodeId: string | null = null;
 
-  function isConnectionHighlighted(
-    conn: Connection,
-    selection: string[],
-    hoveredId: string | undefined
-  ): boolean {
-    if (conn.id === hoveredId) return true;
-    if (selection.length === 0) return false;
-    return selection.includes(conn.from.nodeId) || selection.includes(conn.to.nodeId);
+  $: graphFocus = computeGraphFocus(
+    selectedNodes,
+    connectingFrom ? null : hoveredNodeId,
+    connections
+  );
+
+  // Delegated from the nodes layer rather than wired into NodeUI, so node
+  // pointer handling is untouched. Assigns only on change.
+  function handleNodeHoverOver(e: MouseEvent) {
+    const el = (e.target as Element | null)?.closest?.('.node') as HTMLElement | null;
+    const id = el?.dataset.nodeId ?? null;
+    if (id !== hoveredNodeId) hoveredNodeId = id;
+  }
+
+  function handleNodeHoverOut(e: MouseEvent) {
+    const to = (e.relatedTarget as Element | null)?.closest?.('.node');
+    if (!to && hoveredNodeId !== null) hoveredNodeId = null;
   }
 
   function isConnectionProcessing(conn: Connection): boolean {
@@ -742,10 +749,10 @@
     return target?.cookState === 'queued' || target?.cookState === 'cooking';
   }
 
-  // Dimmed first, highlighted last — see the each block below.
+  // Dimmed first, focused last — see the each block below.
   $: orderedConnections = [
-    ...connections.filter(c => !isConnectionHighlighted(c, selectedNodes, hoveredConnection?.connectionId)),
-    ...connections.filter(c => isConnectionHighlighted(c, selectedNodes, hoveredConnection?.connectionId)),
+    ...connections.filter(c => wireRole(c, graphFocus, hoveredConnection?.connectionId) !== 'focus'),
+    ...connections.filter(c => wireRole(c, graphFocus, hoveredConnection?.connectionId) === 'focus'),
   ];
   
   // Filter connections to only show those between visible nodes
@@ -4324,17 +4331,23 @@ export function execute(node, graph) {
         {#if i > 0}
           <span class="path-separator">›</span>
         {/if}
+        <!-- At the root the only crumb is "/", which used to sit beside a
+             second "/" button. The root crumb opens the path field there
+             instead; inside a subnet the button comes back. -->
         <button
           class="path-segment"
           class:current={i === breadcrumbs.length - 1}
-          on:click={() => navigateToBreadcrumb(crumb.node)}
+          title={breadcrumbs.length === 1 ? 'Press / to navigate by path' : undefined}
+          on:click={() => breadcrumbs.length === 1 ? openPathInput() : navigateToBreadcrumb(crumb.node)}
         >
           {crumb.label}
         </button>
       {/each}
-      <button class="path-edit-btn" on:click={openPathInput} title="Press / to navigate by path">
-        /
-      </button>
+      {#if breadcrumbs.length > 1}
+        <button class="path-edit-btn" on:click={openPathInput} title="Press / to navigate by path">
+          /
+        </button>
+      {/if}
     {/if}
   </div>
 
@@ -4366,6 +4379,7 @@ export function execute(node, graph) {
   <!-- Connections layer -->
   <svg 
     class="connections-layer"
+    class:focus-hover={graphFocus.mode === 'hover'}
     style="transform: translate({internalTransform.x}px, {internalTransform.y}px) scale({internalTransform.zoom})"
   >
     <!-- Existing connections.
@@ -4388,7 +4402,8 @@ export function execute(node, graph) {
         {@const fromPort = fromNode?.outputs.find(p => p.id === conn.from.portId) || fromAnnotation?.outputs?.find(p => p.id === conn.from.portId)}
         {@const isActive = !(toNode as any)?.isInputActive || (toNode as any).isInputActive(conn.to.portId)}
         {@const connectionColor = isActive ? (fromPort ? getPortColor(fromPort) : DATA_TYPE_COLORS.any) : DATA_TYPE_COLORS.inactive}
-        {@const isHighlighted = isConnectionHighlighted(conn, selectedNodes, hoveredConnection?.connectionId)}
+        {@const role = wireRole(conn, graphFocus, hoveredConnection?.connectionId)}
+        {@const isHighlighted = role === 'focus'}
         {@const midY = (fromPos.y + toPos.y) / 2}
         {@const curveOffset = Math.abs(toPos.y - fromPos.y) * 0.5}
         {@const isTrigger = conn.type === 'trigger'}
@@ -4413,11 +4428,11 @@ export function execute(node, graph) {
         <path
           d="M {fromPos.x} {fromPos.y} C {fromPos.x} {fromPos.y + curveOffset} {toPos.x} {toPos.y - curveOffset} {toPos.x} {toPos.y}"
           fill="none"
-          style="stroke: {connectionColor};"
-          stroke-width="2"
-          stroke-opacity={isHighlighted ? 1 : DIMMED_WIRE_OPACITY}
+          style="stroke: {isHighlighted ? connectionColor : 'var(--graph-wire-idle)'};"
           stroke-dasharray={isProcessing ? "8 6" : (isTrigger ? "3 3" : "none")}
           class="connection"
+          class:wire-focus={role === 'focus'}
+          class:wire-faded={role === 'faded'}
           class:trigger-connection={isTrigger}
           class:processing-connection={isProcessing}
           class:inactive={!isActive}
@@ -4526,15 +4541,21 @@ export function execute(node, graph) {
     {/each}
   </div>
   
-  <!-- Nodes -->
+  <!-- Nodes. The hover handlers only preview focus, a visual aid with no
+       action behind it, so they carry no keyboard twin. -->
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_mouse_events_have_key_events -->
   <div 
     class="nodes-container"
+    class:focus-hover={graphFocus.mode === 'hover'}
     style="transform: translate({internalTransform.x}px, {internalTransform.y}px) scale({internalTransform.zoom})"
+    on:mouseover={handleNodeHoverOver}
+    on:mouseout={handleNodeHoverOut}
   >
     {#each nodes as node (node.id)}
       <NodeUI
         {node}
         selected={selectedNodes.includes(node.id)}
+        emphasis={nodeEmphasis(node.id, graphFocus)}
         canvasTransform={internalTransform}
         on:portClick={(e) => handlePortClick(e.detail.nodeId, e.detail.portId, e.detail.portType, e.detail.event)}
         on:portMouseDown={(e) => handlePortMouseDown(e.detail.nodeId, e.detail.portId, e.detail.portType, e.detail.event)}
@@ -4614,8 +4635,8 @@ export function execute(node, graph) {
     z-index: 100;
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
+    gap: 2px;
+    padding: 2px 4px;
     background: var(--surface-veil);
     border-radius: 6px;
     border: 1px solid var(--tint);
@@ -4669,21 +4690,19 @@ export function execute(node, graph) {
 
   .path-edit-btn {
     background: none;
-    border: 1px solid var(--tint-medium);
+    border: none;
     color: var(--text-faintest);
     padding: 2px 6px;
     border-radius: 3px;
     cursor: pointer;
     font-family: 'Monaco', 'Menlo', monospace;
     font-size: 11px;
-    margin-left: 4px;
-    transition: all 0.15s ease;
+    transition: background-color 0.12s ease, color 0.12s ease;
   }
 
   .path-edit-btn:hover {
     background: var(--tint);
     color: var(--text-muted);
-    border-color: var(--tint-strong);
   }
 
   .grid {
@@ -4725,13 +4744,45 @@ export function execute(node, graph) {
     height: 100%;
     pointer-events: none;
     transform-origin: top left;
-    z-index: 10;
+    /* Under the nodes (5), not over them. Drawn on top, every wire crossing a
+       node struck through its body and its name, and its 12px hit area ate
+       clicks and hovers meant for the node. */
+    z-index: 4;
     overflow: visible;
   }
   
+  /* Wire levels live in theme.css (--graph-*). Opacity and width are CSS
+     rather than attributes so a role change is one class flip and a 120 ms
+     transition, never a running animation. */
   .connection {
     pointer-events: stroke;
     cursor: pointer;
+    stroke-width: var(--graph-wire-width);
+    stroke-linecap: round;
+    stroke-opacity: var(--graph-wire-opacity-idle);
+    transition:
+      stroke-opacity var(--graph-focus-fade) ease-out,
+      stroke-width var(--graph-focus-fade) ease-out;
+  }
+
+  .connection.wire-focus {
+    stroke-width: var(--graph-wire-width-focus);
+    stroke-opacity: var(--graph-wire-opacity-focus);
+  }
+
+  .connection.wire-faded {
+    stroke-opacity: var(--graph-wire-opacity-faded);
+  }
+
+  .connections-layer.focus-hover .connection.wire-faded {
+    stroke-opacity: var(--graph-wire-opacity-hover-faded);
+  }
+
+  /* Hover is the light version of selection: the focus is the same, the
+     rest of the graph steps back less far. NodeUI reads these. */
+  .nodes-container.focus-hover {
+    --graph-node-opacity-faded: var(--graph-node-opacity-hover-faded);
+    --graph-node-opacity-neighbour: 1;
   }
   
   .connection.trigger-connection {

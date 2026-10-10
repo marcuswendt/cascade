@@ -8,9 +8,12 @@
   import { propUpdateCounters } from './stores/propUpdateStore';
   import { runsOnByModule, iconByModule, moduleName, type RunsOn } from './stores/executionLocus';
   import { graphStructure } from './stores/graphStructure';
+  import type { NodeEmphasis } from './graphFocus';
 
   export let node: Node;
   export let selected = false;
+  /** Set by Canvas from the selection or hover; see ./graphFocus. */
+  export let emphasis: NodeEmphasis = 'none';
   export let canvasTransform: { x: number; y: number; zoom: number } = { x: 0, y: 0, zoom: 1 };
 
   const dispatch = createEventDispatcher();
@@ -370,6 +373,8 @@
   class:stale={cookState === 'stale'}
   class:queued={cookState === 'queued'}
   class:cooking={isCooking}
+  class:focus-neighbour={emphasis === 'neighbour'}
+  class:focus-faded={emphasis === 'faded'}
   data-cook-state={cookState}
   style="left: {position.x}px; top: {position.y}px; opacity: {node.bypass ? 0.5 : 1}"
   data-node-id={node.id}
@@ -545,7 +550,7 @@
           on:dragstart={handleNameDragStart}
           on:dblclick={startEditingName}
           on:keydown={handleNameKeyDownSpan}
-          title="Double-click to rename · drag into the agent console for its path"
+          title="{node.id} · double-click to rename · drag into the agent console for its path"
         >
           {node.id}
         </span>
@@ -579,16 +584,17 @@
 
 
 <style>
+  /* Inside the body, clear of the cook button it used to sit on, and a glyph
+     rather than a filled chip: the hue alone says server or browser. */
   .locus-badge {
     position: absolute;
-    top: 3px;
-    right: 3px;
-    width: 11px;
-    height: 11px;
-    border-radius: 3px;
+    top: 2px;
+    right: 19px;
+    width: 9px;
+    height: 10px;
     font-size: 8px;
-    font-weight: 700;
-    line-height: 11px;
+    font-weight: 600;
+    line-height: 10px;
     text-align: center;
     letter-spacing: 0;
     pointer-events: auto;
@@ -598,12 +604,10 @@
   /* Amber for server-side work, blue for in-page. Deliberately quiet: it is a
      property of the node, not an alert about it. */
   .locus-server {
-    background: var(--syntax-regexp-tint);
     color: var(--syntax-regexp);
   }
 
   .locus-browser {
-    background: var(--syntax-variable-tint);
     color: var(--syntax-variable);
   }
 
@@ -635,8 +639,24 @@
     --node-border-color: var(--status-error-strong);
   }
 
+  /* Focus dims the node's content, not the .node itself, which already
+     carries an inline opacity for bypass. Levels: --graph-* in theme.css. */
+  .node {
+    --node-focus-opacity: 1;
+  }
+  .node.focus-neighbour {
+    --node-focus-opacity: var(--graph-node-opacity-neighbour);
+  }
+  .node.focus-faded {
+    --node-focus-opacity: var(--graph-node-opacity-faded);
+  }
+  .node-container,
+  .comment {
+    opacity: var(--node-focus-opacity);
+    transition: opacity var(--graph-focus-fade, 120ms) ease-out;
+  }
   .node.stale .node-container {
-    opacity: 0.52;
+    opacity: calc(0.52 * var(--node-focus-opacity));
   }
   
   .node-container {
@@ -686,10 +706,13 @@
     opacity: 0.8;
   }
 
+  /* A hairline ring in the canvas colour keeps a dot legible where a wire
+     crosses it, without adding a colour. */
   .port-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
+    box-shadow: 0 0 0 1.5px var(--surface-void);
     flex-shrink: 0;
     /* Color is set via inline style based on port dataType */
   }
@@ -700,8 +723,9 @@
 
   .port-pill {
     width: 80px;
-    height: 8px;
-    border-radius: 4px;
+    height: 6px;
+    border-radius: 3px;
+    box-shadow: 0 0 0 1.5px var(--surface-void);
     flex-shrink: 0;
     /* Color is set via inline style based on port dataType */
   }
@@ -919,10 +943,19 @@
     font-size: 11px;
     color: var(--text-bright);
     white-space: nowrap;
+    /* Canvas-coloured halo: a wire passing behind a name no longer strikes
+       through it. Long names truncate; the full name is on the tooltip. */
+    max-width: 180px;
+    text-shadow:
+      0 0 2px var(--surface-void),
+      0 0 2px var(--surface-void),
+      0 0 4px var(--surface-void);
   }
   
   .node-name {
     font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
     /* `grab`, not `text`. The name is the node's one drag handle — the body is
        the move gesture and the ports are the wiring — and a text caret over the
        only draggable part of a node is an affordance pointing the wrong way.
