@@ -80,9 +80,17 @@
    * A small tick while a node is selected is the honest fix: it reads the
    * node's own cook counter and port counts, and bumps a version only when one
    * of them actually moved, so a still graph costs nothing.
+   *
+   * Two versions, because a cook and a change of shape need different things.
+   * A cook only changes VALUES: `valuesVersion` re-reads the port arrays, and
+   * the keyed rows update in place. Only a change of node or port count bumps
+   * `portsVersion`, which the section {#key}s read and which remounts the
+   * rows. Remounting on every cook tore down the field being typed into.
    */
   let portsVersion = 0;
+  let valuesVersion = 0;
   let portsFingerprint = '';
+  let cookFingerprint = '';
 
   /**
    * Collapsed by default, and remembered per node.
@@ -129,22 +137,28 @@
   onMount(() => {
     const timer = setInterval(() => {
       if (!node) return;
-      const next = `${node.id}:${node.cookInfo?.cookCount ?? 0}:${node.inputs?.length ?? 0}:${node.outputs?.length ?? 0}`;
+      const next = `${node.id}:${node.inputs?.length ?? 0}:${node.outputs?.length ?? 0}`;
+      const cooked = `${node.id}:${node.cookInfo?.cookCount ?? 0}`;
       if (next !== portsFingerprint) {
         portsFingerprint = next;
+        cookFingerprint = cooked;
         portsVersion += 1;
+      } else if (cooked !== cookFingerprint) {
+        cookFingerprint = cooked;
+        valuesVersion += 1;
       }
     }, 400);
     return () => clearInterval(timer);
   });
 
-  function currentPorts<T>(version: number, ports: T[] | undefined): T[] {
+  function currentPorts<T>(version: number, values: number, ports: T[] | undefined): T[] {
     void version;
+    void values;
     return ports ?? [];
   }
 
-  $: inputs = currentPorts(portsVersion, node?.inputs);
-  $: outputs = currentPorts(portsVersion, node?.outputs);
+  $: inputs = currentPorts(portsVersion, valuesVersion, node?.inputs);
+  $: outputs = currentPorts(portsVersion, valuesVersion, node?.outputs);
 
   /**
    * Every input port, editable when nothing is connected to it.
@@ -163,8 +177,9 @@
 
   /** The node's own values. Dependent ones (`visibleWhen`) drop out until the
    *  parameter they depend on is set. */
-  function currentParameters(version: number) {
+  function currentParameters(version: number, values: number) {
     void version;
+    void values;
     return (node?.parameters ?? []).filter((p: any) => {
     if (typeof p.options?.visibleWhen !== 'function') return true;
     try {
@@ -176,7 +191,7 @@
     });
   }
 
-  $: parameters = currentParameters(portsVersion);
+  $: parameters = currentParameters(portsVersion, valuesVersion);
 
   // Kept for the older props-based path below.
   $: paramInputs = [];
@@ -308,7 +323,7 @@
    * rendered as a blank row: deleting a node inside a container should not
    * leave a broken control on the outside of it.
    */
-  function promotedParameters(_version: number) {
+  function promotedParameters(_version: number, _values: number) {
     if (!node?.promotions?.length || !graph) return [] as any[];
     return node.promotions
       .map(entry => {
@@ -319,7 +334,7 @@
       .filter(Boolean) as any[];
   }
 
-  $: promoted = promotedParameters(portsVersion);
+  $: promoted = promotedParameters(portsVersion, valuesVersion);
 
   /**
    * A promoted edit goes to the child, through the same path the child's own
