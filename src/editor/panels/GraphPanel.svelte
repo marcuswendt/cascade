@@ -7,6 +7,7 @@
   import { sharedContextStore } from '../dockview/renderer';
   import { dockviewStore } from '../dockview/dockview-store.svelte';
   import { ENABLE_CODE_EDITOR } from '@/config/features';
+  import { attachShowInViewerDrag } from '../viewerDrag';
 
   export let panelApi: any;
 
@@ -110,7 +111,15 @@
     }
   }
 
+  // Drag a node out of this panel (or Cmd-drag it) onto a Viewer to pin it.
+  let detachShowInViewer: (() => void) | undefined;
+  onDestroy(() => detachShowInViewer?.());
+
   onMount(() => {
+    if (wrapperEl) {
+      detachShowInViewer = attachShowInViewerDrag({ panel: wrapperEl, getGraph: () => graph });
+    }
+
     // Listen for custom events from container
     wrapperEl?.addEventListener('addNode', ((e: CustomEvent) => {
       addNode(e.detail);

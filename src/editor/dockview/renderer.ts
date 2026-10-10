@@ -6,6 +6,7 @@ import { mount, unmount, type Component } from 'svelte';
 import { writable, get, type Writable } from 'svelte/store';
 import type { CascadePanelParams, PanelContext } from './types';
 import type { Node } from '@/nodes/Node';
+import type { Graph } from '@/nodes/Graph';
 
 // Registry of panel components
 // Round 32: "load Monaco only on demand when someone opens that editor
@@ -37,33 +38,98 @@ export const sharedContextStore: Writable<PanelContext | null> = writable(null);
 // Lock state for panels (panel ID -> locked node)
 export interface PanelLockState {
   isLocked: boolean;
+  /** The node object, so a rename (which keeps the object) is followed. Null
+   *  while a lock restored from a saved layout waits for its node to load. */
   lockedNode: Node | null;
   lockedAnnotationId: string | null;
+  /** The locked node's id as last seen: what the layout persists, and how a
+   *  lock re-binds when the graph rebuilds its node objects (undo, reload). */
+  lockedNodeId?: string | null;
+  /** The graph the node was found in. A node missing from that same graph
+   *  was deleted; missing from a different one may simply not be loaded yet. */
+  graph?: Graph;
 }
 
 export const panelLockStore: Writable<Map<string, PanelLockState>> = writable(new Map());
 
-export function togglePanelLock(panelId: string): void {
-  const context = get(sharedContextStore);
+function setLock(panelId: string, state: PanelLockState | null): void {
   panelLockStore.update(locks => {
     const newLocks = new Map(locks);
-    const current = newLocks.get(panelId);
-
-    if (current?.isLocked) {
-      // Unlock
-      newLocks.delete(panelId);
-    } else {
-      // Lock to current selection
-      if (context?.selectedNode || context?.selectedAnnotation) {
-        newLocks.set(panelId, {
-          isLocked: true,
-          lockedNode: context.selectedNode,
-          lockedAnnotationId: context.selectedAnnotation
-        });
-      }
-    }
+    if (state) newLocks.set(panelId, state);
+    else newLocks.delete(panelId);
     return newLocks;
   });
+}
+
+export function togglePanelLock(panelId: string): void {
+  const context = get(sharedContextStore);
+  const current = get(panelLockStore).get(panelId);
+  if (current?.isLocked) {
+    setLock(panelId, null);
+  } else if (context?.selectedNode || context?.selectedAnnotation) {
+    setLock(panelId, {
+      isLocked: true,
+      lockedNode: context.selectedNode,
+      lockedAnnotationId: context.selectedAnnotation,
+      lockedNodeId: context.selectedNode?.id ?? null,
+      graph: context.graph,
+    });
+  }
+}
+
+/** Pin a panel to one node — the drop of a node dragged out of the graph. */
+export function lockPanelToNode(panelId: string, node: Node, graph?: Graph): void {
+  setLock(panelId, { isLocked: true, lockedNode: node, lockedAnnotationId: null, lockedNodeId: node.id, graph });
+}
+
+export function unlockPanel(panelId: string): void {
+  if (get(panelLockStore).has(panelId)) setLock(panelId, null);
+}
+
+/** A lock read back from a saved layout: only the id is known until the
+ *  graph that holds it has loaded. */
+export function restorePanelLock(panelId: string, nodeId: string): void {
+  if (get(panelLockStore).get(panelId)?.isLocked) return;
+  setLock(panelId, { isLocked: true, lockedNode: null, lockedAnnotationId: null, lockedNodeId: nodeId });
+}
+
+export type LockResolution =
+  | { kind: 'node'; node: Node }
+  | { kind: 'pending' }
+  | { kind: 'gone' };
+
+/**
+ * Where a node lock points in `graph` right now. The object wins (a rename
+ * keeps it); failing that the id (a rebuilt graph has new objects under the
+ * same ids). A node missing from the very graph it was locked in was deleted.
+ * A lock restored from a saved layout waits only while the graph is empty.
+ */
+export function resolveLockedNode(lock: PanelLockState, graph: Graph | undefined): LockResolution {
+  if (!graph) return { kind: 'pending' };
+  if (lock.lockedNode && graph.nodes.includes(lock.lockedNode)) return { kind: 'node', node: lock.lockedNode };
+  const byId = lock.lockedNodeId ? graph.getNode(lock.lockedNodeId) : null;
+  if (byId) return { kind: 'node', node: byId };
+  if (lock.graph === graph) return { kind: 'gone' };
+  // A restored lock (no object yet) on a graph that has loaded nodes, none of
+  // them the one it names: the node was deleted or never saved.
+  if (!lock.lockedNode && graph.nodes.length > 0) return { kind: 'gone' };
+  return { kind: 'pending' };
+}
+
+/** Apply `resolveLockedNode` to the store: re-bind, or drop a deleted lock. */
+export function reconcilePanelLock(panelId: string, graph: Graph | undefined): void {
+  const lock = get(panelLockStore).get(panelId);
+  if (!lock?.isLocked || lock.lockedAnnotationId) return;
+  if (!lock.lockedNode && !lock.lockedNodeId) return;
+  const resolved = resolveLockedNode(lock, graph);
+  if (resolved.kind === 'gone') {
+    setLock(panelId, null);
+  } else if (resolved.kind === 'node') {
+    const node = resolved.node;
+    if (node !== lock.lockedNode || node.id !== lock.lockedNodeId || lock.graph !== graph) {
+      setLock(panelId, { ...lock, lockedNode: node, lockedNodeId: node.id, graph });
+    }
+  }
 }
 
 export function getPanelLockState(panelId: string): PanelLockState | undefined {

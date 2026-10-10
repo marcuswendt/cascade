@@ -270,6 +270,8 @@ class DockviewStore {
             // Show lock button for viewer and inspector panels
             if (panelType === 'viewer' || panelType === 'inspector') {
               lockBtn.style.display = 'flex';
+              // A node dragged out of the graph can be dropped on the tab too.
+              if (panelType === 'viewer') element.dataset.viewerDrop = panelId;
 
               // Subscribe to lock store changes
               unsubscribeLock = panelLockStore.subscribe(() => {

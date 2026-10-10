@@ -20,6 +20,8 @@ export interface CascadePanelParams {
   graphId?: string;     // For graph panels
   projectPanelName?: string;
   sourceNodeId?: string;
+  /** A viewer pinned to one node; persisted with the layout. */
+  lockedNodeId?: string;
 }
 
 // Shared context passed to all panels
