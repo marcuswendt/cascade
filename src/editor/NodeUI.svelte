@@ -4,7 +4,7 @@
   import { getNodeIcon } from './nodeTemplates';
   import Icon from './Icon.svelte';
   import { getPortColor } from '@/utils/portColors';
-  import { geometryFacts } from './components/typePresentation';
+  import { bundleFacts, declaredBundleFields, geometryFacts } from './components/typePresentation';
   import { propUpdateCounters } from './stores/propUpdateStore';
   import { runsOnByModule, iconByModule, moduleName, type RunsOn } from './stores/executionLocus';
   import { graphStructure } from './stores/graphStructure';
@@ -164,6 +164,8 @@
     type: 'input' | 'output';
     /** What the port is actually carrying, when that can be said usefully. */
     facts: string[];
+    /** A bundle lists one field per line. */
+    bundle: boolean;
   } | null = null;
   let isEditingName = false;
   let nameInput: HTMLInputElement;
@@ -179,8 +181,12 @@
    * whatever the last cook left there, which is exactly what the question
    * means.
    */
-  function portFacts(value: unknown): string[] {
+  function portFacts(value: unknown, port?: unknown): string[] {
     try {
+      // A bundle is one port with many fields; the hover is where they are read.
+      if ((port as { dataType?: string } | undefined)?.dataType === 'bundle') {
+        return bundleFacts(value, declaredBundleFields(port, node));
+      }
       return geometryFacts(value);
     } catch {
       // A tooltip must never be the thing that breaks a hover.
@@ -188,7 +194,13 @@
     }
   }
 
-  function showPortTooltip(e: MouseEvent, portName: string, dataType: string, color: string, portType: 'input' | 'output', value?: unknown) {
+  /** `bundle · format` names the schema, which is what tells two bundles apart. */
+  function bundleTypeLabel(dataType: string, port?: unknown): string {
+    const schema = (port as { options?: { schema?: string } } | undefined)?.options?.schema;
+    return dataType === 'bundle' && schema ? `bundle · ${schema}` : dataType;
+  }
+
+  function showPortTooltip(e: MouseEvent, portName: string, dataType: string, color: string, portType: 'input' | 'output', value?: unknown, port?: unknown) {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 
     // getBoundingClientRect returns viewport coordinates, but since the tooltip
@@ -205,12 +217,13 @@
     const offset = 2;
     tooltip = {
       name: portName,
-      dataType,
       color,
       x: containerX,
       y: portType === 'input' ? containerY + offset : containerY - offset,
       type: portType,
-      facts: portFacts(value),
+      facts: portFacts(value, port),
+      dataType: bundleTypeLabel(dataType, port),
+      bundle: dataType === 'bundle',
     };
   }
   
@@ -429,7 +442,7 @@
                 on:click={(e) => handlePortClick(port.id, 'input', e)}
                 on:mousedown={(e) => handlePortMouseDown(port.id, 'input', e)}
                 on:keydown={(e) => handleKeyDown(port.id, 'input', e)}
-                on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'input', port.value)}
+                on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'input', port.value, port)}
                 on:mouseleave={hidePortTooltip}
                 data-node-id={node.id}
                 data-port-id={port.id}
@@ -557,7 +570,7 @@
               on:click={(e) => handlePortClick(port.id, 'output', e)}
               on:mousedown={(e) => handlePortMouseDown(port.id, 'output', e)}
               on:keydown={(e) => handleKeyDown(port.id, 'output', e)}
-              on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'output', port.value)}
+              on:mouseenter={(e) => showPortTooltip(e, port.name, port.dataType || 'any', portColor, 'output', port.value, port)}
               on:mouseleave={hidePortTooltip}
               data-node-id={node.id}
               data-port-id={port.id}
@@ -620,6 +633,7 @@
 {#if tooltip}
   <div
     class="port-tooltip port-tooltip-{tooltip.type}"
+    class:port-tooltip-bundle={tooltip.bundle}
     style="left: {tooltip.x}px; top: {tooltip.y}px; border-color: {tooltip.color};"
     role="tooltip"
   >
@@ -1196,6 +1210,18 @@
   .tooltip-type {
     font-size: 10px;
     opacity: 0.9;
+  }
+
+  .port-tooltip-bundle {
+    flex-wrap: wrap;
+    max-width: 360px;
+  }
+
+  .port-tooltip-bundle .tooltip-fact {
+    flex-basis: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 
   .port-tooltip-input {

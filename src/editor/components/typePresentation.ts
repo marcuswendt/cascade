@@ -283,3 +283,67 @@ export function geometryFacts(value: unknown): string[] {
 
   return facts;
 }
+
+// ------------------------------------------------------------------ bundles
+
+type BundleFieldDeclarations = Readonly<Record<string, string | Readonly<{ type: string; description?: string }>>>;
+
+export interface BundleFieldRow {
+  name: string;
+  /** Declared type, or the type inferred from the value when undeclared. */
+  type: string;
+  description?: string;
+  /** Declared by the producer, as opposed to only present in the value. */
+  declared: boolean;
+  /** Present in the value the last cook left on the port. */
+  present: boolean;
+  value: unknown;
+}
+
+/**
+ * The fields a bundle port declares: its own declaration on an output, or the
+ * producer's on a wired input. Null when nobody declared any.
+ */
+export function declaredBundleFields(port: any, node?: any): BundleFieldDeclarations | null {
+  if (port?.options?.bundleFields) return port.options.bundleFields;
+  const connection = port?.connections?.[0];
+  const upstream = connection && node?.graph?.getNode?.(connection.from.nodeId)?.getPort?.(connection.from.portId);
+  return upstream?.options?.bundleFields ?? null;
+}
+
+/** One row per field: declared ones first in declared order, then extras. */
+export function bundleFieldRows(value: unknown, declared: BundleFieldDeclarations | null): BundleFieldRow[] {
+  const record = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  const has = (name: string) => Object.prototype.hasOwnProperty.call(record, name);
+  const rows: BundleFieldRow[] = [];
+  for (const [name, definition] of Object.entries(declared ?? {})) {
+    const type = typeof definition === 'string' ? definition : definition.type;
+    const description = typeof definition === 'string' ? undefined : definition.description;
+    rows.push({ name, type, description, declared: true, present: has(name), value: record[name] });
+  }
+  for (const name of Object.keys(record)) {
+    if (declared && Object.prototype.hasOwnProperty.call(declared, name)) continue;
+    rows.push({ name, type: inferCascadeType(record[name]), declared: false, present: true, value: record[name] });
+  }
+  return rows;
+}
+
+/** A short vector reads better as its numbers than as "2 items". */
+function factValue(value: unknown, type: string): string {
+  if (Array.isArray(value) && value.length <= 4 && value.every(item => typeof item === 'number')) {
+    return `[${value.map(item => Math.round(item * 1000) / 1000).join(', ')}]`;
+  }
+  return summarizeValue(value, type);
+}
+
+/** Tooltip lines for a bundle port: `name type = value`, capped. */
+export function bundleFacts(value: unknown, declared: BundleFieldDeclarations | null, limit = 16): string[] {
+  const rows = bundleFieldRows(value, declared);
+  const lines = rows.slice(0, limit).map(row =>
+    `${row.name} ${row.type}${row.present ? ` = ${factValue(row.value, row.type)}` : ''}`);
+  if (rows.length > limit) lines.push(`… ${rows.length - limit} more`);
+  if (!rows.length) lines.push(value === undefined ? 'not cooked yet' : 'no fields');
+  return lines;
+}

@@ -7,9 +7,12 @@
  */
 import { registerTypeRenderer } from './typeRenderers';
 import JsonTree from './JsonTree.svelte';
+import BundleValue from './BundleValue.svelte';
 
 // Structured values get a real tree rather than a one-line summary — lazy, so
 // nothing below the top level is built until it is opened, and windowed, so a
 // few thousand curve points cannot lock the tab.
 registerTypeRenderer('object', JsonTree);
 registerTypeRenderer('array', JsonTree);
+// A bundle lists its fields, each drawn by its own type's renderer.
+registerTypeRenderer('bundle', BundleValue);
