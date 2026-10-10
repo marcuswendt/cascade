@@ -1335,7 +1335,7 @@
             >
               {#each folderProps as item}
                 {@const { key, prop, controlType, displayName } = item}
-                {@const inputId = `prop-${node.id}-${key}-${folder}`}
+                {@const inputId = `prop-${node?.id}-${key}-${folder}`}
                 {@const isVector = controlType === 'vec2' || controlType === 'vec3' || controlType === 'vec2i' || controlType === 'vec3i' || controlType === 'vector'}
                 <div class="prop-group" class:prop-group-row={isVector}>
                   {#if displayName !== null}
@@ -1472,7 +1472,7 @@
           {:else}
             {#each folderProps as item}
               {@const { key, prop, controlType, displayName } = item}
-              {@const inputId = `prop-${node.id}-${key}-${folder}`}
+              {@const inputId = `prop-${node?.id}-${key}-${folder}`}
               {@const isVector = controlType === 'vec2' || controlType === 'vec3' || controlType === 'vec2i' || controlType === 'vec3i' || controlType === 'vector'}
               <div class="prop-group" class:prop-group-row={isVector}>
                 {#if displayName !== null}
@@ -1709,7 +1709,7 @@
                              reads the same wherever it is rendered. -->
                         <span
                           class="parameter-name"
-                          bind:this={scrubLabels[`param-${node.id}-${parameter.name}`]}
+                          bind:this={scrubLabels[`param-${node?.id}-${parameter.name}`]}
                           use:parameterDragSource={parameter.name}
                           title={`${parameter.options?.label ?? parameter.name} · ${normalizeType(parameter.dataType)}`}
                         >{parameter.options?.label ?? parameter.name}</span>
@@ -1732,8 +1732,8 @@
                         >
                           <NumberInput
                             prop={bound}
-                            id={`param-${node.id}-${parameter.name}`}
-                            scrubHandle={scrubLabels[`param-${node.id}-${parameter.name}`] ?? null}
+                            id={`param-${node?.id}-${parameter.name}`}
+                            scrubHandle={scrubLabels[`param-${node?.id}-${parameter.name}`] ?? null}
                             onValueChange={(value) => handleParamChange(parameter, value)}
                             onExpressionChange={(expression) => setParameterExpression(parameter.name, expression)}
                           />

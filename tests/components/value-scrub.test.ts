@@ -3,6 +3,7 @@ import { fireEvent, render, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import CoreValue from '@/editor/components/CoreValue.svelte';
 import Inspector from '@/editor/Inspector.svelte';
+import InspectorStack from '@/editor/InspectorStack.svelte';
 import { Graph } from '@/nodes/Graph';
 import { Node } from '@/nodes/Node';
 import { expressionEngine } from '@/engine/expressions/index';
@@ -116,5 +117,18 @@ describe('scrubbing in the Inspector', () => {
     const offset = node.parameters.find(p => p.name === 'offset')!.value as number[];
     expect(offset[0]).toBeCloseTo(-0.1);
     expect(offset[1]).toBeCloseTo(0.3);
+  });
+
+  it('clearing the node tears the scrub labels down without reading a null id', async () => {
+    const node = sketch();
+    const errors: unknown[] = [];
+    const onError = (event: ErrorEvent) => errors.push(event.error);
+    window.addEventListener('error', onError);
+    const view = render(InspectorStack, { props: { nodes: [node] } });
+    expect(view.container.querySelector(".parameter-bound .parameter-name")?.textContent).toBe("scale");
+    await view.rerender({ nodes: [] });
+    window.removeEventListener('error', onError);
+    expect(errors).toEqual([]);
+    expect(view.queryByText('scale')).toBeNull();
   });
 });
