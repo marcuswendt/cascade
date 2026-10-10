@@ -2,6 +2,42 @@
 
 Notable changes to Cascade. Newest first.
 
+## 0.8.0 — 2026-10-10
+
+### Added
+
+- **Number fields scrub.** Middle-drag any numeric field (vector components,
+  ints, a scalar's number box, colour channels) to drag its value, Houdini
+  style. On a trackpad, drag the X/Y/Z letter or the parameter's name, or
+  Option-drag the field. Shift is 10× coarser, Cmd/Ctrl 10× finer, Esc restores
+  the start value, and a whole drag is one undo step. Vectors with a range show
+  a hairline marking where the value sits.
+- **Drag a node onto a Viewer to pin it there.** Drag a node out of the graph
+  panel, or Cmd-drag it, and drop it on a Viewer: the Viewer shows that node and
+  locks to it. Click the lock to follow the selection again. Each Viewer locks
+  on its own, and locks survive a reload.
+
+### Changed
+
+- **The graph stays calm until you select.** Wires idle at half opacity. A
+  selection brings its node and wires to full strength and fades the rest;
+  hover previews the same. Wires now draw under nodes, so they no longer cross
+  names or take clicks. The levels are the `--graph-*` variables in
+  `src/editor/theme.css`.
+- **Dragging a parameter's name into the agent console is now Option-drag**,
+  because a plain drag on the name scrubs.
+
+### Fixed
+
+- **Studio no longer wakes the GPU while idle.** The Viewer requested an
+  animation frame on every frame whenever anything was on display, which kept
+  the compositor ticking at display rate. It now redraws on a cook or a
+  selection change and stops while the tab is hidden: 10 s idle went from 1,250
+  frame callbacks to none.
+- **A scrub label no longer throws when its node goes null on teardown.**
+- **The Pinterest extension no longer puts Save buttons over canvases.** Studio
+  sets `<meta name="pinterest" content="nopin">`.
+
 ## 0.7.1 — 2026-09-12
 
 ### Added
