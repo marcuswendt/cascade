@@ -1,6 +1,6 @@
 <script lang="ts">
   import { looksLikeSvg, svgDataUrl } from './svgPreview';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
   import type { Annotation } from '@/nodes/annotations/Annotation';
@@ -141,7 +141,12 @@
     if (next !== portsFingerprint) {
       portsFingerprint = next;
       portsVersion += 1;
-      refreshMountedImage();
+      // After the bump has flushed: before it, activeOutput still describes
+      // the previous selection, so the old image was re-fetched at the new
+      // version (see checkAndEvaluate).
+      void tick().then(() => {
+        if (!destroyed) refreshMountedImage();
+      });
     }
   }
 
@@ -1059,14 +1064,22 @@
       try {
         await displayNode.requestOutput();
         refreshPorts();
+        await tick();
+        if (destroyed) return;
         // Force re-render after evaluation (content changed even if dimensions didn't)
         forceRender();
       } finally {
         isEvaluating = false;
       }
     } else {
-      // No evaluation needed, just check if render needed
+      // No evaluation needed, just check if render needed. The tick lets the
+      // reactive statements catch up with refreshPorts first: without it a new
+      // selection was rendered against the previous node's activeOutput, the
+      // old image was fetched again, and the right one only appeared on the
+      // idle poll a second later (12 of 31 selections on cloud-plots).
       refreshPorts();
+      await tick();
+      if (destroyed) return;
       checkForRender();
     }
   }
