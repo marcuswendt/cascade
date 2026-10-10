@@ -17,11 +17,51 @@
  * carries a project-relative path, never pixels.
  */
 
+export interface StageCallOptions {
+  /**
+   * Abandons the stage. In Studio the request is withdrawn — dropped if it is
+   * still queued for the worker, interrupted if it is running — and the call
+   * rejects at once, so a superseded cook stops costing anything the moment it
+   * is superseded rather than when the stage happens to finish.
+   *
+   * Optional: when it is absent the signal of the cook in flight is used (see
+   * `COOK_SIGNAL_KEY`), so a node that never heard of this still cancels.
+   */
+  readonly signal?: AbortSignal;
+}
+
 export interface StageBridge {
-  (stage: string, args: Record<string, unknown>): Promise<unknown>;
+  (stage: string, args: Record<string, unknown>, options?: StageCallOptions): Promise<unknown>;
 }
 
 const BRIDGE_KEY = '__cascadeStageBridge';
+
+/**
+ * Where the scheduler publishes the signal of the interactive cook in flight.
+ *
+ * On `globalThis` for the same reason as the bridge: every project module is
+ * compiled with its own copy of this file, so module state would not be shared
+ * with the scheduler that sets it. The interactive lane runs one node at a
+ * time, which is what makes a single ambient value correct: a stage started
+ * while node N cooks belongs to node N's cook. Read at call time, never later.
+ */
+export const COOK_SIGNAL_KEY = '__cascadeCookSignal';
+
+function ambientCookSignal(): AbortSignal | undefined {
+  const read = (globalThis as Record<string, unknown>)[COOK_SIGNAL_KEY];
+  if (typeof read !== 'function') return undefined;
+  const signal = (read as () => AbortSignal | null | undefined)();
+  return signal ?? undefined;
+}
+
+/** The rejection a withdrawn stage produces, recognisable without importing a
+ *  class across module copies. */
+function cancelledError(stage: string, signal: AbortSignal): Error {
+  const reason = signal.reason instanceof Error ? signal.reason.message : 'superseded';
+  const error = new Error(`stage "${stage}" was cancelled: ${reason}`);
+  error.name = 'AbortError';
+  return error;
+}
 
 /**
  * Install the local transport. Called by a host that can reach the filesystem —
@@ -71,20 +111,27 @@ async function capability(): Promise<string> {
   return token;
 }
 
-async function overHttp<T>(stage: string, args: Record<string, unknown>): Promise<T> {
+async function overHttp<T>(stage: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   const postStage = async () => fetch('/api/exec', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Cascade-Exec-Capability': await capability() },
     body: JSON.stringify({ stage, args }),
+    signal,
   });
 
-  let response = await postStage();
-  if (response.status === 403) {
-    capabilityPromise = undefined;
+  let response: Response;
+  let body: { ok?: boolean; stdout?: string; stderr?: string; error?: string };
+  try {
     response = await postStage();
+    if (response.status === 403) {
+      capabilityPromise = undefined;
+      response = await postStage();
+    }
+    body = await response.json() as typeof body;
+  } catch (error) {
+    if (signal?.aborted) throw cancelledError(stage, signal);
+    throw error;
   }
-
-  const body = await response.json() as { ok?: boolean; stdout?: string; stderr?: string; error?: string };
   if (!response.ok || !body.ok) {
     throw new Error(`stage "${stage}" failed: ${body.stderr || body.error || 'unknown error'}`);
   }
@@ -113,16 +160,29 @@ export async function stageAvailable(): Promise<boolean> {
  * rather than a URL parse error from a fetch that was never going to work —
  * which is what this whole file exists to stop happening.
  */
-export async function runStage<T = unknown>(stage: string, args: Record<string, unknown> = {}): Promise<T> {
+export async function runStage<T = unknown>(
+  stage: string,
+  args: Record<string, unknown> = {},
+  options: StageCallOptions = {},
+): Promise<T> {
+  const signal = options.signal ?? ambientCookSignal();
+  if (signal?.aborted) throw cancelledError(stage, signal);
   const bridge = localBridge();
-  if (bridge) return await bridge(stage, args) as T;
+  if (bridge) {
+    try {
+      return await bridge(stage, args, signal ? { signal } : undefined) as T;
+    } catch (error) {
+      if (signal?.aborted) throw cancelledError(stage, signal);
+      throw error;
+    }
+  }
   if (typeof document === 'undefined') {
     throw new Error(
       `Cannot run stage "${stage}": no host bridge is installed and there is no page to post from. ` +
       'A headless host must call installStageBridge() from cascade/stage before executing the graph.',
     );
   }
-  return overHttp<T>(stage, args);
+  return overHttp<T>(stage, args, signal);
 }
 
 /** A scratch path for a node's output, scoped by node id so re-running a graph

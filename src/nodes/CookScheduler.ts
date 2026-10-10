@@ -27,7 +27,18 @@ export interface CookStatus {
    * that separates them, which is the whole reason it exists.
    */
   pass: number;
+  /**
+   * Cooks abandoned in this run because a newer edit invalidated them while
+   * they were running. Each one is a stage that stopped costing anything the
+   * moment it was superseded — its Python request withdrawn, its result never
+   * applied — rather than one the next edit waited behind.
+   */
+  superseded?: number;
 }
+
+/** See `COOK_SIGNAL_KEY` in `cascade/stage`: the same key, duplicated rather
+ *  than imported because core must not depend on the server runtime. */
+const COOK_SIGNAL_KEY = '__cascadeCookSignal';
 
 type CookListener = (status: Readonly<CookStatus>) => void;
 
@@ -42,9 +53,14 @@ export class CookScheduler {
   private listeners = new Set<CookListener>();
   private idleResolvers = new Set<() => void>();
   private backgroundAbort: AbortController | null = null;
+  /** Set when something is invalidated while a run is active: the pass in
+   *  progress stops after the node it is on, so the edit is cooked next rather
+   *  than after everything that happened to be queued before it. */
+  private invalidatedDuringRun = false;
   private _status: CookStatus = {
     phase: 'idle',
     pass: 0,
+    superseded: 0,
     total: 0,
     completed: 0,
     currentNode: null,
@@ -87,6 +103,7 @@ export class CookScheduler {
       }
     };
     visit(node);
+    if (this.activeRun) this.invalidatedDuringRun = true;
 
     // Nodes can become dirty while their constructors are still declaring
     // ports. Do not start graph work until the node has actually been added.
@@ -114,7 +131,7 @@ export class CookScheduler {
     }
     if (this.timer) clearTimeout(this.timer);
     const total = this.graph.nodes.filter(node => node.cookState === 'stale' || node.cookState === 'queued').length;
-    this.setStatus({ phase: 'scheduled', total, completed: 0, currentNode: null, pass: 0, startedAt: null, elapsed: 0 });
+    this.setStatus({ phase: 'scheduled', total, completed: 0, currentNode: null, pass: 0, superseded: 0, startedAt: null, elapsed: 0 });
     this.timer = setTimeout(() => {
       this.timer = null;
       void this.flushScheduled();
@@ -175,9 +192,11 @@ export class CookScheduler {
   private async run(entryNode?: Node): Promise<void> {
     let restrictTo = entryNode ? this.collectDownstream(entryNode) : null;
     let pass = 0;
+    let supersededCount = 0;
 
     do {
       this.rerunRequested = false;
+      this.invalidatedDuringRun = false;
       const stale = this.graph.nodes.filter(node =>
         (node.cookState === 'stale' || node.cookState === 'queued') &&
         (!restrictTo || restrictTo.has(node.id))
@@ -201,6 +220,7 @@ export class CookScheduler {
         completed: 0,
         currentNode: null,
         pass,
+        superseded: supersededCount,
         startedAt,
         elapsed: 0
       });
@@ -256,25 +276,58 @@ export class CookScheduler {
 
         node.setCookState('cooking');
         this.setStatus({ ...this._status, currentNode: node, elapsed: performance.now() - startedAt });
-        await node.execute();
+        await this.executeInteractive(node);
         if (node.cookState === 'error') blocked.add(node.id);
         if (node.cookState === 'stale') {
           blocked.add(node.id);
           superseded = true;
+          supersededCount += 1;
         }
         this.setStatus({
           ...this._status,
           completed: this._status.completed + 1,
           currentNode: null,
+          superseded: supersededCount,
           elapsed: performance.now() - startedAt
         });
+        /**
+         * Cancel-and-supersede. An edit arriving mid-pass has already aborted
+         * whatever it invalidated (`invalidateCook` aborts the cook's signal,
+         * which withdraws its stage request), and here the pass itself yields:
+         * the next pass re-reads the topological order and starts from the
+         * edited node, instead of finishing a queue the edit has overtaken.
+         * Nodes left `queued` are picked up by that pass; nothing is lost.
+         */
+        if (this.invalidatedDuringRun) {
+          this.rerunRequested = true;
+          break;
+        }
       }
       if (superseded) this.rerunRequested = true;
     } while (this.rerunRequested);
 
-    this.setStatus({ phase: 'idle', total: 0, completed: 0, currentNode: null, pass: 0, startedAt: null, elapsed: 0 });
+    this.setStatus({ phase: 'idle', total: 0, completed: 0, currentNode: null, pass: 0, superseded: 0, startedAt: null, elapsed: 0 });
     for (const resolve of this.idleResolvers) resolve();
     this.idleResolvers.clear();
+  }
+
+  /**
+   * Cook one node with its signal published as the ambient cook signal, so a
+   * stage it starts can be withdrawn when the cook is superseded even if the
+   * node never passes `context.signal` along. Safe as a single global because
+   * this lane runs one node at a time; restored rather than cleared in case a
+   * host nests a run.
+   */
+  private async executeInteractive(node: Node): Promise<void> {
+    const globals = globalThis as Record<string, unknown>;
+    const previous = globals[COOK_SIGNAL_KEY];
+    const read = () => node.inFlightCookSignal;
+    globals[COOK_SIGNAL_KEY] = read;
+    try {
+      await node.execute();
+    } finally {
+      if (globals[COOK_SIGNAL_KEY] === read) globals[COOK_SIGNAL_KEY] = previous;
+    }
   }
 
   // ============ The background lane ============

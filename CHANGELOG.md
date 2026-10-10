@@ -2,6 +2,20 @@
 
 Notable changes to Cascade. Newest first.
 
+## Unreleased
+
+### Changed
+
+- **An edit cancels the stage it supersedes.** Changing a parameter while a
+  long Python stage runs used to wait for that stage, and then for every
+  request queued behind it. Now the superseded cook is aborted: its request is
+  withdrawn from the worker (dropped if queued, interrupted with SIGINT if
+  running, killed if it does not answer), its result is never applied, and the
+  pass restarts from the edit. The cook strip shows how many cooks were
+  superseded. Measured on cloud-plots, an edit during a 12 s stage now lands in
+  0.6 s instead of 10.9 s. Project workers should answer an interrupt with
+  `{"cancelled": true}` to stay warm; see `doc/PROJECT_AUTHORING.md`.
+
 ## 0.8.0 — 2026-10-10
 
 ### Added

@@ -1867,6 +1867,19 @@ export class Node {
     return null;
   }
 
+  /**
+   * @internal The signal of the newest cook in flight, aborted or not.
+   *
+   * Unlike `cookSignal`, this keeps answering after the cook is aborted, which
+   * is what a stage started late needs: a call made after the supersede must
+   * see an aborted signal and not start, not see no signal and run unguarded.
+   */
+  get inFlightCookSignal(): AbortSignal | null {
+    let latest: AbortController | null = null;
+    for (const controller of this.cookAborts) latest = controller;
+    return latest?.signal ?? null;
+  }
+
   /** @internal Scheduler-owned invalidation primitive. */
   invalidateCook(): void {
     this.cookGeneration++;

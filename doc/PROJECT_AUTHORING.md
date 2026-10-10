@@ -512,6 +512,18 @@ It may also accept inline JSON after `--args` for manual compatibility. Projects
 with expensive imports may additionally declare a newline-delimited JSON
 `worker`; Cascade keeps that process warm and correlates requests by `id`.
 
+Cascade sends the worker one request at a time. When a newer edit supersedes a
+running stage, Cascade withdraws it: a queued request is never sent, and the
+one in flight gets `SIGINT`. A worker that catches `KeyboardInterrupt` around a
+request should answer `{"id": <id>, "ok": false, "cancelled": true}` and keep
+serving, so warm models survive a scrub; it should also ignore an interrupt
+that arrives between requests. A worker that does not handle it exits and is
+respawned on the next call, and one that has not answered within three seconds
+is killed. Whatever a cancelled request returns is discarded. Write cache
+entries atomically (temp file plus rename), since a stage can now be
+interrupted part-way. Nodes can pass `{ signal }` as `runStage`'s third
+argument; without it the signal of the cook in flight is used.
+
 ## Work with `.cascade` files
 
 A graph document stores authored elements separately from runtime state. Nodes and annotations remain flat even inside subnets:

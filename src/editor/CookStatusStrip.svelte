@@ -56,11 +56,20 @@
         <span class="current-node">{status.currentNode.id}</span>
       {/if}
       <time>{formatElapsed(elapsed)}</time>
+      {#if status.superseded}
+        <!-- A newer edit overtook this many cooks; their work was withdrawn. -->
+        <span class="superseded" title="Cooks abandoned because a newer edit overtook them">{status.superseded} superseded</span>
+      {/if}
     {/if}
   </div>
 {/if}
 
 <style>
+  .superseded {
+    color: var(--text-tertiary, var(--text-secondary));
+    opacity: 0.8;
+  }
+
   .cook-status {
     position: absolute;
     z-index: 1000;

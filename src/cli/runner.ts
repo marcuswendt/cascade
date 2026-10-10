@@ -144,7 +144,9 @@ export async function runGraph(options: RunOptions): Promise<void> {
     setEmbeddedCompiler(async (code) => (await compileEmbedded(project!, code)).code);
     // A node importing `cascade/stage` posts to the server in the page and
     // calls this in a headless run, so one Python-backed node renders either way.
-    disposeStageBridge = installStageBridge((stage, args) => runProjectStage(project!, stage, args, {
+    disposeStageBridge = installStageBridge((stage, args, options) => runProjectStage(project!, stage, args, {
+      // A superseded cook kills its subprocess rather than waiting for it.
+      signal: options?.signal,
       /**
        * A stage can log, and until now nobody could read it.
        *

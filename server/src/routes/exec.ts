@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { Router, json, type NextFunction, type Request, type Response } from 'express';
 import type { ProjectRoot } from '../project.js';
-import { PythonWorker } from '../pythonWorker.js';
+import { PythonWorker, StageCancelledError } from '../pythonWorker.js';
 import { allowsSensitiveCapabilities, createBrowserCapabilityBoundary, type ServerSecurityOptions } from '../security.js';
 import { CredentialStore } from '../credentials.js';
 import { readProjectManifest } from '../projectConfig.js';
@@ -39,12 +39,19 @@ export function createExecRouter(project: ProjectRoot, security: ServerSecurityO
             workerSlot?.worker.shutdown();
             workerSlot = { key, worker: new PythonWorker(project, config.worker, config.python, { ...process.env, ...credentialEnv }) };
           }
+          // The page aborting its fetch is how Studio withdraws a superseded
+          // stage: the worker drops it if queued and interrupts it if running,
+          // so the next edit does not wait behind work nobody will look at.
+          const workerAbort = new AbortController();
+          res.once('close', () => { if (!res.writableEnded) workerAbort.abort(); });
           try {
-            const result = await workerSlot.worker.call(request.stage, request.args);
+            const result = await workerSlot.worker.call(request.stage, request.args, { signal: workerAbort.signal });
             res.json({ ok: true, stdout: JSON.stringify(result), stderr: '' });
           } catch (error) {
+            if (res.destroyed || res.writableEnded) return;
             const message = error instanceof Error ? error.message : String(error);
-            res.status(500).json({ ok: false, error: message, stdout: '', stderr: message });
+            const cancelled = error instanceof StageCancelledError;
+            res.status(cancelled ? 499 : 500).json({ ok: false, error: message, stdout: '', stderr: message, ...(cancelled ? { cancelled: true } : {}) });
           }
           return;
         }
