@@ -1017,8 +1017,8 @@
   // Check for dirty nodes and trigger evaluation + render
   async function checkAndEvaluate() {
     /**
-     * This runs from a permanent rAF loop throttled to 100 ms, so it is a POLL
-     * and not a request — and a node whose execute threw is dirty forever,
+     * This runs from a throttled check (scheduler events plus a slow safety-net
+     * timer, see below), so it is a POLL and not a request — and a node whose execute threw is dirty forever,
      * because a throw never reaches `setCookState('clean')`. Without the
      * `hasSettledFailure` skip, selecting a failing node ran a full
      * `scheduler.flush()` ten times a second for as long as it stayed selected,
@@ -1048,52 +1048,127 @@
     }
   }
 
-  // RAF-based polling - only schedules next frame when needed
-  let rafId: number | null = null;
+  /**
+   * Demand-driven checks, replacing a permanent `requestAnimationFrame` pump.
+   *
+   * Until 2026-10-10 this re-armed a rAF every frame for as long as anything
+   * was on display, throttled to a dirty check every 100 ms. The throttle only
+   * limited the JS: a rAF that is always pending keeps Chrome's compositor
+   * begin-frame source ticking at display rate, so an idle Studio with a node
+   * selected woke the renderer and the GPU process ~120 times a second while
+   * nothing on screen changed. Measured headless against cascade-logo: 1,250
+   * rAF callbacks and 1,200 begin-frames in 10 s of idle; it was the only rAF
+   * source in the app.
+   *
+   * Now a check runs when something can have changed: the scheduler emits on
+   * every node cook-state transition (stale, cooking, clean, error), and the
+   * display target changing. Both are coalesced and throttled to
+   * CHECK_INTERVAL. A slow timer remains as a safety net for value changes
+   * that arrive without a state transition, and it stops altogether while the
+   * tab is hidden or the panel is off-screen; becoming visible again checks
+   * at once. Timers do not request frames, so idle costs no GPU work.
+   */
+  const CHECK_INTERVAL = 100; // ms, minimum gap between event-driven checks
+  const IDLE_POLL = 1000; // ms, safety-net poll while visible and idle
+  let checkTimer: ReturnType<typeof setTimeout> | null = null;
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
   let lastCheckTime = 0;
-  const CHECK_INTERVAL = 100; // ms between dirty checks
+  let wrapperEl: HTMLDivElement | undefined;
+  let panelVisible = true;
+  let pageVisible = typeof document === 'undefined' || document.visibilityState !== 'hidden';
+  let destroyed = false;
 
-  function scheduleCheck() {
-    if (rafId !== null) return; // Already scheduled
-    rafId = requestAnimationFrame(rafCheck);
+  function canCheck(): boolean {
+    return !destroyed && pageVisible && panelVisible;
   }
 
-  function rafCheck() {
-    rafId = null;
-    const now = performance.now();
-
-    // Throttle checks to CHECK_INTERVAL
-    if (now - lastCheckTime >= CHECK_INTERVAL) {
-      lastCheckTime = now;
-      checkAndEvaluate();
+  function scheduleCheck(immediate = false) {
+    if (!canCheck()) return; // resumes via the visibility handlers
+    if (checkTimer !== null) {
+      if (!immediate) return;
+      clearTimeout(checkTimer);
     }
+    const wait = immediate ? 0 : Math.max(0, CHECK_INTERVAL - (performance.now() - lastCheckTime));
+    checkTimer = setTimeout(runCheck, wait);
+  }
 
-    // Continue polling if we have a display node
-    if (displayNode || displayAnnotation) {
+  function runCheck() {
+    checkTimer = null;
+    if (!canCheck()) return;
+    lastCheckTime = performance.now();
+    void checkAndEvaluate();
+    armIdlePoll();
+  }
+
+  function armIdlePoll() {
+    if (idleTimer !== null) clearTimeout(idleTimer);
+    idleTimer = null;
+    if (!canCheck() || !(displayNode || displayAnnotation)) return;
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
       scheduleCheck();
-    }
+    }, IDLE_POLL);
+  }
+
+  function stopTimers() {
+    if (checkTimer !== null) clearTimeout(checkTimer);
+    if (idleTimer !== null) clearTimeout(idleTimer);
+    checkTimer = null;
+    idleTimer = null;
+  }
+
+  // Cook-state transitions are the change signal. Re-subscribe if the graph
+  // instance is swapped (File > Open).
+  let unsubscribeScheduler: (() => void) | null = null;
+  let subscribedGraph: Graph | undefined;
+  $: if (graph !== subscribedGraph) {
+    unsubscribeScheduler?.();
+    unsubscribeScheduler = null;
+    subscribedGraph = graph;
+    if (graph?.scheduler) unsubscribeScheduler = graph.scheduler.subscribe(() => scheduleCheck());
   }
 
   // React to displayNode changes - trigger evaluation when selection changes
-  $: if (displayNode) {
-    lastCheckTime = 0; // Reset throttle for immediate check
-    scheduleCheck();
+  $: if (displayNode || displayAnnotation) {
+    scheduleCheck(true);
   }
 
   onMount(() => {
-    // Start the RAF-based check loop
-    scheduleCheck();
+    const onVisibility = () => {
+      pageVisible = document.visibilityState !== 'hidden';
+      if (pageVisible) scheduleCheck(true);
+      else stopTimers();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    // A Dockview tab that is not in front, or a panel scrolled away, has no
+    // pixels to update.
+    let observer: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver !== 'undefined' && wrapperEl) {
+      observer = new IntersectionObserver(entries => {
+        const visible = entries.some(entry => entry.isIntersecting);
+        if (visible === panelVisible) return;
+        panelVisible = visible;
+        if (visible) scheduleCheck(true);
+        else stopTimers();
+      });
+      observer.observe(wrapperEl);
+    }
+
+    scheduleCheck(true);
 
     return () => {
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-      }
+      destroyed = true;
+      stopTimers();
+      unsubscribeScheduler?.();
+      unsubscribeScheduler = null;
+      observer?.disconnect();
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   });
 </script>
 
-<div class="viewer-wrapper">
+<div class="viewer-wrapper" bind:this={wrapperEl}>
   {#if outputPorts.length > 1}
     <div class="output-switcher" aria-label="Node outputs">
       {#each outputPorts as output (output.id)}

@@ -47,13 +47,9 @@
   }
 
   .annotation-polyline.selected path {
+    /* Static dashes: selection is a state, not activity, and marching ants
+       repaint the canvas every frame for as long as it lasts. */
     stroke-dasharray: 5, 5;
-    animation: dash 0.5s linear infinite;
   }
 
-  @keyframes dash {
-    to {
-      stroke-dashoffset: -10;
-    }
-  }
 </style>

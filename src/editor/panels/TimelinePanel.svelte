@@ -277,7 +277,8 @@
     // No event exists for "a key was added", so the sheet polls. Walking the
     // node list is cheap; re-reading it once a second is cheaper than a stale
     // panel that looks broken after alt-clicking a parameter.
-    refreshTimer = setInterval(refreshTracks, 1000);
+    // Skipped while the tab is hidden: nobody is looking at the sheet.
+    refreshTimer = setInterval(() => { if (!document.hidden) refreshTracks(); }, 1000);
   });
 
   onDestroy(() => {

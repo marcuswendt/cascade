@@ -65,13 +65,10 @@
     align-items: center;
     justify-content: center;
     color: var(--status-info);
-    animation: spin 2s linear infinite;
+    /* No spin: the banner waits on a decision, nothing is in progress, and an
+       endless rotation repaints every frame while it is shown. */
   }
 
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
 
   .banner-content {
     flex: 1;
