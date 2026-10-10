@@ -1,7 +1,9 @@
 <script lang="ts">
   import type { Prop } from '@/types/node.types';
   import { expressionEngine } from '@/engine/expressions/index';
+  import { onDestroy } from 'svelte';
   import { numberFieldCommit, NUMBER_PATTERN } from './numberFieldCommit';
+  import { scrub, type ScrubOptions } from './scrub';
 
   export let prop: Prop;
   export let id: string;
@@ -34,6 +36,9 @@
    * Optional: without it the old behaviour stands and unparseable text reverts.
    */
   export let onExpressionChange: ((expression: string) => void) | null = null;
+  /** The row's label, which then scrubs this value on a plain left-drag. It
+   *  lives in the parent's markup, so it is handed in rather than owned. */
+  export let scrubHandle: HTMLElement | null = null;
 
   $: value = typeof prop.value === 'number' ? prop.value : 0;
   $: min = typeof prop.params?.min === 'number' ? prop.params.min : undefined;
@@ -45,6 +50,9 @@
 
   // Display value for number input - formatted based on integer setting
   $: displayValue = isInteger ? Math.round(value) : value;
+  /** The slider follows the field, so it moves with typing and scrubbing
+   *  alike; `prop.value` changes in place, where this component cannot see. */
+  $: sliderValue = NUMBER_PATTERN.test(text.trim()) ? Number(text.trim()) : value;
 
   /** What the field is showing. Held locally because the field is now text: a
    *  half-typed "1." or "-" is a legitimate intermediate state, and rewriting
@@ -180,6 +188,35 @@
     }
   }
 
+  /** Scrubbing writes exactly as an arrow-key nudge does. Every field reads
+   *  through these closures at call time, so nothing has to be re-passed. */
+  const scrubOptions = (handle: boolean): ScrubOptions => ({
+    handle,
+    getValue: () => (NUMBER_PATTERN.test(text.trim()) ? Number(text.trim()) : value),
+    setValue: (next: number) => {
+      text = String(next);
+      rejected = null;
+      lastCommitted = text;
+      onValueChange(next);
+    },
+    meta: () => ({
+      min,
+      max,
+      step: typeof prop.params?.step === 'number' ? prop.params.step : undefined,
+      integer: isInteger,
+    }),
+    disabled: () => Boolean(disabled) || focused,
+  });
+
+  let handleScrub: ReturnType<typeof scrub> | null = null;
+  let attachedHandle: HTMLElement | null = null;
+  $: if (scrubHandle !== attachedHandle) {
+    handleScrub?.destroy();
+    attachedHandle = scrubHandle;
+    handleScrub = scrubHandle ? scrub(scrubHandle, scrubOptions(true)) : null;
+  }
+  onDestroy(() => handleScrub?.destroy());
+
   function handleFocus() {
     focused = true;
     // A fresh edit is not the previous one, so the guard must not suppress
@@ -203,7 +240,7 @@
         min={min}
         max={max}
         step={step}
-        value={value}
+        value={sliderValue}
         disabled={disabled}
         on:input={handleSliderInput}
       />
@@ -217,6 +254,7 @@
         title={rejected ?? undefined}
         value={text}
         disabled={disabled}
+        use:scrub={scrubOptions(false)}
         on:input={handleTextInput}
         on:keydown={handleKeydown}
         on:focus={handleFocus}
@@ -235,6 +273,7 @@
       title={rejected ?? undefined}
       value={text}
       disabled={disabled}
+      use:scrub={scrubOptions(false)}
       on:input={handleTextInput}
       on:keydown={handleKeydown}
       on:focus={handleFocus}

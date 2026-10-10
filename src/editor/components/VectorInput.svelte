@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Prop } from '@/types/node.types';
   import { onMount, tick } from 'svelte';
+  import { scrub, type ScrubOptions } from './scrub';
   
   export let prop: Prop;
   export let id: string;
@@ -115,6 +116,27 @@
     onValueChange(newArray);
   }
   
+  /** Middle-drag or Alt-drag a component to scrub it. The local array is
+   *  updated too, because the next frame of the drag builds on it. */
+  function componentScrub(index: number): ScrubOptions {
+    return {
+      getValue: () => Number(value[index] ?? 0),
+      setValue: (next: number) => {
+        updateComponent(index, next);
+        const updated = [...value];
+        if (locked) updated.fill(next); else updated[index] = next;
+        value = updated;
+      },
+      meta: () => ({
+        min: Array.isArray(min) ? min[index] : min,
+        max: Array.isArray(max) ? max[index] : max,
+        step: typeof prop.params?.step === 'number' ? prop.params.step : undefined,
+        integer: isInteger,
+      }),
+      disabled: () => Boolean(disabled),
+    };
+  }
+
   function handleNumberInput(e: Event, index: number) {
     const input = e.target as HTMLInputElement;
     let newValue = parseFloat(input.value);
@@ -157,6 +179,7 @@
         step={step}
         value={inputValue}
         disabled={disabled}
+        use:scrub={componentScrub(i)}
         on:input={(e) => handleNumberInput(e, i)}
         on:blur={(e) => handleBlur(e, i)}
       />

@@ -760,3 +760,25 @@ body {
   color: var(--text-primary);
   background: var(--surface-void);
 }
+
+/* Value scrubbing (components/scrub.ts). A label that scrubs says so on hover;
+   while a drag is live the whole document holds the cursor, so it does not
+   flicker as the pointer crosses other elements, and the field being driven
+   carries the accent. Nothing here animates. */
+[data-scrub-handle] {
+  cursor: ew-resize;
+  user-select: none;
+}
+html.cascade-scrubbing,
+html.cascade-scrubbing * {
+  cursor: ew-resize !important;
+  user-select: none !important;
+}
+[data-scrubbing] {
+  color: var(--accent) !important;
+}
+input[data-scrubbing] {
+  border-color: var(--accent) !important;
+  color: var(--text-primary) !important;
+  box-shadow: 0 0 0 1px var(--accent);
+}

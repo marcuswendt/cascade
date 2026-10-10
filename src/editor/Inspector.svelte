@@ -47,6 +47,10 @@
   let historyRecordedForCurrentEdit = false;
 
   // Record history once at the start of an edit session
+  /** Row labels handed to their NumberInput, which scrubs on a left-drag of
+   *  the label. Keyed by the field id so props and parameters cannot collide. */
+  let scrubLabels: Record<string, HTMLElement | null> = {};
+
   function maybeRecordHistory() {
     if (!historyRecordedForCurrentEdit && onRecordHistory) {
       onRecordHistory();
@@ -423,6 +427,9 @@
    * row at one of its three render sites, and a draggable row would swallow the
    * press-and-move that drags a slider. The name is the only part of the row
    * that is not itself a control.
+   *
+   * On a numeric row the name also scrubs the value (scrub.ts), which takes the
+   * plain left-drag; Option/Alt-drag the name to carry its path instead.
    */
   function parameterDragSource(element: HTMLElement, key: string) {
     const onDragStart = (event: DragEvent) => {
@@ -1332,7 +1339,7 @@
                 {@const isVector = controlType === 'vec2' || controlType === 'vec3' || controlType === 'vec2i' || controlType === 'vec3i' || controlType === 'vector'}
                 <div class="prop-group" class:prop-group-row={isVector}>
                   {#if displayName !== null}
-                    <label class="prop-label" for={inputId} use:parameterGestures={key} use:parameterDragSource={key}>
+                    <label class="prop-label" for={inputId} bind:this={scrubLabels[inputId]} use:parameterGestures={key} use:parameterDragSource={key}>
                       {displayName}
                     </label>
                     {#if isKeyable(prop.value)}
@@ -1354,6 +1361,7 @@
                         <NumberInput
                           {prop}
                           id={inputId}
+                          scrubHandle={scrubLabels[inputId] ?? null}
                           onValueChange={(value) => handlePropChange([key, prop], value)}
                         />
                       </ExpressionInput>
@@ -1468,7 +1476,7 @@
               {@const isVector = controlType === 'vec2' || controlType === 'vec3' || controlType === 'vec2i' || controlType === 'vec3i' || controlType === 'vector'}
               <div class="prop-group" class:prop-group-row={isVector}>
                 {#if displayName !== null}
-                  <label class="prop-label" for={inputId} use:parameterGestures={key} use:parameterDragSource={key}>
+                  <label class="prop-label" for={inputId} bind:this={scrubLabels[inputId]} use:parameterGestures={key} use:parameterDragSource={key}>
                     {displayName}
                   </label>
                   {#if isKeyable(prop.value)}
@@ -1489,6 +1497,7 @@
                     <NumberInput
                       {prop}
                       id={inputId}
+                      scrubHandle={scrubLabels[inputId] ?? null}
                       onValueChange={(value) => handlePropChange([key, prop], value)}
                     />
                   </ExpressionInput>
@@ -1700,6 +1709,7 @@
                              reads the same wherever it is rendered. -->
                         <span
                           class="parameter-name"
+                          bind:this={scrubLabels[`param-${node.id}-${parameter.name}`]}
                           use:parameterDragSource={parameter.name}
                           title={`${parameter.options?.label ?? parameter.name} · ${normalizeType(parameter.dataType)}`}
                         >{parameter.options?.label ?? parameter.name}</span>
@@ -1723,6 +1733,7 @@
                           <NumberInput
                             prop={bound}
                             id={`param-${node.id}-${parameter.name}`}
+                            scrubHandle={scrubLabels[`param-${node.id}-${parameter.name}`] ?? null}
                             onValueChange={(value) => handleParamChange(parameter, value)}
                             onExpressionChange={(expression) => setParameterExpression(parameter.name, expression)}
                           />

@@ -4,6 +4,7 @@
   import StructuredValue from './StructuredValue.svelte';
   import { typeRenderer } from './typeRenderers';
   import './registerRenderers';
+  import { scrub, type ScrubMeta, type ScrubOptions } from './scrub';
   import {
     colorCss,
     colorHex,
@@ -73,13 +74,69 @@
    * typing it into a bounded float, and until the contract admitted a range on
    * a vector there was nothing here to enforce.
    */
-  function setComponent(index: number, raw: string) {
+  function setComponent(index: number, raw: string | number) {
     const parsed = Number(raw);
     if (!Number.isFinite(parsed)) return;
     const next = Array.isArray(value) ? [...value] : new Array(components).fill(0);
     const ranged = bounded ? clampNumber(parsed) : parsed;
     next[index] = wantsInteger ? Math.round(ranged) : ranged;
     commit(next);
+    // Held locally as well: the parent writes the parameter in place, which
+    // this component cannot observe, and the next component edit (or the next
+    // frame of a scrub) builds on this array.
+    if (!readOnly && onChange) value = next;
+  }
+
+  /** The declared range and step, as the scrubber reads them. */
+  function scrubMeta(): ScrubMeta {
+    return {
+      min: Number.isFinite(bounds.min) ? bounds.min : undefined,
+      max: Number.isFinite(bounds.max) ? bounds.max : undefined,
+      step: typeof port?.options?.step === 'number' ? port.options.step : undefined,
+      integer: wantsInteger,
+    };
+  }
+
+  /** Scrub one component of a vector or matrix. */
+  function componentScrub(index: number, handle = false): ScrubOptions {
+    return {
+      handle,
+      getValue: () => (Array.isArray(value) ? Number(value[index] ?? 0) : 0),
+      setValue: (next) => setComponent(index, next),
+      meta: scrubMeta,
+      disabled: () => readOnly || !onChange,
+    };
+  }
+
+  function colorScrub(index: number, handle = false): ScrubOptions {
+    return {
+      handle,
+      getValue: () => color[index] ?? 0,
+      setValue: (next) => setColor(index, String(next)),
+      meta: () => ({ min: 0, max: 1, step: 0.01 }),
+      disabled: () => readOnly || !onChange,
+    };
+  }
+
+  function scalarScrub(): ScrubOptions {
+    return {
+      getValue: () => Number(value ?? 0) || 0,
+      setValue: (next) => {
+        const settled = bounded ? clampNumber(next) : (effectiveType === 'int' ? Math.round(next) : next);
+        commit(settled);
+        if (!readOnly && onChange) value = settled;
+      },
+      meta: scrubMeta,
+      disabled: () => readOnly || !onChange,
+    };
+  }
+
+  /** Where a bounded component sits in its range, for the thin fill under it. */
+  function fill(component: unknown): string {
+    if (!bounded) return '';
+    const fraction = (Number(component) - bounds.min) / (bounds.max - bounds.min);
+    const clamped = Number.isFinite(fraction) ? Math.min(1, Math.max(0, fraction)) : 0;
+    return `--fill: ${(clamped * 100).toFixed(2)}%`;
   }
 
   function identity() {
@@ -92,6 +149,7 @@
     const next = [...color] as [number, number, number, number];
     next[index] = Math.max(0, Math.min(1, Number(raw)));
     commit(next);
+    if (!readOnly && onChange) value = next;
   }
 
   function setColorHex(hex: string) {
@@ -139,6 +197,7 @@
           class="cell"
           disabled={readOnly}
           value={Array.isArray(value) ? value[index] ?? 0 : 0}
+          use:scrub={componentScrub(index)}
           on:change={(event) => setComponent(index, event.currentTarget.value)}
         />
       {/each}
@@ -157,8 +216,8 @@
       <div class="vector">
         {#each color as component, index}
           <label class="component">
-            <span>{labels[index]}</span>
-            <input aria-label={labels[index]} type="number" min="0" max="1" step="0.01" disabled={readOnly} value={component} on:change={(event) => setColor(index, event.currentTarget.value)} />
+            <span use:scrub={colorScrub(index, true)}>{labels[index]}</span>
+            <input aria-label={labels[index]} type="number" min="0" max="1" step="0.01" disabled={readOnly} value={component} use:scrub={colorScrub(index)} on:change={(event) => setColor(index, event.currentTarget.value)} />
           </label>
         {/each}
       </div>
@@ -167,15 +226,18 @@
     <div class="vector">
       {#each Array(components) as _, index}
         <label class="component">
-          <span>{labels[index]}</span>
+          <span use:scrub={componentScrub(index, true)}>{labels[index]}</span>
           <input
             aria-label={labels[index]}
+            class:ranged={bounded}
+            style={fill(Array.isArray(value) ? value[index] ?? 0 : 0)}
             type="number"
             min={Number.isFinite(bounds.min) ? bounds.min : undefined}
             max={Number.isFinite(bounds.max) ? bounds.max : undefined}
             step={port?.options?.step ?? (wantsInteger ? 1 : 'any')}
             disabled={readOnly}
             value={Array.isArray(value) ? value[index] ?? 0 : 0}
+            use:scrub={componentScrub(index)}
             on:change={(event) => setComponent(index, event.currentTarget.value)}
           />
         </label>
@@ -221,12 +283,13 @@
         step={bounds.step}
         disabled={readOnly}
         value={value ?? bounds.min}
+        use:scrub={scalarScrub()}
         on:change={(event) => commit(clampNumber(Number(event.currentTarget.value)))}
       />
     </div>
 
   {:else if effectiveType === 'float' || effectiveType === 'int'}
-    <input aria-label={effectiveType} type="number" class="single" step={effectiveType === 'int' ? 1 : 'any'} disabled={readOnly} value={value ?? 0} on:change={(event) => commit(effectiveType === 'int' ? Math.round(Number(event.currentTarget.value)) : Number(event.currentTarget.value))} />
+    <input aria-label={effectiveType} type="number" class="single" step={effectiveType === 'int' ? 1 : 'any'} disabled={readOnly} value={value ?? 0} use:scrub={scalarScrub()} on:change={(event) => commit(effectiveType === 'int' ? Math.round(Number(event.currentTarget.value)) : Number(event.currentTarget.value))} />
   {:else if effectiveType === 'string'}
     {#if mode === 'view' && readOnly}<pre class="text-value">{value ?? ''}</pre>{:else}<input aria-label="string" type="text" class="single" disabled={readOnly} value={value ?? ''} on:change={(event) => commit(event.currentTarget.value)} />{/if}
   {:else if effectiveType === 'image'}
@@ -288,7 +351,10 @@
   .core-value.mode-view { width: min(100%, 1100px); margin: auto; padding: 24px; box-sizing: border-box; }
   .vector { display: flex; gap: 5px; }
   .component { display: flex; align-items: center; gap: 3px; flex: 1; min-width: 0; }
-  .component span { width: 9px; flex: none; color: var(--text-faint); font-size: 9px; }
+  .component span { width: 9px; flex: none; color: var(--text-faint); font-size: 9px; user-select: none; }
+  /* A bounded component shows where it sits in its range: a hairline along
+     the bottom edge, not a second control. */
+  .vector input.ranged { background-image: linear-gradient(var(--accent), var(--accent)); background-repeat: no-repeat; background-position: left bottom; background-size: var(--fill, 0%) 2px; }
   .matrix { display: grid; gap: 4px; }
   input[type='number'], input[type='text'], select { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border-raised); border-radius: 3px; background: var(--surface-panel-alt); color: var(--text-primary); padding: 3px 5px; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
   input:disabled { background: var(--surface-raised); color: var(--text-dim); }
