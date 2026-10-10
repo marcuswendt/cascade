@@ -58,6 +58,8 @@ export interface LayoutOptions {
    * rendered yet.
    */
   widths?: Map<string, number>;
+  /** Horizontal breathing room between neighbouring rendered items. */
+  nodeGap?: number;
   /** Vertical gap between layers. Generous by default: the wires are what the
    *  reader follows, and they need room to fan out. */
   rowGap?: number;
@@ -73,7 +75,7 @@ const PLACEHOLDER_PREFIX = '\u0000lane:';
  *  its neighbours. */
 const PLACEHOLDER_WIDTH = 28;
 
-const DEFAULTS: Required<Omit<LayoutOptions, 'widths'>> = {
+const DEFAULTS: Required<Omit<LayoutOptions, 'widths' | 'nodeGap'>> = {
   columnGap: 260,
   rowGap: 190,
   originX: 40,
@@ -269,7 +271,7 @@ export function layoutTopDown(
   // --- 5. place --------------------------------------------------------
   // Generous, because the measured width already includes the name label and
   // two labels butted together are unreadable even when the boxes don't touch.
-  const gap = 90;
+  const gap = options.nodeGap ?? 90;
   const boxWidth = (id: string) => (isPlaceholder(id) ? PLACEHOLDER_WIDTH : widthOf(id));
   const spacing = (id: string) => (isPlaceholder(id) ? gap / 2 : gap);
 

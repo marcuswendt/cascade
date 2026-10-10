@@ -6,6 +6,15 @@ Notable changes to Cascade. Newest first.
 
 ### Added
 
+- **Groups own their contents.** A group frame keeps an explicit
+  `containedElements` list, separate from subnet parenting. Drag the frame
+  header to move its members (nested contents move once); drop an item's
+  centre inside a frame to add it, outside to remove it, and the smallest
+  enclosing frame wins. The target frame highlights before release, and
+  membership and positions share one undo step. Deleting a frame leaves its
+  contents. View → Clean Up Layout now treats each group as a cluster: it lays
+  out members first, fits the frame, then places the groups.
+
 - **The Agent console keeps a Codex conversation, and panels can hand it a
   draft.** A Codex console resumes the thread id from `thread.started`, so
   later prompts continue one conversation per sketch as Claude's do; project

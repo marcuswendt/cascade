@@ -131,6 +131,7 @@ export class Graph {
 
   // Cached topological order (invalidated when graph structure changes)
   private cachedTopologicalOrder: string[] | null = null;
+  private restoringHierarchy = false;
   
   constructor(assetManager?: AssetManager, packageManager?: PackageManager, moduleResolver?: ModuleResolver) {
     this.assetManager = assetManager || new AssetManager();
@@ -232,6 +233,76 @@ export class Graph {
   }
 
   /**
+   * Return the live members of a group in authored order.
+   *
+   * Group membership is an annotation relationship, separate from subnet
+   * parenting. Only elements in the group's current network are visible, and
+   * recursive traversal is guarded against duplicate references and malformed
+   * cycles in loaded documents.
+   */
+  getGroupMembers(groupId: string, recursive = true): string[] {
+    const group = this.getElement(groupId);
+    if (!this.isGroupAnnotation(group)) return [];
+
+    const members: string[] = [];
+    const seen = new Set<string>([group.id]);
+    const visitingGroups = new Set<string>([group.id]);
+    const visit = (owner: GroupAnnotation): void => {
+      for (const memberId of owner.containedElements ?? []) {
+        if (seen.has(memberId)) continue;
+        const member = this.getElement(memberId);
+        if (!member || member === owner || member.parent !== owner.parent) continue;
+
+        seen.add(memberId);
+        members.push(memberId);
+        if (recursive && this.isGroupAnnotation(member) && !visitingGroups.has(member.id)) {
+          visitingGroups.add(member.id);
+          visit(member);
+          visitingGroups.delete(member.id);
+        }
+      }
+    };
+
+    visit(group);
+    return members;
+  }
+
+  /**
+   * Assign existing elements to one group, or remove their group ownership.
+   * Validation completes before any annotation is changed, so failures leave
+   * every membership list untouched. Assignment never changes subnet parents.
+   */
+  assignToGroup(elementIds: Iterable<string>, groupId: string | null): boolean {
+    const ids = [...new Set(elementIds)];
+    const elements = ids.map(id => this.getElement(id));
+    if (elements.some(element => !element)) return false;
+
+    const targetElement = groupId === null ? null : this.getElement(groupId);
+    if (groupId !== null && !this.isGroupAnnotation(targetElement)) return false;
+    const target = this.isGroupAnnotation(targetElement) ? targetElement : null;
+
+    if (target) {
+      for (const element of elements as Node[]) {
+        if (element === target || element.parent !== target.parent) return false;
+        if (this.isGroupAnnotation(element) && this.groupContains(element, target.id)) return false;
+      }
+    }
+
+    const selected = new Set(ids);
+    for (const group of this.groupAnnotations()) {
+      const current = group.containedElements ?? [];
+      group.containedElements = current.filter(id => !selected.has(id));
+    }
+
+    if (target) {
+      target.containedElements = [
+        ...new Set([...(target.containedElements ?? []), ...ids]),
+      ];
+    }
+    return true;
+  }
+
+  /**
    * Get a node by absolute path (e.g., "/effects/blur1")
    */
   nodeByPath(path: string): Node | null {
@@ -289,6 +360,7 @@ export class Graph {
         (parent as any)._children.push(element);
       }
     }
+    if (!this.restoringHierarchy) this.pruneInvalidGroupMemberships();
     this.invalidateTopologicalOrder();
     return true;
   }
@@ -330,6 +402,10 @@ export class Graph {
       this.cookingNodes.delete(candidate);
     }
 
+    for (const group of this.groupAnnotations()) {
+      group.containedElements = (group.containedElements ?? []).filter(memberId => !removedIds.has(memberId));
+    }
+
     // `removed` is deepest-first, so every child is detached before its parent.
     for (const candidate of removed) {
       const parent = candidate.parent;
@@ -342,6 +418,41 @@ export class Graph {
 
     this.invalidateTopologicalOrder();
     for (const candidate of removed) candidate.onDestroy?.();
+  }
+
+  private isGroupAnnotation(element: Node | null): element is GroupAnnotation {
+    return !!element && this.isAnnotation(element) && element.type === 'Group';
+  }
+
+  private groupAnnotations(): GroupAnnotation[] {
+    return this.annotations.filter(annotation => this.isGroupAnnotation(annotation)) as GroupAnnotation[];
+  }
+
+  private groupContains(group: GroupAnnotation, soughtId: string): boolean {
+    const visited = new Set<string>();
+    const visit = (candidate: GroupAnnotation): boolean => {
+      if (visited.has(candidate.id)) return false;
+      visited.add(candidate.id);
+      for (const memberId of candidate.containedElements ?? []) {
+        if (memberId === soughtId) return true;
+        const member = this.getElement(memberId);
+        if (this.isGroupAnnotation(member) && member.parent === candidate.parent && visit(member)) return true;
+      }
+      return false;
+    };
+    return visit(group);
+  }
+
+  private pruneInvalidGroupMemberships(): void {
+    for (const group of this.groupAnnotations()) {
+      const seen = new Set<string>();
+      group.containedElements = (group.containedElements ?? []).filter(memberId => {
+        const member = this.getElement(memberId);
+        if (!member || member === group || member.parent !== group.parent || seen.has(memberId)) return false;
+        seen.add(memberId);
+        return true;
+      });
+    }
   }
 
   /**
@@ -1206,7 +1317,7 @@ export class Graph {
         if (annAny.endPosition) serialized.endPosition = [annAny.endPosition.x, annAny.endPosition.y];
         if (ann.style) serialized.style = ann.style;
         if (ann.caption !== undefined) serialized.caption = ann.caption;
-        if (ann.containedElements) serialized.containedElements = ann.containedElements;
+        if (ann.containedElements) serialized.containedElements = [...ann.containedElements];
         // Positions are relative to the parent subnet when this field is present.
         if (ann.parent) serialized.parent = ann.parent.id;
         return serialized;
@@ -1894,6 +2005,7 @@ export class Graph {
       ...(Array.isArray(json.nodes) ? json.nodes : []),
       ...(Array.isArray(json.annotations) ? json.annotations : []),
     ];
+    graph.restoringHierarchy = true;
     for (const elementData of authoredElements) {
       if (typeof elementData?.parent !== 'string') continue;
 
@@ -1935,6 +2047,8 @@ export class Graph {
 
       graph.reparentElement(child, parent);
     }
+    graph.restoringHierarchy = false;
+    graph.pruneInvalidGroupMemberships();
 
     const depth = (node: Node): number => {
       let value = 0;

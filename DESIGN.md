@@ -109,6 +109,8 @@ This document contains both current product rules and intended direction. Sectio
 ## Components
 
 - **Current:** `PortEditor`, `JsonTree`, `ColorPicker`, `CoreValue`, `StructuredValue`, Viewer image zoom/pan, geometry summaries/previews, `SceneViewport` with orbit/track/dolly camera controls, and the type renderer registry. Scene rendering currently shows wireframes and points; lights are represented but do not imply shaded rendering.
+- **Canvas previews:** Projects may opt into readable first-output previews on graph nodes with `settings.nodePreviews: true` in `cascade.json`. The canvas reuses `CoreValue` in compact, read-only mode, including project type renderers; the default remains the compact computational graph. A serialized Dockview layout in `settings.workspace` may also suggest the first-open workspace, but a browser's saved layout always wins.
+- **Group-aware cleanup:** View → Clean Up Layout treats each group as a visual cluster. It arranges and measures members first, fits the frame around them, then places clusters in the graph's top-to-bottom flow. Nested groups stay nested, wide source ranks wrap, and standalone notes move to a clear margin. The command changes positions and group sizes only; membership and subnet hierarchy remain authored data.
 - **Planned:** a shared type-value presentation shell, structured JSON editing, richer image/asset inspection, a Viewer output list, and texture inspection after texture values exist.
 - Variants and states: `compact`, `inspect`, `view`; editable/read-only; empty/loading/error/stale; connected source; truncated/expanded
 - Token/component ownership: `coreTypes.ts` owns semantic type metadata; the presentation registry owns components; Inspector/Viewer only choose context and mode
@@ -173,3 +175,15 @@ This table defines the intended presentation contract. Individual rows may be on
 - [ ] Whether scene rendering needs shaded GPU surfaces beyond the current CPU wireframe/point view / product / medium impact
 - [ ] Whether project packages can eventually ship Svelte renderers directly rather than app-side registration / architecture / high impact
 - [ ] Whether large structured values need virtualization beyond bounded initial expansion / performance / medium impact
+
+## Canvas groups
+
+Groups own explicit `containedElements` independently of subnet parenting. Drag
+a frame header to move its members together. Dropping an item’s centre inside a
+frame adds it; dropping outside removes it; the smallest enclosing frame wins
+when frames overlap. The target frame highlights before release. Moving a frame
+does not collect stationary items it passes over. Nested contents move once.
+Membership and positions persist together and share a gesture’s undo snapshot.
+Deleting a frame leaves its contents alive. Unselected wires are neutral grey;
+selection restores their type colour. Preview cards use one surface with
+controls appearing on hover or selection.

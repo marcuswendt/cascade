@@ -14,7 +14,8 @@
   import { registerStudioDocumentBridge } from './editor/studioDocumentBridge';
   import { watchBuild } from './editor/buildWatch';
   import { launchHint, missingProjectModules } from './editor/projectMismatch';
-  import { layoutTopDown, edgesFromConnections } from '@/utils/autoLayout';
+  import { edgesFromConnections } from '@/utils/autoLayout';
+  import { layoutTopDownGrouped } from '@/utils/groupedAutoLayout';
   import CookStatusStrip from './editor/CookStatusStrip.svelte';
   import type { CookStatus } from '@/nodes/CookScheduler';
 
@@ -903,6 +904,7 @@
    */
   async function cleanUpLayout() {
     if (!graph) return;
+    const activeGraph = graph;
     recordHistory();
     // Measure what is actually on screen: node widths vary with port count and
     // a variadic list, and spacing by a fixed pitch overlapped the wide ones.
@@ -910,10 +912,10 @@
     // the box packed columns to the box width, so long names ran straight over
     // the next node and became unreadable — which is the width that matters,
     // since the name is what you navigate by.
-    const widths = new Map<string, number>();
-    document.querySelectorAll('.node').forEach((el) => {
-      const name = el.querySelector('.node-name')?.textContent?.trim();
-      if (!name) return;
+    const sizes = new Map<string, { width: number; height: number }>();
+    document.querySelectorAll<HTMLElement>('.node[data-node-id], .annotation[data-annotation-id]').forEach((el) => {
+      const id = el.dataset.nodeId ?? el.dataset.annotationId;
+      if (!id) return;
       // offsetWidth, not getBoundingClientRect: the canvas is CSS-transformed,
       // so a bounding rect is in SCREEN pixels and depends on the current zoom,
       // while positions are in graph pixels. Dividing by a zoom read from the
@@ -922,18 +924,53 @@
       //
       // The whole node element — box plus label — because that is the footprint
       // that must not collide, and the label is what you read.
-      widths.set(name, Math.max((el as HTMLElement).offsetWidth, 90));
+      sizes.set(id, {
+        width: Math.max(el.offsetWidth, 90),
+        height: Math.max(el.offsetHeight, 50),
+      });
     });
 
-    const positions = layoutTopDown(
-      graph.nodes.map((n: any) => n.id),
-      edgesFromConnections(graph.connections),
-      { widths }
-    );
-    graph.nodes.forEach((node: any) => {
-      const next = positions.get(node.id);
-      if (next) node.position = next;
-    });
+    const annotationIds = new Set(activeGraph.annotations.map(annotation => annotation.id));
+    const parents = new Set(activeGraph.elements.map(element => element.parent ?? null));
+    for (const parent of parents) {
+      const elements = activeGraph.elements.filter(element => (element.parent ?? null) === parent);
+      const ids = new Set(elements.map(element => element.id));
+      const groups = activeGraph.annotations
+        .filter(annotation => annotation.type === 'Group' && (annotation.parent ?? null) === parent)
+        .map(annotation => ({ id: annotation.id, members: [...(annotation.containedElements ?? [])] }));
+      const owned = new Set(groups.flatMap(group => group.members));
+      const layoutElements = elements
+        .filter(element => element.type !== 'Group')
+        .map(element => {
+          const measured = sizes.get(element.id);
+          const annotation = activeGraph.getAnnotation(element.id);
+          return {
+            id: element.id,
+            width: measured?.width ?? annotation?.size?.width ?? 240,
+            height: measured?.height ?? annotation?.size?.height ?? 104,
+            decorative: annotationIds.has(element.id) && !owned.has(element.id),
+          };
+        });
+      const edges = edgesFromConnections(activeGraph.connections).filter(edge => ids.has(edge.from) && ids.has(edge.to));
+      const result = layoutTopDownGrouped(layoutElements, edges, groups);
+
+      for (const [id, next] of result.positions) {
+        const element = activeGraph.getElement(id) as any;
+        if (!element || (element.parent ?? null) !== parent) continue;
+        const dx = next.x - element.position.x;
+        const dy = next.y - element.position.y;
+        element.position = next;
+        if (element.endPosition) element.endPosition = { x: element.endPosition.x + dx, y: element.endPosition.y + dy };
+        if (element.points) element.points = element.points.map((point: { x: number; y: number }) => ({
+          x: point.x + dx,
+          y: point.y + dy,
+        }));
+      }
+      for (const [id, size] of result.groupSizes) {
+        const group = activeGraph.getAnnotation(id);
+        if (group && (group.parent ?? null) === parent) group.size = size;
+      }
+    }
     graph.elements = [...graph.elements];
     bumpGraphStructure();
 

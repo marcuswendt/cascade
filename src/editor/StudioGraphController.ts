@@ -85,6 +85,14 @@ export class StudioGraphController {
     return true;
   }
 
+  assignToGroup(elementIds: Iterable<string>, groupId: string | null): boolean {
+    const graph = this.resolveGraph();
+    if (!graph || !graph.assignToGroup(elementIds, groupId)) return false;
+
+    this.publish(graph, { elements: true });
+    return true;
+  }
+
   refresh(changed: StructureRefresh = ALL_STRUCTURE): boolean {
     const graph = this.resolveGraph();
     if (!graph) return false;
