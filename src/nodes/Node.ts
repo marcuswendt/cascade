@@ -14,6 +14,7 @@ import {
 import type { Channel, Interpolation, Keyframe, SerializedChannel } from '@cascade/runtime/animation';
 import { resolvePropBinding } from '@cascade/runtime/params';
 import { asError } from '../utils/thrownError.js';
+import { sameOutputValue } from './outputEquality.js';
 
 export type { Channel as ParamChannel, Interpolation, Keyframe };
 
@@ -348,6 +349,81 @@ export class Node {
   }
   protected _children: Node[] = [];
 
+  // ============ Early cutoff ============
+
+  /**
+   * Whether this node may be skipped when it is stale only because something
+   * upstream re-cooked and every input came back identical.
+   *
+   * On by default. A node whose result depends on something other than its
+   * inputs and its own parameters — the clock, a file it reads behind the
+   * graph's back, a random draw it wants fresh each time — sets this false, or
+   * marks itself dirty when that other thing changes (which is the better fix,
+   * and what time-dependent expressions already do).
+   */
+  earlyCutoff = true;
+  /** Per output port: bumped whenever a committed value is not provably the
+   *  same as the last one. What downstream nodes compare instead of values. */
+  private outputVersions = new Map<string, number>();
+  /** Set when this node itself was invalidated (a parameter, its code, a
+   *  connection), as opposed to only being downstream of something that was.
+   *  A self-dirty node always cooks. */
+  private selfDirty = true;
+  /** The input versions this node last cooked cleanly against, or null. */
+  private cutoffKey: string | null = null;
+
+  /** @internal The version of one output, for downstream cutoff. */
+  outputVersion(portId: string): number {
+    return this.outputVersions.get(portId) ?? 0;
+  }
+
+  private bumpOutputVersion(portId: string): void {
+    this.outputVersions.set(portId, (this.outputVersions.get(portId) ?? 0) + 1);
+  }
+
+  /** @internal The scheduler calls this on the node an invalidation started at. */
+  markSelfDirty(): void {
+    this.selfDirty = true;
+  }
+
+  /** What every input currently comes from, as upstream output versions. Null
+   *  when an input comes from something that keeps no versions (an annotation),
+   *  which disables the cutoff for this node. */
+  private inputVersionKey(): string | null {
+    const parts: string[] = [];
+    for (const input of this.inputs) {
+      if (input.connections.length === 0) {
+        parts.push(`${input.id}=${this.getValueFingerprint(input.value)}`);
+        continue;
+      }
+      for (const connection of input.connections) {
+        const upstream = this.graph.getNode(connection.from.nodeId);
+        if (!upstream) return null;
+        parts.push(`${input.id}<${connection.from.nodeId}:${connection.from.portId}@${upstream.outputVersion(connection.from.portId)}`);
+      }
+    }
+    return parts.join('|');
+  }
+
+  /**
+   * @internal Early cutoff: true when this node is stale only transitively,
+   * cooked cleanly last time, and every upstream output it reads still has the
+   * version it cooked against — i.e. the upstream re-cook produced the same
+   * values. Skipping it then is exact, and the nodes below it see unchanged
+   * versions in turn, so the whole subgraph stays cached.
+   */
+  canSkipCook(): boolean {
+    if (!this.earlyCutoff || this.selfDirty || !this.hasExecuted) return false;
+    if (this.cutoffKey === null || this.error !== null) return false;
+    if (!this.nodeFunction && this.onCook === Node.prototype.onCook) return false;
+    return this.inputVersionKey() === this.cutoffKey;
+  }
+
+  /** @internal Mark clean without cooking; see `canSkipCook`. */
+  skipCook(): void {
+    this.setCookState('clean');
+  }
+
   // Execution state
   protected hasExecuted: boolean = false;
   protected lastInputHash: string = '';
@@ -587,6 +663,7 @@ export class Node {
   }
 
   private commitOutputValue<T>(port: OutputPort<T>, value: T): void {
+    if (!sameOutputValue(port.value, value)) this.bumpOutputVersion(port.id);
     port.value = value;
     for (const connection of port.connections) {
       const targetNode = this.graph.getNode(connection.to.nodeId);
@@ -2073,6 +2150,13 @@ export class Node {
         for (const [port, value] of staging) {
           this.commitOutputValue(port, value);
         }
+        // An output this cook did not set may still have changed behind the
+        // port (a canvas drawn in place), so it cannot vouch for itself.
+        for (const output of this.outputs) {
+          if (!staging.has(output)) this.bumpOutputVersion(output.id);
+        }
+        this.cutoffKey = this.inputVersionKey();
+        this.selfDirty = false;
         this.error = null;
         this.hasExecuted = true;
         this.lastInputHash = this.calculateInputHash();
@@ -2097,6 +2181,7 @@ export class Node {
       // the same gap from everything downstream.
       const err = asError(thrown);
       if (generation === this.cookGeneration) {
+        this.cutoffKey = null;
         this.error = err;
         // The inputs this failed on, so `isDirty` can tell a genuine change
         // from the Viewer's poll asking the same question again.

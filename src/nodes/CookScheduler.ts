@@ -34,6 +34,11 @@ export interface CookStatus {
    * applied — rather than one the next edit waited behind.
    */
   superseded?: number;
+  /**
+   * Nodes skipped in this run by early cutoff: stale only because something
+   * upstream re-cooked, and every input came back identical.
+   */
+  cutOff?: number;
 }
 
 /** See `COOK_SIGNAL_KEY` in `cascade/stage`: the same key, duplicated rather
@@ -120,7 +125,10 @@ export class CookScheduler {
     this.emit();
   }
 
-  markStale(node: Node): void {
+  markStale(node: Node, origin: 'self' | 'upstream' = 'self'): void {
+    // The node the invalidation starts at always cooks; the ones it reaches
+    // downstream may be cut off if their inputs come back unchanged.
+    if (origin === 'self') node.markSelfDirty();
     const visited = new Set<string>();
     const visit = (candidate: Node): void => {
       if (visited.has(candidate.id)) return;
@@ -145,7 +153,7 @@ export class CookScheduler {
     for (const output of node.outputs) {
       for (const connection of output.connections) {
         const downstream = this.graph.getNode(connection.to.nodeId);
-        if (downstream) this.markStale(downstream);
+        if (downstream) this.markStale(downstream, 'upstream');
       }
     }
   }
@@ -224,6 +232,7 @@ export class CookScheduler {
     let restrictTo = entryNode ? this.collectDownstream(entryNode) : null;
     let pass = 0;
     let supersededCount = 0;
+    let cutOffCount = 0;
 
     do {
       this.rerunRequested = false;
@@ -301,6 +310,19 @@ export class CookScheduler {
             ...this._status,
             completed: this._status.completed + 1,
             currentNode: null,
+            elapsed: performance.now() - startedAt
+          });
+          continue;
+        }
+
+        if (node.canSkipCook()) {
+          node.skipCook();
+          cutOffCount += 1;
+          this.setStatus({
+            ...this._status,
+            completed: this._status.completed + 1,
+            currentNode: null,
+            cutOff: cutOffCount,
             elapsed: performance.now() - startedAt
           });
           continue;

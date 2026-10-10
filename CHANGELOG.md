@@ -6,6 +6,17 @@ Notable changes to Cascade. Newest first.
 
 ### Changed
 
+- **Identical output stops invalidating the graph below it.** A node that
+  re-cooks and commits the same values (compared structurally; the same
+  object reference counts as changed, since it may be mutated in place) keeps
+  its output version, and a node stale only because of that upstream re-cook
+  is skipped. A node whose own parameters, code or wiring changed always
+  cooks, and `node.earlyCutoff = false` opts a node out. The cook status
+  carries the count as `cutOff`. Python projects get the matching half by
+  keying their stage cache on content; cloud-plots does (see its
+  `runtime/node_cli.py`). There, a no-op edit to `area-filter-mask` now costs
+  2 stage calls and 47 ms instead of 13 calls and 866 ms.
+
 - **What a Viewer shows cooks first.** A pass ran in plain topological order,
   so a sink nobody was looking at (an export, a plot check, the mockup) could
   run ahead of the node on screen. Now the selected or pinned node of each open
