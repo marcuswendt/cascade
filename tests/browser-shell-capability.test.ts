@@ -118,6 +118,8 @@ describe('the Studio shell capability', () => {
     const listeners: Array<() => void> = [];
     await browserShellCapability.run('echo', [], {
       timeout: 500,
+      stdin: '{"question":3}',
+      env: { EXAMPLE_MODE: 'bounded' },
       signal: {
         aborted: false,
         addEventListener: (_type: 'abort', listener: () => void) => listeners.push(listener),
@@ -126,8 +128,14 @@ describe('the Studio shell capability', () => {
     });
 
     const post = calls.find(call => !call.url.endsWith('/capability'))!;
-    expect(post.body.options).toEqual({ timeout: 500 });
-    expect(post.body.options.signal).toBeUndefined();
+    expect(post.body).toEqual({
+      command: 'echo',
+      args: [],
+      timeout: 500,
+      stdin: '{"question":3}',
+      env: { EXAMPLE_MODE: 'bounded' },
+    });
+    expect(post.body.signal).toBeUndefined();
     // Bridged, so aborting the Cascade signal has somewhere to go.
     expect(listeners).toHaveLength(1);
   });

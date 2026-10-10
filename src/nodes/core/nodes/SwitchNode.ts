@@ -45,17 +45,17 @@ export class SwitchNode extends Node {
     this.setVariadic();
     this.output = this.out('output');
 
-    this.addParm('index', {
-      value: 0,
-      type: 'int',
-      params: { min: 0, max: 0, step: 1 },
-      displayName: 'Index'
-    });
+    const index = this.param('index', 0, { type: 'int', min: 0, max: 0, step: 1 });
+    index.documentField = 'props';
 
     this.watchProp('index', () => this.update());
 
     this.onUpdate = () => this.update();
     this.onReady = () => this.update();
+  }
+
+  protected onCook(): void {
+    this.update();
   }
 
   private update(): void {

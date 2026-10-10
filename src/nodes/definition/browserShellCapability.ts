@@ -106,7 +106,10 @@ function requestBody(
   return {
     command,
     ...(args ? { args } : {}),
-    ...(Object.keys(rest).length > 0 ? { options: rest } : {}),
+    // `/api/shell` has always accepted execution options at the top level;
+    // keep the Studio adapter on that wire contract. Nesting them under
+    // `options` silently drops stdin, timeout, cwd and env in the route parser.
+    ...rest,
   };
 }
 

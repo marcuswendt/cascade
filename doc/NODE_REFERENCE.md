@@ -369,6 +369,31 @@ Runs on `portable`.
 | --- | --- | --- | --- |
 | `geometry` | `geometry` |  |  |
 
+### `cascade.geo.FromRects`
+
+From Rects — Convert rects into geometry, one closed polygon each, keeping the tag.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `rects` | `rects` |  |  |
+| `height` | `float` | `0` |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `origin` | `string` | `"top-left"` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `geometry` | `geometry` |  |  |
+
 ### `cascade.geo.Merge`
 
 Merge — Concatenate geometries, taking the union of their attributes.
@@ -497,6 +522,121 @@ Runs on `portable`.
 | name | type | default | range |
 | --- | --- | --- | --- |
 | `geometry` | `geometry` |  |  |
+
+### `cascade.math.Binary`
+
+Binary Math — Two values, one operation. Component-wise, and a scalar broadcasts against a vector.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `a` | `any` | `0` |  |
+| `b` | `any` | `0` |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `operation` | `string` | `"add"` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `any` |  |  |
+
+### `cascade.math.Clamp`
+
+Clamp — Hold a value between two bounds.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `any` | `0` |  |
+| `min` | `any` | `0` |  |
+| `max` | `any` | `1` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `any` |  |  |
+
+### `cascade.math.Compare`
+
+Compare — Test two values. Outputs a bool, for a Switch.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `a` | `float` | `0` |  |
+| `b` | `float` | `0` |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `operation` | `string` | `"greater"` |  |
+| `tolerance` | `float` | `0` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `result` | `bool` |  |  |
+
+### `cascade.math.Mix`
+
+Mix — Blend between two values. Houdini's lerp.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `a` | `any` | `0` |  |
+| `b` | `any` | `1` |  |
+| `bias` | `float` | `0.5` | 0…1 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `any` |  |  |
+
+### `cascade.math.Unary`
+
+Unary Math — One value, one operation. Trigonometry is in radians.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `any` | `0` |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `operation` | `string` | `"abs"` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `any` |  |  |
 
 ### `cascade.pop.FieldForce`
 
@@ -784,7 +924,7 @@ under `src/nodes/<library>/nodes/`.
 
 ### Geometry — `cascade.geo.*`
 
-**Geometry.** `cascade.geo.Rectangle` (A closed four-point polygon, counter-clockwise from bottom-left.), `cascade.geo.Circle` (A closed circle, as one cubic Bezier chain or as a polygon of divisions segments.), `cascade.geo.Transform` (Translate, rotate and scale geometry about a pivot.), `cascade.geo.Merge` (Concatenate geometries, taking the union of their attributes.), `cascade.geo.CopyToPoints` (Instance one geometry onto every point of another.), `cascade.geo.SvgExport` (Write geometry as an SVG document, one group element per group.), `cascade.geo.Render` (Draw a scene through a camera, as a raster.)
+**Geometry.** `cascade.geo.Rectangle` (A closed four-point polygon, counter-clockwise from bottom-left.), `cascade.geo.Circle` (A closed circle, as one cubic Bezier chain or as a polygon of divisions segments.), `cascade.geo.Transform` (Translate, rotate and scale geometry about a pivot.), `cascade.geo.Merge` (Concatenate geometries, taking the union of their attributes.), `cascade.geo.CopyToPoints` (Instance one geometry onto every point of another.), `cascade.geo.SvgExport` (Write geometry as an SVG document, one group element per group.), `cascade.geo.Render` (Draw a scene through a camera, as a raster.), `cascade.geo.FromRects` (Convert rects into geometry, one closed polygon each, keeping the tag.)
 
 ### Image — `cascade.image.*`
 

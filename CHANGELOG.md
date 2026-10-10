@@ -35,6 +35,15 @@ Notable changes to Cascade. Newest first.
   0.6 s instead of 10.9 s. Project workers should answer an interrupt with
   `{"cancelled": true}` to stay warm; see `doc/PROJECT_AUTHORING.md`.
 
+### Fixed
+
+- **Three wire and runtime fixes.** Studio's browser-shell adapter sends
+  execution options (stdin, timeout, cwd, env) at the top level of the
+  `/api/shell` body again; nested under `options` the route dropped them. A
+  Switch node's `index` is a document prop, serializes, and re-routes on cook.
+  Project CLI instances of one module share a single executor build, so one
+  cannot import the `.mjs` while another rewrites it.
+
 ## 0.8.0 — 2026-10-10
 
 ### Added

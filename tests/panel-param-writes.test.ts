@@ -23,7 +23,10 @@ import { describe, expect, it } from 'vitest';
 
 import { Graph } from '@/nodes/Graph';
 import { Node } from '@/nodes/Node';
+import { SwitchNode } from '@/nodes/core/nodes/SwitchNode';
 import { createProjectPanelApi } from '@/editor/projectPanels';
+import { createRuntime } from '../packages/runtime/src/index.js';
+import { createNodeRuntimeHost } from '../packages/runtime/src/node.js';
 
 function subject(paramOptions: Record<string, unknown> = { type: 'float' }) {
   const graph = new Graph();
@@ -198,6 +201,60 @@ describe('the panel API', () => {
 
     expect(() => api.setParam('subject', 'gain', 99))
       .toThrow(/driven by an? expression, so writing its value would have no effect/);
+  });
+
+  it('writes and serializes a native Switch index while routing its real inputs', async () => {
+    const graph = new Graph();
+    const switchNode = new SwitchNode('switch', graph);
+    (switchNode as any).modulePath = 'cascade.core.Switch';
+    (switchNode as any).sourceType = 'stdlib';
+    const first = new Node('first', 'Test', graph);
+    const second = new Node('second', 'Test', graph);
+    graph.addElement(switchNode);
+    graph.addElement(first);
+    graph.addElement(second);
+    const firstOutput = first.out('output');
+    const secondOutput = second.out('output');
+    firstOutput.setValue('first');
+    secondOutput.setValue('second');
+    graph.connect(firstOutput, switchNode.in('input_0', null));
+    graph.connect(secondOutput, switchNode.in('input_1', null));
+    const api = createProjectPanelApi({
+      context: () => ({ graph, selectedNode: null, onRecordHistory: undefined }) as never,
+      close: () => {},
+    });
+
+    await graph.execute(switchNode);
+    expect(api.getOutput('switch', 'output')).toBe('first');
+
+    api.setParam('switch', 'index', 1);
+    await api.cook({ nodeId: 'switch' });
+
+    expect(api.getParam('switch', 'index')).toBe(1);
+    expect(api.getRawParam('switch', 'index')).toBe(1);
+    expect(api.getOutput('switch', 'output')).toBe('second');
+    const saved = graph.toJSON().nodes.find((node: { id: string }) => node.id === 'switch');
+    expect(saved).toMatchObject({ module: 'cascade.core.Switch', props: { index: 1 } });
+    expect(saved).not.toHaveProperty('params');
+
+    const runtime = createRuntime({ host: createNodeRuntimeHost({}) });
+    const runtimeGraph = await runtime.load({
+      version: '0.2',
+      nodes: [
+        { id: 'runtime-first', module: 'cascade.core.Input', inputs: { value: 'first' } },
+        { id: 'runtime-second', module: 'cascade.core.Input', inputs: { value: 'second' } },
+        saved,
+      ],
+      connections: [
+        { source: { nodeId: 'runtime-first', outputName: 'output' }, target: { nodeId: 'switch', inputName: 'input_0' } },
+        { source: { nodeId: 'runtime-second', outputName: 'output' }, target: { nodeId: 'switch', inputName: 'input_1' } },
+      ],
+    });
+    expect(runtimeGraph.preflight()).toEqual([]);
+    expect((await runtimeGraph.run()).status).toBe('completed');
+    expect(runtimeGraph.getOutput('switch', 'output')).toBe('second');
+    await runtimeGraph.dispose();
+    await runtime.dispose();
   });
 });
 

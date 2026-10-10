@@ -554,13 +554,16 @@ async function prepare(file: string, document: any, compileExecutors: boolean): 
       throw new Error(architectureDiagnostics.map(formatDiagnostic).join('\n'));
     }
 
+    // Instances load executors concurrently. Share this preparation's build so
+    // they cannot import the .mjs while another instance is rewriting it.
+    let executor: ReturnType<typeof compileExecute> | undefined;
     deterministic.add(id);
     registrations.push({
       kind: 'definition-v1',
       moduleId: id,
       definition: extracted.definition,
       loadExecute: compileExecutors
-        ? () => compileExecute(projectRoot, moduleFile)
+        ? () => executor ??= compileExecute(projectRoot, moduleFile)
         : async () => { throw new Error('Static validation never loads execute'); },
     });
   }
