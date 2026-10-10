@@ -4,6 +4,7 @@ import type {
   NodeCapabilityName,
   ProgressReporter,
 } from "./capabilities.js";
+import type { BundleFieldDefinition, BundleFieldDefinitions } from "./bundle.js";
 import type {
   CascadeType,
   CoreType,
@@ -114,6 +115,20 @@ type SelectMetadata<T extends CascadeType> =
       readonly options?: readonly SelectOption<T>[];
     };
 
+/**
+ * Bundle ports name an optional `schema`, and declare fields from both ends:
+ * a producer declares what it carries (`fields: { dpi: "float" }`), a consumer
+ * the fields it reads (`fields: ["dpi"]`). A consumer that declares its fields
+ * sees only those and, in Studio, re-cooks only when one of them changed. See
+ * `bundle.ts`.
+ */
+type BundleInputMetadata<T extends CascadeType> = T extends "bundle"
+  ? { readonly schema?: string; readonly fields?: readonly string[] }
+  : { readonly schema?: never; readonly fields?: never };
+type BundleOutputMetadata<T extends CascadeType> = T extends "bundle"
+  ? { readonly schema?: string; readonly fields?: BundleFieldDefinitions }
+  : { readonly schema?: never; readonly fields?: never };
+
 export interface TriggerInputDefinition {
   readonly kind: "trigger";
   readonly description?: string;
@@ -126,7 +141,8 @@ export type DataInputDefinition<T extends CascadeType> = {
   readonly variadic?: boolean;
 } & NumericMetadata<T> &
   AcceptMetadata<T> &
-  SelectMetadata<T>;
+  SelectMetadata<T> &
+  BundleInputMetadata<T>;
 export type InputDefinitionFor<E extends RuntimeEnvironment> =
   | TriggerInputDefinition
   | {
@@ -136,11 +152,11 @@ export interface TriggerOutputDefinition {
   readonly kind: "trigger";
   readonly description?: string;
 }
-export interface DataOutputDefinition<T extends CascadeType> {
+export type DataOutputDefinition<T extends CascadeType> = {
   readonly kind: "data";
   readonly type: T;
   readonly description?: string;
-}
+} & BundleOutputMetadata<T>;
 export type OutputDefinitionFor<E extends RuntimeEnvironment> =
   | TriggerOutputDefinition
   | {
@@ -242,8 +258,31 @@ export interface TriggerEvent {
 
 type Entries<D, K extends "inputs" | "outputs" | "props"> =
   D extends Record<K, infer R> ? R : Record<never, never>;
+/** The value a declared bundle field holds. */
+type BundleFieldValue<F> = F extends CascadeType
+  ? ValueForType<F>
+  : F extends { readonly type: infer T extends CascadeType }
+    ? ValueForType<T>
+    : unknown;
+/** A bundle output's value, typed from its declared fields. Every field is
+ *  optional: a producer may leave one unset, and a consumer then reads none. */
+type BundleOutputValue<O> = O extends {
+  readonly fields: infer F extends Readonly<Record<string, BundleFieldDefinition>>;
+}
+  ? { readonly [K in keyof F]?: BundleFieldValue<F[K]> }
+  : Readonly<Record<string, unknown>>;
+/** A bundle input's value: only the declared fields, when it declares any. */
+type BundleInputValue<I> = I extends {
+  readonly fields: readonly (infer K extends string)[];
+}
+  ? { readonly [P in K]?: unknown }
+  : Readonly<Record<string, unknown>>;
 type InputValue<I> = I extends TriggerInputDefinition
   ? TriggerEvent | undefined
+  : I extends DataInputDefinition<"bundle">
+    ? I extends { readonly default: unknown }
+      ? BundleInputValue<I>
+      : BundleInputValue<I> | undefined
   : I extends DataInputDefinition<infer T>
     ? I extends { readonly variadic: true }
       ? readonly ValueForType<T>[]
@@ -253,6 +292,8 @@ type InputValue<I> = I extends TriggerInputDefinition
     : never;
 type OutputValue<O> = O extends TriggerOutputDefinition
   ? { trigger(payload?: JsonValue): void }
+  : O extends DataOutputDefinition<"bundle">
+    ? { set(value: BundleOutputValue<O>): void }
   : O extends DataOutputDefinition<infer T>
     ? { set(value: ValueForType<T>): void }
     : never;

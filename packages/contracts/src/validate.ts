@@ -38,9 +38,9 @@ const TOP_FIELDS = fields(
   "apiVersion runsOn container capabilities label description icon inputs outputs props",
 );
 const DATA_FIELDS = fields(
-  "kind type default description variadic min max step accept control options",
+  "kind type default description variadic min max step accept control options schema fields",
 );
-const OUTPUT_FIELDS = fields("kind type description");
+const OUTPUT_FIELDS = fields("kind type description schema fields");
 const PROP_FIELDS = fields(
   "type default label description min max step accept control options expression action",
 );
@@ -280,6 +280,7 @@ export function validateNodeDefinition(value: unknown): readonly Diagnostic[] {
         );
         continue;
       }
+      if (section !== "props") result.push(...bundleDiagnostics(raw, type, section, path));
       if (type === "texture" && environment !== "browser")
         add("texture-not-portable", "texture is browser-only", `${path}.type`);
       if (type === "texture" && "default" in raw)
@@ -347,6 +348,62 @@ export function validateNodeDefinition(value: unknown): readonly Diagnostic[] {
       )
         add("invalid-range", "min must not exceed max", path);
     }
+  }
+  return result;
+}
+
+/** `schema` and `fields` on a port: bundle-only, and well-formed. */
+function bundleDiagnostics(
+  raw: Record<string, unknown>,
+  type: string,
+  section: "inputs" | "outputs",
+  path: string,
+): Diagnostic[] {
+  const result: Diagnostic[] = [];
+  const add = (code: string, message: string, at: string) =>
+    result.push(diagnostic(code, message, at));
+  for (const key of ["schema", "fields"] as const)
+    if (key in raw && type !== "bundle")
+      add("bundle-metadata", `${key} is only valid on a bundle port`, `${path}.${key}`);
+  if (type !== "bundle") return result;
+  if ("schema" in raw && (typeof raw.schema !== "string" || !IDENTIFIER.test(raw.schema)))
+    add("invalid-schema", "schema must be an identifier", `${path}.schema`);
+  if (!("fields" in raw)) return result;
+  const declared = raw.fields;
+  if (section === "inputs") {
+    if (!Array.isArray(declared)) {
+      add("invalid-fields", "an input's fields list the field names it reads", `${path}.fields`);
+      return result;
+    }
+    const seen = new Set<string>();
+    for (const [index, field] of declared.entries()) {
+      if (typeof field !== "string" || !IDENTIFIER.test(field))
+        add("invalid-field", `${String(field)} is not a valid field name`, `${path}.fields[${index}]`);
+      else if (seen.has(field))
+        add("duplicate-field", `${field} is listed twice`, `${path}.fields[${index}]`);
+      else seen.add(field);
+    }
+    return result;
+  }
+  if (!isRecord(declared)) {
+    add("invalid-fields", "an output's fields map each field name to its type", `${path}.fields`);
+    return result;
+  }
+  for (const [field, definition] of Object.entries(declared)) {
+    const at = `${path}.fields.${field}`;
+    if (!IDENTIFIER.test(field) || RESERVED.has(field))
+      add("invalid-field", `${field} is not a valid field name`, at);
+    const fieldType = typeof definition === "string"
+      ? definition
+      : isRecord(definition) ? definition.type : undefined;
+    if (isRecord(definition))
+      for (const key of Object.keys(definition))
+        if (key !== "type" && key !== "description")
+          add("unknown-field", `${at}.${key} is not allowed`, `${at}.${key}`);
+    if (!validType(fieldType))
+      add("invalid-type", `${String(fieldType)} is not a Cascade type`, at);
+    else if (fieldType === "texture")
+      add("texture-not-portable", "a bundle field cannot hold a texture", at);
   }
   return result;
 }

@@ -44,3 +44,39 @@ const invalidTexture: NodeDefinition = { apiVersion: 1, runsOn: "server", inputs
 void invalidPortable;
 void invalidTexture;
 void invalidAi;
+
+// Bundles: a producer's fields type its `set`, a consumer's fields type its input.
+const format = {
+  apiVersion: 1,
+  runsOn: "portable",
+  inputs: {
+    upstream: { kind: "data", type: "bundle", schema: "format", fields: ["dpi"] },
+  },
+  outputs: {
+    format: {
+      kind: "data",
+      type: "bundle",
+      schema: "format",
+      fields: { dpi: "float", size: { type: "vec2i", description: "pixels" } },
+    },
+  },
+} as const satisfies NodeDefinition;
+
+const executeFormat: NodeExecute<typeof format> = ({ inputs, outputs }) => {
+  const dpi: unknown = inputs.upstream?.dpi;
+  void dpi;
+  outputs.format.set({ dpi: 300, size: [10, 20] });
+  outputs.format.set({ dpi: 300 });
+  // @ts-expect-error An undeclared field is not settable.
+  outputs.format.set({ dpu: 300 });
+  // @ts-expect-error A field takes its declared type.
+  outputs.format.set({ dpi: "300" });
+  // @ts-expect-error A consumer sees only the fields it declared.
+  void inputs.upstream?.size;
+};
+
+void executeFormat;
+
+// @ts-expect-error schema and fields belong to bundle ports.
+const notBundle: NodeDefinition = { apiVersion: 1, runsOn: "portable", outputs: { x: { kind: "data", type: "float", schema: "format" } } };
+void notBundle;

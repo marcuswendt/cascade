@@ -1,6 +1,14 @@
 import {
+  bundleFieldType,
+  bundleSchemasCompatible,
+  bundleValueProblem,
   canConnectTypes,
+  isBundleValue,
+  selectBundleFields,
+  suggestName,
+  unknownFieldMessage,
   validateNodeDefinition,
+  type BundleFieldDefinitions,
   type CascadeAbortSignal,
   type CascadeType,
   type Diagnostic,
@@ -16,6 +24,11 @@ import { CascadeRuntimeError } from "./error.js";
 import { builtinNodeRegistrations } from "./builtins/index.js";
 import { deserializeChannel, isEmptyChannel } from "./animation/channel.js";
 import { PropAnimator, isBoundProp } from "./params/index.js";
+import {
+  bundleFieldReferences,
+  parseBundleFieldPath,
+  remoteBundlePath,
+} from "./expressions/bundlePaths.js";
 import type { PropBinding } from "./params/index.js";
 import { DEFAULT_FPS, MIN_FRAME } from "./expressions/time.js";
 import { isGpuHost } from "./gpu.js";
@@ -389,6 +402,7 @@ class Graph implements LoadedCascadeGraph {
         const source = feeding[index]?.source.nodeId;
         return (source ? this.byId.get(source) : undefined) ?? null;
       },
+      inputValue: (node, name) => this.dataInputValue(node, name),
       // A failed expression has already fallen back to the stored value, so it
       // is a diagnostic rather than a stopped run — but it is never silent: a
       // parameter that quietly reverts is the hardest fault to see in a
@@ -900,17 +914,25 @@ class Graph implements LoadedCascadeGraph {
           return [name, Object.freeze(values)];
         }
         const connection = connections[0];
+        const value = connection
+          ? this.requireNode(connection.source.nodeId).outputs.get(
+              connection.source.outputName,
+            )
+          : node.inputs[name];
+        // A consumer that declares the fields it reads sees only those, so
+        // the declaration is the dependency rather than a comment about it.
         return [
           name,
-          connection
-            ? this.requireNode(connection.source.nodeId).outputs.get(
-                connection.source.outputName,
-              )
-            : node.inputs[name],
+          definition.type === "bundle" && definition.fields
+            ? selectBundleFields(value, definition.fields)
+            : value,
         ];
       }),
     );
     Object.freeze(inputs);
+    // A parameter whose expression reads a wired bundle field resolves now,
+    // when the bundle has been cooked, not at the start of the run.
+    if (readsBundleFields(node)) this.animator.resolveNode(node);
     if (this.isRemote(node)) {
       const bridge = this.host.capabilities.serverBridge;
       if (!bridge)
@@ -948,10 +970,9 @@ class Graph implements LoadedCascadeGraph {
         if (name in response.outputs) {
           const definition = node.definition.outputs?.[name];
           if (!definition || definition.kind !== "data") continue;
-          const value = runtimeValue(
+          const value = outputValue(
             response.outputs[name],
-            definition.type,
-            false,
+            definition,
             `${node.id}.${name}`,
           );
           node.outputs.set(name, value);
@@ -991,12 +1012,7 @@ class Graph implements LoadedCascadeGraph {
                 set: (value: unknown) =>
                   pendingData.set(
                     name,
-                    runtimeValue(
-                      value,
-                      definition.type,
-                      false,
-                      `${node.id}.${name}`,
-                    ),
+                    outputValue(value, definition, `${node.id}.${name}`),
                   ),
               },
         ],
@@ -1157,6 +1173,84 @@ class Graph implements LoadedCascadeGraph {
               node.id,
               `Missing capability ${capability} for ${node.moduleId} (node ${node.id}) — the ${this.host.environment} host ${this.hostProvides()}`,
             );
+    }
+    diagnostics.push(...this.bundleDiagnostics(nodes));
+    return diagnostics;
+  }
+  /**
+   * Bundle fields read by name, checked against what the producer declares:
+   * a consumer's declared `fields`, an expression's `ch("format.dpi")`, and a
+   * Pick's `field`. A producer that declares no fields (Pack, a subnet Input,
+   * a project node that left them out) cannot be checked and is not. Reading
+   * another node's bundle by absolute path is refused with what to do instead.
+   */
+  private bundleDiagnostics(nodes: readonly RuntimeNode[]): Diagnostic[] {
+    const diagnostics: Diagnostic[] = [];
+    const push = (nodeId: string, code: string, message: string, at = nodeId) =>
+      diagnostics.push({ phase: "preflight", code, path: at, message });
+    const producerFields = (node: RuntimeNode, input: string): string[] | null => {
+      const connection = this.dataConnectionsByInput.get(`${node.id}\0${input}`)?.[0];
+      if (!connection) return null;
+      const output = this.byId.get(connection.source.nodeId)?.definition.outputs?.[
+        connection.source.outputName
+      ];
+      if (output?.kind !== "data" || output.type !== "bundle" || !output.fields) return null;
+      return Object.keys(output.fields);
+    };
+    for (const node of nodes) {
+      for (const [name, input] of Object.entries(node.definition.inputs ?? {})) {
+        if (input.kind !== "data" || input.type !== "bundle" || !input.fields) continue;
+        const known = producerFields(node, name);
+        if (!known) continue;
+        for (const field of input.fields)
+          if (!known.includes(field))
+            push(node.id, "runtime/bundle-unknown-field",
+              unknownFieldMessage(field, known, `${node.id}.${name} (declared fields)`),
+              `${node.id}.${name}`);
+      }
+      if (node.moduleId === "cascade.core.Pick") {
+        const field = String(node.props.field ?? "").trim();
+        const known = producerFields(node, "bundle");
+        if (field && known && !known.includes(field))
+          push(node.id, "runtime/bundle-unknown-field",
+            unknownFieldMessage(field, known, `${node.id}.field`), `${node.id}.field`);
+      }
+      for (const [prop, binding] of Object.entries(node.bindings)) {
+        if (!binding.expression) continue;
+        for (const path of expressionPaths(binding.expression)) {
+          const remote = remoteBundlePath(path);
+          if (remote) {
+            const owner = this.byId.get(remote.node);
+            const output = owner?.definition.outputs?.[remote.port];
+            if (output?.kind === "data" && output.type === "bundle")
+              push(node.id, "runtime/bundle-remote-read",
+                `${node.id}.${prop} reads "${path}", another node's bundle, without a wire. `
+                + `Wire ${remote.node}.${remote.port} into a bundle input on ${node.id} and read "${remote.port}.${remote.field}" instead`,
+                `${node.id}.${prop}`);
+            continue;
+          }
+          const reference = parseBundleFieldPath(path);
+          if (!reference) continue;
+          const input = node.definition.inputs?.[reference.port];
+          if (!input) {
+            const ports = Object.entries(node.definition.inputs ?? {})
+              .filter(([, item]) => item.kind === "data" && item.type === "bundle")
+              .map(([portName]) => portName);
+            const suggestion = suggestName(reference.port, ports);
+            push(node.id, "runtime/bundle-unknown-port",
+              `${node.id}.${prop} reads "${path}", but ${node.moduleId} has no input "${reference.port}"`
+              + (suggestion ? ` — did you mean "${suggestion}.${reference.field}"?` : ""),
+              `${node.id}.${prop}`);
+            continue;
+          }
+          if (input.kind !== "data" || input.type !== "bundle") continue;
+          const known = producerFields(node, reference.port);
+          if (known && !known.includes(reference.field))
+            push(node.id, "runtime/bundle-unknown-field",
+              unknownFieldMessage(reference.field, known, `${node.id}.${prop}`),
+              `${node.id}.${prop}`);
+        }
+      }
     }
     return diagnostics;
   }
@@ -1984,6 +2078,17 @@ function materializeConnection(
       "runtime/connection-type",
       `Connection ${index} has incompatible types ${output.type} and ${input.type}`,
     );
+  if (
+    output.kind === "data" &&
+    input.kind === "data" &&
+    output.type === "bundle" &&
+    input.type === "bundle" &&
+    !bundleSchemasCompatible(output.schema, input.schema)
+  )
+    misuse(
+      "runtime/connection-schema",
+      `Connection ${index} wires a ${output.schema} bundle into an input that takes ${input.schema}`,
+    );
   return Object.freeze({
     source: Object.freeze(endpoints.source),
     target: Object.freeze(endpoints.target),
@@ -2333,6 +2438,46 @@ const TUPLE_LENGTHS: Readonly<Record<string, number>> = {
   color: 4,
 };
 
+/**
+ * An output value, checked against its declaration. A bundle with declared
+ * fields may only set those, and each one must be a valid value of its type.
+ */
+function outputValue(
+  value: unknown,
+  definition: { readonly type: string; readonly fields?: unknown },
+  path: string,
+): unknown {
+  if (definition.type !== "bundle" || !definition.fields)
+    return runtimeValue(value, definition.type, false, path);
+  const fields = definition.fields as BundleFieldDefinitions;
+  const problem = bundleValueProblem(value, fields);
+  if (problem) misuse("runtime/value-type", `${path} ${problem}`);
+  if (isBundleValue(value))
+    for (const [field, item] of Object.entries(value))
+      runtimeValue(item, bundleFieldType(fields[field]), true, `${path}.${field}`);
+  return runtimeValue(value, "bundle", false, path);
+}
+
+/** Every path an expression names through ch/chs/chv. */
+function expressionPaths(expression: string): string[] {
+  const paths: string[] = [];
+  const pattern = /\b(?:ch|chs|chv)\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(expression)) !== null) paths.push(match[1]);
+  return paths;
+}
+
+/** Whether any of a node's bound parameters reads a wired bundle field. */
+function readsBundleFields(node: RuntimeNode): boolean {
+  for (const binding of Object.values(node.bindings))
+    if (binding.expression)
+      for (const reference of bundleFieldReferences(binding.expression)) {
+        const input = node.definition.inputs?.[reference.port];
+        if (input?.kind === "data" && input.type === "bundle") return true;
+      }
+  return false;
+}
+
 function runtimeValue(
   value: unknown,
   type: string,
@@ -2357,7 +2502,9 @@ function runtimeValue(
           ? typeof item === "number" && Number.isInteger(item)
           : typeof item === "number" && Number.isFinite(item),
       )) ||
+    (type === "bundle" && isBundleValue(value)) ||
     (!tupleLength &&
+      type !== "bundle" &&
       type !== "float" &&
       type !== "int" &&
       type !== "bool" &&

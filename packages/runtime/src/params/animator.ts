@@ -20,6 +20,7 @@
  */
 
 import { ExpressionEvaluator } from "../expressions/evaluator.js";
+import { parseBundleFieldPath } from "../expressions/bundlePaths.js";
 import type { ExpressionScope } from "../expressions/scope.js";
 import { isBoundProp, resolvePropBinding } from "./resolve.js";
 import type { PropBinding } from "./resolve.js";
@@ -39,6 +40,9 @@ export interface PropAnimatorTopology<TNode extends AnimatableNode> {
   node(id: string): TNode | undefined;
   /** The node feeding `node`'s data input at `index`, for `opinput()`. */
   inputNode(node: TNode, index: number): TNode | null;
+  /** The value wired into `node`'s input `name`, for bundle field reads
+   *  (`ch("format.dpi")`). Optional: a host without it reads none. */
+  inputValue?(node: TNode, name: string): unknown;
   /** A failed expression. The parameter has already fallen back to its stored
    *  value; this is so the host can say so rather than render a wrong number
    *  in silence. */
@@ -73,6 +77,11 @@ export class PropAnimator<TNode extends AnimatableNode> {
   resolveAll(): void {
     for (const node of this.topology.nodes)
       for (const name of Object.keys(node.bindings)) this.resolve(node, name);
+  }
+
+  /** Re-resolve one node's bound parameters, e.g. once its inputs exist. */
+  resolveNode(node: TNode): void {
+    for (const name of Object.keys(node.bindings)) this.resolve(node, name);
   }
 
   /**
@@ -125,6 +134,14 @@ export class PropAnimator<TNode extends AnimatableNode> {
         // as. Reading the stored value here is the bug that makes `ch()` look
         // like it works until somebody keys the parameter it points at.
         if (owner.bindings[name]) return { value: this.resolve(owner, name) };
+        // `format.dpi`: a field of the bundle wired into input `format`.
+        const field = parseBundleFieldPath(name);
+        if (field && this.topology.inputValue) {
+          const bundle = this.topology.inputValue(owner, field.port);
+          if (bundle === null || typeof bundle !== "object") return null;
+          if (!Object.prototype.hasOwnProperty.call(bundle, field.field)) return null;
+          return { value: (bundle as Record<string, unknown>)[field.field] };
+        }
         if (name in owner.props) return { value: owner.props[name] };
         if (name in owner.inputs) return { value: owner.inputs[name] };
         return null;

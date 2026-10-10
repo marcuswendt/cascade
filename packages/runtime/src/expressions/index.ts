@@ -7,6 +7,8 @@
  */
 
 export { ExpressionEvaluator } from "./evaluator.js";
+export { bundleFieldReferences, parseBundleFieldPath, remoteBundlePath } from "./bundlePaths.js";
+export type { BundleFieldReference } from "./bundlePaths.js";
 export {
   clamp,
   fit,

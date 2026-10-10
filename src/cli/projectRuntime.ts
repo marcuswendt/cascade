@@ -103,8 +103,11 @@ async function preflightAgainstRunHost(
   const { errors, warnings } = classifyPreflight(diagnostics);
   reportPreflightWarnings(host, warnings);
   if (!errors.length) return;
+  const bundleOnly = errors.every((item) => item.code.startsWith('runtime/bundle-'));
   throw new Error([
-    `This graph cannot run on the ${host.environment} host that "cascade run" uses:`,
+    bundleOnly
+      ? 'Bundle fields do not match what their producers declare:'
+      : `This graph cannot run on the ${host.environment} host that "cascade run" uses:`,
     ...errors.map(line),
     ...capabilityAdvice(host, errors),
   ].join('\n'));

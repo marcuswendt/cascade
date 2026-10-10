@@ -37,6 +37,7 @@ export const CORE_TYPES = [
   "asset",
   "array",
   "object",
+  "bundle",
   "any",
 ] as const;
 
@@ -226,7 +227,7 @@ export type ValueForType<T extends CascadeType> = T extends "float" | "int"
                                             ? AssetRef
                                             : T extends "array"
                                               ? readonly unknown[]
-                                              : T extends "object"
+                                              : T extends "object" | "bundle"
                                                 ? Readonly<
                                                     Record<string, unknown>
                                                   >
@@ -239,7 +240,7 @@ export type SerializableValueForType<T extends CascadeType> =
       ? GeometrySerialized
       : T extends "array"
         ? readonly JsonValue[]
-        : T extends "object"
+        : T extends "object" | "bundle"
           ? Readonly<Record<string, JsonValue>>
           : T extends "any" | NamespacedType
             ? JsonValue

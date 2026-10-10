@@ -1,4 +1,5 @@
 import type { DefinitionNodeRegistration } from "../../types.js";
+import { packRegistration, pickRegistration } from "./bundle.js";
 import { cameraRegistration } from "./camera.js";
 import { randomRegistration } from "./random.js";
 import { remapRegistration } from "./remap.js";
@@ -20,6 +21,8 @@ export {
   mergeRegistration,
   nullRegistration,
   outputRegistration,
+  packRegistration,
+  pickRegistration,
   randomRegistration,
   remapRegistration,
   selectRegistration,
@@ -36,6 +39,8 @@ export const coreNodeRegistrations: readonly DefinitionNodeRegistration[] = Obje
   mergeRegistration,
   nullRegistration,
   selectRegistration,
+  pickRegistration,
+  packRegistration,
   randomRegistration,
   remapRegistration,
   cameraRegistration,
