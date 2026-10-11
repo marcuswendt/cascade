@@ -20,7 +20,6 @@ import {
   type PublishedParameter,
   type SceneFile,
 } from '../../packages/contracts/src/index.js';
-import { createBrowserRuntimeHost } from '../../packages/runtime/src/browser.js';
 import {
   controlOf,
   createScene,
@@ -31,14 +30,10 @@ import {
   resolveScene,
   sceneFile,
 } from '../../packages/runtime/src/editor/index.js';
-import { createRuntime, PREFLIGHT_WARNING_CODES } from '../../packages/runtime/src/runtime.js';
-import type { DefinitionNodeRegistration, LoadedCascadeGraph } from '../../packages/runtime/src/types.js';
-import { installIoBridge } from '../../server/src/runtime/io.js';
-import { createBrowserGpuHost } from '../browser/gpu.js';
+import type { DefinitionNodeRegistration } from '../../packages/runtime/src/types.js';
 import {
   asError,
   canvasBlob,
-  cleanupAll,
   isAssetRef,
   isGeometry,
   isImageAsset,
@@ -46,7 +41,8 @@ import {
   jsonReplacer,
   renderSceneCanvas,
 } from './app.js';
-import { PlayerAssetStore, mediaTypeForName } from './assets.js';
+import { mediaTypeForName } from './assets.js';
+import { createWorkerEngine, LocalEngine, type EditorEngine } from './editorEngine.js';
 
 /** What a project panel receives. Framework-free, so a Svelte `mount` fits it directly. */
 export interface EditorPanelApi {
@@ -64,7 +60,10 @@ export interface EditorPanelModule {
 
 export interface StartEditorOptions {
   readonly document: CascadeDocument;
-  readonly registrations: readonly DefinitionNodeRegistration[];
+  /** The engine worker script. The graph cooks there, so the page never stalls. */
+  readonly worker?: URL;
+  /** Cook on the page instead (tests, embedding). Used when no worker is given. */
+  readonly registrations?: readonly DefinitionNodeRegistration[];
   readonly assets: Readonly<Record<string, string>>;
   readonly panel?: EditorPanelModule;
   readonly root?: HTMLElement;
@@ -130,29 +129,16 @@ export async function startEditor(options: StartEditorOptions): Promise<EditorCo
   if (!editor) throw new Error('This export has no editor declaration');
   const host = options.root?.ownerDocument ?? globalThis.document;
   const root = options.root ?? host.body;
-  const assets = new PlayerAssetStore(options.assets);
-  const disposeIo = installIoBridge(assets);
-  const gpu = createBrowserGpuHost();
-  const registrations = new Map(options.registrations.map((item) => [item.moduleId, item]));
-  const runtime = createRuntime({
-    host: createBrowserRuntimeHost({
-      modules: { resolve: async (moduleId) => registrations.get(moduleId) ?? null },
-      assets,
-      ...(gpu ? { gpu } : {}),
-    }),
-    nodes: options.registrations,
-  });
+  let engine: EditorEngine | undefined;
   try {
-    const graph = await runtime.load(document);
-    const blocking = graph.preflight().find((item) => !PREFLIGHT_WARNING_CODES.has(item.code));
-    if (blocking) throw new Error(blocking.message);
-    const controller = new EditorController(document, editor, graph, assets, root, async () => {
-      await cleanupAll([() => graph.dispose(), () => runtime.dispose(), () => gpu?.dispose(), () => disposeIo(), () => assets.dispose()]);
-    });
+    engine = options.worker && typeof Worker !== 'undefined'
+      ? await createWorkerEngine(options.worker, { document, assets: options.assets })
+      : await LocalEngine.create({ document, assets: options.assets, registrations: options.registrations ?? [] });
+    const controller = new EditorController(document, editor, engine, root);
     await controller.start(options.panel);
     return controller;
   } catch (error) {
-    await cleanupAll([() => runtime.dispose(), () => gpu?.dispose(), () => disposeIo(), () => assets.dispose()]).catch(() => {});
+    await engine?.dispose().catch(() => {});
     root.replaceChildren(message(host, asError(error).message, 'bad'));
     throw error;
   }
@@ -176,14 +162,13 @@ export class EditorController {
   private inspecting = false;
   private viewRelease?: () => void;
   private readonly storageKey: string;
+  private nodes: Awaited<ReturnType<EditorEngine['nodes']>> = [];
 
   constructor(
     private readonly document: CascadeDocument,
     private readonly editor: EditorDeclaration,
-    private readonly graph: LoadedCascadeGraph,
-    private readonly assets: PlayerAssetStore,
+    private readonly engine: EditorEngine,
     private readonly root: HTMLElement,
-    private readonly release: () => Promise<void>,
   ) {
     this.parameters = [...(editor.parameters ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     this.byId = new Map(this.parameters.map((parameter) => [parameter.id, parameter]));
@@ -191,8 +176,12 @@ export class EditorController {
     this.values = { ...this.defaults };
     this.view = (editor.outputs ?? []).find((output) => output.view) ?? editor.outputs?.[0];
     this.storageKey = `cascade-editor:${editor.id}:${editorGraphVersion(document)}`;
+  }
+
+  async start(panel?: EditorPanelModule): Promise<void> {
     const inspected = new Map<string, unknown>();
-    for (const node of graph.inspect().nodes)
+    this.nodes = await this.engine.nodes();
+    for (const node of this.nodes)
       for (const [name, prop] of Object.entries(node.props)) {
         this.propTypes.set(`${node.id}\u0000${name}`, prop.type);
         inspected.set(`${node.id}\u0000${name}`, prop.value);
@@ -204,9 +193,6 @@ export class EditorController {
         if (value !== undefined) this.defaults[parameter.id] = JSON.parse(JSON.stringify(value)) as JsonValue;
       }
     this.values = { ...this.defaults };
-  }
-
-  async start(panel?: EditorPanelModule): Promise<void> {
     this.ui = this.build();
     const remembered = readLocal(this.storageKey);
     if (remembered) {
@@ -241,7 +227,7 @@ export class EditorController {
         if (!output) throw new Error(`Unknown output ${id}`);
         return this.exclusive(async () => {
           await this.runTarget(output);
-          return this.graph.getOutput(output.node, output.port);
+          return this.engine.output(output.node, output.port);
         });
       },
     };
@@ -261,7 +247,8 @@ export class EditorController {
 
   async dispose(): Promise<void> {
     this.viewRelease?.();
-    await this.release();
+    this.panelDispose?.();
+    await this.engine.dispose();
   }
 
   // ---------------------------------------------------------------- layout
@@ -584,12 +571,12 @@ export class EditorController {
 
   /** Write staged values into the idle graph. Only ever called inside `exclusive`. */
   private async flush(): Promise<void> {
-    const writes = [...this.pending];
-    this.pending.clear();
-    for (const [id, value] of writes) {
+    const writes = [...this.pending].map(([id, value]) => {
       const parameter = this.byId.get(id)!;
-      await this.graph.setProp(parameter.node, parameter.prop, value);
-    }
+      return [parameter.node, parameter.prop, value] as const;
+    });
+    this.pending.clear();
+    if (writes.length) await this.engine.setProps(writes);
   }
 
   /** Run one piece of graph work at a time, after any staged writes. */
@@ -630,7 +617,7 @@ export class EditorController {
   }
 
   private async useFile(parameter: PublishedParameter, file: DroppedFile): Promise<void> {
-    const ref = await this.assets.write(file.bytes, { mediaType: file.mediaType, suggestedName: file.name }, { signal: never });
+    const ref = await this.engine.writeAsset(file.bytes.slice(), { mediaType: file.mediaType, suggestedName: file.name });
     let value: unknown = ref;
     if (this.propTypes.get(`${parameter.node}\u0000${parameter.prop}`) === 'image') {
       const bitmap = await createImageBitmap(new Blob([file.bytes as BlobPart], { type: file.mediaType }));
@@ -728,17 +715,15 @@ export class EditorController {
       const started = performance.now();
       try {
         if (this.inspecting) {
-          const result = await this.graph.run({ reuse: true });
-          if (result.status !== 'completed') throw new Error(result.diagnostics.map((item) => item.message).join('\n') || result.status);
+          const result = await this.engine.run({ reuse: true });
+          if (result.status !== 'completed') throw new Error(result.messages.join('\n') || result.status);
         } else if (this.view) await this.runTarget(this.view);
-        if (this.view) await this.show(this.graph.getOutput(this.view.node, this.view.port));
+        if (this.view) await this.show(await this.engine.output(this.view.node, this.view.port));
         if (this.inspecting) await this.renderInspect();
         this.ui.status.textContent = `${Math.round(performance.now() - started)} ms`;
         this.clearReport('bad');
       } catch (error) {
         this.report(asError(error).message, 'bad');
-      } finally {
-        this.collect();
       }
     });
     this.pendingCook = run;
@@ -746,14 +731,8 @@ export class EditorController {
   }
 
   private async runTarget(output: PublishedOutput): Promise<void> {
-    const result = await this.graph.run({ target: { kind: 'output', nodeId: output.node, outputName: output.port }, reuse: true });
-    if (result.status !== 'completed') throw new Error(result.diagnostics.map((item) => item.message).join('\n') || `Cook ${result.status}`);
-  }
-
-  private collect(): void {
-    const roots: unknown[] = [this.document, this.values];
-    for (const node of this.graph.inspect().nodes) roots.push(...this.graph.getOutputs(node.id).values());
-    try { this.assets.collect(roots); } catch { /* best effort */ }
+    const result = await this.engine.run({ target: { kind: 'output', nodeId: output.node, outputName: output.port }, reuse: true });
+    if (result.status !== 'completed') throw new Error(result.messages.join('\n') || `Cook ${result.status}`);
   }
 
   private async show(value: unknown): Promise<void> {
@@ -775,12 +754,14 @@ export class EditorController {
       return { element: image, release: () => URL.revokeObjectURL(url) };
     }
     if (isAssetRef(value) && isImageAsset(value)) {
-      const lease = await this.assets.resolveUrl(value);
+      const bytes = await this.engine.readAsset(value);
+      const type = ('mediaType' in value && value.mediaType) || mediaTypeForName(value.path) || 'image/png';
+      const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
       const image = d.createElement('img');
-      image.src = lease.value;
+      image.src = url;
       image.alt = value.path;
       await image.decode().catch(() => {});
-      return { element: image, release: () => void lease.release() };
+      return { element: image, release: () => URL.revokeObjectURL(url) };
     }
     if (isGeometry(value) || isScene(value)) {
       const scene = isScene(value) ? value : sceneFromGeometry(value);
@@ -799,7 +780,8 @@ export class EditorController {
   private async renderInspect(): Promise<void> {
     const d = this.root.ownerDocument;
     for (const release of this.inspectReleases.splice(0)) release();
-    const nodes = this.graph.inspect().nodes;
+    const nodes = this.nodes;
+    const outputs = await this.engine.outputs();
     const depth = (id: string | undefined): number => {
       let level = 0;
       let current = nodes.find((node) => node.id === id)?.parent;
@@ -816,7 +798,7 @@ export class EditorController {
       const module = el(d, 'div', 'mod');
       module.textContent = `${node.moduleId}${node.parent ? ` · in ${node.parent}` : ''}`;
       card.append(title, module);
-      for (const [port, value] of this.graph.getOutputs(node.id)) {
+      for (const [port, value] of outputs.get(node.id) ?? []) {
         const out = el(d, 'div', 'out');
         const name = el(d, 'span');
         name.textContent = port;
@@ -834,7 +816,7 @@ export class EditorController {
     this.ui.status.textContent = `Exporting ${output.label ?? output.id}…`;
     const value = await this.exclusive(async () => {
       await this.runTarget(output);
-      return this.graph.getOutput(output.node, output.port);
+      return this.engine.output(output.node, output.port);
     });
     const blob = await this.toBlob(value, output);
     const scene = slug(this.editor.id);
@@ -847,7 +829,7 @@ export class EditorController {
   private async toBlob(value: unknown, output: PublishedOutput): Promise<Blob> {
     if (value instanceof Blob) return value;
     if (isAssetRef(value)) {
-      const bytes = await this.assets.read(value, { signal: never });
+      const bytes = await this.engine.readAsset(value);
       return new Blob([bytes as BlobPart], { type: ('mediaType' in value && value.mediaType) || mediaTypeForName(value.path) || 'application/octet-stream' });
     }
     if (typeof value === 'string')
@@ -873,7 +855,6 @@ export class EditorController {
   }
 }
 
-const never = { aborted: false, reason: undefined, addEventListener() {}, removeEventListener() {} } as never;
 
 function el(d: Document, tag: string, className?: string): HTMLElement {
   const element = d.createElement(tag);

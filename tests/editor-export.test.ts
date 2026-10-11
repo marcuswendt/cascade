@@ -296,3 +296,27 @@ describe('Studio scenes', () => {
     }
   });
 });
+
+describe('editor engine', () => {
+  it('cooks, reuses, writes and reads assets behind the async interface', async () => {
+    const { LocalEngine } = await import('@/player/editorEngine');
+    let cooks = 0;
+    const node: DefinitionNodeRegistration = {
+      kind: 'definition-v1', moduleId: 'project.Text',
+      definition: { apiVersion: 1, runsOn: 'portable', outputs: { svg: { kind: 'data', type: 'string' } }, props: { r: { type: 'float', default: 1 } } },
+      loadExecute: async () => (context: any) => { cooks++; context.outputs.svg.set(`<svg r="${context.props.r}"/>`); },
+    };
+    const engine = await LocalEngine.create({ document: { nodes: [{ id: 't', module: 'project.Text' }] }, registrations: [node], assets: {} });
+    expect((await engine.nodes())[0].props.r).toEqual({ type: 'float', value: 1 });
+    await engine.run({ reuse: true });
+    await engine.run({ reuse: true });
+    expect(cooks).toBe(1);
+    await engine.setProps([['t', 'r', 4]]);
+    expect(await engine.run({ reuse: true })).toEqual({ status: 'completed', messages: [] });
+    expect(await engine.output('t', 'svg')).toBe('<svg r="4"/>');
+    expect((await engine.outputs()).get('t')?.get('svg')).toBe('<svg r="4"/>');
+    const ref = await engine.writeAsset(new Uint8Array([1, 2]), { suggestedName: 'a.bin' });
+    expect([...(await engine.readAsset(ref))]).toEqual([1, 2]);
+    await engine.dispose();
+  });
+});

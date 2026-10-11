@@ -304,12 +304,17 @@ async function buildSite(prepared: Prepared, outOption: string): Promise<string>
   const registrations = modules.map((item, index) => `{ kind:'definition-v1', moduleId:${JSON.stringify(item.id)}, definition:${JSON.stringify(item.definition)}, loadExecute:async()=>execute${index} }`).join(',');
   const assetSource = assets.map((item) => `${JSON.stringify(item.name)}:new URL(${JSON.stringify(`./assets/${item.name.split('/').map(encodeURIComponent).join('/')}`)},import.meta.url).href`).join(',');
   const panelImport = panel ? `import * as panel from ${JSON.stringify(panel)};` : '';
-  const entry = `import { startEditor } from ${JSON.stringify(editorEntry)};\n${imports}\n${panelImport}\nwindow.cascadeEditorReady = startEditor({document:${JSON.stringify(document)},registrations:[${registrations}],assets:{${assetSource}}${panel ? ',panel' : ''}});`;
-  const result = await build({
+  // Two bundles: the page (editor shell, panel) and the engine worker (runtime
+  // and the project's nodes), so a slow stage never blocks the page.
+  const engineEntry = await playerFile('editorEngine');
+  const entry = `import { startEditor } from ${JSON.stringify(editorEntry)};\n${panelImport}\nwindow.cascadeEditorReady = startEditor({document:${JSON.stringify(document)},worker:new URL('./editor-worker.js',import.meta.url),assets:{${assetSource}}${panel ? ',panel' : ''}});`;
+  const workerEntry = `import { serveEditorEngine } from ${JSON.stringify(engineEntry)};\n${imports}\nserveEditorEngine([${registrations}]);`;
+  const bundle = (contents: string, sourcefile: string) => build({
     bundle: true, platform: 'browser', format: 'esm', target: 'es2022', write: false, minify: true,
     legalComments: 'none', logLevel: 'silent', plugins,
-    stdin: { contents: entry, resolveDir: project.root, sourcefile: 'editor-entry.js' },
+    stdin: { contents, resolveDir: project.root, sourcefile },
   });
+  const [result, workerResult] = await Promise.all([bundle(entry, 'editor-entry.js'), bundle(workerEntry, 'editor-worker-entry.js')]);
 
   await fs.mkdir(path.dirname(out), { recursive: true });
   const staging = await fs.mkdtemp(path.join(path.dirname(out), '.cascade-export-'));
@@ -323,7 +328,8 @@ async function buildSite(prepared: Prepared, outOption: string): Promise<string>
       files.push({ path: name, size: typeof data === 'string' ? Buffer.byteLength(data) : data.byteLength, from, kind });
     };
     await write('index.html', html, 'page', 'generated');
-    await write('editor.js', result.outputFiles![0].contents, 'code', 'cascade + project nodes');
+    await write('editor.js', result.outputFiles![0].contents, 'code', 'cascade editor shell');
+    await write('editor-worker.js', workerResult.outputFiles![0].contents, 'code', 'cascade runtime + project nodes');
     for (const asset of assets) {
       const target = path.join(staging, 'assets', asset.name);
       await fs.mkdir(path.dirname(target), { recursive: true });

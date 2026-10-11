@@ -130,7 +130,7 @@ chmodSync(resolve(outputDirectory, 'index.js'), 0o755);
 // one copy of each alongside its custom nodes.
 rmSync(resolve('dist', 'player'), { recursive: true, force: true });
 await build({
-  entryPoints: ['src/player/app.ts', 'src/player/embed.ts', 'src/player/editor.ts'],
+  entryPoints: ['src/player/app.ts', 'src/player/embed.ts', 'src/player/editor.ts', 'src/player/editorEngine.ts'],
   outdir: resolve('dist', 'player'),
   bundle: true,
   platform: 'browser',
