@@ -1,6 +1,6 @@
 {
   "name": "@field/cascade",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Visual programming for generative art",
   "license": "MIT",
   "author": "FIELD.IO <marcus@field.io>",
@@ -35,6 +35,7 @@
     "doc/PROJECT_AUTHORING.md",
     "doc/HEADLESS_GPU.md",
     "doc/WEB_PLAYER.md",
+    "doc/EDITOR_EXPORT.md",
     "README.md",
     "LICENSE"
   ],
@@ -85,6 +86,10 @@
     "./runtime/scene": {
       "types": "./dist/runtime/scene/index.d.ts",
       "default": "./dist/runtime/scene/index.js"
+    },
+    "./runtime/editor": {
+      "types": "./dist/runtime/editor/index.d.ts",
+      "default": "./dist/runtime/editor/index.js"
     },
     "./runtime/definition/extract": {
       "types": "./dist/runtime/definition/extract.d.ts",

@@ -426,6 +426,7 @@ trusted-host session; an untrusted remote bind does not expose them.
 - [Design source of truth](DESIGN.md)
 - [Architecture](ARCHITECTURE.md)
 - [Browser player](doc/WEB_PLAYER.md)
+- [Shareable editors](doc/EDITOR_EXPORT.md)
 - [September quality review and sketch verification](doc/QUALITY_REVIEW_2026-09.md)
 - [Subnet and shell specification](spec/CASCADE_SUBNET_AND_SHELL_SPEC.md)
 

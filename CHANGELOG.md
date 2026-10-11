@@ -6,6 +6,28 @@ Notable changes to Cascade. Newest first.
 
 ### Added
 
+- **Shareable editors (0.9.0).** `cascade export <graph> --out <dir>` builds a
+  static editor site from a graph's new `editor` section. It has the published
+  parameters (with a UI generated from their types), presets, scene files, one
+  export button per declared output, and a read-only inspect view of every
+  stage. `--plan` prints the manifest without building, and
+  `--deploy vercel` deploys the site and checks that Vercel Authentication is
+  on.
+
+  The export is an allowlist. It ships the subgraph the outputs need and the
+  selected assets, and nothing else. It refuses Python and dynamic nodes,
+  wired-in live sources, `licensed/`, hidden and gitignored files. It scans the
+  built site for credentials, local paths and backend URLs.
+  `cascade freeze` snapshots chosen fields of a live source, and
+  `cascade publish` marks a prop as a parameter. Scenes (`*.scene.json`) open
+  in the editor, in Studio (File › Open/Save Scene) and in the CLI
+  (`cascade scene`, `cascade run --scene --write`), with versioned,
+  degrade-gracefully matching.
+
+  The runtime gains `run({ reuse: true })`, an early cutoff for hosts that
+  re-run on every edit, and `cascade.core.Frozen`. Node definitions gain
+  `source: "live"`. See `doc/EDITOR_EXPORT.md`.
+
 - **Bundle ports.** A node can export one `bundle` port carrying named fields
   instead of a dozen loose outputs. A producer declares `fields` (name to type)
   and an optional `schema`; a consumer declares the `fields` it reads, sees only

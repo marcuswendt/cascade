@@ -42,6 +42,12 @@ player. Use repeatable `--asset <project-relative-file>` for inputs whose paths
 are computed in code. Read `doc/WEB_PLAYER.md` before exporting: server stages
 and dynamic modules are not supported, assets must be explicit, and an existing
 output directory is never overwritten. Serve the result over HTTP, not file://.
+`cascade export <graph.cascade> (--plan | --out <dir>)` exports the graph's
+`editor` section (published parameters, outputs, presets) as a shareable static
+editor. Read `doc/EDITOR_EXPORT.md` first. The export is an allowlist: live
+sources must be frozen (`cascade freeze`), and `licensed/`, hidden and
+gitignored files are refused. Scenes round-trip through the editor, Studio and
+`cascade run --scene`.
 The player is an application host under `src/player`, not another graph engine.
 Each embed owns an iframe realm, assets, IO bridge and GPU lifecycle. No Studio
 imports or `/api/*` dependency may enter the static deployment.
