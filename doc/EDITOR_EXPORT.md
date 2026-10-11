@@ -55,8 +55,10 @@ prints the same manifest without building anything.
    cascade publish index.cascade spec.capMm --label "Cap height" --group Type --min 3 --max 60 --unit mm
    ```
 
-   This adds an entry to the graph's `editor.parameters`. You can also edit the
-   JSON directly (see the format below).
+   This adds an entry to the graph's `editor.parameters`. In Studio, the
+   `share` toggle beside a parameter in the Inspector does the same, with
+   label, group and range fields. You can also edit the JSON directly (see the
+   format below).
 
 2. **Declare the outputs.** Add them to `editor.outputs`: one with `view: true`
    is shown in the viewer, and each one gets an export button (`png`, `svg`,
@@ -195,8 +197,10 @@ The same scene gives byte-identical output in the editor and under `cascade run`
 - Only browser-runnable definition-v1 nodes ship. Python, shell and dynamic
   nodes are listed together as "not exportable". Port them to TypeScript, or
   freeze their output.
-- The editor cooks on the page's main thread. Unchanged stages are reused
-  (`run({ reuse: true })`), so only the stages after an edit re-cook, but a
-  long first stage blocks the page while it runs.
-- Studio does not yet have a publish toggle in the Inspector. Use
-  `cascade publish` or edit the JSON.
+- The editor cooks in a module worker. Unchanged stages are reused
+  (`run({ reuse: true })`), so only the stages after an edit re-cook, and the
+  page stays responsive while they do. Values cross to the page by structured
+  clone; a value that cannot be cloned is shown as a description.
+- In Studio, a parameter's `share` toggle in the Inspector publishes it, with
+  label, group and range fields. Presets, outputs, `visibleWhen` and help text
+  are still edited with `cascade publish` or in the JSON.

@@ -24,6 +24,7 @@
   import { normalizeColor, colorToHex } from '@/utils/colorUtils';
   import { setStudioParameter } from './StudioParameterController';
   import { normalizeType } from '@/types/coreTypes';
+  import { findPublished, publishedGroups, togglePublished, updatePublished, type PublishedPatch } from './publishedParameters';
 
   export let node: Node | null = null;
   export let annotation: CanvasAnnotation | null = null;
@@ -293,6 +294,37 @@
     sectionVersion += 1;
     portsVersion += 1;
   }
+
+  /**
+   * Publish this parameter to the graph's shareable editor, or unpublish it.
+   *
+   * The Studio side of `cascade publish`: the entry goes into the document's
+   * `editor.parameters`, which `cascade export` reads. Label and range start
+   * from the parameter's own, and the fields under the row refine them.
+   */
+  let editorVersion = 0;
+  function togglePublishedParameter(parameter: any) {
+    if (!node || !graph) return;
+    maybeRecordHistory();
+    const options = parameter.options ?? {};
+    graph.editor = togglePublished(graph.editor, graph.project?.name || 'editor', node.id, parameter.name, {
+      label: options.label, min: options.min, max: options.max, step: options.step,
+    });
+    resetHistoryTracking();
+    graph.elements = [...graph.elements];
+    editorVersion += 1;
+  }
+
+  function editPublished(parameter: any, patch: PublishedPatch) {
+    if (!node || !graph?.editor) return;
+    maybeRecordHistory();
+    graph.editor = updatePublished(graph.editor, node.id, parameter.name, patch);
+    resetHistoryTracking();
+    graph.elements = [...graph.elements];
+    editorVersion += 1;
+  }
+
+  const numberOrUndefined = (text: string) => (text.trim() === '' ? undefined : Number(text));
 
   /**
    * Show this child parameter on its container, or stop showing it.
@@ -1801,6 +1833,36 @@
                       on:click={() => toggleParentPromotion(parameter)}
                     >{node.isPromotedToParent(parameter.name) ? 'up ✓' : 'up'}</button>
                   {/if}
+                  {#if !parameter.options?.action && bound}
+                    {@const published = editorVersion >= 0 ? findPublished(graph?.editor, node.id, parameter.name) : undefined}
+                    <button
+                      class="promote"
+                      class:on={!!published}
+                      title={published
+                        ? `Published to the shareable editor as "${published.id}". Click to unpublish`
+                        : 'Publish to the shareable editor (cascade export)'}
+                      on:click={() => togglePublishedParameter(parameter)}
+                    >{published ? 'share ✓' : 'share'}</button>
+                    {#if published}
+                      <div class="published-fields" title={`Shareable editor parameter "${published.id}"`}>
+                        <label class="wide"><span>Label</span><input type="text" placeholder={parameter.options?.label ?? parameter.name} value={published.label ?? ''}
+                          on:change={(event) => editPublished(parameter, { label: event.currentTarget.value })} /></label>
+                        <label class="wide"><span>Group</span><input type="text" list={`published-groups-${node.id}`} value={published.group ?? ''}
+                          on:change={(event) => editPublished(parameter, { group: event.currentTarget.value })} /></label>
+                        <datalist id={`published-groups-${node.id}`}>
+                          {#each publishedGroups(graph?.editor) as group}<option value={group}></option>{/each}
+                        </datalist>
+                        {#if numeric}
+                          <label><span>Min</span><input type="number" step="any" value={published.min ?? ''}
+                            on:change={(event) => editPublished(parameter, { min: numberOrUndefined(event.currentTarget.value) })} /></label>
+                          <label><span>Max</span><input type="number" step="any" value={published.max ?? ''}
+                            on:change={(event) => editPublished(parameter, { max: numberOrUndefined(event.currentTarget.value) })} /></label>
+                          <label><span>Step</span><input type="number" step="any" value={published.step ?? ''}
+                            on:change={(event) => editPublished(parameter, { step: numberOrUndefined(event.currentTarget.value) })} /></label>
+                        {/if}
+                      </div>
+                    {/if}
+                  {/if}
                   {#if !parameter.options?.action && parameter.options?.promotable !== false}
                     <button
                       class="promote"
@@ -1943,6 +2005,39 @@
   .promote:hover {
     color: var(--text-tertiary);
     border-color: var(--border-strong);
+  }
+
+  .published-fields {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 4px;
+    margin: 4px 0 2px;
+  }
+
+  .published-fields label {
+    grid-column: span 2;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    font-size: 9px;
+    color: var(--text-disabled);
+  }
+
+  .published-fields label.wide {
+    grid-column: span 3;
+  }
+
+  .published-fields input {
+    flex: 1;
+    min-width: 0;
+    font-size: 10px;
+    padding: 2px 4px;
+    background: var(--bg-input, transparent);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 3px;
   }
 
   .promote.on {

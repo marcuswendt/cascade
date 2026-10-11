@@ -320,3 +320,20 @@ describe('editor engine', () => {
     await engine.dispose();
   });
 });
+
+describe('publishing from the Inspector', () => {
+  it('creates the section, toggles, picks a free id and edits fields', async () => {
+    const { togglePublished, updatePublished, findPublished, publishedGroups } = await import('@/editor/publishedParameters');
+    let editor = togglePublished(undefined, 'Cloud Type.cascade', 'spec', 'seed', { label: 'Seed', min: 0, max: 99 });
+    expect(editor.id).toBe('cloud-type');
+    expect(findPublished(editor, 'spec', 'seed')).toMatchObject({ id: 'seed', label: 'Seed', min: 0, max: 99, order: 1 });
+    editor = togglePublished(editor, 'x', 'other', 'seed');
+    expect(findPublished(editor, 'other', 'seed')?.id).toBe('other.seed');
+    editor = updatePublished(editor, 'spec', 'seed', { group: ' Input ', max: Number.NaN, step: 1, label: '' });
+    expect(findPublished(editor, 'spec', 'seed')).toEqual({ id: 'seed', node: 'spec', prop: 'seed', min: 0, step: 1, order: 1, group: 'Input' });
+    expect(publishedGroups(editor)).toEqual(['Input']);
+    editor = togglePublished(editor, 'x', 'spec', 'seed');
+    expect(findPublished(editor, 'spec', 'seed')).toBeUndefined();
+    expect(editor.id).toBe('cloud-type');
+  });
+});

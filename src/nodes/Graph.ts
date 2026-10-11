@@ -106,7 +106,7 @@ export class Graph {
   project: ProjectConfig = { packages: [] };
   private createdAt = new Date().toISOString();
   /** The document's `editor` section (published parameters, outputs, presets), kept verbatim. */
-  editor?: Record<string, unknown>;
+  editor?: import('../../packages/contracts/src/editor.js').EditorDeclaration;
 
   get created(): string { return this.createdAt; }
 
@@ -1610,7 +1610,7 @@ export class Graph {
     const graph = new Graph(assetManager, packageManager);
     const version = json.version || '0.1';
     if (typeof json.metadata?.created === 'string') graph.createdAt = json.metadata.created;
-    if (json.editor && typeof json.editor === 'object') graph.editor = json.editor;
+    if (json.editor && typeof json.editor === 'object') graph.editor = json.editor as Graph['editor'];
 
     /**
      * The project's name, read whether or not the file carries a `project`

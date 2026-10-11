@@ -6,6 +6,13 @@ Notable changes to Cascade. Newest first.
 
 ### Added
 
+- **Shareable editors, follow-ups (0.9.1).** The exported editor cooks in a
+  module worker (`editor-worker.js`), so a slow stage no longer freezes the
+  page while someone drags a slider. Studio's Inspector has a `share` toggle per
+  parameter that publishes it to the editor, with label, group and min/max/step
+  fields. `npm run build` compiles the workspace packages before vite, so a
+  fresh tree builds and no longer leaves `dist/` without a CLI.
+
 - **Shareable editors (0.9.0).** `cascade export <graph> --out <dir>` builds a
   static editor site from a graph's new `editor` section. It has the published
   parameters (with a UI generated from their types), presets, scene files, one
