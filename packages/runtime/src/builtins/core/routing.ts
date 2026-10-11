@@ -67,6 +67,36 @@ const nullDefinition = {
   },
 } as const;
 
+/**
+ * `cascade.core.Frozen` — a snapshot standing in for a live data source.
+ *
+ * `cascade export` writes one in place of a node the author froze with
+ * `cascade freeze`: the chosen fields of that node's output, and nothing else.
+ * It has no inputs, so nothing upstream of a frozen source ships.
+ */
+const frozenDefinition = {
+  apiVersion: 1,
+  runsOn: "portable",
+  label: "Frozen",
+  description: "Emits a frozen snapshot of a data source's chosen values",
+  icon: "Snowflake",
+  outputs: {
+    value: { kind: "data", type: "any" },
+  },
+  props: {
+    value: { type: "any", default: null },
+  },
+} as const;
+
+export const frozenRegistration: DefinitionNodeRegistration<typeof frozenDefinition> = {
+  kind: "definition-v1",
+  moduleId: "cascade.core.Frozen",
+  definition: frozenDefinition,
+  loadExecute: async () => ({ outputs, props }) => {
+    outputs.value.set(props.value);
+  },
+};
+
 export const switchRegistration: DefinitionNodeRegistration<typeof switchDefinition> = {
   kind: "definition-v1",
   moduleId: "cascade.core.Switch",

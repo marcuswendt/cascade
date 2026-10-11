@@ -44,6 +44,10 @@
     "./definition/extract": {
       "types": "./dist/definition/extract.d.ts",
       "default": "./dist/definition/extract.js"
+    },
+    "./editor": {
+      "types": "./dist/editor/index.d.ts",
+      "default": "./dist/editor/index.js"
     }
   },
   "files": [

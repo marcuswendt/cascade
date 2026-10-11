@@ -146,6 +146,12 @@ export interface RunOptions {
   readonly frame?: number;
   /** Frames per second, for `$FPS` and for `$T`. Default 30. */
   readonly fps?: number;
+  /**
+   * Keep the outputs of nodes whose inputs and props did not change since
+   * their last cook, instead of cooking the whole selection again. For hosts
+   * that re-run on every edit, such as an exported editor.
+   */
+  readonly reuse?: boolean;
 }
 export interface RunResult {
   readonly runId: string;

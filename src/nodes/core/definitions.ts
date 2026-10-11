@@ -19,6 +19,7 @@
 import {
   cameraRegistration,
   feedbackRegistration,
+  frozenRegistration,
   packRegistration,
   pickRegistration,
   previousRegistration,
@@ -33,4 +34,5 @@ registerDefinitionNodes([
   previousRegistration,
   pickRegistration,
   packRegistration,
+  frozenRegistration,
 ]);

@@ -83,6 +83,8 @@
     { label: 'Version History...', action: 'versionHistory' },
     { type: 'separator' },
     { label: 'Export...', action: 'export', shortcut: '⌘E' },
+    { label: 'Open Scene...', action: 'openScene' },
+    { label: 'Save Scene...', action: 'saveScene' },
     { type: 'separator' },
     { label: 'Project Settings...', action: 'projectSettings', shortcut: '⇧⌘,' },
     { label: 'Settings...', action: 'settings', shortcut: '⌘,' },

@@ -105,6 +105,8 @@ export class Graph {
   // Project configuration (v0.2)
   project: ProjectConfig = { packages: [] };
   private createdAt = new Date().toISOString();
+  /** The document's `editor` section (published parameters, outputs, presets), kept verbatim. */
+  editor?: Record<string, unknown>;
 
   get created(): string { return this.createdAt; }
 
@@ -1407,6 +1409,10 @@ export class Graph {
       result.connections = connections;
     }
 
+    // The shareable editor declaration. Studio does not edit it yet, so it is
+    // carried through untouched; dropping it on save would unpublish a graph.
+    if (this.editor) result.editor = this.editor;
+
     return result;
   }
 
@@ -1604,6 +1610,7 @@ export class Graph {
     const graph = new Graph(assetManager, packageManager);
     const version = json.version || '0.1';
     if (typeof json.metadata?.created === 'string') graph.createdAt = json.metadata.created;
+    if (json.editor && typeof json.editor === 'object') graph.editor = json.editor;
 
     /**
      * The project's name, read whether or not the file carries a `project`

@@ -268,6 +268,12 @@
       case 'export':
         loadExportDialog().then(() => exportDialogOpen = true);
         break;
+      case 'openScene':
+        handleOpenScene();
+        break;
+      case 'saveScene':
+        handleSaveScene();
+        break;
       case 'settings':
         loadSettingsDialog().then(() => settingsDialogOpen = true);
         break;
@@ -566,6 +572,51 @@
     } else {
       // No file path - prompt for name
       handleSaveAs();
+    }
+  }
+
+  /**
+   * Scenes: published parameter values saved from an exported editor, or for
+   * one. Opening applies them to this graph as an ordinary unsaved edit.
+   */
+  async function handleOpenScene() {
+    if (!graph) return;
+    try {
+      const file = await triggerFileInput('.json');
+      if (!file) return;
+      const document = JSON.parse(serializeGraph(graph));
+      if (!document.editor) throw new Error('This graph declares no editor, so it has no published parameters for a scene to set.');
+      const { applySceneInStudio } = await import('./editor/studioScenes');
+      const { document: next, warnings } = await applySceneInStudio(document, JSON.parse(await file.text()));
+      const candidate = await prepareGraphCandidate(next);
+      await replaceGraph(candidate, false);
+      hasUnsavedChanges = true;
+      updateWindowTitle();
+      await cookGraph().catch(err => console.warn('Graph execution failed:', err));
+      if (warnings.length) alert(`Scene opened with notes:\n\n${warnings.join('\n')}`);
+    } catch (error) {
+      alert('Failed to open scene: ' + (error as Error).message);
+    }
+  }
+
+  async function handleSaveScene() {
+    if (!graph) return;
+    try {
+      const document = JSON.parse(serializeGraph(graph));
+      if (!document.editor) throw new Error('This graph declares no editor. Publish parameters first (cascade publish, doc/EDITOR_EXPORT.md).');
+      const name = prompt('Scene name', documentName || 'scene')?.trim();
+      if (!name) return;
+      const { sceneFromStudio } = await import('./editor/studioScenes');
+      const scene = await sceneFromStudio(document, name);
+      const blob = new Blob([JSON.stringify(scene, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement('a');
+      link.href = url;
+      link.download = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'scene'}.scene.json`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (error) {
+      alert('Failed to save scene: ' + (error as Error).message);
     }
   }
 

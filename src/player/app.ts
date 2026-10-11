@@ -240,7 +240,7 @@ class BrowserPlayer implements PlayerController {
     }
     if (typeof value === 'string') {
       return new Blob([value], {
-        type: value.trimStart().startsWith('<svg') ? 'image/svg+xml' : 'text/plain;charset=utf-8',
+        type: isSvgText(value) ? 'image/svg+xml' : 'text/plain;charset=utf-8',
       });
     }
     if ((isGeometry(value) || isScene(value)) && this.displayedElement instanceof HTMLCanvasElement)
@@ -356,7 +356,7 @@ class BrowserPlayer implements PlayerController {
     let next: HTMLElement;
     let nextRelease: (() => void | Promise<void>) | undefined;
     const asset = isAssetRef(value) ? value : undefined;
-    if (asset || (typeof value === 'string' && value.trimStart().startsWith('<svg'))) {
+    if (asset || isSvgText(value)) {
       let url: string;
       if (asset) {
         const lease = await this.context.assets.resolveUrl(asset);
@@ -492,13 +492,13 @@ function createUi(hostDocument: Document, root: HTMLElement): PlayerUi {
   return { play, frame, error, output };
 }
 
-function renderSceneCanvas(hostDocument: Document, scene: Scene, width: number, height: number): HTMLCanvasElement {
+export function renderSceneCanvas(hostDocument: Document, scene: Scene, width: number, height: number, stroke: readonly [number, number, number, number] = [1, 1, 1, 1]): HTMLCanvasElement {
   let canvas: HTMLCanvasElement | undefined;
   const camera = scene.camera ?? fitCamera(scene, width, height);
   renderScene(scene.geometry, {
     camera,
     size: [width, height],
-    stroke: [1, 1, 1, 1],
+    stroke: [...stroke],
     strokeWidth: 1,
     opacity: 1,
     pointRadius: 1,
@@ -558,7 +558,7 @@ function preferredOutput(result: RunResult): PlayerOutputSelection | undefined {
     for (const [port, value] of outputs) {
       fallback = { nodeId, port };
       if (isAssetRef(value) || isScene(value) || isGeometry(value) ||
-          (typeof value === 'string' && value.trimStart().startsWith('<svg')))
+          isSvgText(value))
         preferred = { nodeId, port };
     }
   }
@@ -577,31 +577,31 @@ function resultError(result: RunResult): Error {
   return new Error(details.join('\n') || `Player cook ${result.status}`);
 }
 
-function isGeometry(value: unknown): value is Geometry {
+export function isGeometry(value: unknown): value is Geometry {
   return typeof value === 'object' && value !== null && (value as { kind?: unknown }).kind === 'geometry';
 }
 
-function isAssetRef(value: unknown): value is AssetRef | ImageRef {
+export function isAssetRef(value: unknown): value is AssetRef | ImageRef {
   return typeof value === 'object' && value !== null && typeof (value as { path?: unknown }).path === 'string';
 }
 
-function isImageAsset(value: AssetRef | ImageRef): boolean {
+export function isImageAsset(value: AssetRef | ImageRef): boolean {
   if ('size' in value && Array.isArray(value.size)) return true;
   if ('mediaType' in value && value.mediaType?.startsWith('image/')) return true;
   return /\.(png|svg|jpe?g|webp|gif|avif)$/i.test(value.path);
 }
 
-function jsonReplacer(_key: string, value: unknown): unknown {
+export function jsonReplacer(_key: string, value: unknown): unknown {
   return ArrayBuffer.isView(value) ? Array.from(value as unknown as ArrayLike<number>) : value;
 }
 
-function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+export function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Canvas produced no image')), 'image/png');
   });
 }
 
-async function cleanupAll(actions: readonly (() => void | Promise<void> | undefined)[]): Promise<void> {
+export async function cleanupAll(actions: readonly (() => void | Promise<void> | undefined)[]): Promise<void> {
   const errors: unknown[] = [];
   for (const action of actions) {
     try { await action(); } catch (error) { errors.push(error); }
@@ -613,6 +613,11 @@ function requireFinite(value: number, label: string): void {
   if (!Number.isFinite(value)) throw new TypeError(`${label} must be finite`);
 }
 
-function asError(value: unknown): Error {
+export function asError(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
+}
+
+/** SVG text, with or without an XML declaration or comments in front. */
+export function isSvgText(value: unknown): value is string {
+  return typeof value === 'string' && /^\s*(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*|<!DOCTYPE[^>]*>\s*)*<svg[\s>]/i.test(value.slice(0, 2000));
 }

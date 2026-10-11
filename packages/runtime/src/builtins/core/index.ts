@@ -3,7 +3,7 @@ import { packRegistration, pickRegistration } from "./bundle.js";
 import { cameraRegistration } from "./camera.js";
 import { randomRegistration } from "./random.js";
 import { remapRegistration } from "./remap.js";
-import { mergeRegistration, nullRegistration, selectRegistration, switchRegistration } from "./routing.js";
+import { frozenRegistration, mergeRegistration, nullRegistration, selectRegistration, switchRegistration } from "./routing.js";
 import {
   feedbackRegistration,
   inputRegistration,
@@ -16,6 +16,7 @@ import { timeRegistration } from "./time.js";
 export {
   cameraRegistration,
   feedbackRegistration,
+  frozenRegistration,
   previousRegistration,
   inputRegistration,
   mergeRegistration,
@@ -47,6 +48,7 @@ export const coreNodeRegistrations: readonly DefinitionNodeRegistration[] = Obje
   timeRegistration,
   feedbackRegistration,
   previousRegistration,
+  frozenRegistration,
 ]);
 
 const registrationsById = new Map(

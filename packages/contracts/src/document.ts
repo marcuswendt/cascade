@@ -1,3 +1,4 @@
+import type { EditorDeclaration } from "./editor.js";
 import type { SerializableValue } from "./values.js";
 
 export interface CascadeDocumentNode {
@@ -44,6 +45,8 @@ export interface CascadeDocument {
   readonly nodes: readonly CascadeDocumentNode[];
   readonly annotations?: readonly CascadeDocumentAnnotation[];
   readonly connections?: readonly CascadeDocumentConnection[];
+  /** The shareable editor this graph declares; ignored by the runtime. See `editor.ts`. */
+  readonly editor?: EditorDeclaration;
 }
 
 export interface CascadePreset {

@@ -37,6 +37,20 @@ async function main() {
     return;
   }
 
+  // Shareable editors: export, freeze, publish, scene, and `run --scene/--write`.
+  const editorCommand = ['export', 'freeze', 'publish', 'scene'].includes(args[0] ?? '') ||
+    (args[0] === 'run' && (args.includes('--scene') || args.includes('--write')));
+  if (editorCommand && !args.includes('--help') && !args.includes('-h')) {
+    const { runEditorCommand } = await import('./editorCommands.js');
+    try {
+      await runEditorCommand(args);
+    } catch (error) {
+      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   // Project/Studio commands share the root executable. The server entry is
   // bundled into the published CLI, so installed projects never depend on the
   // private server package or workspace links.
@@ -67,6 +81,10 @@ Usage:
   cascade check <graph-file> [options]
   cascade inspect <graph-file>
   cascade build <graph-file> --out <new-directory> [--asset <file>]...
+  cascade export <graph-file> (--plan | --out <dir>) [--deploy vercel]
+  cascade publish <graph-file> <node>.<prop> [--label ...]
+  cascade freeze <graph-file> <node> --fields <a,b>
+  cascade scene <graph-file> <scene.json> --out <new-graph-file>
 
 Commands:
   new       Create a Cascade project
@@ -77,6 +95,10 @@ Commands:
   check     Statically check node definitions, types, and graph structure
   inspect   Print a machine-readable graph and node-definition summary
   build     Export a standalone browser player for static hosting or embedding
+  export    Export the graph's published editor as a static site (doc/EDITOR_EXPORT.md)
+  publish   Publish a node prop as an editor parameter
+  freeze    Snapshot chosen fields of a live data source for export
+  scene     Apply a scene file to a copy of the graph
 
 Options:
   --host <address>         Bind Studio to an address or hostname

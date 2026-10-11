@@ -236,6 +236,14 @@ export interface NodeDefinitionForEnvironment<E extends RuntimeEnvironment> {
    */
   readonly container?: "subnet" | "feedback";
   readonly capabilities?: readonly CapabilityForEnvironment<E>[];
+  /**
+   * `live` marks a node that reads data from outside the graph — an archive,
+   * a CLI, a cache, body data, the filesystem or a network. `cascade export`
+   * never ships one: the author freezes it into a snapshot of chosen values or
+   * the export fails. Server nodes and nodes declaring `files`, `python` or
+   * `shell` are treated as live whether or not they say so.
+   */
+  readonly source?: "live";
   readonly label?: string;
   readonly description?: string;
   readonly icon?: string;

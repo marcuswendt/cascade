@@ -25,7 +25,7 @@ interface ProjectModule {
   definition: NodeDefinition;
 }
 
-const installRoot = fileURLToPath(new URL('../../', import.meta.url));
+export const installRoot = fileURLToPath(new URL('../../', import.meta.url));
 const forbiddenModules = new Set(builtinModules.map(name => name.replace(/^node:/, '')));
 
 /** Compile a trusted project without loading its executors or copying its directory. */
@@ -142,12 +142,12 @@ export async function buildPlayer(file: string, options: PlayerBuildOptions): Pr
   return { directory: out };
 }
 
-async function playerFile(name: string): Promise<string> {
+export async function playerFile(name: string): Promise<string> {
   const source = path.join(installRoot, 'src', 'player', `${name}.ts`);
   return await exists(source) ? source : path.join(installRoot, 'dist', 'player', `${name}.js`);
 }
 
-async function staticRuntimePlugin(projectRoot: string): Promise<Plugin> {
+export async function staticRuntimePlugin(projectRoot: string): Promise<Plugin> {
   const manifest = JSON.parse(await fs.readFile(path.join(installRoot, 'package.json'), 'utf8'));
   const canonicalProjectRoot = await fs.realpath(projectRoot);
   const confinementMarker = Symbol('cascade-player-confinement');
@@ -207,7 +207,7 @@ async function importerIsInProject(importer: string, canonicalProjectRoot: strin
 }
 
 /** Resolve the part that exists so a symlinked parent cannot disguise a target. */
-async function canonicalFuturePath(candidate: string): Promise<string> {
+export async function canonicalFuturePath(candidate: string): Promise<string> {
   let existing = path.resolve(candidate);
   const missing: string[] = [];
   for (;;) {
@@ -225,11 +225,11 @@ async function canonicalFuturePath(candidate: string): Promise<string> {
   return path.resolve(await fs.realpath(existing), ...missing);
 }
 
-function inside(root: string, candidate: string): boolean {
+export function inside(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
-async function exists(file: string): Promise<boolean> {
+export async function exists(file: string): Promise<boolean> {
   try { await fs.lstat(file); return true; }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
 }

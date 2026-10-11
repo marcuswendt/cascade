@@ -35,7 +35,7 @@ export const CAPABILITIES_BY_ENVIRONMENT: Record<
 const ALLOWED = CAPABILITIES_BY_ENVIRONMENT;
 const fields = (names: string) => new Set(names.split(" "));
 const TOP_FIELDS = fields(
-  "apiVersion runsOn container capabilities label description icon inputs outputs props",
+  "apiVersion runsOn container capabilities source label description icon inputs outputs props",
 );
 const DATA_FIELDS = fields(
   "kind type default description variadic min max step accept control options schema fields",
@@ -126,6 +126,8 @@ export function validateNodeDefinition(value: unknown): readonly Diagnostic[] {
     value.container !== "feedback"
   )
     add("invalid-container", "container must be subnet or feedback", "container");
+  if (value.source !== undefined && value.source !== "live")
+    add("invalid-source", "source must be \"live\" when present", "source");
 
   const allowed = ALLOWED[environment as RuntimeEnvironment] ?? [];
   if (value.capabilities !== undefined && !Array.isArray(value.capabilities))

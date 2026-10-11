@@ -148,6 +148,8 @@ interface RuntimeNode {
   readonly unknownProps: readonly string[];
   readonly outputs: Map<string, unknown>;
   execute?: NodeExecute;
+  /** What the last execution saw, for `run({ reuse: true })`. */
+  lastCook?: { readonly inputs: readonly unknown[]; readonly props: readonly unknown[] };
 }
 interface QueuedTrigger {
   readonly nodeId: string;
@@ -648,6 +650,8 @@ class Graph implements LoadedCascadeGraph {
       options.target ?? { kind: "all" },
       options.signal,
       options.runId,
+      undefined,
+      options.reuse === true,
     );
   }
   trigger(
@@ -709,8 +713,9 @@ class Graph implements LoadedCascadeGraph {
     signal?: CascadeAbortSignal,
     runId?: string,
     injection?: { nodeId: string; inputName: string; payload?: JsonValue },
+    reuse = false,
   ): Promise<RunResult> {
-    const running = this.executeRun(target, signal, runId, injection);
+    const running = this.executeRun(target, signal, runId, injection, reuse);
     this.activeRun = running;
     const clear = () => {
       if (this.activeRun === running) this.activeRun = undefined;
@@ -737,6 +742,7 @@ class Graph implements LoadedCascadeGraph {
     externalSignal?: CascadeAbortSignal,
     requestedId?: string,
     injection?: { nodeId: string; inputName: string; payload?: JsonValue },
+    reuse = false,
   ): Promise<RunResult> {
     this.requireReady();
     const runId = requestedId ?? `run-${this.runCounter++}`;
@@ -806,7 +812,13 @@ class Graph implements LoadedCascadeGraph {
       );
       for (const node of ordered) {
         if (signal.aborted) break;
+        if (reuse && this.reusable(node)) {
+          this.emit({ type: "node:start", runId, nodeId: node.id });
+          this.emit({ type: "node:complete", runId, nodeId: node.id });
+          continue;
+        }
         await this.executeNode(node, runId, signal, {}, enqueue);
+        if (!signal.aborted) node.lastCook = this.cookKey(node);
       }
       if (injection && !signal.aborted)
         enqueue(injection.nodeId, injection.inputName, injection.payload, {
@@ -1475,6 +1487,44 @@ class Graph implements LoadedCascadeGraph {
    * per step. Computed once per run rather than per step: the hierarchy cannot
    * change mid-run, and this is walked for every node in the order.
    */
+  /**
+   * Early cutoff for `run({ reuse: true })`: a node whose wired inputs are the
+   * very same values and whose resolved props are equal keeps its outputs.
+   *
+   * Sound because a definition-v1 node may observe only its inputs, its props
+   * and declared capabilities, and time reaches it through props. Upstream
+   * reuse keeps output identity, so one unchanged stage skips everything below
+   * it that is unchanged too. Trigger-driven, feedback and remote nodes always
+   * cook. Off by default: a host opts in when it re-runs a graph on every edit.
+   */
+  private reusable(node: RuntimeNode): boolean {
+    const last = node.lastCook;
+    if (!last || this.isRemote(node) || node.definition.container === "feedback") return false;
+    if (Object.values(node.definition.inputs ?? {}).some((input) => input.kind === "trigger")) return false;
+    if (Object.values(node.definition.outputs ?? {}).some((output) => output.kind === "trigger")) return false;
+    const next = this.cookKey(node);
+    return sameValues(last.inputs, next.inputs, Object.is) && sameValues(last.props, next.props, sameJson);
+  }
+  private cookKey(node: RuntimeNode): { inputs: unknown[]; props: unknown[] } {
+    const inputs: unknown[] = [];
+    for (const [name, definition] of Object.entries(node.definition.inputs ?? {})) {
+      if (definition.kind !== "data") continue;
+      if (node.moduleId === "cascade.core.Input" && name === "value" && node.parent) {
+        const parent = this.requireNode(node.parent);
+        inputs.push(this.dataInputValue(parent, `input_${integerProp(node.props.inputIndex)}`));
+        continue;
+      }
+      const connections = this.dataConnectionsByInput.get(`${node.id}\0${name}`) ?? [];
+      if (!connections.length) inputs.push(node.inputs[name]);
+      for (const connection of connections)
+        inputs.push(this.requireNode(connection.source.nodeId).outputs.get(connection.source.outputName));
+    }
+    // A subnet's outputs are its inner Output nodes' values, which are inputs in all but name.
+    if (node.moduleId === "cascade.core.Subnet")
+      for (const child of this.nodes)
+        if (child.parent === node.id && child.moduleId === "cascade.core.Output") inputs.push(child.outputs.get("output"));
+    return { inputs, props: Object.keys(node.definition.props ?? {}).map((name) => node.props[name]) };
+  }
   private feedbackDescendants(): Set<string> {
     const containers = new Set(
       this.nodes
@@ -2511,4 +2561,14 @@ function runtimeValue(
       type !== "string");
   if (!valid) misuse("runtime/value-type", `${path} is not a valid ${type}`);
   return snapshot(value);
+}
+
+function sameValues(a: readonly unknown[], b: readonly unknown[], equal: (x: unknown, y: unknown) => boolean): boolean {
+  return a.length === b.length && a.every((value, index) => equal(value, b[index]));
+}
+
+function sameJson(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
 }

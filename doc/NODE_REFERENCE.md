@@ -79,6 +79,24 @@ Runs on `portable`.
 | `result` | `any` |  |  |
 | `history` | `array` |  |  |
 
+### `cascade.core.Frozen`
+
+Frozen — Emits a frozen snapshot of a data source's chosen values
+
+Runs on `portable`.
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `any` | `null` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `any` |  |  |
+
 ### `cascade.core.Input`
 
 Input — Defines a public graph or subnet input

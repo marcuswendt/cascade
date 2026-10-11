@@ -328,6 +328,36 @@ export async function runDeterministicProjectGraph(
   }
 }
 
+/**
+ * Cook a definition-v1 project graph headlessly and hand back what it made:
+ * the outputs of one node, or of every node. Used by `cascade freeze` and
+ * `cascade run --write`, which need values rather than a side effect.
+ */
+export async function cookProjectGraph(
+  file: string,
+  document: any,
+  target?: string,
+): Promise<{ outputs: Map<string, ReadonlyMap<string, unknown>>; assets?: { read(ref: any, options: any): Promise<Uint8Array> } }> {
+  const prepared = await prepare(file, document, true);
+  reportUnresolved(prepared);
+  if (!usesDeterministicHost(document, prepared))
+    throw new Error('This graph mixes execution styles or uses dynamic modules; only definition-v1 graphs can be cooked for their values');
+  const host = createProjectHost(file, prepared.registrations);
+  const runtime = createRuntime({ host, nodes: prepared.registrations });
+  try {
+    const graph = await runtime.load(document);
+    const result = await graph.run(target ? { target: { kind: 'node', nodeId: target } } : {});
+    if (result.status !== 'completed')
+      throw new Error(result.diagnostics.map((item) => item.message).join('\n') || `Graph ${result.status}`);
+    const outputs = new Map<string, ReadonlyMap<string, unknown>>();
+    for (const node of graph.inspect().nodes) outputs.set(node.id, new Map(graph.getOutputs(node.id)));
+    return { outputs, assets: (host as any).capabilities?.assets };
+  } finally {
+    try { await runtime.dispose(); }
+    finally { await disposeProjectGpu(host); }
+  }
+}
+
 export interface DeterministicFrameRenderOptions {
   start: number;
   end: number;

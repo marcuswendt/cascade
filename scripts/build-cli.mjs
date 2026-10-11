@@ -130,7 +130,7 @@ chmodSync(resolve(outputDirectory, 'index.js'), 0o755);
 // one copy of each alongside its custom nodes.
 rmSync(resolve('dist', 'player'), { recursive: true, force: true });
 await build({
-  entryPoints: ['src/player/app.ts', 'src/player/embed.ts'],
+  entryPoints: ['src/player/app.ts', 'src/player/embed.ts', 'src/player/editor.ts'],
   outdir: resolve('dist', 'player'),
   bundle: true,
   platform: 'browser',
@@ -143,7 +143,7 @@ await build({
         if (args.path.includes('server/src/runtime/io')) return { path: '@field/cascade/io', external: true };
         if (args.path.includes('contracts')) return { path: '@field/cascade/contracts', external: true };
         const runtimePath = args.path.replace(/^.*packages\/runtime\/src\//, '').replace(/^@cascade\/runtime\/?/, '').replace(/\.(?:js|ts)$/, '');
-        const subpaths = { '': '', index: '', runtime: '', gpu: '', browser: '/browser', 'geometry/render': '/render', 'scene/index': '/scene', 'camera/index': '/camera', camera: '/camera', scene: '/scene', render: '/render' };
+        const subpaths = { '': '', index: '', runtime: '', gpu: '', browser: '/browser', 'geometry/render': '/render', 'scene/index': '/scene', 'camera/index': '/camera', camera: '/camera', scene: '/scene', render: '/render', 'editor/index': '/editor' };
         if (!(runtimePath in subpaths)) return { errors: [{ text: `Player needs a public runtime export for ${args.path}` }] };
         return { path: `@field/cascade/runtime${subpaths[runtimePath]}`, external: true };
       });
