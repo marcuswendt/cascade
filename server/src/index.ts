@@ -17,6 +17,7 @@ import { createProjectRequestBoundary, isLoopbackHost, trustedAuthority, type Se
 import { createMediaRouter } from './routes/media.js';
 import { ProjectRoot } from './project.js';
 import { buildId } from './build.js';
+import { bindWithFallback, DEFAULT_FALLBACK_HOSTS, type BindingController } from './hostBinding.js';
 
 export { createDirectShellCapability } from './shell/service.js';
 export type { ShellCapability, ShellRunOptions, ShellRunResult } from './shell/types.js';
@@ -36,15 +37,28 @@ export interface StartServerOptions {
   readonly trustedOrigins?: readonly string[];
   /** @deprecated Use trustedOrigins. */
   readonly trustedShellOrigins?: readonly string[];
+  /** Hosts to bind, in order, when `host` does not resolve or is not on this
+   *  machine. Default `127.0.0.1`. */
+  readonly fallbackHosts?: readonly string[];
+  /** How often to retry the preferred host while on a fallback. */
+  readonly hostRetryMs?: number;
 }
 
-export function startServer(project: ProjectRoot, opts: StartServerOptions = {}) {
+/** The HTTP server plus where it is actually bound, which may be a fallback. */
+export type StudioServer = ReturnType<typeof createServer> & { readonly binding: BindingController };
+
+export function startServer(project: ProjectRoot, opts: StartServerOptions = {}): StudioServer {
   const app = express();
   const PORT = opts.port ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : 3030);
   const HOST = opts.host ?? '127.0.0.1';
   const trustedHosts = Object.freeze([...(opts.trustedHosts ?? [])]);
+  const fallbackHosts = opts.fallbackHosts ?? DEFAULT_FALLBACK_HOSTS;
+  // A loopback fallback has to answer a local browser, or falling back would
+  // serve a page whose every API call is refused. Loopback only admits local
+  // processes, so this widens nothing.
+  const loopbackReachable = isLoopbackHost(HOST) || fallbackHosts.some(isLoopbackHost);
   const defaultOrigins = [
-    ...(isLoopbackHost(HOST) ? [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`] : []),
+    ...(loopbackReachable ? [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`] : []),
     // Both schemes for a trusted host, because the server cannot know whether
     // something is terminating TLS in front of it.
     //
@@ -156,11 +170,23 @@ export function startServer(project: ProjectRoot, opts: StartServerOptions = {})
 
   const server = createServer(app);
 
-  server.listen(PORT, HOST, () => {
-    console.log(`🚀 Cascade running on http://${HOST}:${PORT}`);
+  // Resolve-or-fall-back rather than a bare listen: a missing tailnet name or
+  // address used to crash Studio on start (see hostBinding.ts).
+  const binding = bindWithFallback(server, {
+    port: PORT,
+    preferredHost: HOST,
+    fallbackHosts,
+    ...(opts.hostRetryMs === undefined ? {} : { retryMs: opts.hostRetryMs }),
+  });
+  binding.ready.then((state) => {
+    console.log(`🚀 Cascade running on http://${state.host}:${PORT}${state.fallback ? ` (fallback; preferred ${HOST} unavailable)` : ''}`);
     console.log(`📁 Project: ${project.root}${project.isGitRepo ? ' (git)' : ' (not a git repo yet)'}`);
     if (trustedHosts.length > 0) console.log(`🔐 Trusted Studio URL: http://${trustedAuthority(trustedHosts[0], PORT)} (all reachable VPN/interface peers are trusted)`);
+  }, (error) => {
+    // Not a host problem (a port in use, a permission error): surface it as
+    // the server's own error, as a bare listen() did.
+    server.emit('error', error);
   });
 
-  return server;
+  return Object.assign(server, { binding });
 }

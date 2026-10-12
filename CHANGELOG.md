@@ -2,6 +2,27 @@
 
 Notable changes to Cascade. Newest first.
 
+## Unreleased
+
+### Added
+
+- **`cascade serve`.** `start | stop | restart | status | logs | install |
+  uninstall [project]` runs Studio as a supervised background service: one
+  lock, record and log per project under `~/.cascade/serve/`, restart with
+  backoff after a crash, and a stop that takes the Python worker with it.
+  `status --json` reports port, actual host, pids, uptime, version and worker
+  state. `install` writes and loads a macOS launchd job.
+- **Host fallback.** When `--host` does not resolve (a MagicDNS name while
+  Tailscale is down) or is not on this machine (`EADDRNOTAVAIL`), Studio binds
+  `127.0.0.1` (or `--fallback-host`, repeatable) instead of crashing, and moves
+  back to the preferred host when it returns.
+
+### Fixed
+
+- **A failed build keeps the previous `dist/`.** `npm run build` and
+  `build:cli` build into `.dist-staging/` and swap it in only when every step
+  passed; the log names the step that failed.
+
 ## 0.9.2 — 2026-10-12
 
 ### Added

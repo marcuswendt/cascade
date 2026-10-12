@@ -77,6 +77,14 @@ curl -fsS http://KURO:3030/health
 curl -fsS http://KURO:3030/api/graph
 ```
 
+For a Studio that should stay up, use `cascade serve` instead of a `screen`:
+`cascade serve start <project> --host KURO --port 3030`, then
+`cascade serve status [project] --json`, `logs`, `restart` and `stop`. It keeps
+one supervisor per project, restarts a crashed Studio, and stops the Python
+worker with it. If the host is unavailable (Tailscale down) Studio binds
+`127.0.0.1` and moves back when the host returns; `status` shows the actual
+binding. Never stop or restart a served Studio you did not start.
+
 Remote access is explicit: a specific non-loopback `--host` is also the default
 trusted browser hostname. Use `--trusted-host` only when the bind address and
 browser hostname differ. Hostnames are exact and case-insensitive; wildcard
@@ -218,7 +226,7 @@ the TypeScript 7 preview until it is stable and the repository gates pass.
 1. Add or update a focused regression test.
 2. Make the smallest change at the owning layer.
 3. Prefer deletion or an existing utility over another wrapper.
-4. Run the focused test, then `npm run check`, `npm run test:run`, `npm --prefix server run build`, `npm run build`, and `npm run build:cli` when the affected surface warrants it. Keep the CLI build last because Vite refreshes `dist/`.
+4. Run the focused test, then `npm run check`, `npm run test:run`, `npm --prefix server run build`, `npm run build`, and `npm run build:cli` when the affected surface warrants it. Both builds write to a staging directory and replace `dist/` only on success, so a failed build leaves the previous CLI working.
 5. For package/public API changes, also test the packed tarball from an empty temporary project.
 6. When a built-in definition or a node library registry changes, regenerate the node reference with `npm run build:node-reference` and commit the result. `build:cli` runs it too, so a full build will produce the diff whether or not you meant to. Nothing tests that the committed file is current, so a stale one ships silently — and it is the first thing a project's agent reads.
 

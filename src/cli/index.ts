@@ -54,7 +54,7 @@ async function main() {
   // Project/Studio commands share the root executable. The server entry is
   // bundled into the published CLI, so installed projects never depend on the
   // private server package or workspace links.
-  if (!['run', 'validate', 'check', 'inspect'].includes(args[0] ?? '') && !args.includes('--version') && !args.includes('--help') && !args.includes('-h')) {
+  if (args[0] === 'serve' || (!['run', 'validate', 'check', 'inspect'].includes(args[0] ?? '') && !args.includes('--version') && !args.includes('--help') && !args.includes('-h'))) {
     const { runStudioCli } = await import('../../server/src/cliCommands.js');
     await runStudioCli(args);
     return;
@@ -76,6 +76,7 @@ Usage:
   cascade new <name>
   cascade node <Name> [project-directory]
   cascade projects [directory]
+  cascade serve start|stop|restart|status|logs|install [project] [options]
   cascade run <graph-file> [options]
   cascade validate <graph-file> [options]
   cascade check <graph-file> [options]
@@ -90,6 +91,7 @@ Commands:
   new       Create a Cascade project
   node      Create a deterministic custom node
   projects  Show or set the default projects directory
+  serve     Run Studio as a managed background service (cascade serve help)
   run       Execute a graph file
   validate  Validate a graph file without executing
   check     Statically check node definitions, types, and graph structure
@@ -104,6 +106,9 @@ Options:
   --host <address>         Bind Studio to an address or hostname
   --port <number>          Bind Studio HTTP to an explicit port
   --trusted-host <name>    Allow an exact remote browser hostname (repeatable)
+  --fallback-host <addr>   Bind this instead when --host does not resolve or is
+                           not on this machine (repeatable; default 127.0.0.1).
+                           The preferred host is retried and rebound when it returns
   --no-open                Do not open Studio in a browser
   --node <id>        Render only this node's output. Repeatable.
   --entry-node <id>  Older spelling of --node, single valued

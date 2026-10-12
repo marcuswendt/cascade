@@ -52,6 +52,27 @@ export interface PythonWorkerOptions {
   readonly requestTimeoutMs?: number;
 }
 
+export interface PythonWorkerStatus {
+  readonly entrypoint: string;
+  readonly pid: number | null;
+  /** `busy` while a stage runs, `idle` when warm and waiting, `stopped` when no process is up. */
+  readonly state: 'busy' | 'idle' | 'stopped';
+  readonly queued: number;
+}
+
+/** Every worker not yet shut down, so `cascade serve status` can report them
+ *  and a stopping server can take them with it. */
+const liveWorkers = new Set<PythonWorker>();
+
+export function pythonWorkerStatuses(): PythonWorkerStatus[] {
+  return [...liveWorkers].map((worker) => worker.status);
+}
+
+/** Shut every live worker down; used when the server itself stops. */
+export function shutdownAllPythonWorkers(): void {
+  for (const worker of [...liveWorkers]) worker.shutdown();
+}
+
 export class PythonWorker {
   private project: ProjectRoot;
   private entrypoint: string;
@@ -83,6 +104,17 @@ export class PythonWorker {
     this.env = env;
     this.cancelGraceMs = options.cancelGraceMs ?? CANCEL_GRACE_MS;
     this.requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+    liveWorkers.add(this);
+  }
+
+  get status(): PythonWorkerStatus {
+    const pid = this.pid;
+    return {
+      entrypoint: this.entrypoint,
+      pid,
+      state: pid === null ? 'stopped' : this.inFlight ? 'busy' : 'idle',
+      queued: this.queue.length,
+    };
   }
 
   /** The worker's process id, or null when none is running. For tests and
@@ -217,6 +249,7 @@ export class PythonWorker {
   }
 
   shutdown(): void {
+    liveWorkers.delete(this);
     this.clearKillTimer();
     for (const request of this.queue.splice(0)) this.settle(request, new Error('python worker shut down'));
     const current = this.inFlight;
