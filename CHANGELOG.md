@@ -16,6 +16,14 @@ Notable changes to Cascade. Newest first.
   Tailscale is down) or is not on this machine (`EADDRNOTAVAIL`), Studio binds
   `127.0.0.1` (or `--fallback-host`, repeatable) instead of crashing, and moves
   back to the preferred host when it returns.
+- **Graph editing from the CLI.** `cascade graph create|read|list`, `node add|rm`, `connect`, `disconnect`, `set` (value, `--expr`, `--key frame=value`, `--unset`), `subnet create|move|dissolve` and `cascade edit` for a batch. Each edit is checked with the same code as `cascade check`, written atomically in the file's own formatting, and leaves a minimal diff: an edit and its inverse leave the file byte-identical. New nodes get stable kebab-case ids and are placed along the graph's flow when wired; wires across a subnet boundary go through named `Input`/`Output` nodes. See `doc/CLI_REFERENCE.md`.
+- **`--json` on every command**: one `{ ok, data, warnings }` envelope on stdout.
+- **`cascade mcp`**: the same operations as MCP tools over stdio (graph read/list, node add/remove, connect, set, subnets, check, cook, render, export; lock and replay once they land). See `doc/MCP.md`.
+- The editing API (`GraphEditor`, `readGraph`, the operation types) is exported from `@field/cascade/runtime`.
+
+### Changed
+
+- `cascade run --frames --json` prints its manifest inside the envelope, as `data`, rather than at the top level.
 
 ### Fixed
 

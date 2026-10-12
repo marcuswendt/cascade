@@ -36,6 +36,8 @@
     "doc/HEADLESS_GPU.md",
     "doc/WEB_PLAYER.md",
     "doc/EDITOR_EXPORT.md",
+    "doc/CLI_REFERENCE.md",
+    "doc/MCP.md",
     "README.md",
     "LICENSE"
   ],

@@ -37,6 +37,8 @@ my-project/
 
 Use `cascade new <name>` to create a project and `cascade node <Name>` to scaffold a custom node in one. Run `cascade .` from a project root to open Studio, `cascade validate <graph.cascade>` for validation, `cascade check <graph.cascade>` for static definition/type checks, `cascade inspect <graph.cascade>` for a JSON summary, `cascade run <graph.cascade>` for headless execution, and `cascade run <graph.cascade> --frames 1-100` for an offline image sequence. `cascade projects` shows or sets the default projects directory.
 
+Never hand-edit a `.cascade` file. Change graphs with `cascade node add|rm`, `connect`, `disconnect`, `set` and `subnet create|move|dissolve` (or `cascade edit` for a batch); they check the edit like `cascade check`, keep the diff minimal and lay new nodes out. Every command takes `--json`, and `cascade mcp` serves the same operations as MCP tools. Read `doc/CLI_REFERENCE.md` and `doc/MCP.md`.
+
 `cascade build <graph.cascade> --out <new-directory>` exports a static browser
 player. Use repeatable `--asset <project-relative-file>` for inputs whose paths
 are computed in code. Read `doc/WEB_PLAYER.md` before exporting: server stages
