@@ -9,3 +9,4 @@ export * from "./params/index.js";
 export * from "./scene/index.js";
 export { createRuntime, PREFLIGHT_WARNING_CODES } from "./runtime.js";
 export type * from "./types.js";
+export * from "./edit/index.js";

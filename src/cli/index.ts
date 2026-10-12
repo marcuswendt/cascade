@@ -5,11 +5,53 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { readFileSync } from 'node:fs';
 import { superviseProcess } from './supervise.js';
+import { GRAPH_COMMANDS_HELP, isGraphCommand, runGraphCommand } from './graphCommands.js';
+import { runWithJsonEnvelope } from './jsonEnvelope.js';
 
 const VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version as string;
 
+/** Commands that never start Studio. Anything else is a project or graph to open. */
+const COMMANDS = ['run', 'validate', 'check', 'inspect', 'build', 'export', 'freeze', 'publish', 'scene', 'projects', 'node', 'mcp'];
+
 async function main() {
   const args = process.argv.slice(2);
+
+  if (args[0] === 'mcp' && !args.includes('--help') && !args.includes('-h')) {
+    const { runMcpServer } = await import('./mcp.js');
+    await runMcpServer(args.slice(1), VERSION);
+    return;
+  }
+
+  // `--json` on any command: one `{ ok, data, warnings }` envelope on stdout.
+  // `run --frames --json` keeps the flag, because it switches the runner to
+  // printing its manifest, which becomes the envelope's data.
+  if (args.includes('--json')) {
+    const keepFlag = args[0] === 'run' && args.includes('--frames');
+    const commandArgs = keepFlag ? args : args.filter((arg) => arg !== '--json');
+    const opensStudio = !COMMANDS.includes(commandArgs[0] ?? '') && !isGraphCommand(commandArgs) &&
+      !commandArgs.some((arg) => arg === '--help' || arg === '-h' || arg === '--version');
+    await runWithJsonEnvelope(async () => {
+      if (opensStudio) throw new Error('This command opens Studio, which has no --json output');
+      if (isGraphCommand(commandArgs)) return runGraphCommand(commandArgs, { json: true });
+      await dispatch(commandArgs);
+      return undefined;
+    });
+    return;
+  }
+
+  await dispatch(args);
+}
+
+async function dispatch(args: string[]) {
+  if (isGraphCommand(args) && !args.includes('--help') && !args.includes('-h')) {
+    try {
+      await runGraphCommand(args, { json: false });
+    } catch (error) {
+      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
 
   if (args[0] === 'build' && !args.includes('--help') && !args.includes('-h')) {
     const { buildPlayer } = await import('./webBuild.js');
@@ -86,7 +128,8 @@ Usage:
   cascade publish <graph-file> <node>.<prop> [--label ...]
   cascade freeze <graph-file> <node> --fields <a,b>
   cascade scene <graph-file> <scene.json> --out <new-graph-file>
-
+  cascade mcp [project-directory]
+${GRAPH_COMMANDS_HELP}
 Commands:
   new       Create a Cascade project
   node      Create a deterministic custom node
@@ -101,6 +144,7 @@ Commands:
   publish   Publish a node prop as an editor parameter
   freeze    Snapshot chosen fields of a live data source for export
   scene     Apply a scene file to a copy of the graph
+  mcp       Serve these commands as MCP tools over stdio (doc/MCP.md)
 
 Options:
   --host <address>         Bind Studio to an address or hostname
@@ -115,7 +159,7 @@ Options:
   --frames <range>   Render a frame sequence: 1-100, 1-100x2 (step), or 42
   --fps <number>     Frame rate to evaluate the range at
   --out <dir>        Sequence directory, project-relative (default: renders)
-  --json             Return a JSON render manifest (requires run --frames)
+  --json             Print one { ok, data, warnings } envelope (any command)
   --timeout <ms>     Bound a run in a supervised child process (exit 124 on timeout)
   --validate-only   Validate only (same as 'validate' command)
   --strict          Fail when a node names a module with no file (default: warn)
@@ -236,10 +280,7 @@ image output nothing downstream consumes, or per output of --entry-node.
   const out = valueOf('--out');
   if (out) options.out = out;
 
-  if (args.includes('--json')) {
-    if (command !== 'run' || !options.frames) throw new Error('--json requires run --frames (use --frames 1 for a still)');
-    options.json = true;
-  }
+  if (args.includes('--json') && command === 'run' && options.frames) options.json = true;
   const timeout = valueOf('--timeout');
   if (timeout !== undefined) {
     const ms = Number(timeout);

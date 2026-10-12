@@ -832,3 +832,77 @@ function within(root: string, candidate: string): boolean {
 async function exists(file: string): Promise<boolean> {
   try { await fs.access(file); return true; } catch { return false; }
 }
+
+/**
+ * The static definition of each module id, read exactly as `check` reads it,
+ * or `undefined` for a module with none (dynamic, missing, or broken). Used by
+ * the graph editor to know a node's ports and parameters before it writes.
+ * Each module is read on its own, so one broken module file does not stop an
+ * edit to the rest of the graph.
+ */
+export async function moduleDefinitions(
+  file: string,
+  ids: readonly string[],
+): Promise<Map<string, NodeDefinition | undefined>> {
+  const definitions = new Map<string, NodeDefinition | undefined>();
+  for (const id of new Set(ids)) {
+    const builtin = builtinNodeRegistration(id);
+    if (builtin) {
+      definitions.set(id, builtin.definition);
+      continue;
+    }
+    try {
+      const prepared = await prepare(file, { nodes: [{ id: 'probe', module: id }] }, false);
+      definitions.set(id, prepared.deterministic.has(id) ? prepared.registrations[0]?.definition : undefined);
+    } catch {
+      definitions.set(id, undefined);
+    }
+  }
+  return definitions;
+}
+
+/** Every module id the CLI can resolve without a project: the runtime's built-in nodes. */
+export function builtinModuleIds(): string[] {
+  return builtinNodeRegistrations.map((registration) => registration.moduleId);
+}
+
+/**
+ * What `validate` and `check` would say about a document, as data instead of
+ * console output: the same preparation and the same runtime load and preflight,
+ * so an edit is refused for exactly the reasons `cascade check` would give.
+ */
+export async function diagnoseGraph(
+  file: string,
+  document: any,
+): Promise<{ errors: string[]; warnings: string[] }> {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  try {
+    const prepared = await prepare(file, document, false);
+    for (const item of prepared.unresolved) warnings.push(line(item).trim());
+    const nodes = document.nodes as ProjectNode[];
+    if (nodes.some((node) => !prepared.deterministic.has(moduleId(node)))) {
+      validateDynamicDocument(document);
+      return { errors, warnings };
+    }
+    let host: RuntimeHost;
+    try {
+      host = createProjectHost(file, prepared.registrations);
+    } catch {
+      host = createNodeRuntimeHost({ modules: resolver(prepared.registrations) });
+    }
+    const runtime = createRuntime({ host, nodes: prepared.registrations });
+    try {
+      const graph = await runtime.load(document);
+      const classified = classifyPreflight(graph.preflight());
+      errors.push(...classified.errors.map((item) => line(item).trim()));
+      warnings.push(...classified.warnings.map((item) => line(item).trim()));
+    } finally {
+      await runtime.dispose();
+      await disposeProjectGpu(host);
+    }
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+  return { errors, warnings };
+}
