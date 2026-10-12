@@ -16,6 +16,8 @@ export default defineConfig({
     exclude: ['svelte']
   },
   build: {
+    // scripts/build.mjs points this at a staging directory and swaps it in on success.
+    outDir: process.env.CASCADE_DIST_DIR ?? 'dist',
     target: 'esnext',
     sourcemap: false,
     chunkSizeWarningLimit: 1000

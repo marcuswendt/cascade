@@ -1,6 +1,8 @@
 **/.DS_Store
 **/node_modules
 **/dist
+.dist-staging/
+.dist-previous/
 **/release
 vite.config.ts.timestamp-*.mjs
 .omx/

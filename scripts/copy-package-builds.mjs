@@ -1,9 +1,11 @@
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+const DIST = resolve(process.env.CASCADE_DIST_DIR ?? 'dist');
+
 for (const name of ['contracts', 'runtime']) {
   const source = resolve('packages', name, 'dist');
-  const destination = resolve('dist', name);
+  const destination = resolve(DIST, name);
   rmSync(destination, { recursive: true, force: true });
   mkdirSync(destination, { recursive: true });
   cpSync(source, destination, { recursive: true });
@@ -12,7 +14,7 @@ for (const name of ['contracts', 'runtime']) {
 // Published runtime files resolve contracts through the root package's actual
 // self-reference, including when consumers install it under the `cascade`
 // alias or link the workspace during project development.
-for (const file of filesUnder(resolve('dist', 'runtime'))) {
+for (const file of filesUnder(resolve(DIST, 'runtime'))) {
   if (!/\.(?:js|d\.ts|map)$/.test(file)) continue;
   const source = readFileSync(file, 'utf8');
   writeFileSync(file, source.replaceAll('@cascade/contracts', '@field/cascade/contracts'));

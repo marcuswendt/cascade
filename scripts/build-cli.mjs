@@ -4,10 +4,13 @@ import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const outputDirectory = resolve('dist', 'cli');
+// CASCADE_DIST_DIR is set by scripts/build.mjs, which builds into a staging
+// directory and swaps it in only when every step succeeded.
+const DIST = resolve(process.env.CASCADE_DIST_DIR ?? 'dist');
+const outputDirectory = resolve(DIST, 'cli');
 rmSync(outputDirectory, { recursive: true, force: true });
 mkdirSync(resolve(outputDirectory, 'runtime'), { recursive: true });
-mkdirSync(resolve('dist', 'studio'), { recursive: true });
+mkdirSync(resolve(DIST, 'studio'), { recursive: true });
 
 await build({
   entryPoints: ['src/cli/index.ts'],
@@ -29,7 +32,7 @@ await build({
   tsconfig: 'tsconfig.json'
 });
 
-writeFileSync(resolve('dist', 'shell.d.ts'), `export {
+writeFileSync(resolve(DIST, 'shell.d.ts'), `export {
   ShellProcessError,
   type ShellProcessErrorKind,
   type ShellRunOptions,
@@ -38,7 +41,7 @@ writeFileSync(resolve('dist', 'shell.d.ts'), `export {
 export declare function run(command: string, args?: readonly string[], options?: import('@field/cascade/contracts').ShellRunOptions): Promise<import('@field/cascade/contracts').ShellRunResult>;
 export declare function runJson<T = unknown>(command: string, args?: readonly string[], options?: import('@field/cascade/contracts').ShellRunOptions): Promise<T>;
 `);
-writeFileSync(resolve('dist', 'stage.d.ts'), `export interface StageBridge {
+writeFileSync(resolve(DIST, 'stage.d.ts'), `export interface StageBridge {
   (stage: string, args: Record<string, unknown>): Promise<unknown>;
 }
 export declare function installStageBridge(bridge: StageBridge | null): () => void;
@@ -47,11 +50,11 @@ export declare function runStage<T = unknown>(stage: string, args?: Record<strin
 export declare function cachePath(nodeId: string, suffix: string): string;
 `);
 
-cpSync(resolve('src', 'studio', 'panel.ts'), resolve('dist', 'studio', 'panel.d.ts'));
+cpSync(resolve('src', 'studio', 'panel.ts'), resolve(DIST, 'studio', 'panel.d.ts'));
 
 await build({
   entryPoints: ['server/src/runtime/stage.ts'],
-  outfile: resolve('dist', 'stage.js'),
+  outfile: resolve(DIST, 'stage.js'),
   bundle: true,
   platform: 'browser',
   target: 'es2022',
@@ -79,7 +82,7 @@ execFileSync(
     'server/src/runtime/gpu.ts',
     '--declaration',
     '--emitDeclarationOnly',
-    '--outDir', resolve('dist'),
+    '--outDir', resolve(DIST),
     '--target', 'es2022',
     '--module', 'esnext',
     '--moduleResolution', 'bundler',
@@ -92,7 +95,7 @@ execFileSync(
 for (const shim of ['io', 'net', 'gpu']) {
   await build({
     entryPoints: [`server/src/runtime/${shim}.ts`],
-    outfile: resolve('dist', `${shim}.js`),
+    outfile: resolve(DIST, `${shim}.js`),
     bundle: true,
     platform: 'browser',
     target: 'es2022',
@@ -104,7 +107,7 @@ for (const shim of ['io', 'net', 'gpu']) {
 
 await build({
   entryPoints: ['server/src/runtime/shell.ts'],
-  outfile: resolve('dist', 'shell.js'),
+  outfile: resolve(DIST, 'shell.js'),
   bundle: true,
   platform: 'browser',
   target: 'es2022',
@@ -128,10 +131,10 @@ chmodSync(resolve(outputDirectory, 'index.js'), 0o755);
 // The player is an application host, not another package or a Studio bundle.
 // Runtime/IO imports stay external here so the static project build resolves
 // one copy of each alongside its custom nodes.
-rmSync(resolve('dist', 'player'), { recursive: true, force: true });
+rmSync(resolve(DIST, 'player'), { recursive: true, force: true });
 await build({
   entryPoints: ['src/player/app.ts', 'src/player/embed.ts', 'src/player/editor.ts', 'src/player/editorEngine.ts'],
-  outdir: resolve('dist', 'player'),
+  outdir: resolve(DIST, 'player'),
   bundle: true,
   platform: 'browser',
   target: 'es2022',
@@ -161,7 +164,7 @@ try {
     '--skipLibCheck', '--lib', 'es2022,dom',
   ], { stdio: 'inherit' });
   for (const name of readdirSync(resolve(playerDeclarations, 'src', 'player'))) {
-    if (name.endsWith('.d.ts')) cpSync(resolve(playerDeclarations, 'src', 'player', name), resolve('dist', 'player', name));
+    if (name.endsWith('.d.ts')) cpSync(resolve(playerDeclarations, 'src', 'player', name), resolve(DIST, 'player', name));
   }
 } finally {
   rmSync(playerDeclarations, { recursive: true, force: true });
