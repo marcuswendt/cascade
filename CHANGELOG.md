@@ -51,6 +51,12 @@ Notable changes to Cascade. Newest first.
 
 ### Fixed
 
+- **Headless frame renders no longer start Python per stage per frame.**
+  `cascade run` uses the project's warm worker for the whole run, and frames
+  after the first re-cook only what the frame changed (`reuse: "strict"`;
+  `--fresh` cooks everything). cloud-plots' morph, frames 1–60: 588 s to 5 s,
+  byte-identical.
+
 - **An edited stage no longer runs its old code in a live Studio.** The warm
   Python worker restarts before the next request when its stage sources
   change, with Python's bytecode cache keyed by the code hash so a quick
