@@ -42,7 +42,7 @@ Every command, not only the editing ones, prints one envelope on stdout and noth
 { "ok": false, "error": { "message": "render has no parameter \"strokewidth\"; props: size, filename, …" }, "warnings": [] }
 ```
 
-`data` is the command's structured result where it has one (the editing commands, `inspect`, `run --frames`), and `{ "output": [lines] }` for a command that only prints. What a command warns becomes `warnings`. The exit code is 0 for `ok` and 1 otherwise. `run --frames --json` puts its render manifest in `data`.
+`data` is the command's structured result where it has one (the editing commands, `inspect`, `run`, `parity`), and `{ "output": [lines] }` for a command that only prints. What a command warns becomes `warnings`. The exit code is 0 for `ok` and 1 otherwise. `run --json` puts its manifest in `data`: the status, the seed, the path of the run trace in `.cascade/runs/`, the frames and files with `--frames`, and `stages`, one entry per Python stage call with its node, key and cache state (`hit`, `miss`, `off` and why). `parity --json` puts its report in `data`, with `data.ok` false when outputs differ; see [Seeds and parity](PROJECT_AUTHORING.md#seeds-and-parity).
 
 ## Operations, for `cascade edit` and the MCP server
 
