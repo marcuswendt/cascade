@@ -6,6 +6,13 @@ Notable changes to Cascade. Newest first.
 
 ### Added
 
+- **The timeline is saved with the graph.** `timeline: { fps, start, end,
+  loop }` in the document: Studio's Timeline opens on it and writes it back,
+  the runtime uses its fps, and `cascade run --frames timeline` renders its
+  range.
+- **`run --frames … --mp4 <file> [--crf N]`** encodes the rendered sequence
+  with ffmpeg as H.264 yuv420p at the run's fps, and reports it as `video` in
+  the `--json` manifest.
 - **Stage cache keys Cascade owns.** Every Python stage call, Studio or
   headless, is keyed on the stage code (a hash of `exec.stages.sources`), the
   arguments with input files replaced by their content hash, and the Cascade

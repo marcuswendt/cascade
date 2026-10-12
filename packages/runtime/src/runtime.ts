@@ -298,6 +298,9 @@ class Runtime implements CascadeRuntime {
       document.annotations,
       graphSeed(document),
     );
+    // The graph's own frame rate, saved with it; a run's `fps` still overrides.
+    const fps = document.timeline?.fps;
+    if (typeof fps === "number" && Number.isFinite(fps) && fps > 0) graph.setFps(fps);
     this.graphs.add(graph);
     return graph;
   }

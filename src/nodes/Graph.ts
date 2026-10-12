@@ -110,6 +110,9 @@ export class Graph {
   /** The document's `seed`, kept so a save does not drop it. Each node's
    *  `context.seed` derives from it the same way as headless (`nodeSeed`). */
   seed?: number;
+  /** The document's `timeline` (fps, range, loop), read and written by the
+   *  Timeline panel and saved with the graph. */
+  timeline?: import('../../packages/contracts/src/document.js').TimelineSettings;
 
   get created(): string { return this.createdAt; }
 
@@ -1416,6 +1419,7 @@ export class Graph {
     // carried through untouched; dropping it on save would unpublish a graph.
     if (this.editor) result.editor = this.editor;
     if (this.seed !== undefined) result.seed = this.seed;
+    if (this.timeline) result.timeline = this.timeline;
 
     return result;
   }
@@ -1616,6 +1620,7 @@ export class Graph {
     if (typeof json.metadata?.created === 'string') graph.createdAt = json.metadata.created;
     if (json.editor && typeof json.editor === 'object') graph.editor = json.editor as Graph['editor'];
     if (Number.isInteger(json.seed)) graph.seed = json.seed;
+    if (json.timeline && typeof json.timeline === 'object') graph.timeline = json.timeline as Graph['timeline'];
 
     /**
      * The project's name, read whether or not the file carries a `project`

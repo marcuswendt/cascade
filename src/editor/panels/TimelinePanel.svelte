@@ -135,10 +135,28 @@
     showFrame(transport.setFrame(parsed, performance.now()));
   }
 
+  // The range is the graph's, saved with it (`timeline` in the document), so a
+  // piece made for 24 fps over 594 frames opens that way instead of at 30/250.
+  let appliedTimelineOf: Graph | undefined;
+  $: if (graph && graph !== appliedTimelineOf) applyGraphTimeline(graph);
+
+  function applyGraphTimeline(target: Graph): void {
+    appliedTimelineOf = target;
+    const saved = target.timeline ?? {};
+    if (typeof saved.fps === 'number' && saved.fps > 0) fps = saved.fps;
+    if (Number.isFinite(saved.start)) rangeStart = saved.start!;
+    if (Number.isFinite(saved.end)) rangeEnd = saved.end!;
+    if (typeof saved.loop === 'boolean') loop = saved.loop;
+    if (rangeEnd < rangeStart) rangeEnd = rangeStart;
+    cascade.setFps(fps);
+    transport.setRange({ start: rangeStart, end: rangeEnd, fps, loop }, performance.now());
+  }
+
   function commitRange(): void {
     if (rangeEnd < rangeStart) rangeEnd = rangeStart;
     if (fps <= 0) fps = 1;
     cascade.setFps(fps);
+    if (graph) graph.timeline = { fps, start: rangeStart, end: rangeEnd, loop };
     transport.setRange({ start: rangeStart, end: rangeEnd, fps, loop }, performance.now());
     if (frame < rangeStart || frame > rangeEnd) showFrame(transport.setFrame(frame, performance.now()));
   }
@@ -269,7 +287,7 @@
   }
 
   onMount(() => {
-    fps = cascade.fps();
+    fps = graph?.timeline?.fps ?? cascade.fps();
     frame = cascade.frame();
     frameField = String(frame);
     transport.setFrame(frame, performance.now());

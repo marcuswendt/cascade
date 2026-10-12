@@ -12,6 +12,7 @@ import { RunTrace } from './runTrace.js';
 import { installProjectIo } from './headlessIo.js';
 import { installHeadlessCanvas, MISSING_CANVAS_MESSAGE, type CanvasHost } from './headlessCanvas.js';
 import { parseFrameSpec } from './frames.js';
+import { encodeMp4, timelineFrameSpec } from './encode.js';
 /**
  * The class-based standard library used to be registered here, because the
  * dynamic executor built a Studio `Graph` and needed the class registry to
@@ -66,6 +67,10 @@ export interface RunOptions {
   seed?: number;
   /** `--fresh`: with `--frames`, cook every node on every frame. */
   fresh?: boolean;
+  /** `--mp4 <file>`, project-relative: encode the sequence as H.264 after rendering it. */
+  mp4?: string;
+  /** `--crf <n>` for `--mp4`. */
+  crf?: number;
 }
 
 /**
@@ -196,7 +201,8 @@ export async function runGraph(options: RunOptions): Promise<void> {
     if (verbose) console.warn(canvasError.message);
   }
 
-  const frameSpec = frames ? parseFrameSpec(frames) : null;
+  // `--frames timeline` is the range saved with the graph.
+  const frameSpec = frames ? (frames === 'timeline' ? timelineFrameSpec(graphData) : parseFrameSpec(frames)) : null;
 
   let hostReleased = false;
   const releaseHost = () => {
@@ -236,17 +242,24 @@ export async function runGraph(options: RunOptions): Promise<void> {
     if (rendered) {
       releaseHost();
       const tracePath = writeTrace();
+      const video = options.mp4 && !rendered.aborted
+        ? await encodeMp4({ root: projectRoot, files: rendered.files, frames: rendered.frames, fps: rendered.fps, file: options.mp4, ...(options.crf === undefined ? {} : { crf: options.crf }) })
+        : undefined;
       if (options.json) {
         process.stdout.write(JSON.stringify({
           status: 'completed',
           graph: path.resolve(file),
           ...rendered,
+          ...(video ? { video } : {}),
           seed: graphSeed(graphData),
           ...(tracePath ? { trace: tracePath } : {}),
           stages: trace.stages(),
         }) + '\n');
       }
-      else console.log(`Rendered ${rendered.frames.length} frames, ${rendered.files.length} files -> ${out ?? 'renders'}/`);
+      else {
+        console.log(`Rendered ${rendered.frames.length} frames, ${rendered.files.length} files -> ${out ?? 'renders'}/`);
+        if (video) console.log(`Encoded ${video.file} (H.264 yuv420p, crf ${video.crf}, ${video.fps} fps)`);
+      }
       return;
     }
     if (options.json) throw new Error('--json rendering requires a fully definition-v1 graph');

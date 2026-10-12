@@ -53,6 +53,27 @@ export interface CascadeDocument {
    * reshuffles every seeded node at once.
    */
   readonly seed?: number;
+  /** The timeline the graph is played and rendered over. See `TimelineSettings`. */
+  readonly timeline?: TimelineSettings;
+}
+
+/**
+ * The frame rate, range and looping a graph is made for, saved with it.
+ *
+ * Without it every graph opened at 30 fps and frames 1-250, and a piece made
+ * for 24 fps over 594 frames (cloud-wall's H1 flipbook) had to be set up by
+ * hand on every open. Studio's timeline reads and writes it, the runtime takes
+ * its `fps` as the graph's own rate, and `cascade run --frames timeline`
+ * renders `start`-`end`. Every field is optional; absent ones keep the
+ * defaults (30 fps, 1-250, looping).
+ */
+export interface TimelineSettings {
+  readonly fps?: number;
+  /** First frame, inclusive. */
+  readonly start?: number;
+  /** Last frame, inclusive. */
+  readonly end?: number;
+  readonly loop?: boolean;
 }
 
 export interface CascadePreset {

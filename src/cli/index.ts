@@ -187,8 +187,11 @@ Options:
   --no-open                Do not open Studio in a browser
   --node <id>        Render only this node's output. Repeatable.
   --entry-node <id>  Older spelling of --node, single valued
-  --frames <range>   Render a frame sequence: 1-100, 1-100x2 (step), or 42
-  --fps <number>     Frame rate to evaluate the range at
+  --frames <range>   Render a frame sequence: 1-100, 1-100x2 (step), 42, or
+                     timeline (the range saved with the graph)
+  --fps <number>     Frame rate to evaluate the range at (default: the graph's timeline fps)
+  --mp4 <file>       After --frames, encode the sequence as H.264 yuv420p (needs ffmpeg)
+  --crf <n>          Quality for --mp4, 0-51, lower is better (default 18)
   --out <dir>        Sequence directory, project-relative (default: renders)
   --json             Print one { ok, data, warnings } envelope (any command)
   --seed <n>         Cook with this graph seed instead of the document's
@@ -263,6 +266,8 @@ stage lines as they happen.
     json?: boolean;
     seed?: number;
     fresh?: boolean;
+    mp4?: string;
+    crf?: number;
   } = {
     file: fileArg,
     validateOnly: command === 'validate',
@@ -318,6 +323,18 @@ stage lines as they happen.
 
   const out = valueOf('--out');
   if (out) options.out = out;
+
+  const mp4 = valueOf('--mp4');
+  if (mp4) {
+    if (command !== 'run' || !options.frames) throw new Error('--mp4 requires run --frames (try --frames timeline)');
+    options.mp4 = mp4;
+  }
+  const crf = valueOf('--crf');
+  if (crf !== undefined) {
+    const value = Number(crf);
+    if (!options.mp4 || !Number.isInteger(value) || value < 0 || value > 51) throw new Error('--crf needs --mp4 and an integer from 0 to 51');
+    options.crf = value;
+  }
 
   if (args.includes('--json') && command === 'run') options.json = true;
   if (args.includes('--fresh')) options.fresh = true;
