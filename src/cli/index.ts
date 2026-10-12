@@ -11,7 +11,7 @@ import { runWithJsonEnvelope } from './jsonEnvelope.js';
 const VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version as string;
 
 /** Commands that never start Studio. Anything else is a project or graph to open. */
-const COMMANDS = ['run', 'validate', 'check', 'inspect', 'build', 'export', 'freeze', 'publish', 'scene', 'projects', 'node', 'mcp'];
+const COMMANDS = ['run', 'validate', 'check', 'inspect', 'build', 'export', 'freeze', 'publish', 'scene', 'projects', 'node', 'mcp', 'serve'];
 
 async function main() {
   const args = process.argv.slice(2);
@@ -23,10 +23,10 @@ async function main() {
   }
 
   // `--json` on any command: one `{ ok, data, warnings }` envelope on stdout.
-  // `run --frames --json` keeps the flag, because it switches the runner to
-  // printing its manifest, which becomes the envelope's data.
+  // `run --frames --json` and `serve --json` keep the flag, because it makes
+  // them print their own JSON (a manifest, a status), which becomes the data.
   if (args.includes('--json')) {
-    const keepFlag = args[0] === 'run' && args.includes('--frames');
+    const keepFlag = (args[0] === 'run' && args.includes('--frames')) || args[0] === 'serve';
     const commandArgs = keepFlag ? args : args.filter((arg) => arg !== '--json');
     const opensStudio = !COMMANDS.includes(commandArgs[0] ?? '') && !isGraphCommand(commandArgs) &&
       !commandArgs.some((arg) => arg === '--help' || arg === '-h' || arg === '--version');
