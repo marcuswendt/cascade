@@ -209,11 +209,13 @@ function writeEntry(project: ProjectRoot, stage: string, key: string, result: un
   fs.renameSync(temporary, file); // atomic: an interrupted write never leaves half an entry
 }
 
-function cacheMode(policy: StageCachePolicy, stage: string, env: NodeJS.ProcessEnv): { use: boolean; why?: string } {
-  if (env.CASCADE_STAGE_CACHE === 'off') return { use: false, why: 'CASCADE_STAGE_CACHE=off' };
-  if (!policy.enabled) return { use: false, why: 'not enabled' };
-  if (policy.exclude.includes(stage)) return { use: false, why: 'excluded' };
-  return { use: true };
+/** Whether the core cache is read and written for this call, and why not.
+ *  `bypass` is the process-wide switch, passed on to the stage. */
+function cacheMode(policy: StageCachePolicy, stage: string, env: NodeJS.ProcessEnv): { use: boolean; bypass: boolean; why?: string } {
+  if (env.CASCADE_STAGE_CACHE === 'off') return { use: false, bypass: true, why: 'CASCADE_STAGE_CACHE=off' };
+  if (!policy.enabled) return { use: false, bypass: false, why: 'not enabled' };
+  if (policy.exclude.includes(stage)) return { use: false, bypass: false, why: 'excluded' };
+  return { use: true, bypass: false };
 }
 
 /** The stage sources a configuration declares, or the default folders. */
@@ -265,7 +267,7 @@ export async function callStage(
     why = stored.why;
   }
 
-  const answer = await invoke({ key: identity.key, code, cache: mode.why === 'CASCADE_STAGE_CACHE=off' ? 'off' : 'use' });
+  const answer = await invoke({ key: identity.key, code, cache: mode.bypass ? 'off' : 'use' });
   if (mode.use) {
     try {
       writeEntry(project, stage, identity.key, answer.result);

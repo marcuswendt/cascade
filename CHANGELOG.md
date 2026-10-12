@@ -6,6 +6,22 @@ Notable changes to Cascade. Newest first.
 
 ### Added
 
+- **Stage cache keys Cascade owns.** Every Python stage call, Studio or
+  headless, is keyed on the stage code (a hash of `exec.stages.sources`), the
+  arguments with input files replaced by their content hash, and the Cascade
+  version, and its cache state (`hit`, `miss`, `off`) and key are reported on
+  every call: in the server log, in `run --json` under `stages`, and in the run
+  trace. `exec.stages.cache` turns on a core result cache that verifies the
+  files a stored result names before serving it.
+- **Run traces.** Every `cascade run` writes `.cascade/runs/<time>-<graph>.json`
+  with each node's time and its stage calls. `run --json` works without
+  `--frames`.
+- **Seeds.** `context.seed` (from the document's `seed` and the node id) and
+  `context.random()` in both hosts; `cascade run --seed N`.
+- **`cascade parity <graph> [--node] [--tolerance] [--json]`** cooks headless
+  twice and through Studio's executor with caches off and reports every node
+  output side by side.
+
 - **`cascade serve`.** `start | stop | restart | status | logs | install |
   uninstall [project]` runs Studio as a supervised background service: one
   lock, record and log per project under `~/.cascade/serve/`, restart with
@@ -26,6 +42,11 @@ Notable changes to Cascade. Newest first.
 - `cascade run --frames --json` prints its manifest inside the envelope, as `data`, rather than at the top level.
 
 ### Fixed
+
+- **An edited stage no longer runs its old code in a live Studio.** The warm
+  Python worker restarts before the next request when its stage sources
+  change, with Python's bytecode cache keyed by the code hash so a quick
+  same-length edit is not served from an old `.pyc`.
 
 - **A failed build keeps the previous `dist/`.** `npm run build` and
   `build:cli` build into `.dist-staging/` and swap it in only when every step

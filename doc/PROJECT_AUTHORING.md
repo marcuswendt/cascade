@@ -576,6 +576,48 @@ entries atomically (temp file plus rename), since a stage can now be
 interrupted part-way. Nodes can pass `{ signal }` as `runStage`'s third
 argument; without it the signal of the cook in flight is used.
 
+#### Stage code, cache keys and the run trace
+
+Cascade keys every stage call on four things: the stage code (a hash of every
+`.py` file under `exec.stages.sources`), the arguments with each input file
+replaced by a hash of its bytes, those input hashes, and the Cascade version.
+The key and the cache state are reported on every call, hit or miss: in the
+server log (`[stage] ink: miss (no entry) key 3f2a… code 99dad29d… 1204 ms`),
+in `cascade run --json` under `stages`, and in the run trace.
+
+```json
+{
+  "exec": {
+    "stages": {
+      "entrypoint": "runtime/node_cli.py",
+      "worker": "runtime/worker.py",
+      "sources": ["runtime", "src", "shared/bridge"],
+      "cache": { "exclude": ["plot-status"], "outputs": ["out", "svg_out"] }
+    }
+  }
+}
+```
+
+- `sources` lists the files and folders whose `.py` files are the stage code.
+  Without it: the folders of the entrypoint and the worker, plus `src/`. A
+  symlinked folder (such as `shared/`) is followed only when it is listed.
+- The warm worker fingerprints those sources when it starts and again before
+  every request, and restarts first when they changed, so an edited stage never
+  keeps running its old code in a live Studio. Its bytecode cache is keyed by
+  the code hash, because Python accepts a `.pyc` whose source kept its size
+  within the same second.
+- `cache` turns on Cascade's own result cache: `true`, or an object with
+  `exclude` (stages whose answer changes under an identical call) and
+  `outputs` (arguments naming files a stage writes, which are not inputs). Off
+  by default. A stored result is served only while every file it names still
+  has the bytes it had, so a stage that writes a fixed path and was re-run with
+  other inputs misses rather than serving the overwritten file.
+- A request carries `"cascade": {"key", "code", "cache"}` beside `args` (the
+  worker), or `CASCADE_STAGE_ENVELOPE` in the environment (one-shot). A
+  project that keeps its own cache should stand aside when `cache` is `"off"`,
+  which `cascade parity` sets, and may answer `"cache": "hit" | "miss"` beside
+  `result` so the trace shows its state too.
+
 ## Work with `.cascade` files
 
 A graph document stores authored elements separately from runtime state. Nodes and annotations remain flat even inside subnets:
@@ -614,6 +656,11 @@ cascade run index.cascade --frames 1-100x2 --fps 25 --out frames
 cascade run index.cascade --frames 42 --entry-node logo-1024
 ```
 
+Every run writes a trace to `.cascade/runs/<time>-<graph>.json` (the last 200
+are kept): each node that cooked, its time, and every stage call it made with
+the key and cache state. `--verbose` prints the stage lines as they happen, and
+`--json` prints the status, the seed, the trace path and the stage calls.
+
 `--frames` takes a range, a stepped range, or a single frame, and refuses a range it cannot parse rather than repairing it. Files are written as `<out>/<node id>.<frame>.<ext>`, zero-padded to at least four digits, into `renders/` unless `--out` says otherwise. One rule whether the graph has one output or three. Every image output with nothing connected downstream is saved, or the outputs of `--entry-node` when one is named. Cascade stops at the image sequence; a directory of numbered frames is what an encoder takes.
 
 Offline, drawing goes through Skia: the optional `@napi-rs/canvas` supplies `OffscreenCanvas`, `Image`, `Path2D` and the rest as globals in the Node process, deliberately not `document`, because that is how a node tells which host it is in. This is why a node that draws on an `OffscreenCanvas` needs no second implementation for headless runs, and why the built-in `cascade.image.*` nodes render under `cascade run` as well as in Studio. A graph that draws nothing runs without the renderer installed.
@@ -646,6 +693,32 @@ not preserve every node, capability, or runtime behavior. Use it only after
 testing the exported artifact for the particular graph. Prefer `cascade build`
 for definition-v1 browser graphs, or embed `cascade/runtime` directly when an
 application needs custom capabilities and presentation.
+
+## Seeds and parity
+
+A graph has one `seed` (an unsigned 32-bit integer, 0 when absent) and each
+node gets `context.seed`, derived from it and the node id, plus
+`context.random()`, a stream seeded with it that restarts at every cook. Both
+hosts derive them the same way, so a node that draws with `context.random`
+draws the same thing headless and in Studio. `Math.random` cannot be
+reproduced by any host; pass `context.seed` on to a Python stage instead of
+seeding there from the clock. `cascade run --seed N` cooks with another seed
+without editing the file.
+
+```bash
+cascade parity index.cascade                 # every node
+cascade parity index.cascade --node ink      # one node and what feeds it
+cascade parity index.cascade --tolerance 2 --json
+```
+
+`parity` cooks three times with every cache off: headless, headless again, and
+through Studio's own executor (the compatibility graph and its definition
+adapter) run headlessly with the same Dawn GPU and project capabilities. It
+prints one row per node output with both comparisons side by side (`same`,
+`within tolerance`, or the difference: pixels and the largest channel delta
+for an image, both values for a number) and exits 1 when anything differs.
+See [Headless GPU](HEADLESS_GPU.md#determinism) for what makes a GPU stage
+repeatable.
 
 ## Verify a project
 

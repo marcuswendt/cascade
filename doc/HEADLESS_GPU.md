@@ -109,6 +109,33 @@ It does not encode PNGs or perform colour conversion. Encode through the existin
 image/IO host and publish an `image` value. Graph-wide texture transport, HDR
 readback, and browser video uploads are outside this first implementation.
 
+## Determinism
+
+A render pass is repeatable on one adapter: draws, and the blending between
+them, are applied in submission order. `cascade parity` checks it
+(`tests/parity-gpu.test.ts` draws 400 alpha-blended triangles and gets the same
+bytes headless twice and through Studio's executor on Dawn). Three things break
+it, and each has a fix:
+
+- **Unordered float accumulation.** WGSL has integer atomics only, so a
+  Cascade compute shader cannot add floats atomically; accumulate in fixed
+  point (`atomicAdd` on `u32`/`i32` of a scaled value), which adds the same in
+  any order. The same hazard outside WGSL is the one that hit cloud-plots:
+  PyTorch's `index_add` on MPS adds floats with atomics, and on 12 Oct a
+  colliding scatter gave 40 different sums in 40 runs while fixed point gave
+  one. The fix there is the same (`src/cloud_plots/detsplat.py` on cloud-plots'
+  `deterministic-splat` branch, opt-in).
+- **Unsynchronised writes.** Two invocations writing one texel or buffer
+  element without a barrier or atomic leave whichever lands last.
+- **A different adapter.** Rasterisation rules, `fma` contraction and
+  transcendental precision differ between GPUs and between Dawn and a browser's
+  WebGPU. Studio in a browser is a different adapter from headless Dawn, so
+  compare those with a tolerance: `cascade parity --tolerance <0-255>` counts a
+  channel difference up to that value as the same and still reports it.
+
+Render into `rgba8unorm`, state the blend state on every pipeline rather than
+relying on a default, and seed anything random from `context.seed`.
+
 ## Verification and limits
 
 ```sh
