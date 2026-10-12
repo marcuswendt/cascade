@@ -2,6 +2,18 @@
 
 Notable changes to Cascade. Newest first.
 
+## Unreleased
+
+### Added
+
+- **Fonts in exported editors.** `editor.fonts` lists OFL-1.1 fonts that
+  `cascade export` ships and loads in the page and the engine worker, so
+  canvas and panel text draw with the project's font. Other licences and
+  `licensed/` files are refused.
+- **`cascade export --deploy vercel --public`** for an editor meant to be
+  public: an anonymously readable site is reported as intended instead of
+  failing the deploy.
+
 ## 0.10.0 — 2026-10-12
 
 ### Added

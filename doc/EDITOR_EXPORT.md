@@ -92,7 +92,8 @@ prints the same manifest without building anything.
    directory, so no `.env.local` can land in the site. It deploys to
    production, then checks that an anonymous request to
    `https://<project>.vercel.app` is refused. If it is not, it says to turn on
-   Vercel Authentication.
+   Vercel Authentication. Add `--public` when the editor is meant to be open to
+   anyone: a readable site is then reported as intended instead of failing.
 
 ## The `editor` section
 
@@ -121,11 +122,17 @@ Studio keeps it verbatim when it saves. The types are in
     { "id": "soft", "label": "Soft", "values": { "strength": 1 }, "keep": ["colour", "font"] }
   ],
   "assets": ["assets/fonts/InterDisplay-Medium.otf"],
+  "fonts": [{ "family": "DM Mono", "file": "assets/fonts/DMMono-Regular.woff2", "license": "OFL-1.1", "weight": 400 }],
   "freeze": [{ "node": "moment", "output": "moment", "snapshot": "frozen/moment.json" }],
   "panel": { "module": "editor/panel.ts", "placement": "extend" },
   "inspect": true
 }
 ```
+
+`fonts` ships open-licensed fonts with the site and loads them in the page
+(`@font-face`) and in the engine worker (`FontFace`), so a panel or a canvas
+that names the family draws with it. Each entry must say `"license": "OFL-1.1"`;
+anything else, or a file under `licensed/`, is refused.
 
 - **Parameter `id`** is the key a scene uses. It survives renaming the node
   or the prop, so keep it stable.

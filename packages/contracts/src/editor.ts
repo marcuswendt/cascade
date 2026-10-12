@@ -44,6 +44,13 @@ export interface EditorDeclaration {
   /** The read-only stage view. On unless the author turns it off. */
   readonly inspect?: boolean;
   /**
+   * Fonts the exported editor ships and loads, in the page and in the engine
+   * worker, so a panel or a canvas that names the family draws with it rather
+   * than the system fallback. Open-licensed only: each one states its licence
+   * (`OFL-1.1`), and a file under `licensed/` is refused like any other asset.
+   */
+  readonly fonts?: readonly EditorFont[];
+  /**
    * Parameter ids a phone keeps in reach at the bottom sheet's lowest snap
    * point (the text, a Reroll). Defaults to the first text and seed parameters.
    */
@@ -54,6 +61,17 @@ export interface EditorDeclaration {
    * the real values cook again on release.
    */
   readonly draft?: Readonly<Record<string, JsonValue>>;
+}
+
+export interface EditorFont {
+  /** The CSS family name the project's code uses (`DM Mono`). */
+  readonly family: string;
+  /** Project-relative font file: `.woff2`, `.woff`, `.ttf` or `.otf`. */
+  readonly file: string;
+  /** SIL Open Font License. Anything else is refused at export. */
+  readonly license: "OFL-1.1";
+  readonly weight?: string | number;
+  readonly style?: "normal" | "italic";
 }
 
 export type PublishedControl =

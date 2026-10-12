@@ -25,7 +25,7 @@ export const EDITOR_COMMANDS = ['export', 'freeze', 'publish', 'scene'] as const
 export const EDITOR_HELP = `
 Shareable editors (see doc/EDITOR_EXPORT.md):
   cascade export <graph> --plan                 Print what would ship, build nothing
-  cascade export <graph> --out <dir> [--deploy vercel [--project <name>] [--scope <team>]]
+  cascade export <graph> --out <dir> [--deploy vercel [--project <name>] [--scope <team>] [--public]]
   cascade publish <graph> <node>.<prop> [--id <id>] [--label <text>] [--group <name>]
                   [--control <kind>] [--min n] [--max n] [--step n] [--help <text>] [--remove]
   cascade freeze <graph> <node> --fields <a,b.c> [--output <port>] [--personal <a,..>]
@@ -53,7 +53,7 @@ interface Flags {
   readonly switches: Set<string>;
 }
 
-const SWITCHES = new Set(['--plan', '--remove', '--json']);
+const SWITCHES = new Set(['--plan', '--remove', '--json', '--public']);
 
 function parseFlags(args: readonly string[]): Flags {
   const positional: string[] = [];
@@ -82,6 +82,7 @@ async function exportCommand(graph: string, flags: Flags): Promise<void> {
     ...(deploy ? { deploy: 'vercel' as const } : {}),
     project: one(flags, '--project'),
     scope: one(flags, '--scope'),
+    ...(flags.switches.has('--public') ? { public: true } : {}),
   });
   if (flags.switches.has('--json')) console.log(JSON.stringify(result.plan, null, 2));
   else console.log(formatPlan(result.plan));

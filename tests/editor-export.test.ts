@@ -14,7 +14,7 @@ import {
   selectEditorSubgraph,
   validateEditor,
 } from '../packages/runtime/src/editor/index';
-import { prepareExport, scanForLeaks } from '@/cli/editorExport';
+import { exportEditor, prepareExport, publicVerdict, scanForLeaks } from '@/cli/editorExport';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -241,6 +241,38 @@ describe('cascade export boundary', () => {
       const root = project({ 'nodes/Live/index.ts': shape(), 'nodes/Shape/index.ts': shape(), [asset]: 'x', 'g.cascade': exportGraph({ editor: { assets: [asset] } }) });
       await expect(prepareExport(path.join(root, 'g.cascade'))).rejects.toThrow(/licensed|visible project-relative/);
     }
+  });
+
+  it('ships declared OFL fonts and loads them in the page and the worker', async () => {
+    // Cloud Volumes (08b9e53): the exported editor drew "DM Mono" with the
+    // system monospace, because nothing shipped the project's font.
+    const font = { family: 'DM Mono', file: 'assets/fonts/DMMono-Regular.woff2', license: 'OFL-1.1' };
+    const root = project({ 'nodes/Live/index.ts': shape(), 'nodes/Shape/index.ts': shape(), [font.file]: 'woff2', 'g.cascade': exportGraph({ editor: { fonts: [font] } }) });
+    const prepared = await prepareExport(path.join(root, 'g.cascade'));
+    expect(prepared.plan.files.map((file) => file.path)).toContain('assets/assets/fonts/DMMono-Regular.woff2');
+    const out = path.join(root, '..', `${path.basename(root)}-site`);
+    roots.push(out);
+    await exportEditor(path.join(root, 'g.cascade'), { out, log: () => {} });
+    expect(fs.readFileSync(path.join(out, 'assets', 'assets', 'fonts', 'DMMono-Regular.woff2'), 'utf8')).toBe('woff2');
+    expect(fs.readFileSync(path.join(out, 'index.html'), 'utf8')).toContain('@font-face{font-family:"DM Mono";src:url("./assets/assets/fonts/DMMono-Regular.woff2")');
+    for (const bundle of ['editor.js', 'editor-worker.js']) expect(fs.readFileSync(path.join(out, bundle), 'utf8')).toContain('FontFace');
+  }, 60_000);
+
+  it('refuses a font that is not OFL or sits under licensed/', async () => {
+    const cases = [
+      { family: 'Helvetica Now', file: 'assets/fonts/HelveticaNow.otf', license: 'commercial' },
+      { family: 'Helvetica Now', file: 'assets/fonts/licensed/HelveticaNow.otf', license: 'OFL-1.1' },
+    ];
+    for (const font of cases) {
+      const root = project({ 'nodes/Live/index.ts': shape(), 'nodes/Shape/index.ts': shape(), [font.file]: 'x', 'g.cascade': exportGraph({ editor: { fonts: [font] } }) });
+      await expect(prepareExport(path.join(root, 'g.cascade'))).rejects.toThrow(/only OFL-1.1|licensed/);
+    }
+  });
+
+  it('treats a public deploy as a failure unless --public says it is intended', () => {
+    expect(publicVerdict(401, false)).toBe('protected');
+    expect(publicVerdict(200, false)).toBe('public-by-accident');
+    expect(publicVerdict(200, true)).toBe('public-as-intended');
   });
 
   it('stops a site that would publish a local path or a secret value', async () => {

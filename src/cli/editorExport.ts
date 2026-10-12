@@ -21,6 +21,7 @@ import type {
   CascadeDocumentConnection,
   CascadeDocumentNode,
   EditorDeclaration,
+  EditorFont,
   FrozenSnapshot,
   NodeDefinition,
 } from '../../packages/contracts/src/index.js';
@@ -52,6 +53,12 @@ export interface EditorExportOptions {
   readonly project?: string;
   /** Vercel team. */
   readonly scope?: string;
+  /**
+   * The site is meant to be public. Without it a deploy that anyone can read
+   * fails, because the default is that a shared editor sits behind Vercel
+   * Authentication; with it, public is the expected result and is reported.
+   */
+  readonly public?: boolean;
   readonly log?: (line: string) => void;
 }
 
@@ -111,7 +118,7 @@ export async function exportEditor(file: string, options: EditorExportOptions = 
   const directory = await buildSite(prepared, options.out);
   const plan = JSON.parse(await fs.readFile(path.join(directory, 'export-manifest.json'), 'utf8')) as ExportPlan;
   let url: string | undefined;
-  if (options.deploy === 'vercel') url = await deployVercel(directory, options.project ?? prepared.plan.editor.id, options.scope, log);
+  if (options.deploy === 'vercel') url = await deployVercel(directory, options.project ?? prepared.plan.editor.id, options.scope, log, options.public === true);
   return { plan, directory, ...(url ? { url } : {}) };
 }
 
@@ -217,6 +224,7 @@ export async function prepareExport(file: string): Promise<Prepared> {
     ...(editor.inspect === false ? { inspect: false } : {}),
     ...(editor.peek ? { peek: editor.peek } : {}),
     ...(editor.draft ? { draft: editor.draft } : {}),
+    ...(editor.fonts?.length ? { fonts: editor.fonts } : {}),
   };
   const document: CascadeDocument = {
     version: source.version,
@@ -232,6 +240,7 @@ export async function prepareExport(file: string): Promise<Prepared> {
 
   // Literal asset values in shipped props, plus the author's selection.
   for (const asset of editor.assets ?? []) await addAsset(project, assets, checkedAssetPath(asset, 'editor.assets'), 'asset', 'editor.assets');
+  for (const font of editor.fonts ?? []) await addAsset(project, assets, checkedFont(font), 'asset', 'editor.fonts');
   for (const literal of await literalAssets(document, modules)) await addAsset(project, assets, checkedAssetPath(literal.path, literal.where), 'asset', literal.where);
   for (const asset of assets.values()) await refuseIgnored(project.root, asset.name);
 
@@ -309,8 +318,9 @@ async function buildSite(prepared: Prepared, outOption: string): Promise<string>
   // Two bundles: the page (editor shell, panel) and the engine worker (runtime
   // and the project's nodes), so a slow stage never blocks the page.
   const engineEntry = await playerFile('editorEngine');
-  const entry = `import { startEditor } from ${JSON.stringify(editorEntry)};\n${panelImport}\nwindow.cascadeEditorReady = startEditor({document:${JSON.stringify(document)},worker:new URL('./editor-worker.js',import.meta.url),assets:{${assetSource}}${panel ? ',panel' : ''}});`;
-  const workerEntry = `import { serveEditorEngine } from ${JSON.stringify(engineEntry)};\n${imports}\nserveEditorEngine([${registrations}]);`;
+  const fonts = fontSources(document.editor?.fonts ?? []);
+  const entry = `import { startEditor } from ${JSON.stringify(editorEntry)};\n${panelImport}\n${fonts.loader}\nwindow.cascadeEditorReady = startEditor({document:${JSON.stringify(document)},worker:new URL('./editor-worker.js',import.meta.url),assets:{${assetSource}}${panel ? ',panel' : ''}});`;
+  const workerEntry = `import { serveEditorEngine } from ${JSON.stringify(engineEntry)};\n${imports}\n${fonts.loader}\nserveEditorEngine([${registrations}]);`;
   const bundle = (contents: string, sourcefile: string) => build({
     bundle: true, platform: 'browser', format: 'esm', target: 'es2022', write: false, minify: true,
     legalComments: 'none', logLevel: 'silent', plugins,
@@ -322,7 +332,7 @@ async function buildSite(prepared: Prepared, outOption: string): Promise<string>
   const staging = await fs.mkdtemp(path.join(path.dirname(out), '.cascade-export-'));
   try {
     const title = escapeHtml(document.editor?.title ?? document.editor?.id ?? 'Cascade');
-    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><link rel="icon" href="data:,"><title>${title}</title><style>html,body{margin:0;height:100%;background:#f4f4f2}@media (prefers-color-scheme:dark){html,body{background:#151515}}</style></head><body><script type="module" src="./editor.js"></script></body></html>`;
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><link rel="icon" href="data:,"><title>${title}</title><style>${fonts.css}html,body{margin:0;height:100%;background:#f4f4f2}@media (prefers-color-scheme:dark){html,body{background:#151515}}</style></head><body><script type="module" src="./editor.js"></script></body></html>`;
     const files: PlanFile[] = [];
     const write = async (name: string, data: string | Uint8Array, kind: PlanFile['kind'], from: string) => {
       await fs.mkdir(path.dirname(path.join(staging, name)), { recursive: true });
@@ -419,7 +429,7 @@ async function secretValues(projectRoot: string): Promise<[string, string][]> {
   return [...values];
 }
 
-async function deployVercel(directory: string, projectName: string, scope: string | undefined, log: (line: string) => void): Promise<string> {
+async function deployVercel(directory: string, projectName: string, scope: string | undefined, log: (line: string) => void, intendedPublic: boolean): Promise<string> {
   const team = scope ?? 'field-io';
   // Link in a scratch directory: `vercel link` also pulls env into .env.local,
   // which must never land in the site being deployed.
@@ -436,11 +446,20 @@ async function deployVercel(directory: string, projectName: string, scope: strin
   const { stdout } = await run('vercel', ['deploy', '--prod', '--yes', '--scope', team], { cwd: directory, maxBuffer: 16 * 1024 * 1024 });
   const url = stdout.trim().split('\n').reverse().find((line) => /^https:\/\//.test(line.trim()))?.trim();
   if (!url) throw new Error(`Vercel did not report a deployment URL:\n${stdout}`);
-  // Vercel Authentication must be on: an anonymous request must not get the page.
+  // Vercel Authentication must be on, unless public was asked for: an
+  // anonymous request must not get the page by accident.
   const response = await fetch(`https://${projectName}.vercel.app/`, { redirect: 'manual' });
-  if (response.status === 200)
+  const verdict = publicVerdict(response.status, intendedPublic);
+  if (verdict === 'public-as-intended') log(`Public, as intended (--public): https://${projectName}.vercel.app`);
+  else if (verdict === 'public-by-accident')
     throw new Error(`Deployed, but https://${projectName}.vercel.app is publicly readable. Turn on Vercel Authentication (Settings → Deployment Protection) for ${team}/${projectName}.`);
   return url;
+}
+
+/** What an anonymous request's status means for a deploy. */
+export function publicVerdict(status: number, intendedPublic: boolean): 'protected' | 'public-as-intended' | 'public-by-accident' {
+  if (status !== 200) return 'protected';
+  return intendedPublic ? 'public-as-intended' : 'public-by-accident';
 }
 
 /** Svelte panels compile with the project's own svelte, so core never depends on it. */
@@ -489,6 +508,32 @@ async function literalAssets(document: CascadeDocument, modules: readonly { id: 
     await runtime.dispose();
   }
   return found;
+}
+
+const FONT_FILE = /\.(woff2?|ttf|otf)$/i;
+
+/** An `editor.fonts` entry: open-licensed, a font file, and a visible project path. */
+function checkedFont(font: EditorFont): string {
+  const where = `editor.fonts ${JSON.stringify(font?.family ?? '')}`;
+  if (!font || typeof font.family !== 'string' || !font.family.trim()) throw new Error(`${where}: needs a family name`);
+  if (font.license !== 'OFL-1.1')
+    throw new Error(`${where}: only OFL-1.1 fonts are exported (got ${JSON.stringify(font.license)}); a licensed font never leaves the project`);
+  if (typeof font.file !== 'string' || !FONT_FILE.test(font.file)) throw new Error(`${where}: file must be a .woff2, .woff, .ttf or .otf`);
+  return checkedAssetPath(font.file, where);
+}
+
+/** `@font-face` rules for the page, and the same fonts loaded into the engine worker's scope. */
+function fontSources(fonts: readonly EditorFont[]): { css: string; loader: string } {
+  const url = (file: string) => `./assets/${file.replace(/^\.\//, '').split('/').map(encodeURIComponent).join('/')}`;
+  const css = fonts.map((font) => `@font-face{font-family:${JSON.stringify(font.family)};src:url(${JSON.stringify(url(font.file))});font-weight:${font.weight ?? 'normal'};font-style:${font.style ?? 'normal'};font-display:swap}`).join('');
+  const list = JSON.stringify(fonts.map((font) => ({ family: font.family, url: url(font.file), weight: String(font.weight ?? 'normal'), style: font.style ?? 'normal' })));
+  // Canvas text in a worker sees only fonts added to the worker's own scope,
+  // and canvas text in the page draws the fallback until a face is loaded, so
+  // both load them explicitly before the first cook.
+  const loader = fonts.length
+    ? `await (async()=>{const s=globalThis;if(typeof FontFace==='undefined'||!s.fonts)return;await Promise.all(${list}.map(async(f)=>{try{const face=new FontFace(f.family,'url('+new URL(f.url,import.meta.url).href+')',{weight:f.weight,style:f.style});s.fonts.add(await face.load())}catch(e){console.warn('Font '+f.family+' did not load',e)}}))})();`
+    : '';
+  return { css, loader };
 }
 
 function checkedAssetPath(asset: string, where: string): string {
