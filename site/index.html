@@ -83,6 +83,9 @@
     font-size: 0.9rem;
   }
   .note > :last-child { margin-bottom: 0; }
+  figure { margin: 1.5rem 0; }
+  figure img { display: block; width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 6px; }
+  figcaption { color: var(--ink-soft); font-size: 0.9em; margin-top: 0.5rem; }
   ul { margin: 0 0 1rem; padding-left: 1.3rem; }
   li { margin-bottom: 0.4rem; }
   footer {
@@ -98,7 +101,7 @@
   <header>
     <h1>Cascade</h1>
     <p class="tagline">An open-source node-graph runtime with a visual Studio, for building generative design systems that move between print, motion, installations, and the web. Built at FIELD.IO and used for our own work.</p>
-    <p class="release">Current release: 0.5.1</p>
+    <p class="release">Current release: 0.9.1. The npm package is still 0.8.0, so <code>cascade export</code> needs a checkout of the repository until 0.9 is published.</p>
   </header>
 
   <h2>What it is</h2>
@@ -160,6 +163,7 @@ cascade my-sketch</pre>
   <h2>Working in Studio</h2>
   <p>Studio is dockable: a graph canvas, an inspector, a viewer, a code editor, logs, and panels a project defines itself. Tab adds a node, and the graph is a plain <code>.cascade</code> file you can commit and diff.</p>
   <p>A sketch owns its own nodes as ordinary TypeScript under <code>nodes/&lt;Name&gt;/index.ts</code>, so anything you can write in a file you can wire into a graph. Read the <code>AGENTS.md</code> in your new sketch first — it is short, and written for both you and whatever coding agent you point at the folder.</p>
+  <p>Keep a graph readable by giving it a few top-level stages and putting the detail in subnets. The cloud-plots print graph has ninety-odd nodes and opens as seven stages, from the moment and the paper format through to marks, type and output.</p>
   <p>Subnets let a network become a reusable operator without changing the document into a second graph format. The 3D Viewer displays geometry, cameras, and scenes as wireframes and points; light data is part of the scene contract, while shaded scene rendering is still future work.</p>
 
   <h2>Animation and simulation</h2>
@@ -178,6 +182,23 @@ cascade my-sketch</pre>
     <p>The static player supports deterministic definition-v1 graphs. Dynamic modules and nodes requiring Python, shell, server files, or Studio APIs are rejected during the build. Package any explicit assets and move heavy preprocessing outside the live browser graph.</p>
   </div>
 
+  <h2>Share an editor</h2>
+  <p>New in 0.9. <code>cascade export</code> turns a graph into a small static site with a viewer, the parameters you chose to publish, presets, scene files and export buttons. Someone without Studio can change your scene, save it and send it back.</p>
+  <pre>cascade publish index.cascade spec.capMm --label "Cap height" --min 3 --max 60 --unit mm
+cascade export index.cascade --plan
+cascade export index.cascade --out export/site --deploy vercel --project my-editor</pre>
+  <p>In Studio, the share toggle beside a parameter in the Inspector publishes it. Scenes are <code>*.scene.json</code> files that open in the editor, in Studio and in the CLI with <code>cascade scene</code>. The editor cooks in a worker, so a slow stage does not stall the page while someone drags a slider.</p>
+  <div class="note">
+    <p>The export is an allowlist. Only the nodes your outputs need and the assets you name are shipped. Live sources such as files, Python or a network service are refused until you freeze the fields you want with <code>cascade freeze</code>, and the built site is scanned for credentials and local paths. <code>--plan</code> shows what goes and what stays.</p>
+  </div>
+
+  <h3>Cloud Type</h3>
+  <p>The first exported editor. It makes the dotted headlines for the Human First book, and "Inspect stages" shows every step of the graph behind it.</p>
+  <figure>
+    <a href="https://cloud-type.vercel.app"><img src="/cloud-type.jpg" width="1600" height="1000" alt="The Cloud Type editor: dotted CLOUD OBSERVATORY lettering in the viewer, with input parameters on the right" loading="lazy"></a>
+    <figcaption><a href="https://cloud-type.vercel.app">cloud-type.vercel.app</a> &middot; <a href="https://github.com/marcuswendt/cloud-type">source</a></figcaption>
+  </figure>
+
   <h2>Headless rendering for agents</h2>
   <p>The CLI can produce a still or numbered image sequence without opening Studio. Its JSON mode gives an agent or test process a small machine-readable contract: output files, frames, timing, and GPU adapter metadata when used.</p>
   <pre>cascade run index.cascade --frames 1 --json --timeout 60000
@@ -191,6 +212,11 @@ cascade node &lt;Name&gt;           scaffold a typed custom node
 cascade run &lt;graph.cascade&gt;   execute a graph headlessly, no browser
 cascade run &lt;graph&gt; --frames 1-48 --fps 24
 cascade build &lt;graph&gt; --out &lt;new-directory&gt;
+cascade export &lt;graph&gt; --plan   what a shared editor would ship
+cascade export &lt;graph&gt; --out &lt;dir&gt;
+cascade publish &lt;graph&gt; &lt;node.prop&gt;  share a parameter
+cascade freeze &lt;graph&gt; &lt;node&gt;  snapshot a live source
+cascade scene &lt;file.scene.json&gt;
 cascade check &lt;graph.cascade&gt;  static check of types and structure
 cascade inspect &lt;graph.cascade&gt; print a JSON graph summary
 cascade projects &lt;dir&gt;        move where sketches live
@@ -208,6 +234,7 @@ cascade --help                all of it</pre>
   <h2>Going deeper</h2>
   <ul>
     <li><a href="https://github.com/marcuswendt/cascade/blob/main/doc/PROJECT_AUTHORING.md">Project authoring</a> — project layout, graph files, and typed nodes.</li>
+    <li><a href="https://github.com/marcuswendt/cascade/blob/main/doc/EDITOR_EXPORT.md">Shareable editors</a>: publishing parameters, the export boundary, scenes and deploying.</li>
     <li><a href="https://github.com/marcuswendt/cascade/blob/main/doc/WEB_PLAYER.md">Browser player</a> — embedding, controls, assets, and host limits.</li>
     <li><a href="https://github.com/marcuswendt/cascade/blob/main/doc/HEADLESS_GPU.md">Headless WebGPU</a> — Dawn setup, JSON render manifests, testing, and platform caveats.</li>
     <li><a href="https://github.com/marcuswendt/cascade/blob/main/doc/NODE_REFERENCE.md">Node reference</a> — the generated reference for core, geometry, particle, and scene nodes.</li>

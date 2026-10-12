@@ -11,6 +11,7 @@ under the MIT license. [Getting started and features](https://cascade.field.io).
 - Deterministic custom-node definitions that tools can inspect without running user code.
 - An environment-neutral runtime for Node services and UI-free browser applications.
 - A standalone browser player: build static pages and embeddable sketches without a Studio server.
+- Shareable editors: `cascade export` builds a static site where someone else can change published parameters, save scenes and export, without Studio or an account.
 - A Studio compatibility controller that already presents deterministic definitions alongside dynamic project nodes while its graph engine migrates to the neutral runtime.
 - Project-native `.cascade` files, assets, presets, and Git-backed version history.
 - Nested subnets with persistent hierarchy.
@@ -25,31 +26,41 @@ under the MIT license. [Getting started and features](https://cascade.field.io).
 
 Cascade separates the generative algorithm from the platform. Custom nodes describe stages of a pipeline; the runtime schedules and validates them; hosts supply environment-specific capabilities; Studio is only one possible frontend.
 
-## New in 0.5
+## Quick start
 
-Build a visual system once, then use its supported host for print, stills,
-motion frames or an interactive web embed. This release adds the standalone
-player and hardens the geometry, simulation and scene tools added during 0.4:
+```bash
+npm install -g @field/cascade
+cascade new my-sketch              # scaffolds ~/Documents/Cascade/my-sketch and opens Studio
+cd ~/Documents/Cascade/my-sketch && npm install
+cascade .                          # reopen it later
+cascade run index.cascade --frames 1 --json   # render headlessly
+```
 
-- **Web delivery:** `cascade build` packages a compatible graph and its explicit
-  assets. Embeds have independent runtimes, playback, parameter/input controls,
-  image downloads and disposal; no editor or Cascade API is required.
-- **Geometry and subnets:** compose shapes, transforms and copies through one
-  geometry type; organize reusable networks with typed Input/Output boundaries.
-- **Particles and feedback:** wire sources, forces and a solver, retain bounded
-  history, and turn particle trails into geometry for SVG or raster output.
-  Checkpoint reuse now preserves complete trails; nested Feedback respects loop
-  ownership and dependency order.
-- **Scenes and cameras:** assemble geometry, a camera and lights, inspect in the
-  3D Viewer, and use shared camera math for output. Rendering currently draws
-  wireframes and points; lights do not yet shade surfaces.
-- **Agent-ready rendering:** static node checks, finite render timeouts and JSON
-  image manifests let an agent edit, render and inspect results. Dawn is optional
-  native WebGPU for the Node host, not a browser emulator or model integration.
+The npm package is at 0.8.0. The 0.9 commands below (`export`, `publish`, `freeze`, `scene`) need a checkout of this repository until 0.9 is published.
 
-Studio now uses only its active Dockview layout; the unreachable old window UI
-has been removed. No new dependencies or graph engine were introduced for the
-player. See the [changelog](CHANGELOG.md) for release details.
+## New in 0.9: shareable editors
+
+`cascade export` turns a graph into a small static website: a viewer, the parameters you chose to publish, presets, scene files and an export button per output. Send the link and someone without Studio can change your scene, save it as a scene file and send it back.
+
+```bash
+cascade publish index.cascade spec.capMm --label "Cap height" --min 3 --max 60 --unit mm
+cascade freeze index.cascade moment --output moment --fields photos[0],instant
+cascade export index.cascade --plan                  # what ships and what stays
+cascade export index.cascade --out export/site
+cascade export index.cascade --out export/site --deploy vercel --project my-editor
+```
+
+In Studio, the `share` toggle beside a parameter in the Inspector publishes it, with a label, group and range. Scenes (`*.scene.json`) open in the editor, in Studio and in the CLI (`cascade scene`, `cascade run --scene`). The editor cooks in a module worker, so a slow stage does not stall the page.
+
+The export is an allowlist. It ships the subgraph the outputs need and the assets you name, refuses live sources until you freeze the fields you want, refuses Python, licensed and ignored files, and scans the built site for credentials and local paths. Read [Shareable editors](doc/EDITOR_EXPORT.md) before sharing anything.
+
+**Cloud Type** is the first exported editor: the dotted headline generator for FIELD's Human First book. Try it at [cloud-type.vercel.app](https://cloud-type.vercel.app); the project is at [marcuswendt/cloud-type](https://github.com/marcuswendt/cloud-type).
+
+![Cloud Type, an editor exported from a Cascade graph](https://cascade.field.io/cloud-type.jpg)
+
+Large graphs stay readable when they open as a few stages with the detail in subnets. The cloud-plots print graph has 98 nodes and opens as seven.
+
+0.9.1 also fixes a fresh checkout's build: `npm run build` compiles the workspace packages before vite, so `dist/` is never left without a CLI. See the [changelog](CHANGELOG.md).
 
 ## Install
 
