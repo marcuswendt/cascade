@@ -36,7 +36,7 @@ With a global install (`npm i -g @field/cascade`), use `"command": "cascade", "a
 | `cook` | `cascade run <graph> [--node <id>]` |
 | `render` | `cascade run <graph> --frames … [--fps] [--out] [--node]… [--scene]` |
 | `export` | `cascade export <graph> --plan \| --out <dir>` |
-| `lock`, `replay` | `cascade lock \| replay`, once that lands (backlog item 1); until then they say so |
+| `lock`, `replay`, `locks` | `cascade lock <graph> <node> --name`, `cascade replay <id> [--live]`, `cascade locks` |
 
 The editing tools take `dryRun`. Reads and edits run inside the server through the same functions the CLI commands call. Cooking, rendering, checking and exporting run `cascade <command> --json` as a child process, so a long render leaves nothing behind in the server and returns exactly what the CLI would print. Calls run one at a time, so two edits to one file never interleave.
 

@@ -29,6 +29,7 @@ import { promisify } from 'node:util';
 import { ProjectRoot } from '../../../server/src/project.js';
 import { moduleId, projectModuleFile } from '../projectRuntime.js';
 import { sceneDocument } from '../editorCommands.js';
+import { graphSeed } from '../../../packages/runtime/src/seed.js';
 import { cookNode } from './cook.js';
 import {
   compareFingerprints, fingerprintOutputs,
@@ -70,7 +71,7 @@ export interface LockFile {
   readonly params: Record<string, unknown>;
   /** Published parameters by id, when the graph declares an editor. */
   readonly published?: Record<string, unknown>;
-  /** Every prop named like a seed, `node.prop`. */
+  /** The graph seed (`graph`, from which every node's `context.seed` derives) and every prop named like a seed, `node.prop`. */
   readonly seeds: Record<string, unknown>;
   /** Project-relative input file to the hash of its content. */
   readonly inputs: Record<string, Digest>;
@@ -99,6 +100,8 @@ export interface LockFile {
   readonly output: {
     readonly ports: OutputFingerprint;
     readonly durationMs: number;
+    /** The cook's run trace in `.cascade/runs/`, project-relative. */
+    readonly trace?: string;
   };
   readonly preview?: { readonly file: string; readonly sha256: Digest };
 }
@@ -122,6 +125,8 @@ export interface CreateLockOptions {
   readonly status?: string;
   readonly supersedes?: string;
   readonly scene?: string;
+  /** The graph seed for this render (`document.seed`), stored with the graph. */
+  readonly seed?: number;
   /** Extra input files the graph reads without naming them in a prop. */
   readonly inputs?: readonly string[];
   /** Output ports to fingerprint. Default: all of them. */
@@ -149,17 +154,19 @@ export async function createLock(options: CreateLockOptions): Promise<{ lock: Lo
   // The graph as it will be cooked: the file, with the scene applied.
   const graphBytes = await fs.readFile(graphFile);
   let document = JSON.parse(graphBytes.toString('utf8'));
-  let graphObject: Digest;
   let scene: LockFile['graph']['scene'];
   if (options.scene) {
     const applied = await sceneDocument(graphFile, options.scene);
     for (const warning of applied.warnings) console.error(`Warning: ${warning}`);
     document = applied.document;
-    graphObject = await putObject(root, `${JSON.stringify(document, null, 2)}\n`);
     scene = { file: displayPath(root, path.resolve(options.scene)), object: await putObject(root, await fs.readFile(options.scene)) };
-  } else {
-    graphObject = await putObject(root, graphBytes);
   }
+  if (options.seed !== undefined) document.seed = options.seed;
+  // The graph exactly as read when nothing changed it, so the object can be
+  // compared byte for byte with the file; re-serialised when a scene or seed did.
+  const graphObject = options.scene || options.seed !== undefined
+    ? await putObject(root, `${JSON.stringify(document, null, 2)}\n`)
+    : await putObject(root, graphBytes);
   if (!document.nodes?.some((node: { id?: string }) => node.id === options.node)) {
     throw new Error(`No node "${options.node}" in ${path.basename(graphFile)}`);
   }
@@ -205,7 +212,7 @@ export async function createLock(options: CreateLockOptions): Promise<{ lock: Lo
       node: process.version,
     },
     host: { kind: 'headless', platform: `${process.platform}-${process.arch}`, cooked: options.live ? 'live' : 'snapshot' },
-    output: { ports: cooked.ports, durationMs: cooked.durationMs },
+    output: { ports: cooked.ports, durationMs: cooked.durationMs, ...(cooked.trace ? { trace: cooked.trace } : {}) },
     ...(preview ? { preview } : {}),
   };
 
@@ -241,6 +248,8 @@ export interface ReplayResult {
   readonly codeSinceLock: TreeDiff;
   readonly warnings: readonly string[];
   readonly durationMs: number;
+  /** The replay's run trace in the project's `.cascade/runs/`. */
+  readonly trace?: string;
   readonly files: readonly string[];
   readonly kept?: string;
 }
@@ -300,6 +309,7 @@ export async function replayLock(projectRoot: string, lock: LockFile, options: R
       codeSinceLock,
       warnings,
       durationMs: cooked.durationMs,
+      ...(cooked.trace ? { trace: cooked.trace } : {}),
       files,
       ...(options.keep && !options.live ? { kept: cooked.root } : {}),
     };
@@ -348,21 +358,26 @@ interface Cooked {
   readonly root: string;
   readonly ports: OutputFingerprint;
   readonly durationMs: number;
+  readonly trace?: string;
   readonly resolve: (relative: string) => string;
   readonly dispose?: () => Promise<void>;
 }
 
-async function cookIn(
-  root: string,
-  graphFile: string,
-  document: unknown,
-  options: { node: string; ports?: readonly string[]; verbose?: boolean },
-): Promise<Cooked> {
+interface CookOptions {
+  readonly node: string;
+  readonly ports?: readonly string[];
+  readonly verbose?: boolean;
+  /** The live project and graph, where the run trace is written. */
+  readonly traceRoot?: string;
+  readonly traceGraph?: string;
+}
+
+async function cookIn(root: string, graphFile: string, document: unknown, options: CookOptions): Promise<Cooked> {
   const project = new ProjectRoot(root);
-  const { outputs, durationMs } = await cookNode(graphFile, document, options.node, options);
+  const { outputs, durationMs, trace } = await cookNode(graphFile, document, options.node, options);
   const resolve = (relative: string) => project.resolveMedia(relative);
   const ports = await fingerprintOutputs({ projectRoot: root, resolve }, outputs, options.ports);
-  return { root, ports, durationMs, resolve };
+  return { root, ports, durationMs, resolve, ...(trace ? { trace } : {}) };
 }
 
 /** Cook in a fresh copy of the project whose code is exactly `tree`. */
@@ -371,7 +386,7 @@ async function cookInCopy(
   tree: SourceTree,
   graphRelative: string,
   document: unknown,
-  options: { node: string; ports?: readonly string[]; verbose?: boolean },
+  options: CookOptions,
   label: string,
 ): Promise<Cooked> {
   const copy = await fs.mkdtemp(path.join(os.tmpdir(), `cascade-${label.replace(/[^A-Za-z0-9._-]/g, '_')}-`));
@@ -381,7 +396,14 @@ async function cookInCopy(
     const graphFile = path.join(copy, graphRelative);
     await fs.rm(graphFile, { force: true });
     await fs.writeFile(graphFile, `${JSON.stringify(document, null, 2)}\n`);
-    return { ...(await cookIn(await fs.realpath(copy), graphFile, document, options)), dispose };
+    return {
+      ...(await cookIn(await fs.realpath(copy), graphFile, document, {
+        ...options,
+        traceRoot: root,
+        traceGraph: path.join(root, graphRelative),
+      })),
+      dispose,
+    };
   } catch (error) {
     await dispose();
     throw error;
@@ -424,7 +446,8 @@ export function publishedParams(document: any): Record<string, unknown> | undefi
 }
 
 export function graphSeeds(document: any): Record<string, unknown> {
-  const seeds: Record<string, unknown> = {};
+  // Every node's `context.seed` is derived from this and its own id.
+  const seeds: Record<string, unknown> = { graph: graphSeed(document) };
   for (const node of (document.nodes ?? []) as GraphNode[]) {
     for (const [prop, value] of Object.entries(node.props ?? {})) {
       if (/seed/i.test(prop)) seeds[`${node.id}.${prop}`] = value;

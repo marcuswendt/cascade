@@ -198,23 +198,43 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'lock',
-    description: 'Record an approved render as a lock file (cascade lock). Available once the CLI has the lock command.',
-    inputSchema: object({ graph, name: { type: 'string' }, scene: { type: 'string' }, preview: { type: 'string' } }, ['graph', 'name']),
+    description: 'Record a render as a lock (cascade lock): cooks `node`, writes locks/<id>.json with the graph, params, seeds, input hashes, stored code and output fingerprints.',
+    inputSchema: object({
+      graph,
+      node: { type: 'string' },
+      name: { type: 'string' },
+      note: { type: 'string' },
+      scene: { type: 'string' },
+      seed: { type: 'integer' },
+      supersedes: { type: 'string' },
+      preview: { type: 'string' },
+      live: { type: 'boolean' },
+    }, ['graph', 'node', 'name']),
     run: (args, server) => withCommand(server, 'lock', [
-      'lock', server.resolve(args.graph), '--name', args.name,
+      'lock', server.resolve(args.graph), args.node, '--name', args.name,
+      ...(args.note ? ['--note', args.note] : []),
       ...(args.scene ? ['--scene', server.resolve(args.scene)] : []),
+      ...(args.seed !== undefined ? ['--seed', String(args.seed)] : []),
+      ...(args.supersedes ? ['--supersedes', args.supersedes] : []),
       ...(args.preview ? ['--preview', server.resolve(args.preview)] : []),
-    ]),
+      ...(args.live ? ['--live'] : []),
+    ], 60 * 60_000),
   },
   {
     name: 'replay',
-    description: 'Rebuild a locked render from its lock file and optionally verify it (cascade replay). Available once the CLI has the replay command.',
-    inputSchema: object({ lock: { type: 'string' }, out: { type: 'string' }, verify: { type: 'boolean' } }, ['lock']),
+    description: 'Re-render a lock from its stored code and compare fingerprints (cascade replay). `data.status` is match or mismatch; `live` uses the current code.',
+    inputSchema: object({ lock: { type: 'string' }, out: { type: 'string' }, live: { type: 'boolean' } }, ['lock']),
     run: (args, server) => withCommand(server, 'replay', [
-      'replay', server.resolve(args.lock),
+      'replay', String(args.lock).endsWith('.json') ? server.resolve(args.lock) : args.lock, '--project', server.resolve('.'),
       ...(args.out ? ['--out', server.resolve(args.out)] : []),
-      ...(args.verify ? ['--verify'] : []),
+      ...(args.live ? ['--live'] : []),
     ], 60 * 60_000),
+  },
+  {
+    name: 'locks',
+    description: "List the project's locks (cascade locks).",
+    inputSchema: object({}, []),
+    run: (args, server) => withCommand(server, 'locks', ['locks', server.resolve('.')]),
   },
 ];
 
@@ -223,7 +243,7 @@ async function withCommand(server: McpContext, command: string, args: readonly s
   const help = await server.cli(['--help']);
   const text = JSON.stringify(help.data ?? '');
   if (!text.includes(`cascade ${command} `)) {
-    return { ok: false, error: { message: `This Cascade build has no "${command}" command yet; it lands with locks and replay (doc/PRODUCTION_READINESS.md, item 1).` }, warnings: [] };
+    return { ok: false, error: { message: `This Cascade build has no "${command}" command yet; update Cascade.` }, warnings: [] };
   }
   return server.cli(args, timeoutMs);
 }

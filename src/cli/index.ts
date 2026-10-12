@@ -11,7 +11,7 @@ import { runWithJsonEnvelope } from './jsonEnvelope.js';
 const VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version as string;
 
 /** Commands that never start Studio. Anything else is a project or graph to open. */
-const COMMANDS = ['run', 'validate', 'check', 'inspect', 'build', 'export', 'freeze', 'publish', 'scene', 'projects', 'node', 'mcp', 'serve', 'parity'];
+const COMMANDS = ['run', 'validate', 'check', 'inspect', 'build', 'export', 'freeze', 'publish', 'scene', 'projects', 'node', 'mcp', 'serve', 'parity', 'lock', 'locks', 'replay'];
 
 async function main() {
   const args = process.argv.slice(2);
@@ -23,11 +23,11 @@ async function main() {
   }
 
   // `--json` on any command: one `{ ok, data, warnings }` envelope on stdout.
-  // `run --json`, `serve --json` and `parity --json` keep the flag, because it
+  // `run`, `serve`, `parity` and the lock commands keep the flag, because it
   // makes them print their own JSON (a manifest with the run trace and stage
   // cache states, a status, a parity report), which becomes the data.
   if (args.includes('--json')) {
-    const keepFlag = args[0] === 'run' || args[0] === 'serve' || args[0] === 'parity';
+    const keepFlag = ['run', 'serve', 'parity', 'lock', 'locks', 'replay'].includes(args[0] ?? '');
     const commandArgs = keepFlag ? args : args.filter((arg) => arg !== '--json');
     const opensStudio = !COMMANDS.includes(commandArgs[0] ?? '') && !isGraphCommand(commandArgs) &&
       !commandArgs.some((arg) => arg === '--help' || arg === '-h' || arg === '--version');

@@ -2,9 +2,11 @@
  * `cascade lock`, `cascade locks`, `cascade replay` and `cascade lock verify`.
  *
  * Argument parsing and printing only; what each command does lives in
- * `lock.ts`. Every command takes `--json`, which prints one JSON object on
- * stdout and nothing else there (cook logs go to stderr), so an agent reads
- * the result instead of parsing prose.
+ * `lock.ts`. Every command takes `--json`: the result is printed as JSON and
+ * becomes the `data` of the CLI's envelope (`jsonEnvelope.ts`), cook logs go
+ * to stderr, and, as with `parity`, the verdict is in the data (`status`) and
+ * the exit code says only whether the command ran. Without `--json` a replay
+ * that does not match exits 1.
  */
 import path from 'node:path';
 import { createLock, listLocks, readLock, replayLock, type LockFile, type ReplayResult } from './lock.js';
@@ -16,12 +18,13 @@ export const LOCK_HELP = `
 Locks: this exact render, from this code, these parameters and this seed.
 
   cascade lock <graph> <node> --name <name> [--note <text>] [--status approved]
-               [--supersedes <id>] [--scene <scene.json>] [--input <file>]...
+               [--supersedes <id>] [--scene <scene.json>] [--seed <n>] [--input <file>]...
                [--port <output>]... [--preview <image>] [--live] [--json]
       Cook <node> and write locks/<id>.json: the graph, parameters, seeds,
       input hashes, versions, the project's source code (stored in
-      .cascade/objects/) and a fingerprint of every output. Cooks from the
-      stored code in a fresh copy of the project unless --live.
+      .cascade/objects/) and a fingerprint of every output. --seed sets the
+      graph seed for this render. Cooks from the stored code in a fresh copy
+      of the project unless --live.
 
   cascade replay <id | locks/<id>.json> [--out <dir>] [--live] [--keep]
                  [--allow-input-change] [--project <dir>] [--json]
@@ -42,7 +45,8 @@ interface Parsed {
   readonly switches: Set<string>;
 }
 
-const SWITCHES = new Set(['--json', '--live', '--keep', '--allow-input-change', '--verbose', '-v']);
+// `--verify` is accepted and changes nothing: a replay always compares.
+const SWITCHES = new Set(['--json', '--live', '--keep', '--allow-input-change', '--verify', '--verbose', '-v']);
 
 function parse(args: readonly string[]): Parsed {
   const positional: string[] = [];
@@ -77,9 +81,9 @@ export async function runLockCommand(args: readonly string[]): Promise<void> {
     else if (command === 'lock') await lockCommand(parse(rest), json, print);
     else throw new Error(`Unknown lock command: ${command}`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (json) print({ status: 'error', error: message });
-    else console.error(`Error: ${message}`);
+    // Under --json the envelope reports it as `ok: false`.
+    if (json) throw error;
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   } finally {
     console.log = log;
@@ -98,6 +102,7 @@ async function lockCommand(parsed: Parsed, json: boolean, print: (value: unknown
     status: one(parsed, '--status'),
     supersedes: one(parsed, '--supersedes'),
     scene: one(parsed, '--scene'),
+    seed: seedValue(one(parsed, '--seed')),
     inputs: parsed.values.get('--input'),
     ports: parsed.values.get('--port'),
     preview: one(parsed, '--preview'),
@@ -110,6 +115,7 @@ async function lockCommand(parsed: Parsed, json: boolean, print: (value: unknown
   console.log(`  ${Object.keys(lock.inputs).length} inputs, ${Object.keys(lock.seeds).length} seeds, cooked from the ${lock.host.cooked} in ${seconds(lock.output.durationMs)}`);
   for (const [port, fingerprint] of Object.entries(lock.output.ports)) console.log(`  ${port}: ${describePort(fingerprint)}`);
   if (lock.code.skipped?.length) console.log(`  not stored (over 2 MB): ${lock.code.skipped.join(', ')}`);
+  if (lock.output.trace) console.log(`  trace ${lock.output.trace}`);
 }
 
 async function replayCommand(parsed: Parsed, json: boolean, print: (value: unknown) => void): Promise<void> {
@@ -123,8 +129,8 @@ async function replayCommand(parsed: Parsed, json: boolean, print: (value: unkno
     allowInputChange: parsed.switches.has('--allow-input-change'),
     verbose: parsed.switches.has('--verbose'),
   });
-  if (json) print(result);
-  else printReplay(result);
+  if (json) return print(result);
+  printReplay(result);
   if (result.status !== 'match') process.exitCode = 1;
 }
 
@@ -152,8 +158,8 @@ async function verifyCommand(parsed: Parsed, json: boolean, print: (value: unkno
     }
   }
   const failed = results.filter((result) => result.status !== 'match').length;
-  if (json) print({ status: failed ? 'failed' : 'ok', verified: results.length, failed, results });
-  else console.log(`\n${results.length - failed} of ${results.length} locks reproduce${failed ? `; ${failed} do not` : ''}.`);
+  if (json) return print({ status: failed ? 'failed' : 'ok', verified: results.length, failed, results });
+  console.log(`\n${results.length - failed} of ${results.length} locks reproduce${failed ? `; ${failed} do not` : ''}.`);
   if (failed) process.exitCode = 1;
 }
 
@@ -203,6 +209,7 @@ function printReplay(result: ReplayResult): void {
   for (const change of result.inputsChanged) console.log(`  input changed: ${change.path}`);
   for (const warning of result.warnings) console.log(`  note: ${warning}`);
   for (const file of result.files) console.log(`  wrote ${shown(file)}`);
+  if (result.trace) console.log(`  trace ${result.trace}`);
   if (result.kept) console.log(`  replay copy kept at ${result.kept}`);
 }
 
@@ -216,6 +223,13 @@ function describePort(fingerprint: ReplayResult['ports'][string]): string {
 function shown(file: string): string {
   const relative = path.relative(process.cwd(), file);
   return relative.startsWith('..') ? file : relative;
+}
+
+function seedValue(text: string | undefined): number | undefined {
+  if (text === undefined) return undefined;
+  const value = Number(text);
+  if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) throw new Error(`--seed must be an integer from 0 to 4294967295 (got "${text}")`);
+  return value;
 }
 
 function seconds(ms: number): string {

@@ -15,6 +15,8 @@ import sharp from 'sharp';
 import { createLock, graphParams, graphSeeds, publishedParams, listLocks, lockId, readLock, replayLock } from '@/cli/locks/lock';
 import { collectSources, diffTrees, hashSources, materialize, storeSources } from '@/cli/locks/snapshot';
 import { getObject, stableJson } from '@/cli/locks/store';
+import { runLockCommand } from '@/cli/locks/commands';
+import { captureEnvelope } from '@/cli/jsonEnvelope';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -76,7 +78,7 @@ describe('cascade lock', () => {
     const text = fs.readFileSync(written, 'utf8');
     // Opens on what it is, then alphabetical: diffs between locks stay small.
     expect(Object.keys(JSON.parse(text)).slice(0, 4)).toEqual(['format', 'version', 'id', 'name']);
-    expect(lock.seeds).toEqual({ 'stamp.seed': 5 });
+    expect(lock.seeds).toEqual({ graph: 0, 'stamp.seed': 5 });
     expect(lock.params).toEqual({ 'stamp.photo': 'assets/photo.txt', 'stamp.seed': 5 });
     expect(Object.keys(lock.inputs)).toEqual(['assets/photo.txt']);
     expect(lock.graph).toMatchObject({ file: 'piece.cascade', node: 'stamp' });
@@ -96,6 +98,13 @@ describe('cascade lock', () => {
     await expect(createLock({ graph: file, node: 'stamp', name: 'C48 v1', live: true })).rejects.toThrow(/never rewritten/);
     const second = await createLock({ graph: file, node: 'stamp', name: 'C48 v2', supersedes: 'c48-v1', live: true });
     expect(second.lock.supersedes).toBe('c48-v1');
+  }, 60_000);
+
+  it('stores the graph seed it was given with the graph', async () => {
+    const { root, file } = project();
+    const { lock } = await createLock({ graph: file, node: 'stamp', name: 'seeded', seed: 9, live: true });
+    expect(lock.seeds.graph).toBe(9);
+    expect(JSON.parse((await getObject(root, lock.graph.object)).toString()).seed).toBe(9);
   }, 60_000);
 
   it('keeps a preview beside the lock when one is given', async () => {
@@ -121,6 +130,9 @@ describe('cascade replay', () => {
     expect(replayed.status).toBe('match');
     expect(replayed.cooked).toBe('snapshot');
     expect(replayed.codeSinceLock.changed).toEqual(['nodes/Stamp/salt.ts']);
+    // Cooked in a copy that is gone now, traced in the project.
+    expect(replayed.trace).toMatch(/^\.cascade\/runs\/.+-piece\.json$/);
+    expect(fs.existsSync(path.join(root, replayed.trace!))).toBe(true);
 
     // With the project's current code the same graph renders differently, and says where.
     const live = await replayLock(root, lock, { live: true });
@@ -155,6 +167,26 @@ describe('cascade replay', () => {
     expect((await readLock(root, 'a')).lock.id).toBe('a');
     expect((await readLock(os.tmpdir(), path.join(root, 'locks', 'b.json'))).root).toBe(root);
     await expect(readLock(root, 'missing')).rejects.toThrow(/No lock "missing"/);
+  }, 60_000);
+});
+
+describe('--json', () => {
+  it('puts the result in the envelope, with the verdict in the data', async () => {
+    const { root, file } = project();
+    const locked = await captureEnvelope(() => runLockCommand(['lock', file, 'stamp', '--name', 'piece', '--live', '--json']));
+    expect(locked).toMatchObject({ ok: true, data: { status: 'locked', lock: { id: 'piece' } } });
+
+    fs.writeFileSync(path.join(root, 'nodes', 'Stamp', 'salt.ts'), 'export const SALT = 4;\n');
+    const replayed = await captureEnvelope(() => runLockCommand(['replay', 'piece', '--project', root, '--live', '--json']));
+    expect(replayed).toMatchObject({ ok: true, data: { status: 'mismatch', cooked: 'live' } });
+    process.exitCode = 0;
+
+    const listed = await captureEnvelope(() => runLockCommand(['locks', root, '--json']));
+    expect(listed).toMatchObject({ ok: true, data: { locks: [{ id: 'piece', node: 'stamp' }] } });
+
+    const missing = await captureEnvelope(() => runLockCommand(['replay', 'nope', '--project', root, '--json']));
+    expect(missing).toMatchObject({ ok: false, error: { message: expect.stringContaining('No lock "nope"') } });
+    process.exitCode = 0;
   }, 60_000);
 });
 
@@ -204,6 +236,7 @@ describe('what a lock records', () => {
     expect(graphParams(document)).toEqual({ 'ink.expressivity': 0.5, 'ink.mass_seed': 7, 'dots.density': 2, 'dots.seed': 0 });
     expect(publishedParams(document)).toEqual({ expressivity: 0.5, seed: 0 });
     expect(publishedParams({ nodes: [] })).toBeUndefined();
-    expect(graphSeeds(document)).toEqual({ 'ink.mass_seed': 7, 'dots.seed': 0 });
+    expect(graphSeeds(document)).toEqual({ graph: 0, 'ink.mass_seed': 7, 'dots.seed': 0 });
+    expect(graphSeeds({ ...document, seed: 42 }).graph).toBe(42);
   });
 });
