@@ -123,8 +123,8 @@ it, and each has a fix:
   any order. The same hazard outside WGSL is the one that hit cloud-plots:
   PyTorch's `index_add` on MPS adds floats with atomics, and on 12 Oct a
   colliding scatter gave 40 different sums in 40 runs while fixed point gave
-  one. The fix there is the same (`src/cloud_plots/detsplat.py` on cloud-plots'
-  `deterministic-splat` branch, opt-in).
+  one. The fix there is the same (`src/cloud_plots/detsplat.py` in cloud-plots, opt-in per graph with
+  the `deterministic` prop).
 - **Unsynchronised writes.** Two invocations writing one texel or buffer
   element without a barrier or atomic leave whichever lands last.
 - **A different adapter.** Rasterisation rules, `fma` contraction and
