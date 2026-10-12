@@ -2,7 +2,7 @@
 
 Notable changes to Cascade. Newest first.
 
-## Unreleased
+## 0.10.0 — 2026-10-12
 
 ### Added
 
