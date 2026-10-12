@@ -47,6 +47,12 @@ export interface CascadeDocument {
   readonly connections?: readonly CascadeDocumentConnection[];
   /** The shareable editor this graph declares; ignored by the runtime. See `editor.ts`. */
   readonly editor?: EditorDeclaration;
+  /**
+   * The graph seed, an unsigned 32-bit integer; 0 when absent. Each node's
+   * `context.seed` is derived from it and the node id, so changing it
+   * reshuffles every seeded node at once.
+   */
+  readonly seed?: number;
 }
 
 export interface CascadePreset {

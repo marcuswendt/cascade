@@ -565,6 +565,11 @@ export class Node {
   // Graph reference
   protected graph: Graph;
 
+  /** The owning graph's document `seed`, which `context.seed` derives from. */
+  get documentSeed(): number | undefined {
+    return this.graph?.seed;
+  }
+
   // Port tracking for cleanup
   protected portsUsedDuringSetup: Set<string> = new Set();
 

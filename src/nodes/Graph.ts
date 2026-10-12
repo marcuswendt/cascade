@@ -107,6 +107,9 @@ export class Graph {
   private createdAt = new Date().toISOString();
   /** The document's `editor` section (published parameters, outputs, presets), kept verbatim. */
   editor?: import('../../packages/contracts/src/editor.js').EditorDeclaration;
+  /** The document's `seed`, kept so a save does not drop it. Each node's
+   *  `context.seed` derives from it the same way as headless (`nodeSeed`). */
+  seed?: number;
 
   get created(): string { return this.createdAt; }
 
@@ -1412,6 +1415,7 @@ export class Graph {
     // The shareable editor declaration. Studio does not edit it yet, so it is
     // carried through untouched; dropping it on save would unpublish a graph.
     if (this.editor) result.editor = this.editor;
+    if (this.seed !== undefined) result.seed = this.seed;
 
     return result;
   }
@@ -1611,6 +1615,7 @@ export class Graph {
     const version = json.version || '0.1';
     if (typeof json.metadata?.created === 'string') graph.createdAt = json.metadata.created;
     if (json.editor && typeof json.editor === 'object') graph.editor = json.editor as Graph['editor'];
+    if (Number.isInteger(json.seed)) graph.seed = json.seed;
 
     /**
      * The project's name, read whether or not the file carries a `project`

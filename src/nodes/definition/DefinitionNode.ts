@@ -12,6 +12,7 @@ import { packagePathToType, registerNodeClasses, registerNodeMetadata, type Node
 import type { Graph } from '../Graph.js';
 import { Node } from '../Node.js';
 import { isGpuHost } from '../../../packages/runtime/src/gpu.js';
+import { graphSeed, nodeSeed, seededRandom } from '../../../packages/runtime/src/seed.js';
 import { bundleValueProblem, selectBundleFields, type BundleFieldDefinitions } from '../../../packages/contracts/src/bundle.js';
 
 const silentProgress: ProgressReporter = { report: () => {} };
@@ -200,6 +201,7 @@ export function attachDefinition(
       nodeCapabilities = { ...capabilities, gpu: gpuHost.forNode(node.id) };
     }
 
+    const seed = nodeSeed(graphSeed({ seed: node.documentSeed }), node.id);
     const context = {
       nodeId: node.id,
       inputs: inputValues,
@@ -210,6 +212,10 @@ export function attachDefinition(
       // `Node.cookSignal` for what that cost.
       signal: node.cookSignal ?? new AbortController().signal,
       progress: silentProgress,
+      // The same derivation as the headless runtime, so a seeded node draws
+      // the same thing in both hosts.
+      seed,
+      random: seededRandom(seed),
     } as unknown as NodeExecutionContext<NodeDefinition>;
     await execute(context);
   };

@@ -346,6 +346,18 @@ export interface NodeExecutionContext<D extends NodeDefinition> {
   readonly capabilities: DeclaredCapabilities<D>;
   readonly signal: CascadeAbortSignal;
   readonly progress: ProgressReporter;
+  /**
+   * This node's seed, derived from the graph's `seed` and the node id
+   * (`nodeSeed` in `@cascade/runtime`). Every host computes it the same way,
+   * so a seeded node draws the same thing headless and in Studio. Pass it on
+   * to anything random, including a Python stage's args.
+   */
+  readonly seed: number;
+  /**
+   * A stream of floats in [0, 1) seeded with `seed`, starting afresh at every
+   * cook. Use it instead of `Math.random`, which no host can reproduce.
+   */
+  readonly random: () => number;
 }
 export type NodeExecute<D extends NodeDefinition = NodeDefinition> = (
   context: NodeExecutionContext<D>,

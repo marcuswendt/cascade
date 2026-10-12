@@ -7,6 +7,7 @@
  */
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { ProjectRoot } from './project.js';
 
@@ -17,6 +18,31 @@ export interface StageConfig {
   python: string;
   entrypoint: string;
   worker?: string;
+  /** Project-relative files or folders whose `.py` files are the stage code
+   *  (`exec.stages.sources`). Absent: see `StageSources.defaultRoots`. */
+  sources?: string[];
+  /** `exec.stages.cache`: the core result cache, off unless declared. */
+  cache: StageCachePolicy;
+}
+
+/**
+ * Whether Cascade caches a stage's result itself (`exec.stages.cache`).
+ *
+ * Off by default, because a stage may be a query whose answer changes under
+ * an identical call (a plotter's progress, a network read) and only the
+ * project knows which. `true` caches every stage; an object names the ones to
+ * leave out and the arguments that name files a stage WRITES, which are not
+ * inputs and are kept out of the input hashes:
+ *
+ *     "cache": { "exclude": ["plot-status"], "outputs": ["out", "svg_out"] }
+ *
+ * The key is computed and reported either way, so a trace always says which
+ * code and inputs a result came from.
+ */
+export interface StageCachePolicy {
+  readonly enabled: boolean;
+  readonly exclude: readonly string[];
+  readonly outputs: readonly string[];
 }
 
 export interface StageRunOptions {
@@ -37,6 +63,14 @@ export interface StageRunOptions {
    * --verbose` supplies one.
    */
   readonly onOutput?: (stream: 'stdout' | 'stderr', text: string) => void;
+  /**
+   * The Cascade envelope (cache key, cache mode), for a one-shot stage. It
+   * reaches the process as `CASCADE_STAGE_ENVELOPE`, JSON, rather than as an
+   * argument, so a project cache keyed on its args is not changed by it.
+   */
+  readonly cascade?: Readonly<Record<string, unknown>>;
+  /** The stage code hash: keys Python's bytecode cache, see `PythonWorker`. */
+  readonly codeHash?: string | null;
 }
 
 function resolveProjectExecutable(project: ProjectRoot, configuredPath: string): string {
@@ -95,7 +129,38 @@ export function readStageConfig(project: ProjectRoot): StageConfig {
       ? executable
       : resolveProjectExecutable(project, executable);
   }
-  return { python, entrypoint, ...(worker ? { worker } : {}) };
+  const sources = value?.sources;
+  if (sources !== undefined && (!Array.isArray(sources) || sources.some((item) => typeof item !== 'string' || !item))) {
+    throw new Error('cascade.json exec.stages.sources must be a list of project-relative paths');
+  }
+  return {
+    python,
+    entrypoint,
+    ...(worker ? { worker } : {}),
+    ...(sources ? { sources: sources as string[] } : {}),
+    cache: readCachePolicy(value?.cache),
+  };
+}
+
+function readCachePolicy(value: unknown): StageCachePolicy {
+  const strings = (list: unknown, name: string): string[] => {
+    if (list === undefined) return [];
+    if (!Array.isArray(list) || list.some((item) => typeof item !== 'string')) {
+      throw new Error(`cascade.json exec.stages.cache.${name} must be a list of names`);
+    }
+    return list as string[];
+  };
+  if (value === undefined || value === false) return { enabled: false, exclude: [], outputs: [] };
+  if (value === true) return { enabled: true, exclude: [], outputs: [] };
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    return {
+      enabled: record.enabled !== false,
+      exclude: strings(record.exclude, 'exclude'),
+      outputs: strings(record.outputs, 'outputs'),
+    };
+  }
+  throw new Error('cascade.json exec.stages.cache must be true, false or { exclude, outputs }');
 }
 
 /**
@@ -126,7 +191,13 @@ export async function runProjectStage(
         cwd: project.root,
         timeout: options.timeout ?? TIMEOUT_MS,
         maxBuffer: MAX_BUFFER,
-        env: options.env ?? process.env,
+        env: {
+          ...(options.env ?? process.env),
+          ...(options.cascade ? { CASCADE_STAGE_ENVELOPE: JSON.stringify(options.cascade) } : {}),
+          // Python checks a .pyc against the source's size and whole-second
+          // mtime, so a quick same-length edit would run the old bytecode.
+          ...(options.codeHash ? { PYTHONPYCACHEPREFIX: path.join(os.tmpdir(), 'cascade-pycache', options.codeHash) } : {}),
+        },
         signal: options.signal,
       },
       (error, out, err) => {

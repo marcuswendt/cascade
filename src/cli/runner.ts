@@ -1,11 +1,14 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { existsSync } from 'node:fs';
 import { checkProjectGraph, inspectProjectGraph, renderDeterministicProjectFrames, runDeterministicProjectGraph, validateProjectGraph } from './projectRuntime.js';
 import { setEmbeddedCompiler, setProjectModuleCompiler } from '../engine/nodeModuleLoader.js';
 import { compileEmbedded, compileProjectModule } from '../../server/src/compile.js';
 import { ProjectRoot } from '../../server/src/project.js';
-import { runProjectStage } from '../../server/src/stageRunner.js';
-import { installStageBridge } from '../../server/src/runtime/stage.js';
+import { cascadeVersion, formatStageTrace } from '../../server/src/stageCache.js';
+import { graphSeed } from '../../packages/runtime/src/seed.js';
+import { installProjectStages } from './projectStages.js';
+import { RunTrace } from './runTrace.js';
 import { installProjectIo } from './headlessIo.js';
 import { installHeadlessCanvas, MISSING_CANVAS_MESSAGE, type CanvasHost } from './headlessCanvas.js';
 import { parseFrameSpec } from './frames.js';
@@ -59,6 +62,8 @@ export interface RunOptions {
   /** Sequence directory, project-relative. Default `renders/`. */
   out?: string;
   json?: boolean;
+  /** `--seed N`: cook with this graph seed instead of the document's. */
+  seed?: number;
 }
 
 /**
@@ -90,6 +95,7 @@ export async function runGraph(options: RunOptions): Promise<void> {
     const filePath = path.resolve(file);
     const content = await fs.readFile(filePath, 'utf-8');
     graphData = JSON.parse(content);
+    if (options.seed !== undefined) graphData.seed = options.seed;
   } catch (error: any) {
     console.error(`Failed to load graph file: ${error.message}`);
     process.exit(1);
@@ -138,36 +144,36 @@ export async function runGraph(options: RunOptions): Promise<void> {
   let canvasHost: CanvasHost | undefined;
   let canvasError: Error | null = null;
   let project: ProjectRoot | undefined;
+  /**
+   * The run trace: each node's timing and every stage call's cache key and
+   * state, written to `.cascade/runs/` so a headless run can be read after
+   * the fact. `--verbose` prints each stage call as it happens.
+   */
+  const trace = new RunTrace(path.resolve(file), cascadeVersion(), graphSeed(graphData));
+  const observe = (graph: Parameters<RunTrace['attach']>[0]) => trace.attach(graph);
+  const writeTrace = (): string | undefined => {
+    // Beside a graph that is really on disk, never into a directory that
+    // merely contains the path somebody named.
+    if (!project || !existsSync(path.resolve(file))) return undefined;
+    try { return trace.write(project.root); }
+    catch (error) {
+      console.warn(`Could not write the run trace: ${error instanceof Error ? error.message : error}`);
+      return undefined;
+    }
+  };
   try {
     project = new ProjectRoot(path.dirname(path.resolve(file)));
     setProjectModuleCompiler(async (folderName) => (await compileProjectModule(project!, folderName)).code);
     setEmbeddedCompiler(async (code) => (await compileEmbedded(project!, code)).code);
     // A node importing `cascade/stage` posts to the server in the page and
     // calls this in a headless run, so one Python-backed node renders either way.
-    disposeStageBridge = installStageBridge((stage, args, options) => runProjectStage(project!, stage, args, {
-      // A superseded cook kills its subprocess rather than waiting for it.
-      signal: options?.signal,
-      /**
-       * A stage can log, and until now nobody could read it.
-       *
-       * `stderr` was consulted only when a stage failed and `stdout` only for
-       * its last line, so anything a stage printed on a successful run was
-       * dropped — while `runProjectStage`'s own comment says logging on the way
-       * through is supported. The case that exposed it: a diagnostic added to
-       * explain an invisible cache hit, which was itself invisible.
-       *
-       * Behind `--verbose` rather than on by default, because a stage that
-       * prints per mark would bury the render it is part of. Prefixed with the
-       * stage name, because a graph runs several and an unattributed line is
-       * only slightly better than no line.
-       */
-      onOutput: verbose
-        ? (stream, text) => {
-            const write = stream === 'stderr' ? console.warn : console.log;
-            for (const line of text.split('\n')) write(`[${stage}] ${line}`);
-          }
-        : undefined,
-    }));
+    disposeStageBridge = installProjectStages(project, {
+      verbose,
+      onTrace: (stage) => {
+        trace.recordStage(stage);
+        if (verbose) console.log(`[stage] ${formatStageTrace(stage)}`);
+      },
+    });
     // And the same for files: `cascade/io` reads and writes over `/api/media`
     // in the page and against the directory here, so a node that saves an image
     // works under both hosts without knowing which it has.
@@ -222,18 +228,43 @@ export async function runGraph(options: RunOptions): Promise<void> {
       ...(entryNode ? { entryNode } : {}),
       ...(nodes?.length ? { nodes } : {}),
       ...(verbose ? { verbose } : {}),
+      observe,
     });
     if (rendered) {
       releaseHost();
-      if (options.json) process.stdout.write(JSON.stringify({ status: 'completed', graph: path.resolve(file), ...rendered }) + '\n');
+      const tracePath = writeTrace();
+      if (options.json) {
+        process.stdout.write(JSON.stringify({
+          status: 'completed',
+          graph: path.resolve(file),
+          ...rendered,
+          seed: graphSeed(graphData),
+          ...(tracePath ? { trace: tracePath } : {}),
+          stages: trace.stages(),
+        }) + '\n');
+      }
       else console.log(`Rendered ${rendered.frames.length} frames, ${rendered.files.length} files -> ${out ?? 'renders'}/`);
       return;
     }
     if (options.json) throw new Error('--json rendering requires a fully definition-v1 graph');
-  } else if (await runDeterministicProjectGraph(file, graphData, nodes?.[0] ?? entryNode)) {
-    if (verbose) console.log('Graph execution completed');
-    releaseHost();
-    return;
+  } else {
+    const started = performance.now();
+    if (await runDeterministicProjectGraph(file, graphData, nodes?.[0] ?? entryNode, observe)) {
+      if (verbose) console.log('Graph execution completed');
+      releaseHost();
+      const tracePath = writeTrace();
+      if (options.json) {
+        process.stdout.write(JSON.stringify({
+          status: 'completed',
+          graph: path.resolve(file),
+          durationMs: performance.now() - started,
+          seed: graphSeed(graphData),
+          ...(tracePath ? { trace: tracePath } : {}),
+          stages: trace.stages(),
+        }) + '\n');
+      }
+      return;
+    }
   }
   } catch (error) {
     releaseHost();

@@ -47,7 +47,7 @@ interface PreparedGraph {
  * the first run. A validator that constructs a different host from the runner
  * is not validating the run.
  */
-function createProjectHost(file: string, registrations: DefinitionNodeRegistration[]): RuntimeHost {
+export function createProjectHost(file: string, registrations: DefinitionNodeRegistration[]): RuntimeHost {
   const project = new ProjectRoot(path.dirname(path.resolve(file)));
   return createNodeRuntimeHost({
     modules: resolver(registrations),
@@ -285,10 +285,14 @@ export async function checkProjectGraph(
   return unresolved;
 }
 
+/** Lets a caller follow a loaded graph's events, e.g. to write a run trace. */
+export type GraphObserver = (graph: LoadedCascadeGraph) => (() => void) | void;
+
 export async function runDeterministicProjectGraph(
   file: string,
   document: any,
   entryNode?: string,
+  observe?: GraphObserver,
 ): Promise<boolean> {
   const prepared = await prepare(file, document, true);
   reportUnresolved(prepared);
@@ -302,6 +306,7 @@ export async function runDeterministicProjectGraph(
   let graph: LoadedCascadeGraph | undefined;
   try {
     graph = await runtime.load(document);
+    observe?.(graph);
     // The run path warns too, and it has to: `assertPreflight` throws only on
     // what stops a run, so a stray-`params` graph cooks on its defaults, and a
     // warning printed by `check` and not by `run` is a warning nobody reads.
@@ -337,6 +342,7 @@ export async function cookProjectGraph(
   file: string,
   document: any,
   target?: string,
+  observe?: GraphObserver,
 ): Promise<{ outputs: Map<string, ReadonlyMap<string, unknown>>; assets?: { read(ref: any, options: any): Promise<Uint8Array> } }> {
   const prepared = await prepare(file, document, true);
   reportUnresolved(prepared);
@@ -346,6 +352,7 @@ export async function cookProjectGraph(
   const runtime = createRuntime({ host, nodes: prepared.registrations });
   try {
     const graph = await runtime.load(document);
+    observe?.(graph);
     const result = await graph.run(target ? { target: { kind: 'node', nodeId: target } } : {});
     if (result.status !== 'completed')
       throw new Error(result.diagnostics.map((item) => item.message).join('\n') || `Graph ${result.status}`);
@@ -371,6 +378,7 @@ export interface DeterministicFrameRenderOptions {
   nodes?: readonly string[];
   verbose?: boolean;
   signal?: { readonly aborted: boolean };
+  observe?: GraphObserver;
 }
 
 export interface DeterministicFrameRenderResult {
@@ -426,6 +434,7 @@ export async function renderDeterministicProjectFrames(
 
   try {
     graph = await runtime.load(document);
+    options.observe?.(graph);
     reportPreflightWarnings(host, classifyPreflight(graph.preflight()).warnings);
     /** `--node`, repeatable. `entryNode` is the older single-valued spelling. */
     const targets = options.nodes?.length

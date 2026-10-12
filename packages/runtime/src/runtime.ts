@@ -32,6 +32,7 @@ import {
 import type { PropBinding } from "./params/index.js";
 import { DEFAULT_FPS, MIN_FRAME } from "./expressions/time.js";
 import { isGpuHost } from "./gpu.js";
+import { DEFAULT_GRAPH_SEED, graphSeed, nodeSeed, seededRandom } from "./seed.js";
 import type {
   CascadeDocument,
   CascadeDocumentConnection,
@@ -295,6 +296,7 @@ class Runtime implements CascadeRuntime {
       connections,
       () => this.graphs.delete(graph),
       document.annotations,
+      graphSeed(document),
     );
     this.graphs.add(graph);
     return graph;
@@ -347,6 +349,8 @@ class Graph implements LoadedCascadeGraph {
     private readonly connections: readonly RuntimeConnection[],
     private readonly onDispose: () => void,
     annotations: CascadeDocument["annotations"] = [],
+    /** The document's seed; each node's `context.seed` derives from it. */
+    private readonly seed: number = DEFAULT_GRAPH_SEED,
   ) {
     this.byId = new Map(nodes.map((node) => [node.id, node]));
     const byInput = new Map<string, RuntimeConnection[]>();
@@ -1055,6 +1059,7 @@ class Graph implements LoadedCascadeGraph {
       }) =>
         this.emit({ type: "node:progress", runId, nodeId: node.id, ...event }),
     };
+    const seed = nodeSeed(this.seed, node.id);
     await node.execute({
       nodeId: node.id,
       inputs,
@@ -1063,6 +1068,9 @@ class Graph implements LoadedCascadeGraph {
       capabilities,
       signal,
       progress,
+      seed,
+      // Fresh per cook: a node that draws N numbers draws the same N each time.
+      random: seededRandom(seed),
     } as never);
     if (signal.aborted) return;
     if (node.definition.container === "feedback") {

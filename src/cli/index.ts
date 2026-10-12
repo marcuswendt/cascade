@@ -11,7 +11,7 @@ import { runWithJsonEnvelope } from './jsonEnvelope.js';
 const VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version as string;
 
 /** Commands that never start Studio. Anything else is a project or graph to open. */
-const COMMANDS = ['run', 'validate', 'check', 'inspect', 'build', 'export', 'freeze', 'publish', 'scene', 'projects', 'node', 'mcp', 'serve'];
+const COMMANDS = ['run', 'validate', 'check', 'inspect', 'build', 'export', 'freeze', 'publish', 'scene', 'projects', 'node', 'mcp', 'serve', 'parity'];
 
 async function main() {
   const args = process.argv.slice(2);
@@ -23,10 +23,11 @@ async function main() {
   }
 
   // `--json` on any command: one `{ ok, data, warnings }` envelope on stdout.
-  // `run --frames --json` and `serve --json` keep the flag, because it makes
-  // them print their own JSON (a manifest, a status), which becomes the data.
+  // `run --json`, `serve --json` and `parity --json` keep the flag, because it
+  // makes them print their own JSON (a manifest with the run trace and stage
+  // cache states, a status, a parity report), which becomes the data.
   if (args.includes('--json')) {
-    const keepFlag = (args[0] === 'run' && args.includes('--frames')) || args[0] === 'serve';
+    const keepFlag = args[0] === 'run' || args[0] === 'serve' || args[0] === 'parity';
     const commandArgs = keepFlag ? args : args.filter((arg) => arg !== '--json');
     const opensStudio = !COMMANDS.includes(commandArgs[0] ?? '') && !isGraphCommand(commandArgs) &&
       !commandArgs.some((arg) => arg === '--help' || arg === '-h' || arg === '--version');
@@ -93,6 +94,18 @@ async function dispatch(args: string[]) {
     return;
   }
 
+  // `cascade parity`: cook headless twice and through the Studio path, compare.
+  if (args[0] === 'parity' && !args.includes('--help') && !args.includes('-h')) {
+    const { runParityCommand } = await import('./parity.js');
+    try {
+      process.exitCode = await runParityCommand(args.slice(1));
+    } catch (error) {
+      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 2;
+    }
+    return;
+  }
+
   // Project/Studio commands share the root executable. The server entry is
   // bundled into the published CLI, so installed projects never depend on the
   // private server package or workspace links.
@@ -130,6 +143,7 @@ Usage:
   cascade scene <graph-file> <scene.json> --out <new-graph-file>
   cascade mcp [project-directory]
 ${GRAPH_COMMANDS_HELP}
+  cascade parity <graph-file> [--node <id>] [--seed N] [--tolerance N] [--no-studio]
 Commands:
   new       Create a Cascade project
   node      Create a deterministic custom node
@@ -145,6 +159,7 @@ Commands:
   freeze    Snapshot chosen fields of a live data source for export
   scene     Apply a scene file to a copy of the graph
   mcp       Serve these commands as MCP tools over stdio (doc/MCP.md)
+  parity    Cook headless twice and through Studio's path; report per-node differences
 
 Options:
   --host <address>         Bind Studio to an address or hostname
@@ -160,6 +175,7 @@ Options:
   --fps <number>     Frame rate to evaluate the range at
   --out <dir>        Sequence directory, project-relative (default: renders)
   --json             Print one { ok, data, warnings } envelope (any command)
+  --seed <n>         Cook with this graph seed instead of the document's
   --timeout <ms>     Bound a run in a supervised child process (exit 124 on timeout)
   --validate-only   Validate only (same as 'validate' command)
   --strict          Fail when a node names a module with no file (default: warn)
@@ -181,6 +197,10 @@ Examples:
 
 A frame sequence is written as <out>/<node id>.<frame>.<ext> — one file per
 image output nothing downstream consumes, or per output of --entry-node.
+
+Every run writes a trace to .cascade/runs/: each node's time and every Python
+stage call with its cache key and state (hit, miss, off). --verbose prints the
+stage lines as they happen.
 `);
     process.exit(0);
   }
@@ -224,6 +244,7 @@ image output nothing downstream consumes, or per output of --entry-node.
     fps?: number;
     out?: string;
     json?: boolean;
+    seed?: number;
   } = {
     file: fileArg,
     validateOnly: command === 'validate',
@@ -280,7 +301,15 @@ image output nothing downstream consumes, or per output of --entry-node.
   const out = valueOf('--out');
   if (out) options.out = out;
 
-  if (args.includes('--json') && command === 'run' && options.frames) options.json = true;
+  if (args.includes('--json') && command === 'run') options.json = true;
+  const seed = valueOf('--seed');
+  if (seed !== undefined) {
+    const value = Number(seed);
+    if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
+      throw new Error(`--seed must be an integer from 0 to 4294967295 (got "${seed}")`);
+    }
+    options.seed = value;
+  }
   const timeout = valueOf('--timeout');
   if (timeout !== undefined) {
     const ms = Number(timeout);

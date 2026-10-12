@@ -82,7 +82,7 @@ export function createProject(projectsRoot: string, name: string): string {
     },
     include: ['nodes/**/*.ts'],
   });
-  fs.writeFileSync(path.join(directory, '.gitignore'), '.cascade-cache/\nrenders/\nnode_modules/\n');
+  fs.writeFileSync(path.join(directory, '.gitignore'), '.cascade-cache/\n.cascade/cache/\n.cascade/runs/\nrenders/\nnode_modules/\n');
   // Everything an agent needed to discover the hard way. Marcus watched a
   // console-launched Claude spend twenty tool calls working out the document
   // format, the connection shape, and whether an oscillator node existed —

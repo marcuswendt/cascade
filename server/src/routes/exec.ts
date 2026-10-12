@@ -6,6 +6,7 @@ import { allowsSensitiveCapabilities, createBrowserCapabilityBoundary, type Serv
 import { CredentialStore } from '../credentials.js';
 import { readProjectManifest } from '../projectConfig.js';
 import { readStageConfig, runProjectStage } from '../stageRunner.js';
+import { callStage, formatStageTrace, stageSources, type StageTrace } from '../stageCache.js';
 
 const EXEC_TIMEOUT_MS = 120_000;
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -33,20 +34,28 @@ export function createExecRouter(project: ProjectRoot, security: ServerSecurityO
       const credentialEnv = new CredentialStore().environment(readProjectManifest(project.root).credentials);
       if (request.kind === 'stage') {
         const config = readStageConfig(project);
+        const env = { ...process.env, ...credentialEnv };
+        // Every call is logged with its cache state and key, hit or miss, so a
+        // result served from a cache is visible in the server log rather than
+        // indistinguishable from a fresh one.
+        const onTrace = (trace: StageTrace) => console.log(`[stage] ${formatStageTrace(trace)}`);
         if (config.worker) {
-          const key = `${config.python}\0${config.worker}\0${JSON.stringify(credentialEnv)}`;
+          const sources = stageSources(project, config);
+          const key = `${config.python}\0${config.worker}\0${sources.roots.join('\0')}\0${JSON.stringify(credentialEnv)}`;
           if (workerSlot?.key !== key) {
             workerSlot?.worker.shutdown();
-            workerSlot = { key, worker: new PythonWorker(project, config.worker, config.python, { ...process.env, ...credentialEnv }) };
+            workerSlot = { key, worker: new PythonWorker(project, config.worker, config.python, env, { sources }) };
           }
+          const worker = workerSlot.worker;
           // The page aborting its fetch is how Studio withdraws a superseded
           // stage: the worker drops it if queued and interrupts it if running,
           // so the next edit does not wait behind work nobody will look at.
           const workerAbort = new AbortController();
           res.once('close', () => { if (!res.writableEnded) workerAbort.abort(); });
           try {
-            const result = await workerSlot.worker.call(request.stage, request.args, { signal: workerAbort.signal });
-            res.json({ ok: true, stdout: JSON.stringify(result), stderr: '' });
+            const { result, trace } = await callStage(project, config, request.stage, request.args, (envelope) =>
+              worker.callWithMeta(request.stage, request.args, { signal: workerAbort.signal, cascade: envelope }), { env, onTrace });
+            res.json({ ok: true, stdout: JSON.stringify(result), stderr: '', trace });
           } catch (error) {
             if (res.destroyed || res.writableEnded) return;
             const message = error instanceof Error ? error.message : String(error);
@@ -58,12 +67,16 @@ export function createExecRouter(project: ProjectRoot, security: ServerSecurityO
         const controller = new AbortController();
         res.once('close', () => { if (!res.writableEnded) controller.abort(); });
         try {
-          const result = await runProjectStage(project, request.stage, request.args, {
-            env: { ...process.env, ...credentialEnv },
-            timeout: EXEC_TIMEOUT_MS,
-            signal: controller.signal,
-          });
-          res.json({ ok: true, stdout: JSON.stringify(result), stderr: '' });
+          const { result, trace } = await callStage(project, config, request.stage, request.args, async (envelope) => ({
+            result: await runProjectStage(project, request.stage, request.args, {
+              env,
+              timeout: EXEC_TIMEOUT_MS,
+              signal: controller.signal,
+              cascade: envelope,
+              codeHash: envelope.code,
+            }),
+          }), { env, onTrace });
+          res.json({ ok: true, stdout: JSON.stringify(result), stderr: '', trace });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           res.status(500).json({ ok: false, error: message, stdout: '', stderr: message });

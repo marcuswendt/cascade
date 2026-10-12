@@ -20,10 +20,25 @@
  * which is kill-and-respawn by default without a protocol change. A worker
  * that has not answered within `cancelGraceMs` is killed outright, so a stage
  * stuck in native code cannot hold the queue.
+ *
+ * **Following the code.** A warm worker keeps the modules it imported, so until
+ * 12 Oct an edited stage went on running its old code in a live Studio until
+ * somebody killed the process. Given `sources`, the worker fingerprints the
+ * project's stage files when it starts and again before each request is sent;
+ * when the fingerprint differs it restarts first, between requests, so nothing
+ * in flight is lost. A file hash, not a file-system watch: it costs a directory
+ * walk per request and cannot miss an event.
+ *
+ * **The envelope.** A request may carry a `cascade` object beside `args` (the
+ * core cache key, the seed). It is outside `args` on purpose, so a project
+ * cache that keys on its args is not changed by it.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import os from 'node:os';
+import path from 'node:path';
 import readline from 'readline';
 import type { ProjectRoot } from './project.js';
+import type { StageSources } from './stageSources.js';
 
 const REQUEST_TIMEOUT_MS = 120_000;
 const CANCEL_GRACE_MS = 3_000;
@@ -38,11 +53,23 @@ export class StageCancelledError extends Error {
   }
 }
 
+/** What a worker answered, with what the core knows about the code that ran. */
+export interface WorkerAnswer {
+  readonly result: unknown;
+  /** The code hash of the process that answered, when sources are watched. */
+  readonly codeHash: string | null;
+  /** True when this request was the first after a restart for changed code. */
+  readonly restarted: boolean;
+  /** A project-owned cache's own report, when the worker sends one
+   *  (`"cache": "hit" | "miss"` beside `result`). */
+  readonly projectCache?: string;
+}
+
 interface Request {
   readonly id: number;
   readonly stage: string;
   readonly line: string;
-  resolve: (result: unknown) => void;
+  resolve: (result: WorkerAnswer) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout> | null;
 }
@@ -50,6 +77,14 @@ interface Request {
 export interface PythonWorkerOptions {
   readonly cancelGraceMs?: number;
   readonly requestTimeoutMs?: number;
+  /** The project's stage sources. Given, the worker restarts when they change. */
+  readonly sources?: StageSources;
+}
+
+export interface WorkerCallOptions {
+  readonly signal?: AbortSignal;
+  /** Sent beside `args` as `cascade`, never inside them. */
+  readonly cascade?: Readonly<Record<string, unknown>>;
 }
 
 export interface PythonWorkerStatus {
@@ -58,6 +93,10 @@ export interface PythonWorkerStatus {
   /** `busy` while a stage runs, `idle` when warm and waiting, `stopped` when no process is up. */
   readonly state: 'busy' | 'idle' | 'stopped';
   readonly queued: number;
+  /** The stage code hash the process started with, when sources are watched. */
+  readonly codeHash: string | null;
+  /** Restarts because the stage code changed. */
+  readonly restarts: number;
 }
 
 /** Every worker not yet shut down, so `cascade serve status` can report them
@@ -90,6 +129,13 @@ export class PythonWorker {
    *  discarded whatever it says. */
   private inFlightCancelled = false;
   private killTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly sources: StageSources | null;
+  /** The code hash the running process started with. */
+  private spawnedCodeHash: string | null = null;
+  /** Set by a restart, cleared by the answer that follows it. */
+  private restartPending = false;
+  /** How many times the worker restarted because its code changed. */
+  restarts = 0;
 
   constructor(
     project: ProjectRoot,
@@ -104,6 +150,7 @@ export class PythonWorker {
     this.env = env;
     this.cancelGraceMs = options.cancelGraceMs ?? CANCEL_GRACE_MS;
     this.requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+    this.sources = options.sources ?? null;
     liveWorkers.add(this);
   }
 
@@ -114,7 +161,15 @@ export class PythonWorker {
       pid,
       state: pid === null ? 'stopped' : this.inFlight ? 'busy' : 'idle',
       queued: this.queue.length,
+      codeHash: this.spawnedCodeHash,
+      restarts: this.restarts,
     };
+  }
+
+  /** The code hash the running worker started with; null before the first
+   *  request or when sources are not watched. */
+  get codeHash(): string | null {
+    return this.spawnedCodeHash;
   }
 
   /** The worker's process id, or null when none is running. For tests and
@@ -128,8 +183,9 @@ export class PythonWorker {
     // SIGINT of a cooperative cancel would orphan a healthy warm worker.
     if (this.proc && this.proc.exitCode === null && this.proc.signalCode === null) return this.proc;
 
+    this.spawnedCodeHash = this.sources?.codeHash() ?? null;
     const scriptPath = this.project.resolve(this.entrypoint);
-    const proc = spawn(this.python, [scriptPath], { cwd: this.project.root, env: this.env });
+    const proc = spawn(this.python, [scriptPath], { cwd: this.project.root, env: this.spawnEnv() });
 
     readline.createInterface({ input: proc.stdout }).on('line', (line) => this.handleLine(proc, line));
     proc.stderr.on('data', (chunk) => console.error('[python-worker]', chunk.toString().trimEnd()));
@@ -154,9 +210,24 @@ export class PythonWorker {
     return proc;
   }
 
+  /**
+   * The environment for a new process. With sources watched, Python's bytecode
+   * cache is moved to a folder named by the code hash.
+   *
+   * Without that a restart is not enough: Python validates a `.pyc` by the
+   * source's size and its mtime in whole seconds, so an edit that keeps the
+   * length (`VALUE = 1` to `VALUE = 2`) within the same second is served from
+   * the old bytecode by the fresh process. Found by the respawn test.
+   */
+  private spawnEnv(): NodeJS.ProcessEnv {
+    if (!this.spawnedCodeHash) return this.env;
+    const prefix = path.join(os.tmpdir(), 'cascade-pycache', this.spawnedCodeHash);
+    return { ...this.env, PYTHONPYCACHEPREFIX: prefix };
+  }
+
   private handleLine(proc: ChildProcessWithoutNullStreams, line: string): void {
     if (this.proc !== proc) return;
-    let msg: { id: number; ok: boolean; result?: unknown; error?: string; cancelled?: boolean };
+    let msg: { id: number; ok: boolean; result?: unknown; error?: string; cancelled?: boolean; cache?: unknown };
     try {
       msg = JSON.parse(line);
     } catch {
@@ -170,17 +241,43 @@ export class PythonWorker {
     this.inFlightCancelled = false;
     this.clearKillTimer();
     if (!cancelled) {
-      if (msg.ok) this.settle(current, null, msg.result);
+      const restarted = this.restartPending;
+      this.restartPending = false;
+      if (msg.ok) {
+        this.settle(current, null, {
+          result: msg.result,
+          codeHash: this.spawnedCodeHash,
+          restarted,
+          ...(typeof msg.cache === 'string' ? { projectCache: msg.cache } : {}),
+        });
+      }
       else this.settle(current, new Error(msg.error || 'python worker reported an error'));
     }
     this.pump();
   }
 
-  private settle(request: Request, error: Error | null, result?: unknown): void {
+  private settle(request: Request, error: Error | null, answer?: WorkerAnswer): void {
     if (request.timer) clearTimeout(request.timer);
     request.timer = null;
     if (error) request.reject(error);
-    else request.resolve(result);
+    else request.resolve(answer!);
+  }
+
+  /**
+   * Stop a running worker whose code changed since it started. Only ever
+   * called with nothing in flight, so no request is lost: the exit handler
+   * finds no current request, and the next `ensureStarted` spawns afresh.
+   */
+  private restartIfCodeChanged(): void {
+    if (!this.sources || !this.proc) return;
+    const now = this.sources.codeHash();
+    if (now === this.spawnedCodeHash) return;
+    console.warn(`[python-worker] stage code changed (${this.spawnedCodeHash} -> ${now}), restarting`);
+    const stale = this.proc;
+    this.proc = null;
+    stale.kill();
+    this.restarts += 1;
+    this.restartPending = true;
   }
 
   private clearKillTimer(): void {
@@ -193,22 +290,29 @@ export class PythonWorker {
     if (this.inFlight) return;
     const next = this.queue.shift();
     if (!next) return;
+    this.restartIfCodeChanged();
     const proc = this.ensureStarted();
     this.inFlight = next;
     this.inFlightCancelled = false;
     proc.stdin.write(next.line);
   }
 
-  call(stage: string, args: Record<string, unknown>, options: { signal?: AbortSignal } = {}): Promise<unknown> {
-    const { signal } = options;
+  /** Run a stage and return its result. */
+  async call(stage: string, args: Record<string, unknown>, options: WorkerCallOptions = {}): Promise<unknown> {
+    return (await this.callWithMeta(stage, args, options)).result;
+  }
+
+  /** Run a stage and return its result with the code hash that produced it. */
+  callWithMeta(stage: string, args: Record<string, unknown>, options: WorkerCallOptions = {}): Promise<WorkerAnswer> {
+    const { signal, cascade } = options;
     if (signal?.aborted) return Promise.reject(new StageCancelledError(stage));
     const id = this.nextId++;
-    return new Promise<unknown>((resolve, reject) => {
+    return new Promise<WorkerAnswer>((resolve, reject) => {
       const onAbort = () => this.cancel(id);
       const request: Request = {
         id,
         stage,
-        line: JSON.stringify({ id, stage, args }) + '\n',
+        line: JSON.stringify(cascade ? { id, stage, args, cascade } : { id, stage, args }) + '\n',
         resolve: (r) => { signal?.removeEventListener('abort', onAbort); resolve(r); },
         reject: (e) => { signal?.removeEventListener('abort', onAbort); reject(e); },
         timer: null,
