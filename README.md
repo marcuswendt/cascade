@@ -52,13 +52,17 @@ cascade export index.cascade --out export/site --deploy vercel --project my-edit
 
 In Studio, the `share` toggle beside a parameter in the Inspector publishes it, with a label, group and range. Scenes (`*.scene.json`) open in the editor, in Studio and in the CLI (`cascade scene`, `cascade run --scene`). The editor cooks in a module worker, so a slow stage does not stall the page.
 
+<img src="https://cascade.field.io/img/inspector-share@2x.webp" width="360" alt="The Studio Inspector with share buttons beside each parameter">
+
 The export is an allowlist. It ships the subgraph the outputs need and the assets you name, refuses live sources until you freeze the fields you want, refuses Python, licensed and ignored files, and scans the built site for credentials and local paths. Read [Shareable editors](doc/EDITOR_EXPORT.md) before sharing anything.
 
 **Cloud Type** is the first exported editor: the dotted headline generator for FIELD's Human First book. Try it at [cloud-type.vercel.app](https://cloud-type.vercel.app); the project is at [marcuswendt/cloud-type](https://github.com/marcuswendt/cloud-type).
 
-![Cloud Type, an editor exported from a Cascade graph](https://cascade.field.io/cloud-type.jpg)
+![Cloud Type, an editor exported from a Cascade graph](https://cascade.field.io/img/cloud-type@2x.webp)
 
 Large graphs stay readable when they open as a few stages with the detail in subnets. The cloud-plots print graph has 98 nodes and opens as seven.
+
+![The cloud-plots graph in Studio, seven stage nodes](https://cascade.field.io/img/graph-stages@2x.webp)
 
 0.9.1 also fixes a fresh checkout's build: `npm run build` compiles the workspace packages before vite, so `dist/` is never left without a CLI. See the [changelog](CHANGELOG.md).
 

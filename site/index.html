@@ -84,6 +84,10 @@
   }
   .note > :last-child { margin-bottom: 0; }
   figure { margin: 1.5rem 0; }
+  .versions dt { font-weight: 600; margin-top: 1.25rem; }
+  .versions dt span { font-weight: 400; color: var(--ink-soft); margin-left: 0.5rem; }
+  .versions dd { margin: 0.25rem 0 0; }
+  .versions ul { margin: 0; padding-left: 1.2rem; }
   figure img { display: block; width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 6px; }
   figcaption { color: var(--ink-soft); font-size: 0.9em; margin-top: 0.5rem; }
   ul { margin: 0 0 1rem; padding-left: 1.3rem; }
@@ -101,7 +105,7 @@
   <header>
     <h1>Cascade</h1>
     <p class="tagline">An open-source node-graph runtime with a visual Studio, for building generative design systems that move between print, motion, installations, and the web. Built at FIELD.IO and used for our own work.</p>
-    <p class="release">Current release: 0.9.1. The npm package is still 0.8.0, so <code>cascade export</code> needs a checkout of the repository until 0.9 is published.</p>
+    <p class="release">Current release: 0.9.2. The npm package is still 0.8.0, so <code>cascade export</code> needs a checkout of the repository until 0.9 is published.</p>
   </header>
 
   <h2>What it is</h2>
@@ -164,6 +168,14 @@ cascade my-sketch</pre>
   <p>Studio is dockable: a graph canvas, an inspector, a viewer, a code editor, logs, and panels a project defines itself. Tab adds a node, and the graph is a plain <code>.cascade</code> file you can commit and diff.</p>
   <p>A sketch owns its own nodes as ordinary TypeScript under <code>nodes/&lt;Name&gt;/index.ts</code>, so anything you can write in a file you can wire into a graph. Read the <code>AGENTS.md</code> in your new sketch first — it is short, and written for both you and whatever coding agent you point at the folder.</p>
   <p>Keep a graph readable by giving it a few top-level stages and putting the detail in subnets. The cloud-plots print graph has ninety-odd nodes and opens as seven stages, from the moment and the paper format through to marks, type and output.</p>
+  <figure>
+    <img src="/img/graph-stages.webp" srcset="/img/graph-stages.webp 1x, /img/graph-stages@2x.webp 2x" width="995" height="670" alt="The cloud-plots graph in Studio: seven stage nodes in a diagonal line, each with a short note" loading="lazy">
+    <figcaption>The cloud-plots graph at the top level.</figcaption>
+  </figure>
+  <figure>
+    <img src="/img/subnet-drawing.webp" srcset="/img/subnet-drawing.webp 1x, /img/subnet-drawing@2x.webp 2x" width="650" height="820" alt="Inside the drawing stage: input and output nodes and four groups of nodes for grain layers, hatches, daylight dots and stipple" loading="lazy">
+    <figcaption>The drawing stage opened. Groups keep its four drawing modes apart.</figcaption>
+  </figure>
   <p>Subnets let a network become a reusable operator without changing the document into a second graph format. The 3D Viewer displays geometry, cameras, and scenes as wireframes and points; light data is part of the scene contract, while shaded scene rendering is still future work.</p>
 
   <h2>Animation and simulation</h2>
@@ -187,16 +199,50 @@ cascade my-sketch</pre>
   <pre>cascade publish index.cascade spec.capMm --label "Cap height" --min 3 --max 60 --unit mm
 cascade export index.cascade --plan
 cascade export index.cascade --out export/site --deploy vercel --project my-editor</pre>
-  <p>In Studio, the share toggle beside a parameter in the Inspector publishes it. Scenes are <code>*.scene.json</code> files that open in the editor, in Studio and in the CLI with <code>cascade scene</code>. The editor cooks in a worker, so a slow stage does not stall the page while someone drags a slider.</p>
+  <p>In Studio, the share toggle beside a parameter in the Inspector publishes it. Scenes are <code>*.scene.json</code> files that open in the editor, in Studio and in the CLI with <code>cascade scene</code>. The editor cooks in a worker, so a slow stage does not stall the page while someone drags a slider. It also works on a phone, with the controls in a bottom sheet.</p>
+
+  <figure>
+    <img src="/img/inspector-share.webp" srcset="/img/inspector-share.webp 1x, /img/inspector-share@2x.webp 2x" width="360" height="687" alt="The Studio Inspector for a node, with share buttons beside each parameter and label, group and range fields under the shared ones" loading="lazy">
+    <figcaption>Shared parameters in the Inspector, with their label, group and range.</figcaption>
+  </figure>
   <div class="note">
     <p>The export is an allowlist. Only the nodes your outputs need and the assets you name are shipped. Live sources such as files, Python or a network service are refused until you freeze the fields you want with <code>cascade freeze</code>, and the built site is scanned for credentials and local paths. <code>--plan</code> shows what goes and what stays.</p>
   </div>
+  <p>For Cloud Type, the plan starts like this:</p>
+  <pre>$ cascade export cloud-type.cascade --plan
+Editor Cloud Type (cloud-type, h4704ea9ff9b4d898) from cloud-type.cascade
+
+Nodes shipped (26):
+  spec  project.spec  props: capMm, density, pitchMm, seed, penMm, quality
+  source  cascade.core.Subnet
+  stipple  project.stipple  props: order
+  ...
+
+Not shipped (0): none
+
+Published parameters (78):
+  seed → spec.seed
+  text → type-set.text
+  ...
+
+Outputs:
+  png → png.image (png)
+  plot-svg → plot-svg.svg (svg)
+  preview-svg → preview-svg.svg (svg)
+
+Files:
+  assets/assets/fonts/InterDisplay-Medium.otf  609 KB  asset  from assets/fonts/InterDisplay-Medium.otf
+  assets/assets/fonts/Inter-OFL-LICENSE.txt  4 KB  asset  from assets/fonts/Inter-OFL-LICENSE.txt</pre>
 
   <h3>Cloud Type</h3>
   <p>The first exported editor. It makes the dotted headlines for the Human First book, and "Inspect stages" shows every step of the graph behind it.</p>
   <figure>
-    <a href="https://cloud-type.vercel.app"><img src="/cloud-type.jpg" width="1600" height="1000" alt="The Cloud Type editor: dotted CLOUD OBSERVATORY lettering in the viewer, with input parameters on the right" loading="lazy"></a>
+    <a href="https://cloud-type.vercel.app"><img src="/img/cloud-type.webp" srcset="/img/cloud-type.webp 1x, /img/cloud-type@2x.webp 2x" width="1000" height="625" alt="The Cloud Type editor: dotted CLOUD OBSERVATORY lettering in the viewer, with input parameters on the right" loading="lazy"></a>
     <figcaption><a href="https://cloud-type.vercel.app">cloud-type.vercel.app</a> &middot; <a href="https://github.com/marcuswendt/cloud-type">source</a></figcaption>
+  </figure>
+  <figure>
+    <img src="/img/cloud-type-stages.webp" srcset="/img/cloud-type-stages.webp 1x, /img/cloud-type-stages@2x.webp 2x" width="1000" height="818" alt="Cloud Type with Inspect stages on: a grid of cards, one per stage, showing each stage output from the spec values to the dotted lettering" loading="lazy">
+    <figcaption>Inspect stages shows what each stage of the graph produced.</figcaption>
   </figure>
 
   <h2>Headless rendering for agents</h2>
@@ -230,6 +276,39 @@ cascade --help                all of it</pre>
     <li>GPU output can vary across hardware and drivers. Record adapter information and use image tolerances rather than assuming identical pixels everywhere.</li>
     <li>A project declares the credential names it needs, never their values. Values default to <code>~/.cascade/credentials.yaml</code>, or to the file selected by <code>CASCADE_CREDENTIALS</code>, and are never stored in a graph.</li>
   </ul>
+
+<!-- versions:start -->
+  <h2>Versions</h2>
+  <p>Notable changes, newest first. Every release, in full, is in the <a href="https://github.com/marcuswendt/cascade/blob/main/CHANGELOG.md">changelog</a> and on <a href="https://github.com/marcuswendt/cascade/releases">GitHub releases</a>.</p>
+  <dl class="versions">
+    <dt>0.9.2 <span>12 Oct 2026</span></dt>
+    <dd><ul><li>Exported editors work on phones.</li><li><code>editor.peek</code> and <code>editor.draft</code>. These choose the controls kept in reach at the sheet's lowest point, and the values cooked while a slider is dragged (a lower density, say).</li></ul></dd>
+    <dt>0.9.1 <span>11 Oct 2026</span></dt>
+    <dd><ul><li>Share from the Inspector. Studio's Inspector has a <code>share</code> toggle per parameter that publishes it to the exported editor, with label, group and min/max/step fields.</li><li>The exported editor cooks in a module worker (<code>editor-worker.js</code>), so a slow stage no longer freezes the page while someone drags a slider.</li></ul></dd>
+    <dt>0.9.0 <span>11 Oct 2026</span></dt>
+    <dd><ul><li>Shareable editors. <code>cascade export &lt;graph&gt; --out &lt;dir&gt;</code> builds a static editor site from a graph's new <code>editor</code> section.</li><li>Bundle ports. A node can export one <code>bundle</code> port carrying named fields instead of a dozen loose outputs.</li><li>Node previews on the canvas.</li><li>Groups own their contents. A group frame keeps an explicit <code>containedElements</code> list, separate from subnet parenting.</li></ul></dd>
+    <dt>0.8.0 <span>10 Oct 2026</span></dt>
+    <dd><ul><li>Number fields scrub. Middle-drag any numeric field (vector components, ints, a scalar's number box, colour channels) to drag its value, Houdini style.</li><li>Drag a node onto a Viewer to pin it there.</li><li>The graph stays calm until you select.</li><li>Dragging a parameter's name into the agent console is now Option-drag, because a plain drag on the name scrubs.</li></ul></dd>
+    <dt>0.7.1 <span>12 Sept 2026</span></dt>
+    <dd><ul><li>File › Open lists the graphs on the machine running the server.</li><li><code>cascade run --node &lt;id&gt;</code> renders only the outputs you name.</li></ul></dd>
+    <dt>0.7.0 <span>12 Sept 2026</span></dt>
+    <dd><ul><li>One execution path. <code>cascade run</code> no longer falls back to a second, dynamic executor.</li><li>A <code>files</code> capability for the CLI, so headless runs can read and write project files.</li><li>A stage's log output now reaches whoever is running it.</li><li><code>cascade.geo.FromRects</code> turns rectangles into geometry.</li></ul></dd>
+    <dt>0.6.0 <span>10 Sept 2026</span></dt>
+    <dd><ul><li><code>cascade.math.*</code>: arithmetic as nodes.</li><li>Connections can be made backwards.</li></ul></dd>
+    <dt>0.5.2 <span>10 Sept 2026</span></dt>
+    <dd><ul><li>The load warm-up no longer reports false errors.</li></ul></dd>
+    <dt>0.5.1 <span>9 Sept 2026</span></dt>
+    <dd><ul><li>Ready for npm, with the README and this site rewritten for the browser player.</li></ul></dd>
+    <dt>0.5.0 <span>9 Sept 2026</span></dt>
+    <dd><ul><li>The browser player. <code>cascade build</code> exports a graph as a static page with an iframe embed, no Studio server needed.</li><li>Each embed runs on its own, so several sketches can share a page.</li><li>Particle simulations render the same warm or cold, and nested Feedback loops run in the right order.</li></ul></dd>
+    <dt>0.4.0 <span>9 Sept 2026</span></dt>
+    <dd><ul><li>A camera node that works like Houdini's, and scenes with lights.</li><li>Series: one graph cooked once per parameter set.</li><li>Headless WebGPU through Dawn, for renders without a browser.</li><li>Studio can call allowlisted shell commands.</li></ul></dd>
+    <dt>0.3.1</dt>
+    <dd><ul><li>A <code>gpu</code> capability, stage one of WebGPU support.</li><li>A stored value equal to its default is no longer dropped on save.</li><li>A browser-only node is refused on the run path again.</li><li><code>cascade run</code> reports stranded <code>params</code> values.</li></ul></dd>
+    <dt>0.3.0</dt>
+    <dd><ul><li>Animation: a timeline with a dope sheet, keyframes and expressions on any parameter.</li><li>Offline rendering. <code>cascade run --frames 1-100</code> writes an image sequence.</li><li>A coding agent per sketch, working in the project folder.</li></ul></dd>
+  </dl>
+<!-- versions:end -->
 
   <h2>Going deeper</h2>
   <ul>

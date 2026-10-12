@@ -1,0 +1,31 @@
+{
+  "0.7.1": [
+    "File › Open lists the graphs on the machine running the server.",
+    "`cascade run --node <id>` renders only the outputs you name."
+  ],
+  "0.7.0": [
+    "One execution path. `cascade run` no longer falls back to a second, dynamic executor.",
+    "A `files` capability for the CLI, so headless runs can read and write project files.",
+    "A stage's log output now reaches whoever is running it.",
+    "`cascade.geo.FromRects` turns rectangles into geometry."
+  ],
+  "0.5.1": [
+    "Ready for npm, with the README and this site rewritten for the browser player."
+  ],
+  "0.5.0": [
+    "The browser player. `cascade build` exports a graph as a static page with an iframe embed, no Studio server needed.",
+    "Each embed runs on its own, so several sketches can share a page.",
+    "Particle simulations render the same warm or cold, and nested Feedback loops run in the right order."
+  ],
+  "0.4.0": [
+    "A camera node that works like Houdini's, and scenes with lights.",
+    "Series: one graph cooked once per parameter set.",
+    "Headless WebGPU through Dawn, for renders without a browser.",
+    "Studio can call allowlisted shell commands."
+  ],
+  "0.3.0": [
+    "Animation: a timeline with a dope sheet, keyframes and expressions on any parameter.",
+    "Offline rendering. `cascade run --frames 1-100` writes an image sequence.",
+    "A coding agent per sketch, working in the project folder."
+  ]
+}

@@ -143,7 +143,9 @@
     "test:coverage": "vitest run --coverage",
     "test:package": "node scripts/smoke-package.mjs",
     "test:player": "node scripts/smoke-player.mjs",
-    "build:node-reference": "tsx scripts/build-node-reference.mjs"
+    "build:node-reference": "tsx scripts/build-node-reference.mjs",
+    "site:versions": "node site/build-versions.mjs",
+    "site:deploy": "node site/build-versions.mjs && vercel deploy --prod --yes --cwd site"
   },
   "dependencies": {
     "esbuild": "^0.28.2",
