@@ -2,7 +2,16 @@
 
 Notable changes to Cascade. Newest first.
 
-## Unreleased
+## 0.10.1 — 2026-10-12
+
+### Fixed
+
+- **A phone never scales the editor page.** The viewport is fixed at the
+  device width (`maximum-scale=1`). iOS ignores `user-scalable=no`, so the shell
+  also blocks Safari's gesture events and two-finger moves outside the preview,
+  and sets `touch-action: manipulation` on controls so a double-tap on a button
+  does not zoom. Pinching the preview still zooms the preview. The page clips
+  any horizontal overflow, and the header truncates within the screen width.
 
 ### Added
 

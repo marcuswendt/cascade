@@ -84,6 +84,11 @@ export function notch(value: number, min: number, max: number): number {
   return max > min ? Math.round(((value - min) / (max - min)) * 10) : 0;
 }
 
+/** Capture a pointer where the platform allows it; a pointer it does not know is not an error. */
+function capture(element: HTMLElement, pointerId: number): void {
+  try { element.setPointerCapture?.(pointerId); } catch { /* not an active pointer */ }
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -119,7 +124,7 @@ export function attachZoom(surface: HTMLElement, layer: HTMLElement, enabled: ()
   };
   surface.addEventListener('pointerdown', (event) => {
     if (!enabled()) return;
-    surface.setPointerCapture?.(event.pointerId);
+    capture(surface, event.pointerId);
     pointers.set(event.pointerId, local(event));
     moved = false;
     begin();
@@ -171,7 +176,7 @@ export function attachSheet(grip: HTMLElement, options: {
   grip.addEventListener('pointerdown', (event) => {
     if (!options.enabled()) return;
     if ((event.target as HTMLElement | null)?.closest?.('input,select,textarea,button')) return;
-    grip.setPointerCapture?.(event.pointerId);
+    capture(grip, event.pointerId);
     drag = { id: event.pointerId, y: event.clientY, height: options.height(), time: performance.now(), velocity: 0, last: event.clientY, moved: false };
   });
   grip.addEventListener('pointermove', (event) => {

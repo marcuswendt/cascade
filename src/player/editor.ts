@@ -123,8 +123,11 @@ button.primary{background:var(--accent);color:var(--bg);border-color:var(--accen
 
 /* Phones (.m, set from a media query): the preview on top, controls in a bottom sheet, one-row header. */
 .ce-grip,.ce-more,.ce-menu,.ce-busy,.ce-step,.ce-toast{display:none}
-.ce.m{overflow:hidden;padding:0 env(safe-area-inset-right) 0 env(safe-area-inset-left)}
-.ce.m .ce-bar{flex-wrap:nowrap;gap:4px;min-height:52px;padding:calc(4px + env(safe-area-inset-top)) 4px 4px 16px}
+html.ce-phone,html.ce-phone body{overflow-x:hidden;max-width:100%;overscroll-behavior:none;touch-action:pan-x pan-y}
+.ce.m{overflow:hidden;max-width:100vw;padding:0 env(safe-area-inset-right) 0 env(safe-area-inset-left)}
+.ce.m,.ce.m button,.ce.m select,.ce.m input,.ce.m textarea,.ce.m summary,.ce.m label,.ce.m a{touch-action:manipulation}
+.ce.m .ce-bar>*{min-width:0;max-width:100%}
+.ce.m .ce-bar{flex-wrap:nowrap;overflow:hidden;max-width:100vw;gap:4px;min-height:52px;padding:calc(4px + env(safe-area-inset-top)) 4px 4px 16px}
 .ce.m .ce-bar>*:not(h1):not(.ce-more):not(.ce-busy){display:none}
 .ce.m .ce-bar h1{flex:1;min-width:0;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ce.m .ce-more{display:inline-grid;place-items:center;width:44px;height:44px;padding:0;border:0;background:transparent;font-size:24px;line-height:1;letter-spacing:1px}
@@ -189,6 +192,8 @@ button.primary{background:var(--accent);color:var(--bg);border-color:var(--accen
 
 /** Phone layout: narrow, or a coarse pointer on a short (landscape) screen. */
 const PHONE = '(max-width: 760px), (pointer: coarse) and (max-height: 540px)';
+/** The page is laid out at the device width and never scaled; only the preview zooms. */
+export const VIEWPORT = 'width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1';
 
 /** Start the editor in its own document. Resolves once the first view is drawn. */
 export async function startEditor(options: StartEditorOptions): Promise<EditorController> {
@@ -453,9 +458,14 @@ export class EditorController {
     shell.append(bar, main, menu, toast);
     this.root.replaceChildren(shell);
     // Edge to edge on a phone, so the safe-area insets are real numbers.
-    const viewport = d.querySelector('meta[name="viewport"]');
-    if (viewport && !/viewport-fit/.test(viewport.getAttribute('content') ?? ''))
-      viewport.setAttribute('content', `${viewport.getAttribute('content')},viewport-fit=cover`);
+    // Edge to edge, and never scaled: the preview zooms itself, the page does not.
+    let viewport = d.querySelector('meta[name="viewport"]');
+    if (!viewport) {
+      viewport = d.createElement('meta');
+      viewport.setAttribute('name', 'viewport');
+      d.head.append(viewport);
+    }
+    viewport.setAttribute('content', VIEWPORT);
     // A scene dropped anywhere opens; any other file goes to the file parameter that accepts it.
     viewer.addEventListener('dragover', (event) => event.preventDefault());
     viewer.addEventListener('drop', (event) => {
@@ -1077,6 +1087,15 @@ export class EditorController {
     query?.addEventListener?.('change', update);
     win?.addEventListener('resize', update);
     attachZoom(this.ui.surface, this.ui.output, () => this.mobile);
+    // iOS ignores user-scalable=no, so block page zoom here: Safari's gesture
+    // events and any two-finger move outside the preview, which zooms itself.
+    const d = this.root.ownerDocument;
+    const onPreview = (target: EventTarget | null) => target instanceof Node && this.ui.surface.contains(target);
+    for (const type of ['gesturestart', 'gesturechange', 'gestureend'])
+      d.addEventListener(type, (event) => { if (this.mobile) event.preventDefault(); }, { passive: false });
+    d.addEventListener('touchmove', (event) => {
+      if (this.mobile && event.touches.length > 1 && !onPreview(event.target)) event.preventDefault();
+    }, { passive: false });
     attachSheet(this.ui.head, {
       enabled: () => this.mobile && !this.landscape,
       height: () => this.sheetHeight,
@@ -1094,6 +1113,7 @@ export class EditorController {
     this.mobile = mobile;
     this.landscape = mobile && landscape;
     this.ui.shell.classList.toggle('m', mobile);
+    this.root.ownerDocument.documentElement.classList.toggle('ce-phone', mobile);
     this.ui.shell.classList.toggle('land', this.landscape);
     if (changed) {
       this.placePeek(mobile);

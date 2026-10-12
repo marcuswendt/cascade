@@ -255,6 +255,8 @@ describe('cascade export boundary', () => {
     await exportEditor(path.join(root, 'g.cascade'), { out, log: () => {} });
     expect(fs.readFileSync(path.join(out, 'assets', 'assets', 'fonts', 'DMMono-Regular.woff2'), 'utf8')).toBe('woff2');
     expect(fs.readFileSync(path.join(out, 'index.html'), 'utf8')).toContain('@font-face{font-family:"DM Mono";src:url("./assets/assets/fonts/DMMono-Regular.woff2")');
+    // A phone lays the page out at its width and never scales it; only the preview zooms.
+    expect(fs.readFileSync(path.join(out, 'index.html'), 'utf8')).toContain('content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1"');
     for (const bundle of ['editor.js', 'editor-worker.js']) expect(fs.readFileSync(path.join(out, bundle), 'utf8')).toContain('FontFace');
   }, 60_000);
 
