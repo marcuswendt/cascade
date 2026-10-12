@@ -80,6 +80,14 @@ async function dispatch(args: string[]) {
     return;
   }
 
+  // Locks: `lock`, `lock verify`, `locks` and `replay` (src/cli/locks/).
+  if (['lock', 'locks', 'replay'].includes(args[0] ?? '')) {
+    const { runLockCommand, LOCK_HELP } = await import('./locks/commands.js');
+    if (args.includes('--help') || args.includes('-h')) console.log(LOCK_HELP);
+    else await runLockCommand(args);
+    return;
+  }
+
   // Shareable editors: export, freeze, publish, scene, and `run --scene/--write`.
   const editorCommand = ['export', 'freeze', 'publish', 'scene'].includes(args[0] ?? '') ||
     (args[0] === 'run' && (args.includes('--scene') || args.includes('--write')));
@@ -144,6 +152,11 @@ Usage:
   cascade mcp [project-directory]
 ${GRAPH_COMMANDS_HELP}
   cascade parity <graph-file> [--node <id>] [--seed N] [--tolerance N] [--no-studio]
+  cascade lock <graph-file> <node> --name <name> [--note ...]
+  cascade replay <lock-id> [--out <dir>]
+  cascade lock verify [<lock-id>...]
+  cascade locks
+
 Commands:
   new       Create a Cascade project
   node      Create a deterministic custom node
@@ -160,6 +173,9 @@ Commands:
   scene     Apply a scene file to a copy of the graph
   mcp       Serve these commands as MCP tools over stdio (doc/MCP.md)
   parity    Cook headless twice and through Studio's path; report per-node differences
+  lock      Record a render (graph, params, seeds, inputs, code) in locks/<id>.json
+  replay    Re-render a lock from its stored code and compare fingerprints
+  locks     List the project's locks (cascade lock --help for all options)
 
 Options:
   --host <address>         Bind Studio to an address or hostname
