@@ -21,6 +21,14 @@ Notable changes to Cascade. Newest first.
 - **`cascade parity <graph> [--node] [--tolerance] [--json]`** cooks headless
   twice and through Studio's executor with caches off and reports every node
   output side by side.
+- **Locks and replay.** `cascade lock <graph> <node> --name <name>` records one
+  render in `locks/<id>.json`: the graph as cooked, every prop and seed, input
+  file hashes, the project's source code (stored by hash in
+  `.cascade/objects/`), versions and git state, and a fingerprint of every
+  output. `cascade replay <id>` rebuilds that code in a throwaway copy of the
+  project and compares fingerprints, without a worktree; `--live` uses the
+  current code instead. `cascade lock verify` replays every lock and
+  `cascade locks` lists them. All take `--json`.
 
 - **`cascade serve`.** `start | stop | restart | status | logs | install |
   uninstall [project]` runs Studio as a supervised background service: one
