@@ -43,6 +43,17 @@ export interface EditorDeclaration {
   readonly panel?: EditorPanelDeclaration;
   /** The read-only stage view. On unless the author turns it off. */
   readonly inspect?: boolean;
+  /**
+   * Parameter ids a phone keeps in reach at the bottom sheet's lowest snap
+   * point (the text, a Reroll). Defaults to the first text and seed parameters.
+   */
+  readonly peek?: readonly string[];
+  /**
+   * Values cooked while a slider is being dragged on a phone, for a quicker
+   * preview: a lower density, say. They never enter a scene or an export, and
+   * the real values cook again on release.
+   */
+  readonly draft?: Readonly<Record<string, JsonValue>>;
 }
 
 export type PublishedControl =

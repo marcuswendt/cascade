@@ -215,6 +215,8 @@ export async function prepareExport(file: string): Promise<Prepared> {
     ...(editor.freeze ? { freeze: editor.freeze.filter((item) => selected.has(item.node)).map((item) => ({ node: item.node, output: item.output, snapshot: '' })) } : {}),
     ...(editor.panel ? { panel: { module: '', ...(editor.panel.placement ? { placement: editor.panel.placement } : {}) } } : {}),
     ...(editor.inspect === false ? { inspect: false } : {}),
+    ...(editor.peek ? { peek: editor.peek } : {}),
+    ...(editor.draft ? { draft: editor.draft } : {}),
   };
   const document: CascadeDocument = {
     version: source.version,
@@ -320,7 +322,7 @@ async function buildSite(prepared: Prepared, outOption: string): Promise<string>
   const staging = await fs.mkdtemp(path.join(path.dirname(out), '.cascade-export-'));
   try {
     const title = escapeHtml(document.editor?.title ?? document.editor?.id ?? 'Cascade');
-    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><link rel="icon" href="data:,"><title>${title}</title><style>html,body{margin:0;height:100%;background:#f4f4f2}@media (prefers-color-scheme:dark){html,body{background:#151515}}</style></head><body><script type="module" src="./editor.js"></script></body></html>`;
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><link rel="icon" href="data:,"><title>${title}</title><style>html,body{margin:0;height:100%;background:#f4f4f2}@media (prefers-color-scheme:dark){html,body{background:#151515}}</style></head><body><script type="module" src="./editor.js"></script></body></html>`;
     const files: PlanFile[] = [];
     const write = async (name: string, data: string | Uint8Array, kind: PlanFile['kind'], from: string) => {
       await fs.mkdir(path.dirname(path.join(staging, name)), { recursive: true });

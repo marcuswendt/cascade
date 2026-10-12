@@ -97,6 +97,10 @@ export function validateEditor(document: CascadeDocument): EditorDiagnostic[] {
   for (const preset of editor.presets ?? [])
     for (const key of Object.keys(preset.values ?? {}))
       if (!ids.has(key)) warn("editor/preset-parameter", `Preset ${preset.id} sets unknown parameter ${key}`);
+  for (const id of editor.peek ?? [])
+    if (!ids.has(id)) warn("editor/peek-parameter", `peek names unknown parameter ${id}`);
+  for (const id of Object.keys(editor.draft ?? {}))
+    if (!ids.has(id)) warn("editor/draft-parameter", `draft sets unknown parameter ${id}`);
   for (const frozen of editor.freeze ?? [])
     if (!nodes.has(frozen.node)) error("editor/freeze-node", `Frozen source ${frozen.node} is not in the graph`);
   return out;

@@ -145,6 +145,26 @@ Studio keeps it verbatim when it saves. The types are in
   the project's own compiler. `replace` hides the generated parameters.
 - **Inspect** shows every stage and each of its outputs, read-only: geometry
   drawn, images and SVG shown, and anything else as JSON.
+- **`peek`** lists the parameter ids a phone keeps in reach at the bottom
+  sheet's lowest snap point, such as `["text", "seed"]`. By default these are
+  the first text and seed parameters.
+- **`draft`** sets values that are cooked while someone drags a slider on a
+  phone, such as `{ "density": 0.5 }`. The preview is quicker during the drag,
+  and the real values cook again on release. Draft values never reach a scene
+  or an export.
+
+## On a phone
+
+The same export works on a phone without any extra setup. The preview fills the
+top of the screen. Pinch to zoom, drag to pan, and double-tap to fit. The
+controls sit in a bottom sheet with a handle and three snap points (peek, half
+and full), and the groups start folded. Every control is at least 44 px with
+16 px text, and numbers have − and + steppers. The header shrinks to the title
+and a ⋯ menu, which holds the presets, the scene buttons, Inspect stages, the
+exports and the last cook time. A pulsing dot shows the graph is cooking. Exports and
+saved scenes open the share sheet (Save to Files, Photos, AirDrop) and fall back to a
+download. File controls open the file picker. In landscape, the controls move to a side
+panel. Desktop is unchanged.
 
 ## Scene files
 

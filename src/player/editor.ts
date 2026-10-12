@@ -43,6 +43,7 @@ import {
 } from './app.js';
 import { mediaTypeForName } from './assets.js';
 import { createWorkerEngine, LocalEngine, type EditorEngine } from './editorEngine.js';
+import { attachSheet, attachZoom, notch, shareFile, stepOf, stepValue, tick } from './editorTouch.js';
 
 /** What a project panel receives. Framework-free, so a Svelte `mount` fits it directly. */
 export interface EditorPanelApi {
@@ -82,7 +83,7 @@ const STYLE = `
 :root[data-theme="dark"]{--bg:#151515;--panel:#1d1d1d;--ink:#ececec;--muted:#9a9a9a;--line:#2f2f2f;--accent:#ececec;--field:#232323;--warn:#e0b050;--bad:#ff8a7a}
 *{box-sizing:border-box}html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--ink);font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
-.ce{display:grid;grid-template-rows:auto 1fr;height:100vh}
+.ce{display:grid;grid-template-rows:auto 1fr;height:100vh;height:100dvh}
 .ce-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
 .ce-bar h1{font-size:14px;font-weight:600;margin:0 8px 0 0}
 .ce-bar .sp{flex:1}
@@ -119,8 +120,75 @@ button.primary{background:var(--accent);color:var(--bg);border-color:var(--accen
 .ce-stage img,.ce-stage canvas{width:100%;height:140px;object-fit:contain;background:var(--field);display:block}
 .ce-stage pre{margin:0;max-height:140px;overflow:auto;font-size:11px;background:var(--field);padding:6px}
 .ce-indent{margin-left:12px}
-@media (max-width:760px){.ce-main{grid-template-columns:1fr;grid-template-rows:55vh auto}.ce-side{border-left:0;border-top:1px solid var(--line)}}
+
+/* Phones (.m, set from a media query): the preview on top, controls in a bottom sheet, one-row header. */
+.ce-grip,.ce-more,.ce-menu,.ce-busy,.ce-step,.ce-toast{display:none}
+.ce.m{overflow:hidden;padding:0 env(safe-area-inset-right) 0 env(safe-area-inset-left)}
+.ce.m .ce-bar{flex-wrap:nowrap;gap:4px;min-height:52px;padding:calc(4px + env(safe-area-inset-top)) 4px 4px 16px}
+.ce.m .ce-bar>*:not(h1):not(.ce-more):not(.ce-busy){display:none}
+.ce.m .ce-bar h1{flex:1;min-width:0;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ce.m .ce-more{display:inline-grid;place-items:center;width:44px;height:44px;padding:0;border:0;background:transparent;font-size:24px;line-height:1;letter-spacing:1px}
+.ce.m .ce-busy{display:block;flex:none;width:8px;height:8px;border-radius:50%;background:var(--muted);opacity:0;transition:opacity .2s}
+.ce.m.busy .ce-busy{opacity:1;animation:ce-pulse 1s ease-in-out infinite}
+@keyframes ce-pulse{50%{opacity:.2}}
+.ce.m .ce-main{display:block;position:relative;min-height:0}
+.ce.m .ce-view{position:absolute;inset:0 0 var(--ce-cut,45%) 0;display:block;padding:0;overflow:hidden}
+.ce.m .ce-out{position:absolute;inset:8px 8px 12px;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
+.ce.m .ce-zoom{width:100%;height:100%;display:flex;align-items:center;justify-content:center;transform-origin:0 0}
+.ce.m .ce-zoom>img,.ce.m .ce-zoom>canvas{max-width:100%;max-height:100%;-webkit-user-drag:none}
+.ce.m .ce-inspect{grid-template-columns:1fr;padding:12px;touch-action:pan-y;z-index:1}
+.ce.m .ce-stage img,.ce.m .ce-stage canvas{height:200px}
+.ce.m .ce-side{position:fixed;left:0;right:0;bottom:0;z-index:5;height:var(--ce-sheet,45%);display:flex;flex-direction:column;overflow:hidden;border:0;border-top:1px solid var(--line);border-radius:14px 14px 0 0;box-shadow:0 -4px 24px rgba(0,0,0,.12);padding:0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.ce.m .ce-side.settle{transition:height .24s cubic-bezier(.2,.8,.2,1)}
+.ce.m .ce-head{flex:none;touch-action:none;-webkit-user-select:none;user-select:none}
+.ce.m .ce-head textarea,.ce.m .ce-head input{-webkit-user-select:text;user-select:text}
+.ce.m .ce-grip{display:block;height:24px;cursor:grab}
+.ce.m .ce-grip::before{content:"";display:block;width:40px;height:5px;border-radius:3px;background:var(--line);margin:10px auto 0}
+.ce.m .ce-peek{display:grid;gap:10px;padding:0 16px 12px}
+.ce.m .ce-peek:empty{display:none}
+.ce.m .ce-peek .help{display:none}
+.ce.m .ce-msg{max-height:25vh;overflow:auto;padding:4px 16px 8px}
+.ce.m .ce-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;border-top:1px solid var(--line)}
+.ce.m.land .ce-main{display:grid;grid-template-columns:1fr min(340px,46vw)}
+.ce.m.land .ce-view{position:relative;inset:auto;height:100%}
+.ce.m.land .ce-side{position:static;height:auto;min-height:0;box-shadow:none;border-radius:0;border-left:1px solid var(--line);border-top:0;padding:0 0 env(safe-area-inset-bottom)}
+.ce.m.land .ce-grip{display:none}.ce.m.land .ce-head{touch-action:auto;padding-top:10px}
+.ce.m input,.ce.m select,.ce.m textarea,.ce.m button{font-size:16px}
+.ce.m button,.ce.m select,.ce.m input[type=number],.ce.m input[type=text]{min-height:44px}
+.ce.m button{padding:0 14px;border-radius:8px}
+.ce.m select,.ce.m input[type=number],.ce.m input[type=text],.ce.m textarea{border-radius:8px;padding:6px 10px}
+.ce.m input[type=number]{width:76px}
+.ce.m select{-webkit-appearance:none;appearance:none;height:44px;padding-right:32px;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 19px) 52%,calc(100% - 14px) 52%;background-size:5px 5px;background-repeat:no-repeat}
+.ce.m .ce-step{display:inline-grid;place-items:center;flex:none;width:44px;padding:0;font-size:22px;line-height:1}
+.ce.m .ce-group>summary{display:flex;align-items:center;min-height:48px;font-size:15px}
+.ce.m .ce-group>summary::after{content:"";margin-left:auto;width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:translateY(-2px) rotate(45deg);transition:transform .2s}
+.ce.m .ce-group[open]>summary::after{transform:translateY(2px) rotate(-135deg)}
+.ce.m .ce-group>div{gap:14px;padding-bottom:16px}
+.ce.m .ce-p label,.ce.m .ce-p .lab{font-size:14px;align-items:center}
+.ce.m .ce-row{gap:8px}
+.ce.m input[type=range]{-webkit-appearance:none;appearance:none;height:44px;margin:0;background:transparent;touch-action:pan-y}
+.ce.m input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:var(--line)}
+.ce.m input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:28px;height:28px;margin-top:-12px;border-radius:50%;background:var(--panel);border:1px solid var(--muted);box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.ce.m input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(--line)}
+.ce.m input[type=range]::-moz-range-thumb{width:28px;height:28px;border-radius:50%;background:var(--panel);border:1px solid var(--muted)}
+.ce.m input[type=checkbox]{width:24px;height:24px;margin:0 6px 0 0}
+.ce.m .ce-p>label:has(input[type=checkbox]){min-height:44px}
+.ce.m input[type=color]{width:56px;height:44px;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--field)}
+.ce.m .ce-drop{display:grid;place-items:center;min-height:56px;border-radius:8px}
+.ce.m .ce-menu.on{display:grid;gap:2px;position:fixed;z-index:20;top:calc(52px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right));width:min(280px,calc(100vw - 16px));max-height:calc(100dvh - 72px - env(safe-area-inset-top));overflow:auto;padding:6px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.22)}
+.ce-menu button{width:100%;text-align:left;border:0;background:transparent}
+.ce-menu select{width:100%}
+.ce-menu hr{border:0;border-top:1px solid var(--line);margin:4px 0;width:100%}
+.ce-menu .meta{color:var(--muted);padding:8px 14px;font-size:13px;font-variant-numeric:tabular-nums}
+.ce.m .ce-toast{display:flex;align-items:center;gap:8px;position:fixed;z-index:15;left:50%;bottom:calc(var(--ce-sheet,45%) + 12px);transform:translateX(-50%);max-width:calc(100vw - 32px);padding:8px 8px 8px 16px;border-radius:22px;background:var(--ink);color:var(--bg);font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
+.ce.m.land .ce-toast{bottom:calc(16px + env(safe-area-inset-bottom))}
+.ce.m .ce-toast.on{opacity:1;pointer-events:auto}
+.ce.m .ce-toast button{min-height:36px;color:var(--bg);background:transparent;border-color:var(--bg)}
+.ce.m .ce-toast button[hidden]{display:none}
 `;
+
+/** Phone layout: narrow, or a coarse pointer on a short (landscape) screen. */
+const PHONE = '(max-width: 760px), (pointer: coarse) and (max-height: 540px)';
 
 /** Start the editor in its own document. Resolves once the first view is drawn. */
 export async function startEditor(options: StartEditorOptions): Promise<EditorController> {
@@ -163,6 +231,17 @@ export class EditorController {
   private viewRelease?: () => void;
   private readonly storageKey: string;
   private nodes: Awaited<ReturnType<EditorEngine['nodes']>> = [];
+  /** Phone layout, and whether it is the landscape (side panel) form. */
+  private mobile = false;
+  private landscape = false;
+  private sheetHeight = 0;
+  private snapIndex = 0;
+  private peekSlots = new Map<string, Comment>();
+  private groupsFolded = false;
+  /** The parameter being dragged while draft values cook, and whether they are written. */
+  private drafting?: string;
+  private draftWritten = false;
+  private toastTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly document: CascadeDocument,
@@ -204,6 +283,8 @@ export class EditorController {
     this.renderParameters();
     if (panel) await this.mountPanel(panel);
     this.ui.inspectToggle.hidden = this.editor.inspect === false;
+    this.ui.menuInspect.hidden = this.editor.inspect === false;
+    this.setupTouch();
     await this.cook();
   }
 
@@ -292,23 +373,89 @@ export class EditorController {
     inspectBox.addEventListener('change', () => {
       this.inspecting = inspectBox.checked;
       inspect.classList.toggle('on', this.inspecting);
+      menuInspect.setAttribute('aria-checked', String(this.inspecting));
+      menuInspect.textContent = this.inspecting ? 'Inspect stages \u2713' : 'Inspect stages';
       if (this.inspecting) void this.cook().catch(() => {});
     });
     const status = el(d, 'span', 'ce-status');
-    bar.append(title, presets, open, save, sceneInput, el(d, 'span', 'sp'), inspectToggle, status);
+    const busy = el(d, 'span', 'ce-busy');
+    busy.setAttribute('aria-hidden', 'true');
+    const more = button(d, '\u22ef');
+    more.className = 'ce-more';
+    more.setAttribute('aria-label', 'Menu');
+    more.setAttribute('aria-haspopup', 'menu');
+    bar.append(title, presets, open, save, sceneInput, el(d, 'span', 'sp'), inspectToggle, status, busy, more);
+    // The phone's one menu: what the desktop header shows in a row.
+    const menu = el(d, 'div', 'ce-menu');
+    menu.setAttribute('role', 'menu');
+    const closeMenu = () => { menu.classList.remove('on'); more.setAttribute('aria-expanded', 'false'); };
+    more.addEventListener('click', () => {
+      const on = menu.classList.toggle('on');
+      more.setAttribute('aria-expanded', String(on));
+    });
+    d.addEventListener('pointerdown', (event) => {
+      const target = event.target as Node | null;
+      if (menu.classList.contains('on') && target && !menu.contains(target) && !more.contains(target)) closeMenu();
+    });
+    const menuPresets = presets.cloneNode(true) as HTMLSelectElement;
+    menuPresets.addEventListener('change', () => {
+      const id = menuPresets.value;
+      menuPresets.value = '';
+      closeMenu();
+      if (id) void this.applyPreset(id).catch((error) => this.report(asError(error).message, 'bad'));
+    });
+    const menuItem = (text: string, run: () => void) => {
+      const item = button(d, text);
+      item.setAttribute('role', 'menuitem');
+      item.addEventListener('click', () => { closeMenu(); run(); });
+      return item;
+    };
+    const menuInspect = menuItem('Inspect stages', () => { inspectBox.checked = !inspectBox.checked; inspectBox.dispatchEvent(new Event('change')); });
+    menuInspect.setAttribute('role', 'menuitemcheckbox');
+    menuInspect.setAttribute('aria-checked', 'false');
+    const menuStatus = el(d, 'div', 'meta');
+    menu.append(
+      menuPresets,
+      menuItem('Open scene\u2026', () => sceneInput.click()),
+      menuItem('Save scene', () => void this.saveScene().catch((error) => this.report(asError(error).message, 'bad'))),
+      menuInspect,
+    );
+    if ((this.editor.outputs ?? []).length) menu.append(el(d, 'hr'));
+    for (const output of this.editor.outputs ?? [])
+      menu.append(menuItem(output.label ?? `Export ${output.id}`, () => void this.exportOutput(output).catch((error) => this.report(asError(error).message, 'bad'))));
+    menu.append(el(d, 'hr'), menuStatus);
     const main = el(d, 'div', 'ce-main');
     const viewer = el(d, 'section', 'ce-view');
-    const output = el(d, 'div');
+    const surface = el(d, 'div', 'ce-out');
+    const output = el(d, 'div', 'ce-zoom');
+    surface.append(output);
     const inspect = el(d, 'div', 'ce-inspect');
-    viewer.append(output, inspect);
+    viewer.append(surface, inspect);
     const side = el(d, 'aside', 'ce-side');
+    const head = el(d, 'div', 'ce-head');
+    const grip = el(d, 'div', 'ce-grip');
+    grip.setAttribute('aria-hidden', 'true');
     const messages = el(d, 'div');
+    const peek = el(d, 'div', 'ce-peek');
+    head.append(grip, messages, peek);
+    const body = el(d, 'div', 'ce-body');
     const panelSlot = el(d, 'div');
     const groups = el(d, 'div');
-    side.append(messages, panelSlot, groups);
+    body.append(panelSlot, groups);
+    side.append(head, body);
     main.append(viewer, side);
-    shell.append(bar, main);
+    const toast = el(d, 'div', 'ce-toast');
+    toast.setAttribute('role', 'status');
+    const toastText = el(d, 'span');
+    const toastAction = button(d, '');
+    toastAction.hidden = true;
+    toast.append(toastText, toastAction);
+    shell.append(bar, main, menu, toast);
     this.root.replaceChildren(shell);
+    // Edge to edge on a phone, so the safe-area insets are real numbers.
+    const viewport = d.querySelector('meta[name="viewport"]');
+    if (viewport && !/viewport-fit/.test(viewport.getAttribute('content') ?? ''))
+      viewport.setAttribute('content', `${viewport.getAttribute('content')},viewport-fit=cover`);
     // A scene dropped anywhere opens; any other file goes to the file parameter that accepts it.
     viewer.addEventListener('dragover', (event) => event.preventDefault());
     viewer.addEventListener('drop', (event) => {
@@ -316,7 +463,7 @@ export class EditorController {
       const file = event.dataTransfer?.files?.[0];
       if (file) void this.dropAnywhere(file).catch((error) => this.report(asError(error).message, 'bad'));
     });
-    return { status, output, inspect, inspectToggle, messages, panelSlot, groups };
+    return { shell, status, output, surface, viewer, inspect, inspectToggle, messages, panelSlot, groups, bar, side, head, peek, menuInspect, menuStatus, toast, toastText, toastAction };
   }
 
   private renderParameters(): void {
@@ -387,6 +534,32 @@ export class EditorController {
       if (hasRange) line.append(range);
       line.append(number);
       if (unit) line.append(d.createTextNode(unit));
+      // Phones: a keypad that fits, steppers for the thumb, a tick as a slider crosses each tenth.
+      if (integer && (parameter.min ?? 0) >= 0) number.inputMode = 'numeric';
+      else if ((parameter.min ?? 0) >= 0) number.inputMode = 'decimal';
+      const stepSize = stepOf(parameter.step, parameter.min, parameter.max, integer);
+      if (control !== 'seed') {
+        for (const direction of [-1, 1] as const) {
+          const stepper = button(d, direction < 0 ? '\u2212' : '+');
+          stepper.className = 'ce-step';
+          stepper.setAttribute('aria-label', `${direction < 0 ? 'Decrease' : 'Increase'} ${parameter.label ?? parameter.id}`);
+          stepper.addEventListener('click', () => {
+            const current = Number(this.values[parameter.id] ?? parameter.min ?? 0);
+            const value = stepValue(Number.isFinite(current) ? current : 0, direction, stepSize, parameter.min, parameter.max);
+            number.value = String(value);
+            range.value = String(value);
+            tick();
+            commit(value);
+          });
+          line.append(stepper);
+        }
+      }
+      let lastNotch = Number.NaN;
+      const begin = () => this.beginDraft(parameter.id);
+      const end = () => this.endDraft();
+      range.addEventListener('pointerdown', begin);
+      range.addEventListener('touchstart', begin, { passive: true });
+      for (const type of ['pointerup', 'pointercancel', 'touchend', 'touchcancel', 'change']) range.addEventListener(type, end);
       const parse = (text: string) => {
         const value = Number(text);
         return Number.isFinite(value) ? (integer ? Math.round(value) : value) : undefined;
@@ -395,6 +568,9 @@ export class EditorController {
         const value = parse(range.value);
         if (value === undefined) return;
         number.value = String(value);
+        const step = notch(value, parameter.min ?? 0, parameter.max ?? 1);
+        if (this.mobile && step !== lastNotch && !Number.isNaN(lastNotch)) tick();
+        lastNotch = step;
         commit(value);
       });
       number.addEventListener('change', () => {
@@ -513,7 +689,7 @@ export class EditorController {
         const value = this.values[parameter.id] as { path?: string } | undefined;
         drop.textContent = dropped
           ? `${dropped.name} (stays in this browser)`
-          : `${value?.path ? `Default: ${value.path.split('/').pop()}` : 'None'}. Drop a file or click`;
+          : `${value?.path ? `Default: ${value.path.split('/').pop()}` : 'None'}. ${this.mobile ? 'Tap to choose a file' : 'Drop a file or click'}`;
         clear.hidden = !dropped;
       };
       wrap.append(drop, picker, clear);
@@ -569,6 +745,25 @@ export class EditorController {
     }
   }
 
+  /** A phone starts dragging a slider: cook the declared draft values until it lets go. */
+  private beginDraft(id: string): void {
+    if (!this.mobile || this.drafting || !Object.keys(this.editor.draft ?? {}).length) return;
+    this.drafting = id;
+    this.draftWritten = false;
+  }
+
+  /** The drag ended: put the real values back and cook them. */
+  private endDraft(): void {
+    if (!this.drafting) return;
+    const written = this.draftWritten;
+    this.drafting = undefined;
+    this.draftWritten = false;
+    if (!written) return;
+    for (const id of Object.keys(this.editor.draft ?? {}))
+      if (this.byId.has(id)) this.pending.set(id, this.values[id]);
+    void this.cook().catch(() => {});
+  }
+
   /** Write staged values into the idle graph. Only ever called inside `exclusive`. */
   private async flush(): Promise<void> {
     const writes = [...this.pending].map(([id, value]) => {
@@ -576,6 +771,13 @@ export class EditorController {
       return [parameter.node, parameter.prop, value] as const;
     });
     this.pending.clear();
+    if (this.drafting && !this.draftWritten) {
+      for (const [id, value] of Object.entries(this.editor.draft ?? {})) {
+        const parameter = this.byId.get(id);
+        if (parameter && id !== this.drafting) writes.push([parameter.node, parameter.prop, value]);
+      }
+      this.draftWritten = true;
+    }
     if (writes.length) await this.engine.setProps(writes);
   }
 
@@ -693,8 +895,7 @@ export class EditorController {
     const name = prompt('Scene name', 'scene')?.trim();
     if (!name) return;
     const scene = this.currentScene(name);
-    download(this.root.ownerDocument, `${slug(name)}.scene.json`, new Blob([JSON.stringify(scene, null, 2)], { type: 'application/json' }));
-    this.report(`Saved ${slug(name)}.scene.json`, 'ok');
+    await this.deliver(`${slug(name)}.scene.json`, new Blob([JSON.stringify(scene, null, 2)], { type: 'application/json' }));
   }
 
   private remember(): void {
@@ -710,6 +911,7 @@ export class EditorController {
   private cook(): Promise<void> {
     if (this.queued && this.pendingCook) return this.pendingCook;
     this.queued = true;
+    this.ui.shell.classList.add('busy');
     const run = this.exclusive(async () => {
       this.queued = false;
       const started = performance.now();
@@ -720,10 +922,14 @@ export class EditorController {
         } else if (this.view) await this.runTarget(this.view);
         if (this.view) await this.show(await this.engine.output(this.view.node, this.view.port));
         if (this.inspecting) await this.renderInspect();
-        this.ui.status.textContent = `${Math.round(performance.now() - started)} ms`;
+        const took = Math.round(performance.now() - started);
+        this.ui.status.textContent = `${took} ms`;
+        this.ui.menuStatus.textContent = `Last cook ${took} ms`;
         this.clearReport('bad');
       } catch (error) {
         this.report(asError(error).message, 'bad');
+      } finally {
+        if (!this.queued) this.ui.shell.classList.remove('busy');
       }
     });
     this.pendingCook = run;
@@ -765,7 +971,7 @@ export class EditorController {
     }
     if (isGeometry(value) || isScene(value)) {
       const scene = isScene(value) ? value : sceneFromGeometry(value);
-      const box = this.ui.output.parentElement?.getBoundingClientRect();
+      const box = this.ui.viewer.getBoundingClientRect();
       const dark = d.defaultView?.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
       const ink: [number, number, number, number] = dark ? [0.92, 0.92, 0.92, 1] : [0.11, 0.11, 0.11, 1];
       return { element: renderSceneCanvas(d, scene, width || Math.max(320, Math.round(box?.width ?? 800)), height || Math.max(240, Math.round(box?.height ?? 600)), ink) };
@@ -822,8 +1028,29 @@ export class EditorController {
     const scene = slug(this.editor.id);
     const extension = output.format === 'text' ? 'txt' : output.format;
     const name = (output.filename ?? `{scene}-{id}.${extension}`).split('{id}').join(output.id).split('{scene}').join(scene);
-    download(this.root.ownerDocument, name, blob);
-    this.ui.status.textContent = `Saved ${name}`;
+    await this.deliver(name, blob);
+  }
+
+  /**
+   * Hand a file over: a download on a desktop, the share sheet on a phone (Save
+   * to Files, Photos, AirDrop), falling back to a download. When the cook took
+   * longer than the browser lets a tap count, the toast offers a fresh tap.
+   */
+  private async deliver(name: string, blob: Blob): Promise<void> {
+    const d = this.root.ownerDocument;
+    const save = () => download(d, name, blob);
+    if (!this.mobile) {
+      save();
+      this.report(`Saved ${name}`, 'ok');
+      return;
+    }
+    const result = await shareFile(name, blob, save);
+    if (result === 'needs-tap')
+      this.toast(`${name} is ready`, 'Share', () => void shareFile(name, blob, save).then((again) => {
+        if (again === 'downloaded') this.report(`Saved ${name}`, 'ok');
+      }));
+    else if (result === 'downloaded') this.report(`Saved ${name}`, 'ok');
+    else this.ui.status.textContent = result === 'shared' ? `Shared ${name}` : '';
   }
 
   private async toBlob(value: unknown, output: PublishedOutput): Promise<Blob> {
@@ -841,12 +1068,120 @@ export class EditorController {
     return new Blob([JSON.stringify(value, jsonReplacer, 2)], { type: 'application/json' });
   }
 
+  // ---------------------------------------------------------------- phones
+
+  private setupTouch(): void {
+    const win = this.root.ownerDocument.defaultView;
+    const query = win?.matchMedia?.(PHONE);
+    const update = () => this.applyMode(query?.matches ?? false, (win?.innerWidth ?? 0) > (win?.innerHeight ?? 0));
+    query?.addEventListener?.('change', update);
+    win?.addEventListener('resize', update);
+    attachZoom(this.ui.surface, this.ui.output, () => this.mobile);
+    attachSheet(this.ui.head, {
+      enabled: () => this.mobile && !this.landscape,
+      height: () => this.sheetHeight,
+      snaps: () => this.snaps(),
+      onHeight: (height, settled) => this.setSheet(height, settled),
+    });
+    // The peek grows when a message or a longer text appears: follow it while resting there.
+    if (typeof ResizeObserver !== 'undefined')
+      new ResizeObserver(() => { if (this.mobile && !this.landscape && this.snapIndex === 0) this.setSheet(this.snaps()[0]!, false); }).observe(this.ui.head);
+    update();
+  }
+
+  private applyMode(mobile: boolean, landscape: boolean): void {
+    const changed = mobile !== this.mobile;
+    this.mobile = mobile;
+    this.landscape = mobile && landscape;
+    this.ui.shell.classList.toggle('m', mobile);
+    this.ui.shell.classList.toggle('land', this.landscape);
+    if (changed) {
+      this.placePeek(mobile);
+      // A phone opens with the groups folded, so the sheet reads as a list of sections.
+      if (mobile && !this.groupsFolded) {
+        this.groupsFolded = true;
+        for (const details of this.ui.groups.querySelectorAll('details')) details.open = false;
+      }
+      for (const row of this.rows.values()) row.refresh();
+    }
+    if (mobile && !this.landscape) this.setSheet(this.snaps()[Math.min(this.snapIndex, 2)]!, false);
+    else {
+      this.ui.shell.style.removeProperty('--ce-sheet');
+      this.ui.shell.style.removeProperty('--ce-cut');
+    }
+  }
+
+  /** The parameters kept in reach at the peek: declared, else the first text and seed. */
+  private peekIds(): string[] {
+    if (this.editor.peek) return this.editor.peek.filter((id) => this.byId.has(id));
+    const ids: string[] = [];
+    const text = this.parameters.find((parameter) => ['text', 'textarea'].includes(this.control(parameter)));
+    const seed = this.parameters.find((parameter) => this.control(parameter) === 'seed');
+    for (const parameter of this.parameters) if (parameter === text || parameter === seed) ids.push(parameter.id);
+    return ids;
+  }
+
+  /** Move the peek rows into the sheet's head on a phone, and back to their groups otherwise. */
+  private placePeek(mobile: boolean): void {
+    const d = this.root.ownerDocument;
+    for (const id of this.peekIds()) {
+      const row = this.rows.get(id)?.element;
+      if (!row) continue;
+      if (mobile && row.parentElement !== this.ui.peek) {
+        const slot = d.createComment(`peek:${id}`);
+        row.before(slot);
+        this.peekSlots.set(id, slot);
+        this.ui.peek.append(row);
+      } else if (!mobile) {
+        const slot = this.peekSlots.get(id);
+        if (slot) { slot.replaceWith(row); this.peekSlots.delete(id); }
+      }
+    }
+  }
+
+  /** Peek, half and full heights of the sheet, in px. */
+  private snaps(): [number, number, number] {
+    const shell = this.ui.shell.clientHeight || this.root.ownerDocument.defaultView?.innerHeight || 800;
+    const inset = parseFloat(getComputedStyle(this.ui.side).paddingBottom) || 0;
+    const peek = Math.min(Math.round(this.ui.head.scrollHeight + inset + 1), Math.round(shell * 0.45));
+    const full = Math.max(peek, shell - this.ui.bar.offsetHeight - 8);
+    const half = Math.min(full, Math.max(peek + 96, Math.round(shell * 0.55)));
+    return [peek, half, full];
+  }
+
+  private setSheet(height: number, settled: boolean): void {
+    const snaps = this.snaps();
+    this.sheetHeight = height;
+    this.ui.side.classList.toggle('settle', settled);
+    this.ui.shell.style.setProperty('--ce-sheet', `${Math.round(height)}px`);
+    // The preview sits above the sheet up to half height; a full sheet covers it.
+    this.ui.shell.style.setProperty('--ce-cut', `${Math.round(Math.min(height, snaps[1]))}px`);
+    if (settled) {
+      this.snapIndex = snaps.reduce((best, snap, index) => (Math.abs(snap - height) < Math.abs(snaps[best]! - height) ? index : best), 0);
+      this.ui.side.dataset.snap = ['peek', 'half', 'full'][this.snapIndex];
+    }
+  }
+
+  private toast(text: string, action?: string, run?: () => void): void {
+    this.ui.toastText.textContent = text;
+    this.ui.toastAction.hidden = !action;
+    this.ui.toastAction.textContent = action ?? '';
+    this.ui.toastAction.onclick = run ? () => { this.ui.toast.classList.remove('on'); run(); } : null;
+    this.ui.toast.classList.add('on');
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => this.ui.toast.classList.remove('on'), action ? 8000 : 2200);
+  }
+
   // ---------------------------------------------------------------- messages
 
   private report(text: string, kind: 'ok' | 'warn' | 'bad'): void {
     const d = this.root.ownerDocument;
     this.clearReport(kind);
-    if (kind === 'ok') { this.ui.status.textContent = text; return; }
+    if (kind === 'ok') {
+      this.ui.status.textContent = text;
+      if (this.mobile) this.toast(text);
+      return;
+    }
     this.ui.messages.append(message(d, text, kind));
   }
 

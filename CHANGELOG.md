@@ -2,6 +2,21 @@
 
 Notable changes to Cascade. Newest first.
 
+## 0.9.2 — 2026-10-12
+
+### Added
+
+- **Exported editors work on phones.** The preview is full width at the top,
+  with pinch, pan and double-tap to fit. Controls sit in a bottom sheet with
+  three snap points and folded groups, sized for thumbs (44 px targets, 16 px
+  text, steppers). The header is one row with a ⋯ menu. Safe-area insets and
+  `100dvh` keep everything clear of Safari's toolbar. Exports and scenes use the
+  share sheet, with a download as the fallback. Landscape uses a side panel, and
+  desktop is unchanged.
+- **`editor.peek` and `editor.draft`.** These choose the controls kept in reach
+  at the sheet's lowest point, and the values cooked while a slider is dragged
+  (a lower density, say).
+
 ## 0.9.1 — 2026-10-11
 
 ### Added
