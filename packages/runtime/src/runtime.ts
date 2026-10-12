@@ -655,7 +655,7 @@ class Graph implements LoadedCascadeGraph {
       options.signal,
       options.runId,
       undefined,
-      options.reuse === true,
+      options.reuse === true || options.reuse === "strict" ? options.reuse : false,
     );
   }
   trigger(
@@ -717,7 +717,7 @@ class Graph implements LoadedCascadeGraph {
     signal?: CascadeAbortSignal,
     runId?: string,
     injection?: { nodeId: string; inputName: string; payload?: JsonValue },
-    reuse = false,
+    reuse: boolean | "strict" = false,
   ): Promise<RunResult> {
     const running = this.executeRun(target, signal, runId, injection, reuse);
     this.activeRun = running;
@@ -746,7 +746,7 @@ class Graph implements LoadedCascadeGraph {
     externalSignal?: CascadeAbortSignal,
     requestedId?: string,
     injection?: { nodeId: string; inputName: string; payload?: JsonValue },
-    reuse = false,
+    reuse: boolean | "strict" = false,
   ): Promise<RunResult> {
     this.requireReady();
     const runId = requestedId ?? `run-${this.runCounter++}`;
@@ -814,14 +814,17 @@ class Graph implements LoadedCascadeGraph {
       const ordered = topological(this.nodes, this.connections).filter(
         (node) => initial.includes(node) && !insideFeedback.has(node.id),
       );
+      /** Nodes that cooked in this run, for `reuse: "strict"`. */
+      const cooked = new Set<string>();
       for (const node of ordered) {
         if (signal.aborted) break;
-        if (reuse && this.reusable(node)) {
+        if (reuse && this.reusable(node) && !(reuse === "strict" && this.feedsFrom(node, cooked))) {
           this.emit({ type: "node:start", runId, nodeId: node.id });
           this.emit({ type: "node:complete", runId, nodeId: node.id });
           continue;
         }
         await this.executeNode(node, runId, signal, {}, enqueue);
+        cooked.add(node.id);
         if (!signal.aborted) node.lastCook = this.cookKey(node);
       }
       if (injection && !signal.aborted)
@@ -1505,6 +1508,18 @@ class Graph implements LoadedCascadeGraph {
    * it that is unchanged too. Trigger-driven, feedback and remote nodes always
    * cook. Off by default: a host opts in when it re-runs a graph on every edit.
    */
+  /** Whether any data input of `node` (or, for a subnet, any inner output)
+   *  comes from a node in `cooked`. */
+  private feedsFrom(node: RuntimeNode, cooked: ReadonlySet<string>): boolean {
+    for (const name of Object.keys(node.definition.inputs ?? {})) {
+      for (const connection of this.dataConnectionsByInput.get(`${node.id}\0${name}`) ?? [])
+        if (cooked.has(connection.source.nodeId)) return true;
+    }
+    if (node.moduleId === "cascade.core.Input" && node.parent && cooked.size) return true;
+    if (node.moduleId === "cascade.core.Subnet")
+      for (const child of this.nodes) if (child.parent === node.id && cooked.has(child.id)) return true;
+    return false;
+  }
   private reusable(node: RuntimeNode): boolean {
     const last = node.lastCook;
     if (!last || this.isRemote(node) || node.definition.container === "feedback") return false;

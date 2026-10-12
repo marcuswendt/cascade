@@ -192,6 +192,7 @@ Options:
   --out <dir>        Sequence directory, project-relative (default: renders)
   --json             Print one { ok, data, warnings } envelope (any command)
   --seed <n>         Cook with this graph seed instead of the document's
+  --fresh            With --frames, cook every node on every frame (default: only what the frame changed)
   --timeout <ms>     Bound a run in a supervised child process (exit 124 on timeout)
   --validate-only   Validate only (same as 'validate' command)
   --strict          Fail when a node names a module with no file (default: warn)
@@ -261,6 +262,7 @@ stage lines as they happen.
     out?: string;
     json?: boolean;
     seed?: number;
+    fresh?: boolean;
   } = {
     file: fileArg,
     validateOnly: command === 'validate',
@@ -318,6 +320,7 @@ stage lines as they happen.
   if (out) options.out = out;
 
   if (args.includes('--json') && command === 'run') options.json = true;
+  if (args.includes('--fresh')) options.fresh = true;
   const seed = valueOf('--seed');
   if (seed !== undefined) {
     const value = Number(seed);

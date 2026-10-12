@@ -64,6 +64,8 @@ export interface RunOptions {
   json?: boolean;
   /** `--seed N`: cook with this graph seed instead of the document's. */
   seed?: number;
+  /** `--fresh`: with `--frames`, cook every node on every frame. */
+  fresh?: boolean;
 }
 
 /**
@@ -228,6 +230,7 @@ export async function runGraph(options: RunOptions): Promise<void> {
       ...(entryNode ? { entryNode } : {}),
       ...(nodes?.length ? { nodes } : {}),
       ...(verbose ? { verbose } : {}),
+      ...(options.fresh ? { fresh: true } : {}),
       observe,
     });
     if (rendered) {

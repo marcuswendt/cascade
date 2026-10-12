@@ -150,8 +150,14 @@ export interface RunOptions {
    * Keep the outputs of nodes whose inputs and props did not change since
    * their last cook, instead of cooking the whole selection again. For hosts
    * that re-run on every edit, such as an exported editor.
+   *
+   * `"strict"` also cooks every node downstream of one that cooked: equal
+   * inputs are not trusted when they come from a node that just ran, because
+   * a node that writes a fixed path and outputs the same path string would
+   * otherwise leave its consumers on the previous file. `cascade run
+   * --frames` uses it, so a frame re-cooks only what that frame changed.
    */
-  readonly reuse?: boolean;
+  readonly reuse?: boolean | "strict";
 }
 export interface RunResult {
   readonly runId: string;

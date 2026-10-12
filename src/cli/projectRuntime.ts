@@ -379,6 +379,8 @@ export interface DeterministicFrameRenderOptions {
   verbose?: boolean;
   signal?: { readonly aborted: boolean };
   observe?: GraphObserver;
+  /** Cook every node on every frame (`--fresh`) instead of only what changed. */
+  fresh?: boolean;
 }
 
 export interface DeterministicFrameRenderResult {
@@ -449,6 +451,14 @@ export async function renderDeterministicProjectFrames(
       }
       const result = await graph.run({
         frame,
+        /**
+         * Only what this frame changed cooks: a node whose props (time
+         * reaches nodes through props) and inputs are unchanged, and that
+         * nothing which cooked this frame feeds, keeps its outputs from the
+         * last frame. Strict, so an upstream that re-ran is never trusted on
+         * equal values. The morph's Moments and Match cook once per film.
+         */
+        ...(options.fresh ? {} : { reuse: 'strict' as const }),
         ...(options.fps === undefined ? {} : { fps: options.fps }),
         /**
          * One named node narrows the COOK as well as the output, because the

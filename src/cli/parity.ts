@@ -14,6 +14,10 @@
  * in how the two executors cook, not in which GPU drew it. The browser's own
  * WebGPU is the one thing this cannot reach.
  *
+ * Stages run as fresh one-shot processes, not through the warm worker: a
+ * difference that only shows from a cold start (MPS gave one drawing in one
+ * process and another in the next, 12 Oct) must not be hidden by reuse.
+ *
  * Caches stand aside for the whole command (`CASCADE_STAGE_CACHE=off`, and the
  * envelope tells each stage `cache: "off"`), because a second cook served from
  * a cache would agree with the first by construction and prove nothing.
@@ -284,7 +288,7 @@ export async function parity(options: ParityOptions): Promise<ParityReport> {
   process.env.CASCADE_STAGE_CACHE = 'off';
   setProjectModuleCompiler(async (folder) => (await compileProjectModule(project, folder)).code);
   setEmbeddedCompiler(async (code) => (await compileEmbedded(project, code)).code);
-  const disposers = [installProjectStages(project), installProjectIo(project)];
+  const disposers = [installProjectStages(project, { worker: false }), installProjectIo(project)];
   try {
     const canvas = await installHeadlessCanvas();
     disposers.push(() => canvas.dispose());

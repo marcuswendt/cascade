@@ -79,6 +79,9 @@ export interface PythonWorkerOptions {
   readonly requestTimeoutMs?: number;
   /** The project's stage sources. Given, the worker restarts when they change. */
   readonly sources?: StageSources;
+  /** Where the worker's stderr goes. Default: the console, prefixed. A
+   *  headless run passes its own, so a quiet run stays quiet. */
+  readonly onStderr?: (text: string) => void;
 }
 
 export interface WorkerCallOptions {
@@ -130,6 +133,7 @@ export class PythonWorker {
   private inFlightCancelled = false;
   private killTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly sources: StageSources | null;
+  private readonly onStderr: (text: string) => void;
   /** The code hash the running process started with. */
   private spawnedCodeHash: string | null = null;
   /** Set by a restart, cleared by the answer that follows it. */
@@ -151,6 +155,7 @@ export class PythonWorker {
     this.cancelGraceMs = options.cancelGraceMs ?? CANCEL_GRACE_MS;
     this.requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
     this.sources = options.sources ?? null;
+    this.onStderr = options.onStderr ?? ((text) => console.error('[python-worker]', text));
     liveWorkers.add(this);
   }
 
@@ -188,7 +193,7 @@ export class PythonWorker {
     const proc = spawn(this.python, [scriptPath], { cwd: this.project.root, env: this.spawnEnv() });
 
     readline.createInterface({ input: proc.stdout }).on('line', (line) => this.handleLine(proc, line));
-    proc.stderr.on('data', (chunk) => console.error('[python-worker]', chunk.toString().trimEnd()));
+    proc.stderr.on('data', (chunk) => this.onStderr(chunk.toString().trimEnd()));
     proc.stdin.on('error', () => { /* the exit handler reports it */ });
     proc.on('exit', (code, signal) => {
       if (this.proc !== proc) return;
