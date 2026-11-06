@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ProjectRoot } from '../server/src/project.js';
-import { createGraphWatcher, graphFileFor } from '../server/src/graphWatch.js';
+import { createGraphWatcher, graphFileFor, GRAPH_WATCH_DEBOUNCE_MS } from '../server/src/graphWatch.js';
+import { FakeClock, FakeWatch } from './mocks/fakeWatch.js';
 import { agentAvailability, agentExtraArgs, allowlistHint, resolveExecutable } from '../server/src/agent/allowlist.js';
 import type { Server } from 'node:http';
 import { argsFor, childEnvironment, claudeArgs, codexArgs, reapAgentChildren, sessionIdFrom, type AgentEvent } from '../server/src/agent/session.js';
@@ -28,64 +29,90 @@ function projectRoot(cascadeJson?: unknown): ProjectRoot {
   return new ProjectRoot(root);
 }
 
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-/** FSEvents delivers with a lag and can hand over events that predate the
- *  watch, so the fixture's own setup writes arrive after the watcher is made. */
-const settle = () => pause(400);
-
-function nextChange(watcher: ReturnType<typeof createGraphWatcher>, timeout = 4000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { unsubscribe(); reject(new Error('no change reported')); }, timeout);
-    const unsubscribe = watcher.subscribe((file) => {
-      clearTimeout(timer);
-      unsubscribe();
-      resolve(file);
-    });
-  });
+/**
+ * The watcher with its events and its clock in the test's hands: real
+ * `fs.watch` plus fixed sleeps failed in every full run of the 6 Nov 2026
+ * review, because FSEvents under load delivers late, coalesces, or replays the
+ * fixture's setup writes. What is pinned here is the watcher's own logic.
+ */
+function graphHarness() {
+  const project = projectRoot();
+  const clock = new FakeClock();
+  const fake = new FakeWatch();
+  const watcher = createGraphWatcher(project, { clock, watch: fake.watch });
+  watchers.push(watcher);
+  const reported: string[] = [];
+  watcher.subscribe((file) => reported.push(file));
+  return { project, clock, fake, watcher, reported };
 }
 
 describe('graph document watcher', () => {
-  it('names the document that changed', async () => {
-    const project = projectRoot();
-    const watcher = createGraphWatcher(project);
-    watchers.push(watcher);
-    await settle();
-    const change = nextChange(watcher);
+  it('names the document that changed, watching only the project root', () => {
+    const { project, clock, fake, reported } = graphHarness();
+    expect(fake.directories).toEqual([project.root]);
 
-    fs.writeFileSync(path.join(project.root, 'index.cascade'), '{"nodes":[{"id":"a"}]}');
+    fake.change(project.root, 'index.cascade');
+    expect(reported).toEqual([]); // not before the debounce
+    clock.advance(GRAPH_WATCH_DEBOUNCE_MS);
 
-    expect(await change).toBe('index.cascade');
+    expect(reported).toEqual(['index.cascade']);
   });
 
-  it('collapses a burst of writes into one report', async () => {
-    const project = projectRoot();
-    const watcher = createGraphWatcher(project);
-    watchers.push(watcher);
-    await settle();
-    let reports = 0;
-    watcher.subscribe(() => { reports += 1; });
+  it('collapses a burst of writes into one report', () => {
+    const { project, clock, fake, reported } = graphHarness();
 
-    const file = path.join(project.root, 'index.cascade');
-    for (let i = 0; i < 5; i += 1) fs.writeFileSync(file, `{"nodes":[],"i":${i}}`);
-    await pause(600);
+    for (let i = 0; i < 5; i += 1) {
+      fake.change(project.root, 'index.cascade', i % 2 ? 'rename' : 'change');
+      clock.advance(GRAPH_WATCH_DEBOUNCE_MS - 1);
+    }
+    clock.advance(1);
 
-    expect(reports).toBe(1);
+    expect(reported).toEqual(['index.cascade']);
   });
 
-  it('ignores writes that are not documents', async () => {
-    const project = projectRoot();
-    const watcher = createGraphWatcher(project);
-    watchers.push(watcher);
-    await settle();
-    let reports = 0;
-    watcher.subscribe(() => { reports += 1; });
+  it('ignores writes that are not documents', () => {
+    const { project, clock, fake, reported } = graphHarness();
 
-    fs.mkdirSync(path.join(project.root, 'nodes', 'Blur'), { recursive: true });
-    fs.writeFileSync(path.join(project.root, 'nodes', 'Blur', 'index.ts'), 'export function execute() {}\n');
-    fs.writeFileSync(path.join(project.root, 'notes.md'), 'hello');
-    await pause(600);
+    fake.change(project.root, path.join('nodes', 'Blur', 'index.ts'));
+    fake.change(project.root, 'notes.md');
+    fake.change(project.root, '.index.cascade.swp');
+    fake.change(project.root, null);
+    clock.advance(GRAPH_WATCH_DEBOUNCE_MS * 4);
 
-    expect(reports).toBe(0);
+    expect(reported).toEqual([]);
+  });
+
+  it('stops reporting once closed, including a change inside its debounce', () => {
+    const { project, clock, fake, watcher, reported } = graphHarness();
+
+    fake.change(project.root, 'index.cascade');
+    watcher.close();
+    clock.advance(GRAPH_WATCH_DEBOUNCE_MS * 4);
+
+    expect(reported).toEqual([]);
+    expect(clock.pending).toBe(0);
+  });
+
+  /** Without seams it is real `fs.watch`, not recursive, on the project root,
+   *  and real timers. The event is delivered by hand through the listener
+   *  fs.watch was given, not waited for from FSEvents. */
+  it('defaults to a flat fs.watch on the project root and real timers', async () => {
+    const watchSpy = vi.spyOn(fs, 'watch');
+    try {
+      const project = projectRoot();
+      const watcher = createGraphWatcher(project);
+      watchers.push(watcher);
+      const call = watchSpy.mock.calls.find(([directory]) => directory === project.root);
+      expect(call?.[1]).toEqual({ recursive: false });
+      const report = call![2] as unknown as (event: string, filename: string) => void;
+      const change = new Promise<string>((resolve) => watcher.subscribe(resolve));
+
+      report('rename', 'index.cascade');
+
+      expect(await change).toBe('index.cascade');
+    } finally {
+      watchSpy.mockRestore();
+    }
   });
 });
 

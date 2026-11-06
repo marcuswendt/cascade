@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ProjectRoot } from './project.js';
+import { createDebouncer, systemClock, systemWatch, type WatcherSeams, type WatchHandle } from './watchSeam.js';
 
 export type NodeChangeListener = (moduleName: string) => void;
 
@@ -21,7 +22,7 @@ export const ALL_MODULES = '*';
 
 /** Long enough that an editor's write-truncate-write lands as one event,
  *  short enough to feel immediate. */
-const DEBOUNCE_MS = 120;
+export const NODE_WATCH_DEBOUNCE_MS = 120;
 
 export interface NodeWatcher {
   subscribe(listener: NodeChangeListener): () => void;
@@ -38,22 +39,15 @@ function moduleNameFor(relative: string): string | null {
   return name;
 }
 
-export function createNodeWatcher(project: ProjectRoot): NodeWatcher {
+/** `seams` replaces the clock and `fs.watch` for tests; see `watchSeam.ts`. */
+export function createNodeWatcher(project: ProjectRoot, seams: WatcherSeams = {}): NodeWatcher {
   const listeners = new Set<NodeChangeListener>();
-  const watchers: fs.FSWatcher[] = [];
-  const pending = new Map<string, NodeJS.Timeout>();
-
-  function emit(moduleName: string): void {
-    const existing = pending.get(moduleName);
-    if (existing) clearTimeout(existing);
-    pending.set(
-      moduleName,
-      setTimeout(() => {
-        pending.delete(moduleName);
-        for (const listener of listeners) listener(moduleName);
-      }, DEBOUNCE_MS),
-    );
-  }
+  const watchers: WatchHandle[] = [];
+  const watchDirectory = seams.watch ?? systemWatch;
+  const debounce = createDebouncer(seams.clock ?? systemClock, NODE_WATCH_DEBOUNCE_MS, (moduleName) => {
+    for (const listener of listeners) listener(moduleName);
+  });
+  const emit = (moduleName: string) => debounce.push(moduleName);
 
   function watch(directory: string, scope: 'project' | 'shared'): void {
     if (!fs.existsSync(directory)) return;
@@ -61,7 +55,7 @@ export function createNodeWatcher(project: ProjectRoot): NodeWatcher {
       // Recursive watching is supported on macOS and Windows. Where it is
       // not, the watch still reports the top level, so a new module folder
       // is noticed even though edits inside it are not.
-      const watcher = fs.watch(directory, { recursive: true }, (_event, filename) => {
+      const watcher = watchDirectory(directory, { recursive: true }, (_event, filename) => {
         if (!filename) return;
         if (scope === 'shared') {
           // A shared node is reached through a project module that re-exports
@@ -75,7 +69,7 @@ export function createNodeWatcher(project: ProjectRoot): NodeWatcher {
         const moduleName = moduleNameFor(String(filename));
         if (moduleName) emit(moduleName);
       });
-      watcher.on('error', (error) => console.warn('[node watch] stopped watching', directory, error));
+      watcher.on?.('error', (error) => console.warn('[node watch] stopped watching', directory, error));
       watchers.push(watcher);
     } catch (error) {
       console.warn('[node watch] could not watch', directory, error);
@@ -99,8 +93,7 @@ export function createNodeWatcher(project: ProjectRoot): NodeWatcher {
       return () => listeners.delete(listener);
     },
     close() {
-      for (const timer of pending.values()) clearTimeout(timer);
-      pending.clear();
+      debounce.cancel();
       for (const watcher of watchers) watcher.close();
       watchers.length = 0;
       listeners.clear();

@@ -158,20 +158,30 @@ describe('/api/nodes cache', () => {
   });
 
   it('drops a module edited on disk once the watcher reports it', async () => {
-    const project = fixtureProject();
-    const { base, headers } = await serve(project);
-    const list = async () => (await fetch(`${base}/api/nodes`, { headers })).json() as Promise<{ icons: Record<string, string> }>;
+    // The watcher's report is delivered by hand through the listener the
+    // server gave fs.watch. Waiting on FSEvents instead failed under a loaded
+    // full run (it can stall for longer than any sane timeout); what is under
+    // test is that a reported change drops the entry, not FSEvents' latency.
+    const watchSpy = vi.spyOn(fs, 'watch');
+    try {
+      const project = fixtureProject();
+      const { base, headers } = await serve(project);
+      const list = async () => (await fetch(`${base}/api/nodes`, { headers })).json() as Promise<{ icons: Record<string, string> }>;
 
-    expect((await list()).icons.Mod07).toBe('Circle');
-    // FSEvents can lag, and under load drop the first event after a watch
-    // starts, so the edit is repeated until it is seen. What is under test is
-    // that a reported change drops the entry, not FSEvents' latency.
-    let attempt = 0;
-    await vi.waitFor(async () => {
-      if (attempt++ % 5 === 0) {
-        fs.writeFileSync(path.join(project.root, 'nodes', 'Mod07', 'index.ts'), `export const icon = 'Hexagon';\nexport function execute() { return ${attempt}; }\n`);
-      }
-      expect((await list()).icons.Mod07).toBe('Hexagon');
-    }, { timeout: 8000, interval: 100 });
+      expect((await list()).icons.Mod07).toBe('Circle');
+      const nodesDirectory = path.join(project.root, 'nodes');
+      const call = watchSpy.mock.calls.find(([directory]) => fs.realpathSync(String(directory)) === fs.realpathSync(nodesDirectory));
+      expect(call, 'the /api/nodes cache watches the project nodes folder').toBeDefined();
+      const report = call![2] as unknown as (event: string, filename: string) => void;
+
+      fs.writeFileSync(path.join(nodesDirectory, 'Mod07', 'index.ts'), "export const icon = 'Hexagon';\nexport function execute() {}\n");
+      report('change', path.join('Mod07', 'index.ts'));
+
+      await vi.waitFor(async () => {
+        expect((await list()).icons.Mod07).toBe('Hexagon');
+      }, { timeout: 5000, interval: 50 });
+    } finally {
+      watchSpy.mockRestore();
+    }
   });
 });

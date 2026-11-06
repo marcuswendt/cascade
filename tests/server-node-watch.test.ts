@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ProjectRoot } from '../server/src/project.js';
 import { PathSafetyError } from '../server/src/pathSafety.js';
-import { createNodeWatcher, ALL_MODULES } from '../server/src/nodeWatch.js';
+import { createNodeWatcher, ALL_MODULES, NODE_WATCH_DEBOUNCE_MS } from '../server/src/nodeWatch.js';
+import { FakeClock, FakeWatch } from './mocks/fakeWatch.js';
 
 const roots: string[] = [];
 const watchers: Array<{ close(): void }> = [];
@@ -23,101 +24,122 @@ function project(): ProjectRoot {
   return new ProjectRoot(root);
 }
 
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** FSEvents delivers with a lag and can hand over events that predate the
- *  watch, so the fixture's own setup writes arrive after createNodeWatcher
- *  returns. Every test settles before it acts, otherwise it is asserting on
- *  its own scaffolding. */
-const settle = () => pause(400);
-
-/** fs.watch is asynchronous and the watcher debounces, so wait for the report
- *  rather than for a fixed delay. */
-function nextChange(watcher: ReturnType<typeof createNodeWatcher>, timeout = 4000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { unsubscribe(); reject(new Error('no change reported')); }, timeout);
-    const unsubscribe = watcher.subscribe((moduleName) => {
-      clearTimeout(timer);
-      unsubscribe();
-      resolve(moduleName);
-    });
-  });
+/**
+ * The watcher with its events and its clock in the test's hands. These tests
+ * used real `fs.watch` and fixed sleeps, and under load FSEvents delivered
+ * late, coalesced, or replayed the fixture's setup writes: they failed in every
+ * full run of the 6 Nov 2026 review. What they pin is the watcher's own logic
+ * (attribution, debounce, close), which needs neither.
+ */
+function harness(root = project()) {
+  const clock = new FakeClock();
+  const fake = new FakeWatch();
+  const watcher = createNodeWatcher(root, { clock, watch: fake.watch });
+  watchers.push(watcher);
+  const reported: string[] = [];
+  watcher.subscribe((moduleName) => reported.push(moduleName));
+  const nodes = root.resolve('nodes');
+  return { root, clock, fake, watcher, reported, nodes };
 }
 
 describe('node source watcher', () => {
-  it('reports the module folder when one of its files changes', async () => {
-    const root = project();
-    const watcher = createNodeWatcher(root);
-    watchers.push(watcher);
-    await settle();
-    const change = nextChange(watcher);
+  it('reports the module folder when one of its files changes', () => {
+    const { clock, fake, reported, nodes } = harness();
 
-    fs.writeFileSync(path.join(root.root, 'nodes', 'Blur', 'index.ts'), 'export function execute() { /* edited */ }\n');
+    fake.change(nodes, path.join('Blur', 'index.ts'));
+    expect(reported).toEqual([]); // not before the debounce
+    clock.advance(NODE_WATCH_DEBOUNCE_MS);
 
-    expect(await change).toBe('Blur');
-  });
-
-  it('collapses a burst of writes into one report', async () => {
-    const root = project();
-    const watcher = createNodeWatcher(root);
-    watchers.push(watcher);
-
-    await settle();
-    const reported: string[] = [];
-    watcher.subscribe((moduleName) => reported.push(moduleName));
-
-    const file = path.join(root.root, 'nodes', 'Blur', 'index.ts');
-    for (let i = 0; i < 5; i++) fs.writeFileSync(file, `export function execute() { /* ${i} */ }\n`);
-
-    await pause(600);
     expect(reported).toEqual(['Blur']);
   });
 
-  it('reports every module when a shared library file changes, since the re-exporting module cannot be derived', async () => {
+  it('collapses a burst of writes into one report', () => {
+    const { clock, fake, reported, nodes } = harness();
+
+    for (let i = 0; i < 5; i++) {
+      fake.change(nodes, path.join('Blur', 'index.ts'));
+      clock.advance(NODE_WATCH_DEBOUNCE_MS - 1); // each write lands inside the last one's window
+    }
+    expect(reported).toEqual([]);
+    clock.advance(1);
+
+    expect(reported).toEqual(['Blur']);
+  });
+
+  it('reports separate modules separately, and the same module again after the window', () => {
+    const { clock, fake, reported, nodes } = harness();
+
+    fake.change(nodes, path.join('Blur', 'index.ts'));
+    fake.change(nodes, path.join('Crop', 'shader.wgsl'));
+    clock.advance(NODE_WATCH_DEBOUNCE_MS);
+    fake.change(nodes, path.join('Blur', 'index.ts'));
+    clock.advance(NODE_WATCH_DEBOUNCE_MS);
+
+    expect(reported).toEqual(['Blur', 'Crop', 'Blur']);
+  });
+
+  it('reports every module when a shared library file changes, since the re-exporting module cannot be derived', () => {
     const root = project();
     const shared = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-node-watch-shared-'));
     roots.push(shared);
     fs.mkdirSync(path.join(shared, 'nodes', 'Crop'), { recursive: true });
-    fs.writeFileSync(path.join(shared, 'nodes', 'Crop', 'index.ts'), 'export function execute() {}\n');
     fs.symlinkSync(shared, path.join(root.root, 'shared'));
+    const { clock, fake, reported } = harness(root);
 
-    const watcher = createNodeWatcher(root);
-    watchers.push(watcher);
-    await settle();
-    const change = nextChange(watcher);
+    const sharedNodes = path.join(fs.realpathSync(shared), 'nodes');
+    expect(fake.directories).toContain(sharedNodes);
+    fake.change(sharedNodes, path.join('Crop', 'index.ts'));
+    clock.advance(NODE_WATCH_DEBOUNCE_MS);
 
-    fs.writeFileSync(path.join(shared, 'nodes', 'Crop', 'index.ts'), 'export function execute() { /* edited */ }\n');
-
-    expect(await change).toBe(ALL_MODULES);
+    expect(reported).toEqual([ALL_MODULES]);
   });
 
-  it('ignores a loose file directly under nodes/, which belongs to no module', async () => {
-    const root = project();
-    const watcher = createNodeWatcher(root);
-    watchers.push(watcher);
+  it('ignores a loose file directly under nodes/, a dot folder, and an event with no name', () => {
+    const { clock, fake, reported, nodes } = harness();
 
-    await settle();
-    const reported: string[] = [];
-    watcher.subscribe((moduleName) => reported.push(moduleName));
+    fake.change(nodes, 'README.md');
+    fake.change(nodes, path.join('.DS_Store'));
+    fake.change(nodes, path.join('.cache', 'x.js'));
+    fake.change(nodes, null);
+    clock.advance(NODE_WATCH_DEBOUNCE_MS * 4);
 
-    fs.writeFileSync(path.join(root.root, 'nodes', 'README.md'), 'notes\n');
-
-    await pause(600);
     expect(reported).toEqual([]);
   });
 
-  it('stops reporting once closed', async () => {
-    const root = project();
-    const watcher = createNodeWatcher(root);
-    await settle();
-    const reported: string[] = [];
-    watcher.subscribe((moduleName) => reported.push(moduleName));
+  it('stops reporting once closed, including a change still inside its debounce', () => {
+    const { clock, fake, watcher, reported, nodes } = harness();
+
+    fake.change(nodes, path.join('Blur', 'index.ts'));
     watcher.close();
+    fake.change(nodes, path.join('Blur', 'index.ts'));
+    clock.advance(NODE_WATCH_DEBOUNCE_MS * 4);
 
-    fs.writeFileSync(path.join(root.root, 'nodes', 'Blur', 'index.ts'), 'export function execute() { /* after close */ }\n');
-
-    await pause(600);
     expect(reported).toEqual([]);
+    expect(clock.pending).toBe(0);
+    expect(fake.directories).toEqual([]);
+  });
+
+  /** Without seams it is real `fs.watch`, recursive, on the project's nodes
+   *  folder, and real timers. The event is delivered by hand through the
+   *  listener fs.watch was given: waiting on FSEvents is what made this file
+   *  flaky (a loaded full run stalled it past 20 s). */
+  it('defaults to a recursive fs.watch on nodes/ and real timers', async () => {
+    const watchSpy = vi.spyOn(fs, 'watch');
+    try {
+      const root = project();
+      const watcher = createNodeWatcher(root);
+      watchers.push(watcher);
+      const call = watchSpy.mock.calls.find(([directory]) => directory === root.resolve('nodes'));
+      expect(call?.[1]).toEqual({ recursive: true });
+      const report = call![2] as unknown as (event: string, filename: string) => void;
+      const change = new Promise<string>((resolve) => watcher.subscribe(resolve));
+
+      report('change', path.join('Blur', 'index.ts'));
+
+      expect(await change).toBe('Blur');
+    } finally {
+      watchSpy.mockRestore();
+    }
   });
 });
 
