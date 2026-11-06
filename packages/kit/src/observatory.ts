@@ -10,7 +10,8 @@
 // shell stage; that stays in the project. This module is the reading and
 // shaping half, with file access injected.
 
-export type ReadBytes = (path: string) => Promise<Uint8Array>;
+/** Read a project file's bytes (e.g. `(p) => loadBytes(p, { raw: true })` from cascade/io). */
+export type ReadBytes = (path: string) => Promise<Uint8Array | ArrayBuffer>;
 
 export interface MomentColumns {
   /** frames reduced to colour columns: one column per slice, `stops` entries each */

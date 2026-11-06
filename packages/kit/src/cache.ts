@@ -40,7 +40,7 @@ export interface CacheOptions {
   /** environment variable that turns the cache off when it is off/0/false/no */
   offEnv?: string;
   /** read a project-relative file when there is no Node fs (e.g. cascade/io loadBytes) */
-  read?: (path: string) => Promise<Uint8Array>;
+  read?: (path: string) => Promise<Uint8Array | ArrayBuffer>;
   /** where the one line per call goes (default console.error) */
   log?: (line: string) => void;
 }
