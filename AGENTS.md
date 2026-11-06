@@ -39,6 +39,8 @@ Use `cascade new <name>` to create a project and `cascade node <Name>` to scaffo
 
 Never hand-edit a `.cascade` file. Change graphs with `cascade node add|rm`, `connect`, `disconnect`, `set` and `subnet create|move|dissolve` (or `cascade edit` for a batch); they check the edit like `cascade check`, keep the diff minimal and lay new nodes out. Every command takes `--json`, and `cascade mcp` serves the same operations as MCP tools. Read `doc/CLI_REFERENCE.md` and `doc/MCP.md`.
 
+For agents working headlessly: `cascade help node <type>` prints a node's ports and description from the installed package; `cascade run <graph> --out <dir> [--out-node <id>]` saves image outputs as `<node>[.<port>].<ext>` (and `run --json` lists them in `data.images`); `cascade.assert.*` nodes fail a run with a readable message; what nodes and stages print is in the run trace under `.cascade/runs/`; `--env NAME=value` replaces a shell prefix; `cascade doctor --fix` builds the Python environment a project declares in `cascade.json` `python`; every MCP tool takes `project` to work in another directory.
+
 `cascade build <graph.cascade> --out <new-directory>` exports a static browser
 player. Use repeatable `--asset <project-relative-file>` for inputs whose paths
 are computed in code. Read `doc/WEB_PLAYER.md` before exporting: server stages
