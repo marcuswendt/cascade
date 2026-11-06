@@ -104,6 +104,19 @@ export interface LockFile {
     readonly trace?: string;
   };
   readonly preview?: { readonly file: string; readonly sha256: Digest };
+  /**
+   * Set when the lock was picked from a ladder (`cascade pick`): the variant
+   * he chose, and the full-size image he saw. The lock's output fingerprint is
+   * that image's, so a replay that matches is pixel-identical to it.
+   */
+  readonly ladder?: {
+    readonly id: string;
+    readonly file: string;
+    readonly variant: number;
+    readonly label: string;
+    readonly image: string;
+    readonly sheet?: string;
+  };
 }
 
 export interface VersionInfo {
@@ -143,13 +156,7 @@ export async function createLock(options: CreateLockOptions): Promise<{ lock: Lo
   const root = path.dirname(graphFile);
   const project = new ProjectRoot(root);
   const id = lockId(options.name);
-  const lockFile = path.join(root, LOCKS_DIR, `${id}.json`);
-  if (await exists(lockFile)) {
-    throw new Error(`${path.relative(process.cwd(), lockFile)} exists. A lock is never rewritten; make a new one with --supersedes ${id}`);
-  }
-  if (options.supersedes && !(await exists(path.join(root, LOCKS_DIR, `${options.supersedes}.json`)))) {
-    throw new Error(`--supersedes ${options.supersedes}: no such lock in ${LOCKS_DIR}/`);
-  }
+  await checkLockId(root, id, options.supersedes);
 
   // The graph as it will be cooked: the file, with the scene applied.
   const graphBytes = await fs.readFile(graphFile);
@@ -216,9 +223,33 @@ export async function createLock(options: CreateLockOptions): Promise<{ lock: Lo
     ...(preview ? { preview } : {}),
   };
 
+  return { lock, file: await writeLock(root, lock) };
+}
+
+/** Write `locks/<id>.json`, refusing to replace one: a lock is never rewritten. */
+export async function writeLock(root: string, lock: LockFile): Promise<string> {
+  const lockFile = path.join(root, LOCKS_DIR, `${lock.id}.json`);
   await fs.mkdir(path.dirname(lockFile), { recursive: true });
-  await fs.writeFile(lockFile, stableJson(lock, LOCK_KEY_ORDER), { flag: 'wx' });
-  return { lock, file: lockFile };
+  try {
+    await fs.writeFile(lockFile, stableJson(lock, LOCK_KEY_ORDER), { flag: 'wx' });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new Error(`${path.relative(process.cwd(), lockFile)} exists. A lock is never rewritten; make a new one with --supersedes ${lock.id}`);
+    }
+    throw error;
+  }
+  return lockFile;
+}
+
+/** Refuse a lock id that exists, or a `supersedes` that does not, before any work is done. */
+export async function checkLockId(root: string, id: string, supersedes?: string): Promise<void> {
+  const lockFile = path.join(root, LOCKS_DIR, `${id}.json`);
+  if (await exists(lockFile)) {
+    throw new Error(`${path.relative(process.cwd(), lockFile)} exists. A lock is never rewritten; make a new one with --supersedes ${id}`);
+  }
+  if (supersedes && !(await exists(path.join(root, LOCKS_DIR, `${supersedes}.json`)))) {
+    throw new Error(`--supersedes ${supersedes}: no such lock in ${LOCKS_DIR}/`);
+  }
 }
 
 // ---------------------------------------------------------------- replay
@@ -353,7 +384,7 @@ export async function listLocks(projectRoot: string): Promise<LockFile[]> {
 
 // ---------------------------------------------------------------- cooking
 
-interface Cooked {
+export interface Cooked {
   /** The project root the cook ran in (the copy, or the project). */
   readonly root: string;
   readonly ports: OutputFingerprint;
@@ -363,7 +394,7 @@ interface Cooked {
   readonly dispose?: () => Promise<void>;
 }
 
-interface CookOptions {
+export interface CookOptions {
   readonly node: string;
   readonly ports?: readonly string[];
   readonly verbose?: boolean;
@@ -372,7 +403,7 @@ interface CookOptions {
   readonly traceGraph?: string;
 }
 
-async function cookIn(root: string, graphFile: string, document: unknown, options: CookOptions): Promise<Cooked> {
+export async function cookIn(root: string, graphFile: string, document: unknown, options: CookOptions): Promise<Cooked> {
   const project = new ProjectRoot(root);
   const { outputs, durationMs, trace } = await cookNode(graphFile, document, options.node, options);
   const resolve = (relative: string) => project.resolveMedia(relative);
@@ -389,25 +420,48 @@ async function cookInCopy(
   options: CookOptions,
   label: string,
 ): Promise<Cooked> {
+  const copy = await openCopy(root, tree, label);
+  try {
+    return { ...(await copy.cook(graphRelative, document, options)), dispose: copy.dispose };
+  } catch (error) {
+    await copy.dispose();
+    throw error;
+  }
+}
+
+export interface ProjectCopy {
+  readonly root: string;
+  /** Write `document` over the copy's graph file and cook it there. Traced in the live project. */
+  cook(graphRelative: string, document: unknown, options: CookOptions): Promise<Cooked>;
+  dispose(): Promise<void>;
+}
+
+/** A fresh copy of the project whose code is exactly `tree`, to cook in once or many times. */
+export async function openCopy(root: string, tree: SourceTree, label: string): Promise<ProjectCopy> {
   const copy = await fs.mkdtemp(path.join(os.tmpdir(), `cascade-${label.replace(/[^A-Za-z0-9._-]/g, '_')}-`));
   const dispose = () => fs.rm(copy, { recursive: true, force: true });
   try {
     await materialize(root, tree, copy);
-    const graphFile = path.join(copy, graphRelative);
-    await fs.rm(graphFile, { force: true });
-    await fs.writeFile(graphFile, `${JSON.stringify(document, null, 2)}\n`);
-    return {
-      ...(await cookIn(await fs.realpath(copy), graphFile, document, {
-        ...options,
-        traceRoot: root,
-        traceGraph: path.join(root, graphRelative),
-      })),
-      dispose,
-    };
   } catch (error) {
     await dispose();
     throw error;
   }
+  const real = await fs.realpath(copy);
+  return {
+    root: real,
+    dispose,
+    async cook(graphRelative, document, options) {
+      const graphFile = path.join(real, graphRelative);
+      // Removed first: the copy's graph may be a clone or link of the live one.
+      await fs.rm(graphFile, { force: true });
+      await fs.writeFile(graphFile, `${JSON.stringify(document, null, 2)}\n`);
+      return cookIn(real, graphFile, document, {
+        ...options,
+        traceRoot: root,
+        traceGraph: path.join(root, graphRelative),
+      });
+    },
+  };
 }
 
 // ---------------------------------------------------------------- what the lock records
@@ -465,7 +519,7 @@ export function graphSeeds(document: any): Record<string, unknown> {
  * Hash every file the graph names in a prop (at any depth: a moment's photo
  * path inside its record counts), plus any named with `--input`.
  */
-async function hashInputs(project: ProjectRoot, document: any, extra: readonly string[]): Promise<Record<string, Digest>> {
+export async function hashInputs(project: ProjectRoot, document: any, extra: readonly string[]): Promise<Record<string, Digest>> {
   const candidates = new Set<string>(extra.map((file) => relativeTo(project.root, path.resolve(file))));
   const walk = (value: unknown) => {
     if (typeof value === 'string') {
@@ -494,7 +548,7 @@ function resolveInput(project: ProjectRoot, relative: string): string | null {
   }
 }
 
-async function changedInputs(project: ProjectRoot, inputs: Record<string, Digest>): Promise<InputChange[]> {
+export async function changedInputs(project: ProjectRoot, inputs: Record<string, Digest>): Promise<InputChange[]> {
   const changes: InputChange[] = [];
   for (const [name, expected] of Object.entries(inputs)) {
     const file = resolveInput(project, name);
@@ -504,7 +558,7 @@ async function changedInputs(project: ProjectRoot, inputs: Record<string, Digest
   return changes;
 }
 
-async function moduleHashes(root: string, document: any, tree: SourceTree): Promise<Record<string, Digest>> {
+export async function moduleHashes(root: string, document: any, tree: SourceTree): Promise<Record<string, Digest>> {
   const modules: Record<string, Digest> = {};
   for (const node of (document.nodes ?? []) as GraphNode[]) {
     const id = moduleId(node as any);
@@ -517,7 +571,7 @@ async function moduleHashes(root: string, document: any, tree: SourceTree): Prom
   return modules;
 }
 
-async function stageHashes(root: string, tree: SourceTree): Promise<{ stages?: Record<string, Digest> }> {
+export async function stageHashes(root: string, tree: SourceTree): Promise<{ stages?: Record<string, Digest> }> {
   let manifest: any;
   try { manifest = JSON.parse(await fs.readFile(path.join(root, 'cascade.json'), 'utf8')); } catch { return {}; }
   const declared = manifest?.exec?.stages;
@@ -530,7 +584,7 @@ async function stageHashes(root: string, tree: SourceTree): Promise<{ stages?: R
   return Object.keys(stages).length ? { stages } : {};
 }
 
-function firstRaster(root: string, ports: OutputFingerprint): string | undefined {
+export function firstRaster(root: string, ports: OutputFingerprint): string | undefined {
   for (const fingerprint of Object.values(ports)) {
     if (fingerprint.kind === 'file' && fingerprint.pixels) {
       try { return new ProjectRoot(root).resolveMedia(fingerprint.path); } catch { /* skip */ }
@@ -540,7 +594,7 @@ function firstRaster(root: string, ports: OutputFingerprint): string | undefined
 }
 
 /** A small PNG beside the lock, so a lock can be looked at without replaying it. */
-async function writePreview(root: string, id: string, source: string | undefined): Promise<LockFile['preview']> {
+export async function writePreview(root: string, id: string, source: string | undefined): Promise<LockFile['preview']> {
   if (!source) return undefined;
   const { default: sharp } = await import('sharp');
   const file = path.join(LOCKS_DIR, `${id}.preview.png`);
@@ -579,7 +633,7 @@ export async function cascadeVersion(): Promise<VersionInfo> {
   }
 }
 
-async function projectVersion(root: string): Promise<VersionInfo> {
+export async function projectVersion(root: string): Promise<VersionInfo> {
   let version: string | undefined;
   try { version = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version; } catch { /* none */ }
   return { ...(version ? { version } : {}), ...(await git(root)) };
@@ -599,7 +653,7 @@ function versionWarnings(lock: LockFile, current: VersionInfo): string[] {
 
 // ---------------------------------------------------------------- helpers
 
-function relativeTo(root: string, file: string): string {
+export function relativeTo(root: string, file: string): string {
   const relative = path.relative(root, file);
   if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error(`${file} is outside the project (${root})`);
   return relative.split(path.sep).join('/');

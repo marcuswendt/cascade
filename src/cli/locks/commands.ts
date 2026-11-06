@@ -1,8 +1,9 @@
 /**
- * `cascade lock`, `cascade locks`, `cascade replay` and `cascade lock verify`.
+ * `cascade lock`, `cascade locks`, `cascade replay`, `cascade lock verify`,
+ * `cascade ladder` and `cascade pick`.
  *
  * Argument parsing and printing only; what each command does lives in
- * `lock.ts`. Every command takes `--json`: the result is printed as JSON and
+ * `lock.ts` and `ladder.ts`. Every command takes `--json`: the result is printed as JSON and
  * becomes the `data` of the CLI's envelope (`jsonEnvelope.ts`), cook logs go
  * to stderr, and, as with `parity`, the verdict is in the data (`status`) and
  * the exit code says only whether the command ran. Without `--json` a replay
@@ -11,8 +12,9 @@
 import path from 'node:path';
 import { createLock, listLocks, readLock, replayLock, type LockFile, type ReplayResult } from './lock.js';
 import { short } from './store.js';
+import { createLadder, parseValues, pickVariant } from './ladder.js';
 
-export const LOCK_COMMANDS = ['lock', 'locks', 'replay'] as const;
+export const LOCK_COMMANDS = ['lock', 'locks', 'replay', 'ladder', 'pick'] as const;
 
 export const LOCK_HELP = `
 Locks: this exact render, from this code, these parameters and this seed.
@@ -37,6 +39,24 @@ Locks: this exact render, from this code, these parameters and this seed.
 
   cascade locks [<project-dir>] [--json]
       List the project's locks.
+
+Ladders: three to five options side by side, and a lock at approval.
+
+  cascade ladder <graph> <node> --name <name> [--vary <node.prop>=<a,b,c>]...
+                 [--seeds <a,b,c>] [--columns N] [--port <output>]... [--input <file>]...
+                 [--note <text>] [--live] [--json]
+      Cook <node> once per variant and write ladders/<id>/<n>.png, a labelled
+      contact sheet ladders/<id>/sheet.png, and the record ladders/<id>.json
+      (per variant: graph, params, seed, inputs, output fingerprint; the
+      stored code and git commit once). Values are a JSON list without its
+      brackets (0.5,1,2 or [1,2],[3,4]); lists are zipped, one value applies
+      to every variant. Cooks from the stored code in a fresh copy unless --live.
+
+  cascade pick <ladder-id | ladders/<id>.json> <n> [--name <lock name>] [--note <text>]
+               [--status approved] [--supersedes <id>] [--project <dir>] [--json]
+      Write locks/<id>.json for variant <n> from the ladder's record, without
+      cooking again: its fingerprint is the image that was approved, so
+      cascade replay reproduces that image. Default name: "<ladder> <n>".
 `;
 
 interface Parsed {
@@ -79,6 +99,8 @@ export async function runLockCommand(args: readonly string[]): Promise<void> {
     else if (command === 'replay') await replayCommand(parse(rest), json, print);
     else if (command === 'lock' && rest[0] === 'verify') await verifyCommand(parse(rest.slice(1)), json, print);
     else if (command === 'lock') await lockCommand(parse(rest), json, print);
+    else if (command === 'ladder') await ladderCommand(parse(rest), json, print);
+    else if (command === 'pick') await pickCommand(parse(rest), json, print);
     else throw new Error(`Unknown lock command: ${command}`);
   } catch (error) {
     // Under --json the envelope reports it as `ok: false`.
@@ -131,6 +153,7 @@ async function replayCommand(parsed: Parsed, json: boolean, print: (value: unkno
   });
   if (json) return print(result);
   printReplay(result);
+  if (lock.ladder) console.log(`  picked from ladder ${lock.ladder.id}, variant ${lock.ladder.label}: ${result.status === 'match' ? 'same pixels as' : 'differs from'} ${lock.ladder.image}`);
   if (result.status !== 'match') process.exitCode = 1;
 }
 
@@ -186,6 +209,66 @@ async function locksCommand(parsed: Parsed, json: boolean, print: (value: unknow
     const supersedes = lock.supersedes ? `, supersedes ${lock.supersedes}` : '';
     console.log(`${lock.id.padEnd(width)}  ${lock.status.padEnd(9)} ${lock.created.slice(0, 16).replace('T', ' ')}  ${lock.graph.file} ${lock.graph.node}${commit}${supersedes}`);
   }
+}
+
+async function ladderCommand(parsed: Parsed, json: boolean, print: (value: unknown) => void): Promise<void> {
+  const [graph, node] = parsed.positional;
+  const name = one(parsed, '--name');
+  if (!graph || !node || !name) throw new Error('cascade ladder needs <graph> <node> --name <name> and --vary or --seeds');
+  const vary: Record<string, unknown[]> = {};
+  for (const pair of parsed.values.get('--vary') ?? []) {
+    const at = pair.indexOf('=');
+    if (at <= 0) throw new Error(`--vary takes node.prop=a,b,c (got "${pair}")`);
+    vary[pair.slice(0, at)] = parseValues(pair.slice(at + 1));
+  }
+  const seedsText = one(parsed, '--seeds');
+  const columns = one(parsed, '--columns');
+  const { ladder, file } = await createLadder({
+    graph,
+    node,
+    name,
+    note: one(parsed, '--note'),
+    vary,
+    seeds: seedsText === undefined ? undefined : seedsText.split(',').map((text) => seedValue(text.trim())!),
+    columns: columns === undefined ? undefined : Number(columns),
+    ports: parsed.values.get('--port'),
+    inputs: parsed.values.get('--input'),
+    live: parsed.switches.has('--live'),
+    verbose: parsed.switches.has('--verbose'),
+  });
+  const root = path.dirname(path.dirname(file));
+  if (json) {
+    return print({
+      status: 'laddered',
+      file,
+      sheet: path.join(root, ladder.sheet.file),
+      variants: ladder.variants.map((variant) => ({ index: variant.index, label: variant.label, image: path.join(root, variant.image), set: variant.set, seed: variant.seed })),
+      ladder,
+    });
+  }
+  console.log(`Ladder ${ladder.id} -> ${shown(file)}, cooked from the ${ladder.host.cooked}`);
+  console.log(`  sheet ${shown(path.join(root, ladder.sheet.file))}`);
+  for (const variant of ladder.variants) console.log(`  ${variant.label}  ${variant.image}  (${seconds(variant.output.durationMs)})`);
+  console.log(`Pick one with: cascade pick ${ladder.id} <n>`);
+}
+
+async function pickCommand(parsed: Parsed, json: boolean, print: (value: unknown) => void): Promise<void> {
+  const [ladder, variant] = parsed.positional;
+  const index = Number(variant);
+  if (!ladder || !Number.isInteger(index)) throw new Error('cascade pick needs <ladder> <variant number>');
+  const result = await pickVariant(one(parsed, '--project') ?? process.cwd(), ladder, index, {
+    name: one(parsed, '--name'),
+    note: one(parsed, '--note'),
+    status: one(parsed, '--status'),
+    supersedes: one(parsed, '--supersedes'),
+  });
+  for (const warning of result.warnings) console.error(`Warning: ${warning}`);
+  if (json) return print({ status: 'locked', file: result.file, ladder: result.ladder, variant: result.variant.index, warnings: result.warnings, lock: result.lock });
+  const commit = result.lock.versions.project.commit;
+  console.log(`Locked ${result.lock.id} -> ${shown(result.file)}: ${result.ladder} variant ${result.variant.label}`);
+  console.log(`  graph seed ${result.lock.seeds.graph}, code ${short(result.lock.code.tree)}${commit ? `, commit ${commit.slice(0, 7)}${result.lock.versions.project.dirty ? '+' : ''}` : ''}`);
+  console.log(`  image ${result.variant.image}${result.lock.preview ? `, preview ${result.lock.preview.file}` : ''}`);
+  console.log(`Reproduce it with: cascade replay ${result.lock.id}`);
 }
 
 function printReplay(result: ReplayResult): void {

@@ -31,8 +31,8 @@ const SOURCE_EXTENSIONS = new Set([
 /** Above this a `.json` or `.py` is data that happens to have a code extension. */
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 
-/** Never part of the snapshot, and never copied into a replay. */
-const NEVER = new Set(['.git', '.cascade', '.cascade-cache', 'locks', 'node_modules', '__pycache__']);
+/** Never part of the snapshot, and never copied into a replay. `ladders/` holds records and renders, not code. */
+const NEVER = new Set(['.git', '.cascade', '.cascade-cache', 'locks', 'ladders', 'node_modules', '__pycache__']);
 
 /** Path (project-relative, `/`-separated) to the hash of its bytes. */
 export type SourceTree = Record<string, Digest>;
