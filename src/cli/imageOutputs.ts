@@ -54,13 +54,23 @@ export function collectImageOutputs(
   const wanted = new Set(options.nodes ?? []);
   const extra = new Set(options.extra ?? []);
   const found: ImageOutput[] = [];
-  for (const node of graph.inspect().nodes) {
+  const inspection = graph.inspect();
+  // An assertion is a check, not an output, and not a consumer: an image
+  // wired only into assertions is still the graph's final image, and the
+  // assertion's pass-through of it is not saved a second time.
+  const isAssertion = (moduleId: string) => moduleId.startsWith('cascade.assert.');
+  const assertions = new Set(inspection.nodes.filter((node) => isAssertion(node.moduleId)).map((node) => node.id));
+  const consumed = new Set(inspection.connections
+    .filter((connection) => !assertions.has(connection.target.nodeId))
+    .map((connection) => `${connection.source.nodeId}\u0000${connection.source.outputName}`));
+  for (const node of inspection.nodes) {
     const named = wanted.has(node.id) || extra.has(node.id);
     if (wanted.size && !named) continue;
+    if (!named && assertions.has(node.id)) continue;
     const ports = Object.entries(node.outputs).filter(([, port]) => port.value !== undefined
       && (port.type === 'image' || (port.type === 'any' && looksLikeImage(port.value))));
     for (const [name, port] of ports) {
-      if (!named && port.connected) continue;
+      if (!named && port.connected && consumed.has(`${node.id}\u0000${name}`)) continue;
       found.push({ nodeId: node.id, port: name, value: port.value, shared: ports.length > 1 });
     }
   }

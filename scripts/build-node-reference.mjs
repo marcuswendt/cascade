@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { headlessNodeRegistrations as builtinNodeRegistrations } from '../packages/runtime/src/builtins/headless.ts';
+import { assertNodeRegistrations } from '../src/cli/assertNodes.ts';
 import { coreLibrary } from '../src/nodes/core/library.ts';
 import { geoLibrary } from '../src/nodes/geo/library.ts';
 import { imageLibrary } from '../src/nodes/image/library.ts';
@@ -78,6 +79,15 @@ These are definition-v1: their declarations are literal, so what follows is
 exact rather than a description.
 
 ${definitions.join('\n')}
+## Assertions, headless only
+
+\`cascade.assert.*\` fail a \`cascade run\` (non-zero exit, the message in
+\`run --json\`'s \`error.message\`) when their check does not hold, and pass
+their input through. The CLI registers them; Studio does not yet, and shows
+them as unresolved. An image wired only into assertions still counts as the
+graph's final image for \`run --out\`.
+
+${assertNodeRegistrations.map((registration) => definitionSection(registration.moduleId, registration.definition)).join('\n')}
 ## Studio node libraries
 
 Class-based nodes, available in Studio. Their parameters are declared in the

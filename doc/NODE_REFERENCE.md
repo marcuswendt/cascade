@@ -1006,6 +1006,115 @@ Runs on `portable`.
 | --- | --- | --- | --- |
 | `scene` | `scene` |  |  |
 
+## Assertions, headless only
+
+`cascade.assert.*` fail a `cascade run` (non-zero exit, the message in
+`run --json`'s `error.message`) when their check does not hold, and pass
+their input through. The CLI registers them; Studio does not yet, and shows
+them as unresolved. An image wired only into assertions still counts as the
+graph's final image for `run --out`.
+
+### `cascade.assert.Equals`
+
+Assert Equals — Fails the run unless value equals expected (JSON-equal; numbers within tolerance); passes value through
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `any` | `null` |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `expected` | `any` | `null` |  |
+| `tolerance` | `float` | `0` |  |
+| `message` | `string` | `""` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `any` |  |  |
+
+### `cascade.assert.NotBlank`
+
+Assert Not Blank — Fails the run when an image (PNG or PPM) is one flat colour or fully transparent; passes the image through
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `tolerance` | `int` | `0` | 0…255 |
+| `message` | `string` | `""` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+### `cascade.assert.Range`
+
+Assert Range — Fails the run unless value is a finite number in [min, max]; passes value through
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `float` | `0` |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `min` | `float` | `0` |  |
+| `max` | `float` | `1` |  |
+| `message` | `string` | `""` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `float` |  |  |
+
+### `cascade.assert.True`
+
+Assert True — Fails the run unless value is true (wire a condition, or give the prop an expression); passes value through
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `bool` | `false` |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `message` | `string` | `""` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `value` | `bool` |  |  |
+
 ## Studio node libraries
 
 Class-based nodes, available in Studio. Their parameters are declared in the

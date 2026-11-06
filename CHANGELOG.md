@@ -42,6 +42,14 @@ Notable changes to Cascade. Newest first.
   instead of overwriting itself; a `cascade.core.Null` passing an image counts
   as an output; `--out-node <id>` (repeatable, MCP `outNodes`) saves a
   mid-graph node as well; an absolute `--out` is accepted.
+- **Assertion nodes, `cascade.assert.Range`, `Equals`, `True` and
+  `NotBlank`.** A check in the graph that fails `cascade run` (exit 1, and
+  `run --json` gives `error.message: "Assertion failed in \"<node>\" …"`)
+  when it does not hold: a value in a range, equal to an expected JSON value,
+  true, or an image (PNG/PPM) that is not one flat colour or fully
+  transparent. Each passes its input through. Headless only for now: the CLI
+  registers them, Studio does not (its entry bundle has no room) and shows
+  them unresolved. Listed in `doc/NODE_REFERENCE.md`.
 
 ### Removed
 

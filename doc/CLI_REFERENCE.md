@@ -134,3 +134,17 @@ Opened in Studio, the top level reads `motif → transform → render`, with the
 ## Outputs as files (`run --out`)
 
 `cascade run <graph> --out <dir>` copies each image output to `<dir>/<node>.<ext>`, or `<dir>/<node>.<port>.<ext>` for a node with more than one image output. With `--frames` the same names carry the frame: `<node>[.<port>].<frame>.<ext>`. Which outputs: every image output nothing downstream consumes (a `cascade.core.Null` passing an image counts), or those of `--node`; `--out-node <id>` (repeatable) adds a mid-graph node's. `--out` may be project-relative or absolute; `files` in the result is spelled the same way. `run --json` lists every image output as `data.images: [{ node, port, source, file? }]`, with or without `--out`. The MCP `cook` and `render` tools take `out` and `outNodes`.
+
+## Checks that fail a run (`cascade.assert.*`)
+
+Put the check in the graph instead of a script beside it:
+
+```sh
+cascade node add index.cascade NotBlank --name poster-not-blank --set 'message="the poster rendered empty"'
+cascade connect index.cascade render.image poster-not-blank.image
+cascade node add index.cascade cascade.assert.Range --name density-ok --set min=0.2 --set max=0.8
+cascade connect index.cascade stats.density density-ok.value
+cascade run index.cascade --json      # exit 1: { "ok": false, "error": { "message": "Assertion failed in \"density-ok\" (cascade.assert.Range): value 0.93 is outside [0.2, 0.8]." } }
+```
+
+`Range` (a finite number in `[min, max]`), `Equals` (JSON-equal to `expected`, numbers within `tolerance`), `True`, and `NotBlank` (a PNG or PPM that is not one flat colour within `tolerance`, nor fully transparent). Each passes its input through and runs when the graph runs whole, or when the `--node` you name is downstream of it. An image wired only into assertions is still saved by `--out`. Headless only for now; see `doc/NODE_REFERENCE.md`.
