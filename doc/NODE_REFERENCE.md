@@ -589,6 +589,39 @@ Runs on `portable`.
 | --- | --- | --- | --- |
 | `geometry` | `geometry` |  |  |
 
+### `cascade.image.ContactSheet`
+
+Contact Sheet — Lay images out as one labelled grid.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `images` | `image` |  |  |
+| `list` | `array` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `columns` | `int` | `0` | 0…64 |
+| `gap` | `int` | `16` | 0…512 |
+| `background` | `color` | `[1,1,1,1]` |  |
+| `cellWidth` | `int` | `0` | 0…8192 |
+| `labels` | `string` | `""` |  |
+| `labelSize` | `int` | `14` | 6…128 |
+| `labelColor` | `color` | `[0.1,0.1,0.1,1]` |  |
+| `filename` | `string` | `"contact-sheet.png"` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+| `asset` | `asset` |  |  |
+
 ### `cascade.math.Binary`
 
 Binary Math — Two values, one operation. Component-wise, and a scalar broadcasts against a vector.

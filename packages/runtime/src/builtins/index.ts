@@ -1,6 +1,7 @@
 import type { DefinitionNodeRegistration } from "../types.js";
 import { coreNodeRegistrations } from "./core/index.js";
 import { geoNodeRegistrations } from "./geo/index.js";
+import { imageNodeRegistrations } from "./image/index.js";
 import { mathNodeRegistrations } from "./math/index.js";
 import { popNodeRegistrations } from "./pop/index.js";
 import { sceneNodeRegistrations } from "./scene/index.js";
@@ -20,6 +21,7 @@ export const builtinNodeRegistrations: readonly DefinitionNodeRegistration[] =
     ...mathNodeRegistrations,
     ...popNodeRegistrations,
     ...sceneNodeRegistrations,
+    ...imageNodeRegistrations,
   ]);
 
 const registrationsById = new Map(
