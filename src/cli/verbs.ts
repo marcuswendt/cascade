@@ -27,7 +27,8 @@ export type Handler =
   | 'parity'
   | 'graph' // graphCommands.ts
   | 'lock' // locks/commands.ts
-  | 'mcp';
+  | 'mcp'
+  | 'help'; // helpCommand.ts: help node
 
 /**
  * `--json`:
@@ -511,6 +512,17 @@ export const VERBS: readonly Verb[] = [
 
   // One of `cascade render --workers`' processes, forked by it with its spec.
   { name: '__render-worker', usage: '<spec>', summary: 'internal', section: 'internal', handler: 'renderWorker', json: 'studio', help: 'own', version: 'handler' },
+
+  // A node's declaration from the installed package (helpCommand.ts).
+  {
+    name: 'help node', usage: '[<type>] [--project <dir>]', summary: 'Print a node type\'s inputs, props, outputs and description, or list every node type', section: 'agents', handler: 'help', json: 'keep', help: 'own', version: 'handler',
+    mcp: [{
+      name: 'node_help',
+      description: 'A node type\'s declaration: inputs, props and outputs with types, defaults and ranges, and its description (cascade help node). `type` is a module id or short name; without it, every node type this build and the project know.',
+      inputSchema: object({ type: { type: 'string' } }, []),
+      call: { kind: 'cli', argv: (args, resolve) => ['help', 'node', ...(args.type ? [String(args.type)] : []), '--project', resolve('.')] },
+    }],
+  },
 ];
 
 // ---------------------------------------------------------------------------

@@ -85,6 +85,11 @@ const HANDLERS: Record<Handler, (args: string[], help: boolean) => Promise<void>
     const { runMcpServer } = await import('./mcp.js');
     await runMcpServer(args.slice(1), VERSION);
   },
+  async help(args, help) {
+    const { runHelpCommand, HELP_NODE_USAGE } = await import('./helpCommand.js');
+    if (help) console.log(`Usage: ${HELP_NODE_USAGE}`);
+    else await reported(1, () => runHelpCommand(args))();
+  },
 };
 
 async function main() {

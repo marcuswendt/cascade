@@ -54,6 +54,13 @@ Notable changes to Cascade. Newest first.
   `project`; the call's paths resolve against it and may not leave it, and
   CLI-backed tools run there. One server started in commons can work on any
   sketch. See `doc/MCP.md`.
+- **`cascade help node [<type>]`, node docs from the package.** Prints a node
+  type's inputs, props and outputs (type, default, range, description), where
+  it runs and its capabilities, from the definitions bundled in the CLI or
+  read statically from the project's `nodes/`; without a type, lists every
+  type. Short names work (`Circle`, `NotBlank`); a typo gets suggestions; a
+  class-based Studio node says so and points at the shipped
+  `doc/NODE_REFERENCE.md`. `--json`, and MCP `node_help`.
 
 ### Removed
 

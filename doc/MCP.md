@@ -38,6 +38,7 @@ With a global install (`npm i -g @field/cascade`), use `"command": "cascade", "a
 | `export` | `cascade export <graph> --plan \| --out <dir>` |
 | `lock`, `replay`, `locks` | `cascade lock <graph> <node> --name`, `cascade replay <id> [--live]`, `cascade locks` |
 | `ladder`, `pick` | `cascade ladder <graph> <node> --name --vary node.prop=a,b,c \| --seeds a,b,c` (`vary` is `{ "node.prop": [a, b, c] }`), `cascade pick <ladder> <n>` |
+| `node_help` | `cascade help node [<type>]` (a node type's declaration; every type without one) |
 
 The editing tools take `dryRun`. Reads and edits run inside the server through the same functions the CLI commands call. Cooking, rendering, checking, exporting and the lock tools run `cascade <command> --json` as one child process each, so a long render leaves nothing behind in the server and returns exactly what the CLI would print. Calls run one at a time, so two edits to one file never interleave.
 
