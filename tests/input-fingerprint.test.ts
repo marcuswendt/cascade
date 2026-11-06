@@ -45,7 +45,7 @@ describe('input fingerprint', () => {
     input.value = b;
     expect(node.isDirty).toBe(true);
     await node.requestOutput();
-    expect(seen.at(-1)).toBe(b);
+    expect(seen[seen.length - 1]).toBe(b);
   });
 
   it('re-cooks when a typed array input is changed in place, away from the sampled positions', async () => {
@@ -79,7 +79,7 @@ describe('input fingerprint', () => {
     output.setValue(b);
     expect(node.isDirty).toBe(true);
     await node.requestOutput();
-    expect(seen.at(-1)).toBe(b);
+    expect(seen[seen.length - 1]).toBe(b);
   });
 
   it('stays clean when nothing changed, so the cut-off still holds', async () => {

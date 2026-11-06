@@ -447,11 +447,11 @@ export class Node {
   /** What every input currently comes from, as upstream output versions. Null
    *  when an input comes from something that keeps no versions (an annotation),
    *  which disables the cutoff for this node. */
-  private inputVersionKey(memo?: Map<InputPort, string>): string | null {
+  private inputVersionKey(): string | null {
     const parts: string[] = [];
     for (const input of this.inputs) {
       if (input.connections.length === 0) {
-        parts.push(`${input.id}=${this.directValueFingerprint(input, memo)}`);
+        parts.push(`${input.id}=${valueFingerprint(input.value)}`);
         continue;
       }
       const fields = this.bundleFieldsRead(input);
@@ -2064,37 +2064,16 @@ export class Node {
   }
 
   /**
-   * What one input is, exactly: see `inputFingerprint.ts` for why this no
-   * longer samples. A connected input is its producers' output versions, which
-   * move on every commit that is not provably the same value — O(1) however
-   * large the image. A value set directly on the port has no producer, so it is
-   * hashed in full. A connection to something that keeps no versions (an
-   * annotation) falls back to the full hash too.
+   * What the inputs are, exactly: the same key the early cutoff uses. See
+   * `inputFingerprint.ts` for why this no longer samples. A connected input is
+   * its producers' output versions, which move on every commit that is not
+   * provably the same value — O(1) however large the image. A value set
+   * directly on the port has no producer, so it is hashed in full. A
+   * connection to something that keeps no versions (an annotation) falls back
+   * to hashing every input's value.
    */
-  private inputFingerprint(input: InputPort, memo?: Map<InputPort, string>): string {
-    if (input.connections.length === 0) return this.directValueFingerprint(input, memo);
-    const parts: string[] = [];
-    for (const connection of input.connections) {
-      const upstream = this.graph.getNode(connection.from.nodeId);
-      if (!upstream) return `~${valueFingerprint(input.value)}`;
-      parts.push(`${connection.from.nodeId}:${connection.from.portId}@${upstream.outputVersion(connection.from.portId)}`);
-    }
-    return `<${parts.join('+')}`;
-  }
-
-  /** The full-content fingerprint of a value set directly on a port. `memo`
-   *  lets one cook's two keys (cut-off and dirty) share a single hash of a
-   *  large buffer instead of reading it twice. */
-  private directValueFingerprint(input: InputPort, memo?: Map<InputPort, string>): string {
-    const known = memo?.get(input);
-    if (known !== undefined) return known;
-    const fingerprint = valueFingerprint(input.value);
-    memo?.set(input, fingerprint);
-    return fingerprint;
-  }
-
-  private calculateInputHash(memo?: Map<InputPort, string>): string {
-    return this.inputs.map(input => this.inputFingerprint(input, memo)).join('|');
+  private calculateInputHash(): string {
+    return this.inputVersionKey() ?? this.inputs.map(input => valueFingerprint(input.value)).join('|');
   }
 
   get isDirty(): boolean {
@@ -2220,12 +2199,12 @@ export class Node {
         for (const output of this.outputs) {
           if (!staging.has(output)) this.bumpOutputVersion(output.id);
         }
-        const fingerprints = new Map<InputPort, string>();
-        this.cutoffKey = this.inputVersionKey(fingerprints);
+        this.cutoffKey = this.inputVersionKey();
         this.selfDirty = false;
         this.error = null;
         this.hasExecuted = true;
-        this.lastInputHash = this.calculateInputHash(fingerprints);
+        // The same key, so a large direct input is hashed once per cook.
+        this.lastInputHash = this.cutoffKey ?? this.calculateInputHash();
         this.failedInputHash = null;
         // A deferred retarget only learns what the new definition declares by
         // watching it declare it, so the reconciliation closes here.

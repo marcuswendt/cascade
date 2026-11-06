@@ -103,8 +103,9 @@ describe('graph document watcher', () => {
       const watcher = createGraphWatcher(project);
       watchers.push(watcher);
       const call = watchSpy.mock.calls.find(([directory]) => directory === project.root);
-      expect(call?.[1]).toEqual({ recursive: false });
-      const report = call![2] as unknown as (event: string, filename: string) => void;
+      const args = call as unknown[] | undefined;
+      expect(args?.[1]).toEqual({ recursive: false });
+      const report = args?.[2] as (event: string, filename: string) => void;
       const change = new Promise<string>((resolve) => watcher.subscribe(resolve));
 
       report('rename', 'index.cascade');

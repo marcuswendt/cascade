@@ -130,8 +130,9 @@ describe('node source watcher', () => {
       const watcher = createNodeWatcher(root);
       watchers.push(watcher);
       const call = watchSpy.mock.calls.find(([directory]) => directory === root.resolve('nodes'));
-      expect(call?.[1]).toEqual({ recursive: true });
-      const report = call![2] as unknown as (event: string, filename: string) => void;
+      const args = call as unknown[] | undefined;
+      expect(args?.[1]).toEqual({ recursive: true });
+      const report = args?.[2] as (event: string, filename: string) => void;
       const change = new Promise<string>((resolve) => watcher.subscribe(resolve));
 
       report('change', path.join('Blur', 'index.ts'));

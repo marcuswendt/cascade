@@ -172,7 +172,7 @@ describe('/api/nodes cache', () => {
       const nodesDirectory = path.join(project.root, 'nodes');
       const call = watchSpy.mock.calls.find(([directory]) => fs.realpathSync(String(directory)) === fs.realpathSync(nodesDirectory));
       expect(call, 'the /api/nodes cache watches the project nodes folder').toBeDefined();
-      const report = call![2] as unknown as (event: string, filename: string) => void;
+      const report = (call as unknown[] | undefined)?.[2] as (event: string, filename: string) => void;
 
       fs.writeFileSync(path.join(nodesDirectory, 'Mod07', 'index.ts'), "export const icon = 'Hexagon';\nexport function execute() {}\n");
       report('change', path.join('Mod07', 'index.ts'));
