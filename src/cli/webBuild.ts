@@ -177,7 +177,7 @@ export async function staticRuntimePlugin(projectRoot: string): Promise<Plugin> 
       const canonical = args.path.replace(/^@field\/cascade\//, 'cascade/').replace(/^@cascade\//, 'cascade/');
       if (!canonical.startsWith('cascade/')) return;
       const subpath = canonical.slice('cascade/'.length);
-      if (!(subpath === 'io' || subpath === 'gpu' || subpath === 'contracts' || subpath.startsWith('contracts/') || subpath === 'runtime' || subpath.startsWith('runtime/'))) {
+      if (!(subpath === 'io' || subpath === 'image' || subpath === 'gpu' || subpath === 'contracts' || subpath.startsWith('contracts/') || subpath === 'runtime' || subpath.startsWith('runtime/'))) {
         return { errors: [{ text: `Browser player cannot import ${args.path}; server transports and configuration are not exported` }] };
       }
       if (subpath === 'runtime/node' || subpath === 'runtime/definition/extract') {
@@ -187,7 +187,7 @@ export async function staticRuntimePlugin(projectRoot: string): Promise<Plugin> 
       if (!entry) return { errors: [{ text: `Unknown Cascade browser export: ${args.path}` }] };
       // During checkout development use the very same IO implementation as Studio.
       const sourceShim = path.join(installRoot, 'server', 'src', 'runtime', `${subpath}.ts`);
-      return { path: (subpath === 'io' || subpath === 'gpu') && await exists(sourceShim) ? sourceShim : path.resolve(installRoot, entry) };
+      return { path: (subpath === 'io' || subpath === 'image' || subpath === 'gpu') && await exists(sourceShim) ? sourceShim : path.resolve(installRoot, entry) };
     });
   } };
 }

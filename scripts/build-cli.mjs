@@ -84,6 +84,7 @@ execFileSync(
     resolve('node_modules', 'typescript', 'bin', 'tsc'),
     '--ignoreConfig',
     'server/src/runtime/io.ts',
+    'server/src/runtime/image.ts',
     'server/src/runtime/net.ts',
     'server/src/runtime/gpu.ts',
     '--declaration',
@@ -98,7 +99,7 @@ execFileSync(
   { stdio: 'inherit' }
 );
 
-for (const shim of ['io', 'net', 'gpu']) {
+for (const shim of ['io', 'image', 'net', 'gpu']) {
   await build({
     entryPoints: [`server/src/runtime/${shim}.ts`],
     outfile: resolve(DIST, `${shim}.js`),

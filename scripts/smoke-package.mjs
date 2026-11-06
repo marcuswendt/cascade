@@ -43,8 +43,9 @@ try {
     import * as io from 'cascade/io';
     import * as net from 'cascade/net';
     import * as gpu from 'cascade/gpu';
+    import * as image from 'cascade/image';
     import * as player from 'cascade/player';
-    for (const [name, value] of Object.entries({ contracts, schema, runtime, nodeHost, browserHost, extract, camera, scene, shell, stage, io, net, gpu, player })) {
+    for (const [name, value] of Object.entries({ contracts, schema, runtime, nodeHost, browserHost, extract, camera, scene, shell, stage, io, net, gpu, image, player })) {
       if (!Object.keys(value).length) throw new Error(name + ' has no exports');
     }
   `);
@@ -54,6 +55,7 @@ try {
     import { createRuntime } from 'cascade/runtime';
     import { createGpuHost } from 'cascade/runtime';
     import { readTexture } from 'cascade/gpu';
+    import { surface, readImage, writeImage, registerFont } from 'cascade/image';
     import { mountPlayer, type PlayerController } from 'cascade/player';
     import { run } from 'cascade/shell';
     import { runStage, stageAvailable } from 'cascade/stage';
@@ -72,6 +74,7 @@ try {
     void cameraBasis; void horizontalFov; void verticalFov; void frameAspect;
     void viewMatrix; void projectionMatrix; void lookAtRotation;
     void sceneBounds; void sceneDimensionality;
+    void surface; void readImage; void writeImage; void registerFont;
     void asScene; void isScene; void sceneFromGeometry; void EMPTY_SCENE; void LIGHT_DEFAULTS;
   `);
 

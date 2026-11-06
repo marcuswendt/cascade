@@ -27,6 +27,8 @@
  * process that claims to be a page would take the browser branch of each.
  */
 
+import { installImageHost } from '../../server/src/runtime/image.js';
+
 export const CANVAS_PACKAGE = '@napi-rs/canvas';
 
 /** The one sentence a missing renderer is allowed to produce. */
@@ -63,6 +65,7 @@ interface NapiCanvasModule {
   DOMMatrix: unknown;
   DOMPoint: unknown;
   DOMRect: unknown;
+  GlobalFonts: { register(font: Uint8Array, nameAlias?: string): unknown };
 }
 
 let modulePromise: Promise<NapiCanvasModule> | undefined;
@@ -159,9 +162,20 @@ export async function installHeadlessCanvas(): Promise<CanvasHost> {
     globals[name] = value;
   }
 
+  const renderer = `${CANVAS_PACKAGE} (Skia)`;
+  // `cascade/image`'s font door: a browser adds a FontFace to its font set,
+  // Skia keeps one process-wide registry under the family alias.
+  const disposeImageHost = installImageHost({
+    renderer,
+    registerFont(family, bytes) {
+      canvas.GlobalFonts.register(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), family);
+    },
+  });
+
   return {
-    renderer: `${CANVAS_PACKAGE} (Skia)`,
+    renderer,
     dispose() {
+      disposeImageHost();
       for (const [name, value] of previous) {
         if (value === undefined) delete globals[name];
         else globals[name] = value;

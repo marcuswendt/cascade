@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { existsSync } from 'node:fs';
 import ts from 'typescript';
 import { build } from 'esbuild';
 import { CAPABILITIES_BY_ENVIRONMENT, type Diagnostic, type NodeDefinition } from '../../packages/contracts/src/index.js';
@@ -757,11 +758,36 @@ async function compileExecute(projectRoot: string, moduleFile: string) {
     target: 'node20',
     format: 'esm',
     sourcemap: 'inline',
+    plugins: [cliImageModule()],
   });
   await fs.rename(staging, output);
   const loaded = await import(`${pathToFileURL(output).href}?v=${Date.now()}`);
   if (typeof loaded.execute !== 'function') throw new Error(`${moduleFile} does not export execute`);
   return loaded.execute;
+}
+
+/**
+ * `cascade/image` from the running CLI rather than the project's installed
+ * package. Studio's compiler and the editor export already read the shims
+ * from Cascade's own install; the CLI externalises packages, so without this
+ * a project whose `cascade` dependency predates the module could not cook a
+ * portable image node under a CLI that has it. The module holds no state of
+ * its own (the font door is a global the CLI installs), so bundling this copy
+ * into the node is safe.
+ */
+function cliImageModule(): import('esbuild').Plugin {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const source = [
+    path.join(here, 'runtime', 'image.ts'), // dist/cli/runtime, copied by build-cli
+    path.join(here, '..', '..', 'server', 'src', 'runtime', 'image.ts'), // running from src
+  ].find((candidate) => existsSync(candidate));
+  return {
+    name: 'cascade-cli-image',
+    setup(builder) {
+      if (!source) return;
+      builder.onResolve({ filter: /^(?:@field\/)?cascade\/image$/ }, () => ({ path: source }));
+    },
+  };
 }
 
 function savedRegistration(moduleId: string, node: ProjectNode): DefinitionNodeRegistration {
