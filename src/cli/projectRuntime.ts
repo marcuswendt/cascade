@@ -381,6 +381,22 @@ export interface DeterministicFrameRenderOptions {
   observe?: GraphObserver;
   /** Cook every node on every frame (`--fresh`) instead of only what changed. */
   fresh?: boolean;
+  /**
+   * The frames to render, when not simply `start`-`end` by `step`: a render
+   * worker pulls its frames from the coordinator one batch at a time. `start`
+   * and `end` still fix the sequence's digit width, so every worker names its
+   * files the way a serial run would.
+   */
+  frameSource?: Iterable<number> | AsyncIterable<number>;
+  /** Called after each frame is on disk, with the file each output node wrote
+   *  (`source`, project-relative) and the sequence file it was copied to. */
+  onFrame?: (frame: RenderedFrame) => void | Promise<void>;
+}
+
+export interface RenderedFrame {
+  frame: number;
+  outputs: { nodeId: string; source: string; file: string }[];
+  durationMs: number;
 }
 
 export interface DeterministicFrameRenderResult {
@@ -444,7 +460,8 @@ export async function renderDeterministicProjectFrames(
       : options.entryNode ? [options.entryNode] : [];
     const outDirectory = project.resolve(options.out);
     await fs.mkdir(outDirectory, { recursive: true });
-    for (const frame of frameRange(options.start, options.end, options.step ?? 1)) {
+    for await (const frame of options.frameSource ?? frameRange(options.start, options.end, options.step ?? 1)) {
+      const frameStarted = performance.now();
       if (options.signal?.aborted) {
         aborted = true;
         break;
@@ -486,14 +503,18 @@ export async function renderDeterministicProjectFrames(
               + 'Name the node to render with --node.',
         );
       }
+      const written: RenderedFrame['outputs'] = [];
       for (const { nodeId, value } of outputs) {
         const source = imagePath(value);
         if (!source) continue;
         const name = sequenceFileName(nodeId, frame, source, width);
-        await fs.copyFile(project.resolveMedia(source.replace(/^\.?\//, '')), path.join(outDirectory, name));
+        const relative = source.replace(/^\.?\//, '');
+        await fs.copyFile(project.resolveMedia(relative), path.join(outDirectory, name));
         files.push(path.posix.join(options.out, name));
+        written.push({ nodeId, source: relative, file: path.posix.join(options.out, name) });
       }
       frames.push(frame);
+      await options.onFrame?.({ frame, outputs: written, durationMs: performance.now() - frameStarted });
       if (options.verbose) console.log(`  frame ${frame}`);
     }
     // CPU graphs never initialize the lazy optional GPU host.
@@ -733,9 +754,13 @@ async function compileExecute(projectRoot: string, moduleFile: string) {
   const cache = path.join(projectRoot, '.cascade-cache', 'nodes');
   await fs.mkdir(cache, { recursive: true });
   const output = path.join(cache, `${path.basename(path.dirname(moduleFile))}.mjs`);
+  // Built beside the real name and renamed into place: `render --workers`
+  // starts several processes that compile the same node at once, and one of
+  // them importing another's half-written bundle fails as a syntax error.
+  const staging = `${output}.${process.pid}.${Date.now()}.tmp`;
   await build({
     entryPoints: [moduleFile],
-    outfile: output,
+    outfile: staging,
     bundle: true,
     packages: 'external',
     platform: 'node',
@@ -743,6 +768,7 @@ async function compileExecute(projectRoot: string, moduleFile: string) {
     format: 'esm',
     sourcemap: 'inline',
   });
+  await fs.rename(staging, output);
   const loaded = await import(`${pathToFileURL(output).href}?v=${Date.now()}`);
   if (typeof loaded.execute !== 'function') throw new Error(`${moduleFile} does not export execute`);
   return loaded.execute;
