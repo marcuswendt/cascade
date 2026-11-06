@@ -68,6 +68,14 @@ Notable changes to Cascade. Newest first.
   names it in the error. `cascade run|render --env NAME=value` (MCP `env`)
   sets a variable for the run's stages and render workers without a shell
   prefix; the trace records the names only.
+- **A declared Python environment for stages, and `cascade doctor`.**
+  `cascade.json` `"python": { "requirements": ["numpy", "Pillow"] }` (or a
+  requirements file) declares what a project's stages import; `cascade
+  doctor --fix` builds a venv for it in `.cascade-cache/python/venv`, never
+  system-wide, and stages then run under it instead of a bare `python3`. A
+  stage call with the environment missing or stale fails naming the fix,
+  not later on an ImportError. `cascade doctor` (MCP `doctor`) also checks
+  the stage interpreter, ffmpeg and the headless canvas.
 
 ### Removed
 

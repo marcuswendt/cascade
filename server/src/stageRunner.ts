@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { ProjectRoot } from './project.js';
+import { declaredStagePython } from './pythonEnv.js';
 
 const TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -139,15 +140,18 @@ export function readStageConfig(project: ProjectRoot): StageConfig {
   if (worker) project.resolve(worker);
   const configuredPython = value?.python;
   let python = 'python3';
+  let explicit = false;
   if (configuredPython !== undefined) {
     if (typeof configuredPython !== 'string' || !configuredPython.trim()) {
       throw new Error('cascade.json exec.stages.python must be python, python3, or a project-relative executable');
     }
     const executable = configuredPython.trim();
-    python = executable === 'python' || executable === 'python3'
-      ? executable
-      : resolveProjectExecutable(project, executable);
+    explicit = executable !== 'python' && executable !== 'python3';
+    python = explicit ? resolveProjectExecutable(project, executable) : executable;
   }
+  // A declared environment (cascade.json "python", see pythonEnv.ts) replaces
+  // a bare python/python3; a project-relative executable is a choice and wins.
+  if (!explicit) python = declaredStagePython(project.root) ?? python;
   const sources = value?.sources;
   if (sources !== undefined && (!Array.isArray(sources) || sources.some((item) => typeof item !== 'string' || !item))) {
     throw new Error('cascade.json exec.stages.sources must be a list of project-relative paths');

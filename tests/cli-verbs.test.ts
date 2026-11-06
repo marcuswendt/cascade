@@ -54,7 +54,7 @@ describe('the verb table', () => {
     expect(isGraphCommand(['node', 'Multiply'])).toBe(false);
     // Verbs that print their own JSON keep --json; the rest are wrapped.
     expect(VERBS.filter((verb) => verb.json === 'keep').map((verb) => verb.name).sort())
-      .toEqual(['help node', 'ladder', 'lock', 'lock verify', 'locks', 'parity', 'pick', 'render', 'replay', 'run', 'serve']);
+      .toEqual(['doctor', 'help node', 'ladder', 'lock', 'lock verify', 'locks', 'parity', 'pick', 'render', 'replay', 'run', 'serve']);
     expect(VERBS.filter((verb) => verb.json === 'studio').map((verb) => verb.name)).toEqual(['new', '__render-worker']);
   });
 });
@@ -68,9 +68,9 @@ describe('MCP tools from the verb table', () => {
     }
   });
 
-  it('serves the twenty tools from before the table, plus ladder, pick and node_help', async () => {
+  it('serves the twenty tools from before the table, plus ladder, pick, node_help and doctor', async () => {
     expect(TOOLS.map((tool) => tool.name).sort()).toEqual([
-      'check', 'connect', 'cook', 'disconnect', 'edit', 'export', 'graph_create', 'graph_list', 'graph_read',
+      'check', 'connect', 'cook', 'disconnect', 'doctor', 'edit', 'export', 'graph_create', 'graph_list', 'graph_read',
       'inspect', 'ladder', 'lock', 'locks', 'node_add', 'node_help', 'node_remove', 'pick', 'render', 'replay', 'set',
       'subnet_create', 'subnet_dissolve', 'subnet_move',
     ]);

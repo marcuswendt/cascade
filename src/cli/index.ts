@@ -90,6 +90,11 @@ const HANDLERS: Record<Handler, (args: string[], help: boolean) => Promise<void>
     if (help) console.log(`Usage: ${HELP_NODE_USAGE}`);
     else await reported(1, () => runHelpCommand(args))();
   },
+  async doctor(args, help) {
+    const { runDoctorCommand, DOCTOR_USAGE } = await import('./doctorCommand.js');
+    if (help) console.log(`Usage: ${DOCTOR_USAGE}`);
+    else await reported(1, () => runDoctorCommand(args))();
+  },
 };
 
 async function main() {

@@ -61,6 +61,7 @@ Running, sharing, locks and Studio. `cascade --help` has their options; `cascade
 | `cascade ladder <graph-file> <node> --name <name> --vary <node.prop>=<a,b,c> \| --seeds <a,b,c>` | Cook 3 to 5 variants (values zipped across params, or graph seeds) from the stored code; write `ladders/<id>/<n>.png`, a labelled contact sheet `ladders/<id>/sheet.png` and the record `ladders/<id>.json` (per variant: graph, params, seed, inputs, fingerprint; the code and git commit once). |
 | `cascade pick <ladder-id> <n> [--name <lock name>]` | At approval, write `locks/<id>.json` for variant `n` from the ladder's record, without cooking again; `cascade replay` reproduces that image pixel for pixel. |
 | `cascade help node [<type>] [--project <dir>]` | A node type's inputs, props and outputs (type, default, range, description), where it runs and its capabilities, read from the installed package or the project's `nodes/`; without a type, every node type. No repository checkout needed. |
+| `cascade doctor [project-directory] [--fix]` | What a headless run here will find: the declared Python environment, the stage interpreter, ffmpeg, the canvas. `--fix` builds the environment. See [Python for stages](#python-for-stages-cascadejson-python). |
 
 Every verb is one row in `src/cli/verbs.ts`: its usage and summary for `--help`, the handler that runs it, how it treats `--json`, and the MCP tools that call it. A new verb is a row there, its handler, and its line here (`tests/cli-verbs.test.ts` checks both this page and [MCP.md](MCP.md)).
 
@@ -155,3 +156,16 @@ cascade run index.cascade --json      # exit 1: { "ok": false, "error": { "messa
 Every run's trace in `.cascade/runs/<time>-<graph>.json` holds, per node, what it printed while it cooked: `console.log/info/warn/error/debug` from the node, and its Python stages' stderr, as `logs: [{ level, text }]` (500 lines per node, the rest counted in `logsDropped`). `run --json` gives the same lines as `data.logs: [{ node, level, text }]`. A failed run writes its trace too, and the error ends with `Run trace: <path>`.
 
 `--env NAME=value` (repeatable) sets a variable for the run: Python stages, the warm stage worker and `cascade render`'s worker processes see it, so `CLOUD_ANALYST_ONLINE=1` no longer needs a shell prefix. The trace records the names under `env`, never the values. The MCP `cook` and `render` tools take `env: { NAME: "value" }`.
+
+## Python for stages (`cascade.json` `python`)
+
+A project whose stages import numpy or Pillow declares them, and Cascade keeps a virtual environment for it in `.cascade-cache/python/venv` (inside the project, never system-wide):
+
+```json
+{
+  "exec": { "stages": { "entrypoint": "runtime/node_cli.py" } },
+  "python": { "requirements": ["numpy", "Pillow>=10"] }
+}
+```
+
+`requirements` is a list of pip specifiers or a project-relative requirements file; `interpreter` (default `python3`) is what creates the venv. `cascade doctor` reports it as `current`, `missing` or `stale` (cascade.json changed since it was built); `cascade doctor --fix` creates or rebuilds it, moving an old one to `.cascade-cache/python/_archive/`. While one is declared, stages run under its interpreter instead of a bare `python`/`python3` in `exec.stages.python` (a project-relative executable there still wins), and a stage call with the environment missing or stale fails with the command that fixes it, rather than later on an `ImportError`. MCP: `doctor { "fix": true }`.

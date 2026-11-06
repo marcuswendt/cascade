@@ -28,7 +28,8 @@ export type Handler =
   | 'graph' // graphCommands.ts
   | 'lock' // locks/commands.ts
   | 'mcp'
-  | 'help'; // helpCommand.ts: help node
+  | 'help' // helpCommand.ts: help node
+  | 'doctor'; // doctorCommand.ts
 
 /**
  * `--json`:
@@ -526,6 +527,17 @@ export const VERBS: readonly Verb[] = [
       description: 'A node type\'s declaration: inputs, props and outputs with types, defaults and ranges, and its description (cascade help node). `type` is a module id or short name; without it, every node type this build and the project know.',
       inputSchema: object({ type: { type: 'string' } }, []),
       call: { kind: 'cli', argv: (args, resolve) => ['help', 'node', ...(args.type ? [String(args.type)] : []), '--project', resolve('.')] },
+    }],
+  },
+
+  // What a headless run here will find; --fix builds the declared Python environment (doctorCommand.ts).
+  {
+    name: 'doctor', usage: '[project-directory] [--fix]', summary: 'Check the project\'s Python environment, stage interpreter, ffmpeg and canvas; --fix builds the declared environment', section: 'run', handler: 'doctor', json: 'keep', help: 'own', version: 'handler',
+    mcp: [{
+      name: 'doctor',
+      description: 'Check what a headless run in the project will find (cascade doctor): the declared Python environment (cascade.json "python"), the stage interpreter, ffmpeg and the canvas. `fix` creates or updates the environment in .cascade-cache/python/venv.',
+      inputSchema: object({ fix: { type: 'boolean' } }, []),
+      call: { kind: 'cli', argv: (args, resolve) => ['doctor', resolve('.'), ...(args.fix ? ['--fix'] : [])], timeoutMs: () => 30 * 60_000 },
     }],
   },
 ];
