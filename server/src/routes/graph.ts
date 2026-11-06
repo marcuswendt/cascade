@@ -8,7 +8,8 @@
 import { Router } from 'express';
 import type { ProjectRoot } from '../project.js';
 import { PathSafetyError } from '../pathSafety.js';
-import { formatCompactJSON } from '../formatCascadeJson.js';
+import { formatCompactJSON } from '@cascade/contracts';
+import { writeFileAtomic } from '../atomicWrite.js';
 import { autoCommit, listFileVersions, isFileDirty, readFileAtVersion } from '../git.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -112,9 +113,7 @@ export function createGraphRouter(project: ProjectRoot): Router {
       // default layout that replaces it never overwrites the only copy.
       const slot = req.query.slot === 'failed' ? 'failed' : null;
       const target = workspacePath(project, req.params.filename, slot);
-      const temporary = `${target}.${process.pid}.tmp`;
-      await fs.writeFile(temporary, JSON.stringify(body, null, 1), 'utf-8');
-      await fs.rename(temporary, target);
+      await writeFileAtomic(target, JSON.stringify(body, null, 1));
       res.json({ ok: true, file: path.basename(target) });
     } catch (err) {
       handleError(res, err);

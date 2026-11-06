@@ -4,13 +4,17 @@
  * arrays like [x, y] coordinates and [from, to] connections on one line
  * instead of exploding them across many, so a saved graph stays readable
  * and diffable in git — which matters now that every save is a commit.
+ *
+ * The one copy: Studio's save and download (src/utils/fileSystem.ts), the
+ * server's graph route and the CLI's graph edits all write through it, so a
+ * file saved by any of them diffs cleanly against the others.
  */
 /**
  * Format JSON string with compact arrays (keeps small arrays on single lines)
  * This function finds multi-line arrays with 2-4 elements and compacts them
  * Handles both numeric arrays and arrays containing small arrays (like connections)
  */
-function formatCompactJSON(jsonString: string, indent: number = 2): string {
+export function formatCompactJSON(jsonString: string, indent: number = 2): string {
   // Process multiple passes to handle nested arrays
   let result = jsonString;
   let previousResult = '';
@@ -201,5 +205,3 @@ function formatCompactJSONPass(jsonString: string, indent: number = 2): string {
   
   return result.join('\n');
 }
-
-export { formatCompactJSON };

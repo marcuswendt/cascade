@@ -8,10 +8,26 @@
  * watches the files; this consumes what it reports.
  */
 import { invalidateProjectModule } from './nodeModuleLoader.js';
-import { invalidateDefinitionFacts } from '../editor/panels/nodeDefinitionFacts.js';
 
 /** Matches the server's sentinel for a change it cannot attribute to one module. */
 const ALL_MODULES = '*';
+
+/**
+ * Other caches keyed by a project node's folder register here to be dropped
+ * with the compiled bundle (the Definition panel's facts do). A hook rather
+ * than an import, so the engine never imports the editor.
+ */
+const invalidationListeners = new Set<(folder: string) => void>();
+
+export function onNodeSourceInvalidated(listener: (folder: string) => void): () => void {
+  invalidationListeners.add(listener);
+  return () => invalidationListeners.delete(listener);
+}
+
+function invalidate(folder: string): void {
+  invalidateProjectModule(folder);
+  for (const listener of invalidationListeners) listener(folder);
+}
 
 export interface NodeSourceWatchTarget {
   /** Nodes carrying `project.<folder>` module paths, and a way to restale them. */
@@ -53,15 +69,12 @@ export function watchNodeSources(options: NodeSourceWatchOptions): () => void {
     // read that gets believed.
     if (moduleName === ALL_MODULES) {
       for (const node of affected) {
-        const folder = node.modulePath!.slice('project.'.length);
-        invalidateProjectModule(folder);
-        invalidateDefinitionFacts(folder);
+        invalidate(node.modulePath!.slice('project.'.length));
       }
     } else {
       // Invalidate even with nothing on the canvas using it, so dropping the
       // node in afterwards does not resurrect the stale bundle.
-      invalidateProjectModule(moduleName);
-      invalidateDefinitionFacts(moduleName);
+      invalidate(moduleName);
     }
 
     for (const node of affected) node.markDirty();

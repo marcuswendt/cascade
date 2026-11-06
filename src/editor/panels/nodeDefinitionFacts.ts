@@ -21,6 +21,7 @@ import {
   missingStudioCapabilities,
 } from '@/nodes/definition/projectDefinition';
 import { fetchCompiledProjectModule } from '@/engine/nodeModuleLoader';
+import { onNodeSourceInvalidated } from '@/engine/nodeSourceWatch';
 
 export type NodeOrigin = 'core' | 'library' | 'project' | 'embedded' | 'unknown';
 
@@ -228,6 +229,10 @@ export function invalidateDefinitionFacts(folder: string): void {
 
 const sourceCache = new Map<string, Promise<string>>();
 const pathCache = new Map<string, Promise<string | null>>();
+
+// Dropped with the compiled bundle whenever the node watcher reports an edit,
+// so the panel never shows the previous definition's ports.
+onNodeSourceInvalidated(invalidateDefinitionFacts);
 
 function fetchSource(folder: string): Promise<string> {
   let cached = sourceCache.get(folder);

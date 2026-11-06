@@ -17,6 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { writeFileAtomicSync } from '../atomicWrite.js';
 
 export interface ServicePaths {
   readonly id: string;
@@ -76,9 +77,7 @@ export function readJson<T>(file: string): T | null {
 /** Write through a temporary file and rename, so a reader never sees half a file. */
 export function writeJsonAtomic(file: string, value: unknown): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n');
-  fs.renameSync(temporary, file);
+  writeFileAtomicSync(file, JSON.stringify(value, null, 2) + '\n');
 }
 
 export function removeFile(file: string): void {

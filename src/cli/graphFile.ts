@@ -25,7 +25,8 @@ import {
   type EditableDocument,
   type GraphEditOperation,
 } from '../../packages/runtime/src/edit/index.js';
-import { formatCompactJSON } from '../../server/src/formatCascadeJson.js';
+import { formatCompactJSON } from '../../packages/contracts/src/documentFormat.js';
+import { writeFileAtomic } from '../../server/src/atomicWrite.js';
 import { builtinModuleIds, diagnoseGraph, moduleDefinitions } from './projectRuntime.js';
 import { mergeLines } from './lineMerge.js';
 
@@ -219,10 +220,8 @@ export class GraphFile {
     if (current !== this.original) {
       throw new GraphEditError(`${this.file} changed on disk while it was being edited; nothing was written. Run the command again.`);
     }
-    const temporary = `${this.file}.${process.pid}.tmp`;
     const { mode } = await fs.stat(this.file);
-    await fs.writeFile(temporary, text, { mode });
-    await fs.rename(temporary, this.file);
+    await writeFileAtomic(this.file, text, { mode });
   }
 
   private async loadDefinitions(ids: readonly string[]): Promise<void> {
