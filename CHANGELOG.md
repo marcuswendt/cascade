@@ -2,6 +2,35 @@
 
 Notable changes to Cascade. Newest first.
 
+## 0.10.2 — 2026-11-06
+
+### Added
+
+- **`cascade render`: an animation across worker processes.** `cascade render
+  <graph> --node <id> [--frames <range>] [--workers N]` splits the range across
+  processes (default: cores minus a few), each pulling contiguous batches from
+  one queue, and writes the same `<out>/<node>.<frame>.<ext>` sequence a serial
+  `run --frames` writes. A node that writes every frame to one fixed file is
+  refused before the other workers start: the first worker renders the first
+  two frames alone, and two frames on one path stop the render with the node
+  and the path. 144 ripple frames at 540 px on a shared 16-core machine at load
+  33-44: 59 s serial, 8-14 s on 8-12 workers, frames byte-identical to the
+  serial render.
+- **Preview by default.** An animation render also encodes
+  `<out>/<node>.preview.mp4`, half size, H.264 yuv420p with faststart.
+  `--final` encodes `<node>.mp4` at full size, `--prores` adds a ProRes
+  `<node>.mov` (4444 with alpha when the frames have any, else 422 HQ),
+  `--no-video` skips it. ffmpeg is checked before the render, not after.
+- **Progress and ETA.** One line every N frames (`--progress N`, default about
+  twenty a render), and the same as a note on a Cairn job with `--job <id>` or
+  `CAIRN_JOB` (`cairn jobs update <id> --note`).
+
+### Fixed
+
+- **Project nodes compile atomically.** The bundle is written beside its name
+  and renamed into place, so processes compiling the same node at once never
+  import a half-written file.
+
 ## 0.10.1 — 2026-10-12
 
 ### Fixed

@@ -12,6 +12,7 @@ import { RunTrace } from './runTrace.js';
 import { installProjectIo } from './headlessIo.js';
 import { installHeadlessCanvas, MISSING_CANVAS_MESSAGE, type CanvasHost } from './headlessCanvas.js';
 import { parseFrameSpec } from './frames.js';
+import type { RenderedFrame } from './projectRuntime.js';
 import { encodeMp4, timelineFrameSpec } from './encode.js';
 /**
  * The class-based standard library used to be registered here, because the
@@ -71,6 +72,16 @@ export interface RunOptions {
   mp4?: string;
   /** `--crf <n>` for `--mp4`. */
   crf?: number;
+  /**
+   * Set when this process is one of `cascade render --workers`: frames come
+   * from the coordinator rather than the range, each finished frame is
+   * reported back, and the summary line, the run trace and any encode are the
+   * coordinator's to do once, not every worker's.
+   */
+  worker?: {
+    frameSource: AsyncIterable<number>;
+    onFrame: (frame: RenderedFrame) => void | Promise<void>;
+  };
 }
 
 /**
@@ -237,8 +248,13 @@ export async function runGraph(options: RunOptions): Promise<void> {
       ...(nodes?.length ? { nodes } : {}),
       ...(verbose ? { verbose } : {}),
       ...(options.fresh ? { fresh: true } : {}),
+      ...(options.worker ? { frameSource: options.worker.frameSource, onFrame: options.worker.onFrame } : {}),
       observe,
     });
+    if (rendered && options.worker) {
+      releaseHost();
+      return;
+    }
     if (rendered) {
       releaseHost();
       const tracePath = writeTrace();

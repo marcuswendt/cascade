@@ -11,7 +11,7 @@ import { runWithJsonEnvelope } from './jsonEnvelope.js';
 const VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version as string;
 
 /** Commands that never start Studio. Anything else is a project or graph to open. */
-const COMMANDS = ['run', 'validate', 'check', 'inspect', 'build', 'export', 'freeze', 'publish', 'scene', 'projects', 'node', 'mcp', 'serve', 'parity', 'lock', 'locks', 'replay'];
+const COMMANDS = ['render', 'run', 'validate', 'check', 'inspect', 'build', 'export', 'freeze', 'publish', 'scene', 'projects', 'node', 'mcp', 'serve', 'parity', 'lock', 'locks', 'replay'];
 
 async function main() {
   const args = process.argv.slice(2);
@@ -27,7 +27,7 @@ async function main() {
   // makes them print their own JSON (a manifest with the run trace and stage
   // cache states, a status, a parity report), which becomes the data.
   if (args.includes('--json')) {
-    const keepFlag = ['run', 'serve', 'parity', 'lock', 'locks', 'replay'].includes(args[0] ?? '');
+    const keepFlag = ['render', 'run', 'serve', 'parity', 'lock', 'locks', 'replay'].includes(args[0] ?? '');
     const commandArgs = keepFlag ? args : args.filter((arg) => arg !== '--json');
     const opensStudio = !COMMANDS.includes(commandArgs[0] ?? '') && !isGraphCommand(commandArgs) &&
       !commandArgs.some((arg) => arg === '--help' || arg === '-h' || arg === '--version');
@@ -44,6 +44,30 @@ async function main() {
 }
 
 async function dispatch(args: string[]) {
+  // One of `cascade render --workers`' processes, forked by it with its spec.
+  if (args[0] === '__render-worker') {
+    const { runRenderWorker } = await import('./render.js');
+    await runRenderWorker(args[1]);
+    return;
+  }
+
+  if (args[0] === 'render') {
+    const { RENDER_HELP, parseRenderArgs, renderGraph } = await import('./render.js');
+    if (args.includes('--help') || args.includes('-h')) {
+      console.log(RENDER_HELP);
+      return;
+    }
+    try {
+      const options = parseRenderArgs(args.slice(1));
+      const result = await renderGraph(options);
+      if (options.json) process.stdout.write(JSON.stringify({ status: 'completed', graph: path.resolve(options.file), ...result }) + '\n');
+    } catch (error) {
+      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   if (isGraphCommand(args) && !args.includes('--help') && !args.includes('-h')) {
     try {
       await runGraphCommand(args, { json: false });
@@ -141,6 +165,7 @@ Usage:
   cascade projects [directory]
   cascade serve start|stop|restart|status|logs|install [project] [options]
   cascade run <graph-file> [options]
+  cascade render <graph-file> [--frames <range>] [--node <id>] [--workers N] [--final] [--prores]
   cascade validate <graph-file> [options]
   cascade check <graph-file> [options]
   cascade inspect <graph-file>
@@ -163,6 +188,7 @@ Commands:
   projects  Show or set the default projects directory
   serve     Run Studio as a managed background service (cascade serve help)
   run       Execute a graph file
+  render    Render an animation across worker processes, then a preview video (cascade render --help)
   validate  Validate a graph file without executing
   check     Statically check node definitions, types, and graph structure
   inspect   Print a machine-readable graph and node-definition summary
