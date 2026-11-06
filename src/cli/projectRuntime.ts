@@ -5,7 +5,8 @@ import ts from 'typescript';
 import { build } from 'esbuild';
 import { CAPABILITIES_BY_ENVIRONMENT, type Diagnostic, type NodeDefinition } from '../../packages/contracts/src/index.js';
 import { createRuntime, PREFLIGHT_WARNING_CODES } from '../../packages/runtime/src/index.js';
-import { builtinNodeRegistration, builtinNodeRegistrations } from '../../packages/runtime/src/builtins/index.js';
+import { builtinNodeRegistration } from '../../packages/runtime/src/builtins/index.js';
+import { headlessNodeRegistration, headlessNodeRegistrations, headlessOnlyNodeRegistration } from '../../packages/runtime/src/builtins/headless.js';
 import { createNodeRuntimeHost } from '../../packages/runtime/src/node.js';
 import { extractNodeDefinition } from '../../packages/runtime/src/definition/extract.js';
 import { validateNodeModuleArchitecture } from '../../packages/runtime/src/definition/architecture.js';
@@ -564,7 +565,7 @@ export async function inspectProjectGraph(file: string, document: any) {
   const prepared = await prepare(file, document, false);
   reportUnresolved(prepared);
   const registrations = new Map(
-    [...builtinNodeRegistrations, ...prepared.registrations].map((item) => [item.moduleId, item]),
+    [...headlessNodeRegistrations, ...prepared.registrations].map((item) => [item.moduleId, item]),
   );
   const nodes = (document.nodes as ProjectNode[]).map((node) => {
     const id = moduleId(node);
@@ -600,6 +601,13 @@ async function prepare(file: string, document: any, compileExecutors: boolean): 
     seen.add(id);
     if (builtinNodeRegistration(id)) {
       deterministic.add(id);
+      continue;
+    }
+    // Built-ins Studio does not register yet; the runtime gets them from here.
+    const headlessOnly = headlessOnlyNodeRegistration(id);
+    if (headlessOnly) {
+      deterministic.add(id);
+      registrations.push(headlessOnly);
       continue;
     }
     const resolved = await projectModuleFile(projectRoot, node, id);
@@ -891,7 +899,7 @@ export async function moduleDefinitions(
 ): Promise<Map<string, NodeDefinition | undefined>> {
   const definitions = new Map<string, NodeDefinition | undefined>();
   for (const id of new Set(ids)) {
-    const builtin = builtinNodeRegistration(id);
+    const builtin = headlessNodeRegistration(id);
     if (builtin) {
       definitions.set(id, builtin.definition);
       continue;
@@ -908,7 +916,7 @@ export async function moduleDefinitions(
 
 /** Every module id the CLI can resolve without a project: the runtime's built-in nodes. */
 export function builtinModuleIds(): string[] {
-  return builtinNodeRegistrations.map((registration) => registration.moduleId);
+  return headlessNodeRegistrations.map((registration) => registration.moduleId);
 }
 
 /**

@@ -15,7 +15,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { builtinNodeRegistrations } from '../packages/runtime/src/builtins/index.ts';
+import { headlessNodeRegistrations as builtinNodeRegistrations } from '../packages/runtime/src/builtins/headless.ts';
 import { coreLibrary } from '../src/nodes/core/library.ts';
 import { geoLibrary } from '../src/nodes/geo/library.ts';
 import { imageLibrary } from '../src/nodes/image/library.ts';

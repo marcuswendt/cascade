@@ -15,7 +15,8 @@ import type { DefinitionNodeRegistration } from "../../types.js";
  * on an `OffscreenCanvas`, which both hosts supply (the headless one through
  * @napi-rs/canvas). It lives in `cascade.image.*` beside Studio's image
  * library, as the first definition-v1 node there; Studio does not register it
- * yet, so today it runs headless.
+ * yet, so today it runs headless and is listed in `../headless.ts` rather
+ * than in the built-ins Studio bundles.
  */
 export const contactSheetDefinition = {
   apiVersion: 1,
