@@ -223,7 +223,9 @@ The same scene gives byte-identical output in the editor and under `cascade run`
 
 - Only browser-runnable definition-v1 nodes ship. Python, shell and dynamic
   nodes are listed together as "not exportable". Port them to TypeScript, or
-  freeze their output.
+  freeze their output. A node that draws ships when it uses `cascade/image`
+  (PROJECT_AUTHORING.md, "Draw an image in any host"); fonts and images it
+  reads must be shipped files (`editor.assets`, `editor.fonts`, frozen files).
 - The editor cooks in a module worker. Unchanged stages are reused
   (`run({ reuse: true })`), so only the stages after an edit re-cook, and the
   page stays responsive while they do. Values cross to the page by structured

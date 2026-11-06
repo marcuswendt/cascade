@@ -28,6 +28,7 @@ import {
 import { installHeadlessCanvas } from '../src/cli/headlessCanvas';
 import { runDeterministicProjectGraph } from '../src/cli/projectRuntime';
 import { prepareExport } from '../src/cli/editorExport';
+import { runEditorCommand } from '../src/cli/editorCommands';
 
 const dispose: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
@@ -229,5 +230,28 @@ describe('one node body, two hosts', () => {
 
     // And the export accepts it: portable, declared assets, the input shipped.
     expect(prepared.plan.files.map((item) => item.path)).toContain('assets/assets/in.png');
+  }, 60_000);
+});
+
+describe('freezing an image output', () => {
+  it('ships the file an image ref names when its path is a frozen field', async () => {
+    await headless();
+    const input = createCanvas(4, 4);
+    input.getContext('2d')!.fillRect(0, 0, 4, 4);
+    const document = {
+      version: '0.2',
+      nodes: [{ id: 'tint', module: 'project.Tint' }],
+      connections: [],
+      editor: { id: 'tint', parameters: [], outputs: [{ id: 'png', node: 'tint', port: 'image', format: 'png', view: true }] },
+    };
+    const root = tempProject({ 'nodes/Tint/index.ts': PORTABLE_NODE, 'assets/in.png': await encodeImage(input), 'g.cascade': JSON.stringify(document) });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    dispose.push(() => log.mockRestore());
+    await runEditorCommand(['freeze', path.join(root, 'g.cascade'), 'tint', '--fields', 'path,size,channels,depth,space']);
+    const snapshot = JSON.parse(fs.readFileSync(path.join(root, 'frozen', 'tint.json'), 'utf8'));
+    expect(snapshot.value.path).toMatch(/^frozen\/tint\/tint\.[0-9a-f]{12}\.png$/);
+    expect(snapshot.files).toEqual([snapshot.value.path]);
+    expect(snapshot.value.size).toEqual([8, 8]);
+    expect(fs.existsSync(path.join(root, snapshot.value.path))).toBe(true);
   }, 60_000);
 });

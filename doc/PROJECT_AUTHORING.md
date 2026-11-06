@@ -365,7 +365,7 @@ export async function execute(node: any) {
 
 `param()` is a method on the node the engine hands to `execute`, not an import. It is re-declared on every cook, so it never resets a value, an expression, or a keyframe someone set: reading `.value` gives the *resolved* value for the current frame, whichever of the three bindings is in force. The loader imports the module as real JavaScript, so top-level code does run at import time. Keep dynamic modules free of top-level effects and put interface declaration and cooking inside `execute`.
 
-Prefer `new OffscreenCanvas(width, height)` to `document.createElement('canvas')` when both hosts can run the node. A portable declaration still requires output parity checks; installing Skia does not override a browser-only declaration. Use Python for libraries or tools that require a server. Measure transport, serialization, and cold-start costs; persistent workers can avoid repeated process/model startup.
+Prefer `new OffscreenCanvas(width, height)` to `document.createElement('canvas')` when both hosts can run the node; a definition-v1 node uses `cascade/image` (see "Draw an image in any host"). A portable declaration still requires output parity checks; installing Skia does not override a browser-only declaration. Use Python for libraries or tools that require a server. Measure transport, serialization, and cold-start costs; persistent workers can avoid repeated process/model startup.
 
 Choose the narrowest execution locus:
 
@@ -386,6 +386,64 @@ export const definition = {
 ```
 
 The runtime refuses unsupported host/capability combinations before executing the graph.
+
+### Draw an image in any host
+
+A node that draws, reads or writes an image uses `cascade/image`, and then one
+body cooks in Studio, under `cascade run`/`render`/MCP, and in an exported
+editor's worker. Declare `runsOn: 'portable'` and `capabilities: ['assets']`,
+and import nothing host-specific: no `node:*`, no `@napi-rs/canvas`, no
+`document`.
+
+```ts
+import type { NodeDefinition, NodeExecutionContext } from 'cascade/contracts';
+import { readBytes, readImage, registerFont, surface, writeImage } from 'cascade/image';
+
+export const definition = {
+  apiVersion: 1,
+  label: 'Poster',
+  runsOn: 'portable',
+  capabilities: ['assets'],
+  inputs: { photo: { kind: 'data', type: 'image' } },
+  outputs: { image: { kind: 'data', type: 'image' } },
+  props: { title: { type: 'string', default: 'Hello' }, font: { type: 'string', default: 'assets/fonts/Display.otf' } },
+} as const satisfies NodeDefinition;
+
+export async function execute(context: NodeExecutionContext<typeof definition>) {
+  const photo = await readImage(context, context.inputs.photo);          // an image input, asset or project path
+  await registerFont('Display', await readBytes(context, context.props.font));
+  const { canvas, context: g } = surface(photo.width, photo.height);     // OffscreenCanvas, CPU-backed 2D
+  g.drawImage(photo, 0, 0);
+  g.font = '96px Display';
+  g.fillText(context.props.title, 40, 140);
+  context.outputs.image.set(await writeImage(context, canvas, `${context.nodeId}.png`));
+}
+```
+
+| | Browser (Studio, exported editor) | Headless (CLI, MCP) |
+| --- | --- | --- |
+| `createCanvas`, `surface` | the realm's `OffscreenCanvas` | Skia's, from `@napi-rs/canvas` |
+| `decodeImage`, `readImage` | `createImageBitmap` | Skia's decoder |
+| `writeImage` | an in-memory generated asset | `.cascade-cache/<name>.<hash>.png` |
+| `registerFont` | `FontFace` added to the page's or worker's font set | Skia's `GlobalFonts` |
+| `readBytes` | shipped files only (`editor.assets`, literal asset props, frozen files) | any project file |
+
+- The host chooses where a written image lands; never name a path or read an
+  output file back by a path you built. `cachePath` and `saveImage` from
+  `cascade/io` remain for dynamic nodes.
+- `surface(w, h)` asks for a `willReadFrequently` context, which keeps Chrome
+  on the same software Skia rasteriser the headless host uses. Expect the same
+  image, not the same bytes: on commons `plotter-social` the paper, foil and
+  wordmark match exactly and scanline marks differ at stroke edges (mean
+  channel delta under 0.5 of 255 with the same fonts).
+- A font only matches across hosts when both register the same bytes. A file
+  that is not there (a licensed face the export never ships) should fall back
+  to a named system face, not fail; read it with `readBytes` in a `try`.
+- What has no browser form is refused, not imitated: no canvas in the realm,
+  or `assets` not declared, throws a sentence saying which. A node that needs
+  the filesystem, a network fetch or ffmpeg stays `runsOn: 'server'`; to put
+  its output in an editor, freeze it (`cascade freeze <graph> <node> --fields
+  path,size,channels,depth,space` ships the image file with the snapshot).
 
 ### GPU nodes today
 

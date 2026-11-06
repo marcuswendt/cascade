@@ -6,6 +6,20 @@ Notable changes to Cascade. Newest first.
 
 ### Added
 
+- **`cascade/image`: one node body for the browser and headless.** A
+  portable node declaring `capabilities: ['assets']` draws on `surface()` /
+  `createCanvas()` (the realm's `OffscreenCanvas` in Studio and an exported
+  editor, Skia's under `cascade run`/`render`/MCP), reads with `readImage` /
+  `readBytes` and writes with `writeImage` through the assets capability (the
+  host picks the stored path), and registers fonts with `registerFont`
+  (`FontFace` in a browser realm, Skia's `GlobalFonts` headless). No canvas or
+  no declared `assets` is refused with a sentence. Resolved from Cascade's own
+  install by Studio, the editor export, the web player and the CLI. This was
+  the missing browser image contract that kept commons nodes headless-only:
+  commons `plotter-social` (plotter, social-layout, foil ported; source
+  frozen) now exports as an editor, and renders pixel-identically to the old
+  server nodes headless. `cascade freeze --fields path,...` on an image output
+  now ships the image file with the snapshot.
 - **The sketch kit, `@field/cascade-kit` (`packages/kit`).** One package for
   what the sketch projects kept rebuilding: OKLCH colour and gamut mapping,
   k-means palettes in OKLab, seeded random (`Rng`, mulberry32, Python-equal

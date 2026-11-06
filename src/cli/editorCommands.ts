@@ -196,6 +196,13 @@ async function freezeCommand(graph: string, flags: Flags): Promise<void> {
     if (value === undefined) throw new Error(`${node}.${output} has no field ${field}`);
     setPath(chosen, field, await pick(value));
   }
+  // An output that is itself a file reference (an `image` port: `--fields
+  // path,size,...`) names its path as a field, so `pick` sees a bare string.
+  // Ship that file too, or the editor's snapshot points at a file it lacks.
+  if (fields.includes('path') && typeof chosen.path === 'string' && full && typeof full === 'object' && !Array.isArray(full)) {
+    const { path: copied } = await pick({ path: chosen.path }) as { path: string };
+    chosen.path = copied;
+  }
   const snapshot: FrozenSnapshot = {
     format: 'cascade.frozen', version: 1, node, output, fields,
     ...(personal.length ? { personal } : {}),
