@@ -58,6 +58,8 @@ Running, sharing, locks and Studio. `cascade --help` has their options; `cascade
 | `cascade lock verify [<lock-id>...]` | Replay locks and report which still match. |
 | `cascade replay <lock-id>` | Re-render a lock from its stored code and compare fingerprints. |
 | `cascade locks` | List the project's locks. |
+| `cascade ladder <graph-file> <node> --name <name> --vary <node.prop>=<a,b,c> \| --seeds <a,b,c>` | Cook 3 to 5 variants (values zipped across params, or graph seeds) from the stored code; write `ladders/<id>/<n>.png`, a labelled contact sheet `ladders/<id>/sheet.png` and the record `ladders/<id>.json` (per variant: graph, params, seed, inputs, fingerprint; the code and git commit once). |
+| `cascade pick <ladder-id> <n> [--name <lock name>]` | At approval, write `locks/<id>.json` for variant `n` from the ladder's record, without cooking again; `cascade replay` reproduces that image pixel for pixel. |
 
 Every verb is one row in `src/cli/verbs.ts`: its usage and summary for `--help`, the handler that runs it, how it treats `--json`, and the MCP tools that call it. A new verb is a row there, its handler, and its line here (`tests/cli-verbs.test.ts` checks both this page and [MCP.md](MCP.md)).
 

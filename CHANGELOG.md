@@ -25,6 +25,16 @@ Notable changes to Cascade. Newest first.
   from ARCHITECTURE.md, no new import cycle, no new file over 750 lines, no
   unimported source file, duplicated lines capped. `build-node-reference
   --check` fails on a stale `doc/NODE_REFERENCE.md`.
+- **Ladder, pick, lock (0.10.3).** `cascade ladder <graph> <node> --name
+  --vary node.prop=a,b,c | --seeds a,b,c` cooks three to five variants from
+  the stored code and writes each image, a labelled contact sheet and
+  `ladders/<id>.json` (per variant: graph, params, seed, inputs, output
+  fingerprint; the code and git commit once). `cascade pick <ladder> <n>`
+  writes the lock from that record at approval without cooking again, so
+  `cascade replay` reproduces the approved image pixel for pixel with no
+  worktree. Both are MCP tools (`ladder`, `pick`). New built-in
+  `cascade.image.ContactSheet` (definition-v1, headless; not yet in Studio):
+  images in, one labelled grid out.
 
 ### Removed
 

@@ -442,6 +442,60 @@ export const VERBS: readonly Verb[] = [
       call: { kind: 'cli', argv: (_args, resolve) => ['locks', resolve('.')] },
     }],
   },
+  {
+    ...lockVerb, name: 'ladder', usage: '<graph-file> <node> --name <name> --vary <node.prop>=<a,b,c> | --seeds <a,b,c>', summary: 'Cook 3-5 variants, write a labelled contact sheet and ladders/<id>.json',
+    mcp: [{
+      name: 'ladder',
+      description: 'Cook `node` once per variant (cascade ladder) and return the contact sheet, each variant image and the record ladders/<id>.json. `vary` maps node.prop to a list of values (zipped; one value applies to all); `seeds` varies the graph seed. Three to five variants is the usual.',
+      inputSchema: object({
+        graph,
+        node: { type: 'string' },
+        name: { type: 'string' },
+        vary: { type: 'object', description: 'node.prop to an array of values, one per variant' },
+        seeds: { type: 'array', items: { type: 'integer' } },
+        columns: { type: 'integer' },
+        note: { type: 'string' },
+        live: { type: 'boolean' },
+      }, ['graph', 'node', 'name']),
+      call: {
+        kind: 'cli',
+        argv: (args, resolve) => [
+          'ladder', resolve(args.graph), args.node, '--name', args.name,
+          ...Object.entries((args.vary ?? {}) as Record<string, unknown>).flatMap(([key, values]) => [
+            '--vary', `${key}=${(Array.isArray(values) ? values : [values]).map((value) => JSON.stringify(value)).join(',')}`,
+          ]),
+          ...(args.seeds?.length ? ['--seeds', args.seeds.join(',')] : []),
+          ...(args.columns ? ['--columns', String(args.columns)] : []),
+          ...(args.note ? ['--note', args.note] : []),
+          ...(args.live ? ['--live'] : []),
+        ],
+        timeoutMs: () => 60 * 60_000,
+      },
+    }],
+  },
+  {
+    ...lockVerb, name: 'pick', usage: '<ladder-id> <n> [--name <lock name>] [--note ...]', summary: 'Lock variant <n> of a ladder at approval (commit, seed, params, image)',
+    mcp: [{
+      name: 'pick',
+      description: 'Write the lock for variant `variant` of a ladder (cascade pick), from what the ladder recorded, without cooking again. `cascade replay` then reproduces that image.',
+      inputSchema: object({
+        ladder: { type: 'string' },
+        variant: { type: 'integer' },
+        name: { type: 'string' },
+        note: { type: 'string' },
+        supersedes: { type: 'string' },
+      }, ['ladder', 'variant']),
+      call: {
+        kind: 'cli',
+        argv: (args, resolve) => [
+          'pick', String(args.ladder).endsWith('.json') ? resolve(args.ladder) : args.ladder, String(args.variant), '--project', resolve('.'),
+          ...(args.name ? ['--name', args.name] : []),
+          ...(args.note ? ['--note', args.note] : []),
+          ...(args.supersedes ? ['--supersedes', args.supersedes] : []),
+        ],
+      },
+    }],
+  },
 
   // One of `cascade render --workers`' processes, forked by it with its spec.
   { name: '__render-worker', usage: '<spec>', summary: 'internal', section: 'internal', handler: 'renderWorker', json: 'studio', help: 'own', version: 'handler' },
