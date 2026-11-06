@@ -6,6 +6,7 @@
 
 import * as fs from 'fs/promises';
 import { superviseProcess } from './supervise.js';
+import { parseEnvArgs } from './runEnv.js';
 
 export async function runCommand(args: string[]): Promise<void> {
   const command = args[0];
@@ -31,6 +32,7 @@ export async function runCommand(args: string[]): Promise<void> {
     entryNode?: string;
     nodes?: string[];
     outNodes?: string[];
+    env?: Record<string, string>;
     validateOnly?: boolean;
     checkOnly?: boolean;
     inspectOnly?: boolean;
@@ -79,6 +81,10 @@ export async function runCommand(args: string[]): Promise<void> {
     outNodes.push(value);
   }
   if (outNodes.length) options.outNodes = outNodes;
+
+  // `--env NAME=value`, repeatable.
+  const env = parseEnvArgs(args);
+  if (env) options.env = env;
 
   const entryNodeIndex = args.indexOf('--entry-node');
   if (entryNodeIndex !== -1 && args[entryNodeIndex + 1]) {

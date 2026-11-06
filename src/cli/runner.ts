@@ -8,7 +8,8 @@ import { ProjectRoot } from '../../server/src/project.js';
 import { cascadeVersion, formatStageTrace } from '../../server/src/stageCache.js';
 import { graphSeed } from '../../packages/runtime/src/seed.js';
 import { installProjectStages } from './projectStages.js';
-import { RunTrace } from './runTrace.js';
+import { captureNodeConsole, RunTrace } from './runTrace.js';
+import { applyEnv } from './runEnv.js';
 import { installProjectIo } from './headlessIo.js';
 import { installHeadlessCanvas, MISSING_CANVAS_MESSAGE, type CanvasHost } from './headlessCanvas.js';
 import { parseFrameSpec } from './frames.js';
@@ -46,6 +47,8 @@ export interface RunOptions {
   nodes?: readonly string[];
   /** `--out-node <id>`, repeatable: also save these (usually mid-graph) nodes' image outputs. */
   outNodes?: readonly string[];
+  /** `--env NAME=value`, repeatable: set for the run, so Python stages and workers see it. */
+  env?: Readonly<Record<string, string>>;
   validateOnly?: boolean;
   checkOnly?: boolean;
   inspectOnly?: boolean;
@@ -198,6 +201,14 @@ export async function runGraph(options: RunOptions): Promise<void> {
         trace.recordStage(stage);
         if (verbose) console.log(`[stage] ${formatStageTrace(stage)}`);
       },
+      // What a stage prints goes into the trace against the node that called
+      // it, always; on the terminal too with --verbose (the console capture
+      // below records that copy, so it is not recorded twice).
+      onOutput: (stage, stream, line) => {
+        const text = `[${stage ?? 'stage-worker'}] ${line}`;
+        if (verbose) (stream === 'stderr' ? console.warn : console.log)(text);
+        else trace.recordLog(stream, text);
+      },
     });
     // And the same for files: `cascade/io` reads and writes over `/api/media`
     // in the page and against the directory here, so a node that saves an image
@@ -222,13 +233,22 @@ export async function runGraph(options: RunOptions): Promise<void> {
   // `--frames timeline` is the range saved with the graph.
   const frameSpec = frames ? (frames === 'timeline' ? timelineFrameSpec(graphData) : parseFrameSpec(frames)) : null;
 
+  // What nodes print while they cook goes into the trace as well.
+  const restoreConsole = captureNodeConsole(trace);
+  // `--env KEY=VALUE`: for this run's stages and workers, without a shell
+  // prefix (which agent shells often refuse). Names go in the trace, values never.
+  const restoreEnv = applyEnv(options.env);
+  if (options.env) trace.setEnvNames(Object.keys(options.env));
+
   let hostReleased = false;
   const releaseHost = () => {
     if (hostReleased) return;
     hostReleased = true;
     const errors: unknown[] = [];
     for (const dispose of [
+      restoreConsole,
       disposeStageBridge,
+      restoreEnv,
       disposeIoBridge,
       canvasHost ? () => canvasHost.dispose() : undefined,
       () => setProjectModuleCompiler(null),
@@ -278,6 +298,7 @@ export async function runGraph(options: RunOptions): Promise<void> {
           seed: graphSeed(graphData),
           ...(tracePath ? { trace: tracePath } : {}),
           stages: trace.stages(),
+          logs: trace.logs(),
         }) + '\n');
       }
       else {
@@ -315,6 +336,7 @@ export async function runGraph(options: RunOptions): Promise<void> {
           ...(out ? { files: images.map((image) => image.file) } : {}),
           ...(tracePath ? { trace: tracePath } : {}),
           stages: trace.stages(),
+          logs: trace.logs(),
         }) + '\n');
       } else if (out) {
         console.log(`Saved ${images.length} ${images.length === 1 ? 'image' : 'images'} -> ${out}/`);
@@ -324,6 +346,10 @@ export async function runGraph(options: RunOptions): Promise<void> {
   }
   } catch (error) {
     releaseHost();
+    // A failed run is the one whose trace is most wanted: what each node
+    // printed before it failed. Its path goes on the error.
+    const tracePath = options.worker ? undefined : writeTrace();
+    if (tracePath && error instanceof Error) error.message += `\nRun trace: ${tracePath}`;
     throw error;
   }
 

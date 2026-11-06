@@ -149,3 +149,9 @@ cascade run index.cascade --json      # exit 1: { "ok": false, "error": { "messa
 ```
 
 `Range` (a finite number in `[min, max]`), `Equals` (JSON-equal to `expected`, numbers within `tolerance`), `True`, and `NotBlank` (a PNG or PPM that is not one flat colour within `tolerance`, nor fully transparent). Each passes its input through and runs when the graph runs whole, or when the `--node` you name is downstream of it. An image wired only into assertions is still saved by `--out`. Headless only for now; see `doc/NODE_REFERENCE.md`.
+
+## Debug output and environment (`.cascade/runs/`, `--env`)
+
+Every run's trace in `.cascade/runs/<time>-<graph>.json` holds, per node, what it printed while it cooked: `console.log/info/warn/error/debug` from the node, and its Python stages' stderr, as `logs: [{ level, text }]` (500 lines per node, the rest counted in `logsDropped`). `run --json` gives the same lines as `data.logs: [{ node, level, text }]`. A failed run writes its trace too, and the error ends with `Run trace: <path>`.
+
+`--env NAME=value` (repeatable) sets a variable for the run: Python stages, the warm stage worker and `cascade render`'s worker processes see it, so `CLOUD_ANALYST_ONLINE=1` no longer needs a shell prefix. The trace records the names under `env`, never the values. The MCP `cook` and `render` tools take `env: { NAME: "value" }`.

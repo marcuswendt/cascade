@@ -91,6 +91,8 @@ export interface Verb {
 const graph = { type: 'string', description: 'Path to the .cascade file, relative to the project directory' };
 const dryRun = { type: 'boolean', description: 'Validate without writing' };
 const outNodes = { type: 'array', items: { type: 'string' }, description: 'Mid-graph node ids whose image outputs are saved as well (--out-node)' };
+const env = { type: 'object', additionalProperties: { type: 'string' }, description: 'Environment variables for this run, its Python stages and workers (--env NAME=value)' };
+const envArgs = (args: Record<string, any>) => Object.entries((args.env ?? {}) as Record<string, unknown>).flatMap(([name, value]) => ['--env', `${name}=${String(value)}`]);
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required, additionalProperties: false });
 
 const edit = (operation: (args: Record<string, any>) => GraphEditOperation): McpCall => ({ kind: 'edit', operations: (args) => [operation(args)] });
@@ -118,7 +120,7 @@ export const VERBS: readonly Verb[] = [
       {
         name: 'cook',
         description: 'Run a graph headlessly, optionally only the given node (cascade run). `data.images` lists each image output\'s file; `out` copies them there as <node>[.<port>].<ext>, `outNodes` adds mid-graph nodes.',
-        inputSchema: object({ graph, node: { type: 'string' }, out: { type: 'string', description: 'Directory to save image outputs to, project-relative' }, outNodes, timeoutMs: { type: 'number' } }, ['graph']),
+        inputSchema: object({ graph, node: { type: 'string' }, out: { type: 'string', description: 'Directory to save image outputs to, project-relative' }, outNodes, env, timeoutMs: { type: 'number' } }, ['graph']),
         call: {
           kind: 'cli',
           argv: (args, resolve) => [
@@ -126,6 +128,7 @@ export const VERBS: readonly Verb[] = [
             ...(args.node ? ['--node', args.node] : []),
             ...(args.out ? ['--out', resolve(args.out)] : []),
             ...(args.outNodes ?? []).flatMap((node: string) => ['--out-node', node]),
+            ...envArgs(args),
           ],
           timeoutMs: (args) => args.timeoutMs,
         },
@@ -140,6 +143,7 @@ export const VERBS: readonly Verb[] = [
           out: { type: 'string', description: 'Output directory, project-relative (default renders)' },
           nodes: { type: 'array', items: { type: 'string' } },
           outNodes,
+          env,
           scene: { type: 'string', description: 'A scene file to apply first' },
           timeoutMs: { type: 'number' },
         }, ['graph', 'frames']),
@@ -152,6 +156,7 @@ export const VERBS: readonly Verb[] = [
             ...(args.scene ? ['--scene', resolve(args.scene)] : []),
             ...(args.nodes ?? []).flatMap((node: string) => ['--node', node]),
             ...(args.outNodes ?? []).flatMap((node: string) => ['--out-node', node]),
+            ...envArgs(args),
           ],
           timeoutMs: (args) => args.timeoutMs ?? 30 * 60_000,
         },
@@ -611,6 +616,7 @@ Options:
   --out <dir>        Save image outputs here, project-relative or absolute: the
                      sequence with --frames (default: renders), else the still
   --out-node <id>    Also save this (mid-graph) node's image outputs. Repeatable.
+  --env NAME=value   Set a variable for the run and its Python stages. Repeatable.
   --json             Print one { ok, data, warnings } envelope (any command)
   --seed <n>         Cook with this graph seed instead of the document's
   --fresh            With --frames, cook every node on every frame (default: only what the frame changed)
@@ -641,8 +647,10 @@ writes <out>/<node id>[.<port>].<ext>, and run --json lists every image output
 in data.images either way.
 
 Every run writes a trace to .cascade/runs/: each node's time and every Python
-stage call with its cache key and state (hit, miss, off). --verbose prints the
-stage lines as they happen.
+stage call with its cache key and state (hit, miss, off), and what each node
+and its stages printed while it cooked (also in run --json as data.logs). A
+failed run writes its trace too, and names it in the error. --verbose prints
+the stage lines as they happen.
 `;
 }
 

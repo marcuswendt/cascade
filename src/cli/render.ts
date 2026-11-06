@@ -32,6 +32,7 @@ import { DEFAULT_FPS } from '../../packages/runtime/src/expressions/time.js';
 import { parseFrameSpec } from './frames.js';
 import { encodeSequence, frameSequences, hasFfmpeg, timelineFrameSpec, type EncodedSequence } from './encode.js';
 import { runGraph } from './runner.js';
+import { parseEnvArgs } from './runEnv.js';
 import type { RenderedFrame } from './projectRuntime.js';
 
 export interface RenderOptions {
@@ -40,6 +41,8 @@ export interface RenderOptions {
   frames?: string;
   nodes?: readonly string[];
   out?: string;
+  /** `--env NAME=value`, repeatable: set in every worker (and so its Python stages). */
+  env?: Readonly<Record<string, string>>;
   fps?: number;
   fresh?: boolean;
   seed?: number;
@@ -109,6 +112,7 @@ Options:
   --progress <n>      A progress line every n frames (default: about 20 lines)
   --job <id>          Note progress on this Cairn job (default: $CAIRN_JOB),
                       with cairn jobs update <id> --note
+  --env NAME=value    Set a variable in every worker and its Python stages. Repeatable
   --json              Print the result as JSON; progress goes to stderr
   --verbose, -v       Every frame, and the workers' own output
 `;
@@ -149,6 +153,7 @@ export function parseRenderArgs(args: readonly string[]): RenderOptions {
       case '--fresh': options.fresh = true; break;
       case '--progress': options.progressEvery = integer(value(index, flag), flag, 1); index += 1; break;
       case '--job': options.job = value(index, flag); index += 1; break;
+      case '--env': options.env = { ...options.env, ...parseEnvArgs(['--env', value(index, flag)]) }; index += 1; break;
       case '--json': options.json = true; break;
       case '--verbose': case '-v': options.verbose = true; break;
       default: throw new Error(`Unknown render option: ${flag} (cascade render --help)`);
@@ -336,6 +341,7 @@ export async function renderGraph(options: RenderOptions): Promise<RenderResult>
       execArgv: entry.execArgv,
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       cwd: process.cwd(),
+      env: { ...process.env, ...options.env },
     });
     children.push(child);
     let stderr = '';

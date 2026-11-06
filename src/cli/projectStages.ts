@@ -30,6 +30,12 @@ export interface ProjectStageOptions {
   readonly onTrace?: (trace: StageTrace) => void;
   /** Use the project's warm worker when it declares one. Default true. */
   readonly worker?: boolean;
+  /**
+   * Receives what a stage prints, one line at a time (`stage` is null for the
+   * warm worker, which serves every stage). Set, it replaces the `verbose`
+   * printing; the run uses it to put stage output in the trace.
+   */
+  readonly onOutput?: (stage: string | null, stream: 'stdout' | 'stderr', line: string) => void;
 }
 
 /** Install the bridge; returns the disposer. */
@@ -49,9 +55,11 @@ export function installProjectStages(project: ProjectRoot, options: ProjectStage
           // render may run a stage for several.
           requestTimeoutMs: 10 * 60 * 1000,
           // What a stage prints is shown with --verbose only, as before.
-          onStderr: options.verbose
-            ? (text) => { for (const line of text.split('\n')) console.warn(`[stage-worker] ${line}`); }
-            : () => {},
+          onStderr: options.onOutput
+            ? (text) => { for (const line of text.split('\n')) options.onOutput!(null, 'stderr', line); }
+            : options.verbose
+              ? (text) => { for (const line of text.split('\n')) console.warn(`[stage-worker] ${line}`); }
+              : () => {},
         }),
       };
     }
@@ -80,7 +88,9 @@ export function installProjectStages(project: ProjectRoot, options: ProjectStage
          * render it is part of; prefixed with the stage name, because a graph
          * runs several.
          */
-        onOutput: options.verbose
+        onOutput: options.onOutput
+          ? (stream, text) => { for (const line of text.split('\n')) options.onOutput!(stage, stream, line); }
+          : options.verbose
           ? (stream, text) => {
               const write = stream === 'stderr' ? console.warn : console.log;
               for (const line of text.split('\n')) write(`[${stage}] ${line}`);

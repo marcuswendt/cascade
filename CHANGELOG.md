@@ -61,6 +61,13 @@ Notable changes to Cascade. Newest first.
   type. Short names work (`Circle`, `NotBlank`); a typo gets suggestions; a
   class-based Studio node says so and points at the shipped
   `doc/NODE_REFERENCE.md`. `--json`, and MCP `node_help`.
+- **Debug output in the run trace, and `--env`.** What a node prints while it
+  cooks (console, and its Python stages' stderr, which was shown only with
+  `--verbose`) is kept per node in `.cascade/runs/…json` and in
+  `run --json` as `data.logs`. A failed run now writes its trace too and
+  names it in the error. `cascade run|render --env NAME=value` (MCP `env`)
+  sets a variable for the run's stages and render workers without a shell
+  prefix; the trace records the names only.
 
 ### Removed
 

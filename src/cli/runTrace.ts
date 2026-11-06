@@ -23,7 +23,26 @@ export interface TracedNode {
   readonly module: string;
   ms: number;
   readonly stages: StageTrace[];
+  /** What the node printed while it cooked (console, and its stages' stdout/stderr). Absent when nothing. */
+  logs?: LogLine[];
+  /** Lines past `MAX_NODE_LOGS`, counted rather than kept. */
+  logsDropped?: number;
 }
+
+export interface LogLine {
+  /** `log`, `info`, `warn`, `error`, `debug`, or `stdout`/`stderr` for a Python stage. */
+  readonly level: string;
+  readonly text: string;
+}
+
+/** One logged line with its node, for `--json` output. */
+export interface LogSummary extends LogLine {
+  readonly node: string;
+}
+
+/** Lines kept per node and per line, so a node printing per mark cannot bloat the trace. */
+export const MAX_NODE_LOGS = 500;
+export const MAX_LOG_LINE = 2000;
 
 export interface TracedRun {
   readonly runId: string;
@@ -37,6 +56,8 @@ export interface RunTraceFile {
   readonly startedAt: string;
   readonly cascade: string;
   readonly seed: number;
+  /** Names of the variables `--env` set for this run. */
+  readonly env?: readonly string[];
   readonly runs: readonly TracedRun[];
 }
 
@@ -83,6 +104,38 @@ export class RunTrace {
     else this.loose.push(trace);
   }
 
+  /**
+   * Record a line printed while a node cooks, against that node. Returns
+   * false when no node is cooking, so the caller leaves the line alone (the
+   * CLI's own messages are not node output).
+   */
+  recordLog(level: string, text: string): boolean {
+    const node = this.current?.node;
+    if (!node) return false;
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      node.logs ??= [];
+      if (node.logs.length >= MAX_NODE_LOGS) {
+        node.logsDropped = (node.logsDropped ?? 0) + 1;
+        continue;
+      }
+      node.logs.push({ level, text: line.length > MAX_LOG_LINE ? `${line.slice(0, MAX_LOG_LINE)}…` : line });
+    }
+    return true;
+  }
+
+  /** Every logged line in order, with its node. */
+  logs(): LogSummary[] {
+    return this.runs.flatMap((run) => run.nodes.flatMap((node) => (node.logs ?? []).map((line) => ({ node: node.id, ...line }))));
+  }
+
+  /** The names (never the values) of variables `--env` set, for the trace. */
+  setEnvNames(names: readonly string[]): void {
+    this.envNames = [...names];
+  }
+
+  private envNames: string[] = [];
+
   /** Every stage call in order, with its node. */
   stages(): StageSummary[] {
     const list: StageSummary[] = [];
@@ -100,6 +153,7 @@ export class RunTrace {
       startedAt: this.startedAt.toISOString(),
       cascade: this.cascade,
       seed: this.seed,
+      ...(this.envNames.length ? { env: this.envNames } : {}),
       runs: this.runs,
     };
   }
@@ -115,6 +169,31 @@ export class RunTrace {
     pruneTraces(path.dirname(full));
     return relative;
   }
+}
+
+const CONSOLE_LEVELS = ['log', 'info', 'warn', 'error', 'debug'] as const;
+
+/**
+ * Copy what nodes print into the trace while they cook, and pass it on as
+ * before. A node's `console.log` used to reach the terminal only, which is
+ * gone by the time an agent opens the trace, and under `--json` was mixed
+ * into `warnings`. Returns the restore.
+ */
+export function captureNodeConsole(trace: RunTrace): () => void {
+  const original = Object.fromEntries(CONSOLE_LEVELS.map((level) => [level, console[level]])) as Record<(typeof CONSOLE_LEVELS)[number], (...args: unknown[]) => void>;
+  for (const level of CONSOLE_LEVELS) {
+    console[level] = (...args: unknown[]) => {
+      trace.recordLog(level, args.map((arg) => (typeof arg === 'string' ? arg : arg instanceof Error ? arg.stack ?? arg.message : safeJson(arg))).join(' '));
+      original[level](...args);
+    };
+  }
+  return () => {
+    for (const level of CONSOLE_LEVELS) console[level] = original[level];
+  };
+}
+
+function safeJson(value: unknown): string {
+  try { return JSON.stringify(value) ?? String(value); } catch { return String(value); }
 }
 
 /** Traces kept per project; the oldest go first. Names sort by time. */
