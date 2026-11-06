@@ -16,7 +16,7 @@ sketch that swaps its copy for the kit renders the same bytes.
 ```bash
 npm run build:kit                       # in the cascade checkout: writes packages/kit/dist
 cd ~/Documents/Cascade/my-sketch
-npm install --save-dev @field/cascade-kit@file:../../Dev/cascade/packages/kit
+npm install --save-dev ../../Dev/cascade/packages/kit   # "@field/cascade-kit": "file:../../Dev/cascade/packages/kit"
 ```
 
 `dist/` is not committed, so a fresh checkout of Cascade needs
@@ -38,7 +38,7 @@ entry `@field/cascade-kit` re-exports the all-host modules only.
 
 ## Modules
 
-| Import | What it is | Replaced |
+| Import | What it is | Rebuilt in (2026-11-06) |
 |---|---|---|
 | `colour` | sRGB transfer, OKLab, OKLCH, gamut mapping (`clip`, `bisect`, `shrink`), `gamutCmax`, hex, CSS, WCAG contrast | 12 copies: strata ribbon, commons plotter-kit, cairn-swatch, rides-atlas, race-story-frame, tmr-2026-preview, cloud-wall, cloud-volumes |
 | `palette` | seeded k-means in OKLab, `paletteFromPixels(rgba, k)` | the Python k-means in cloud-volumes moods, field-rocks, pebble-set |
@@ -46,7 +46,7 @@ entry `@field/cascade-kit` re-exports the all-host modules only.
 | `noise` | the GLSL hashes, `valueNoise1/2`, `fbm2`, `seededNoise2`, `smoothstep` | commons plotter-kit, field-logo |
 | `paper` | `paperPixels` and `paperSheet`: mottle, tooth and vignette on any RGBA buffer or 2D context | commons plotter, pen-live, ripple-plot |
 | `pen` | `plotSvg` (mm, numbered Inkscape layers, `%` guide layers, 0.1 mm pen), `dot`, `hatch`, `orderPaths`, `inkShade` (raster pen preview) | commons plotter-kit, cloud-plots `plotdoc` (Python) |
-| `video` | `framesToMp4` (H.264 yuv420p, faststart), `videoFrame`, `runFfmpeg` (PATH, then Homebrew) | commons frames-to-video and plotter-source, cloud-volumes tools |
+| `video` | `framesToMp4` (H.264 yuv420p, faststart), `videoFrame`, `runFfmpeg` (PATH, then Homebrew) | commons frames-to-video and plotter-source, cloud-wall, cloud-plots, cloud-volumes, cloud-palette |
 | `cairn` | `readCairnSnapshot`, `painter`, `spaceEvents` (deduped across spaces), `eventsByDay`, `addDays` over the `data/spaces.json` + `data/events.json` snapshot | cairn-strata-hd, cairn-flow, cairn-stretch, cairn-swatch |
 | `observatory` | moment records (`readMomentRecord`), photo moments (`selectMomentImage`, `bestFrame`), `parseLocalTime` | cloud-volumes, cloud-shared, cloud-wall |
 | `cache` | `createCache`: a disk cache keyed on stage, inputs and the code's import closure, one log line per call | cairn-strata-hd river cache, after cloud-plots' stale-key lesson |
@@ -54,6 +54,11 @@ entry `@field/cascade-kit` re-exports the all-host modules only.
 
 File access is always injected (`read` functions, a `root`), so the same code
 runs under `cascade/io` in a node, in a dev script and in tests.
+
+Using it today: cairn-strata-hd (colour, random, cache, cairn), commons
+(colour, noise, paper, pen, video through `lib/plotter-kit.ts`) and
+cloud-volumes (observatory, colour). Their old copies are in each project's
+`_archive/`.
 
 ## The disk cache
 
@@ -92,7 +97,7 @@ script to catch them drifting. Instead:
 1. Make the providing project a normal dependency, not a symlink:
 
    ```bash
-   npm install --save-dev cloud-shared@file:../cloud-shared
+   npm install --save-dev ../cloud-shared   # "cloud-shared": "file:../cloud-shared"
    ```
 
 2. Generate the stubs (all of the provider's nodes, or name some):
