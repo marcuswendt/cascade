@@ -11,7 +11,7 @@ import type { ProjectRoot } from '../project.js';
 import { PathSafetyError } from '../pathSafety.js';
 import { autoCommit } from '../git.js';
 import { compileProjectModule, compileEmbedded } from '../compile.js';
-import { createNodeWatcher, type NodeWatcher } from '../nodeWatch.js';
+import { ALL_MODULES, createNodeWatcher, type NodeWatcher } from '../nodeWatch.js';
 
 function handleError(res: import('express').Response, err: unknown) {
   if (err instanceof PathSafetyError) {
@@ -27,9 +27,53 @@ function handleError(res: import('express').Response, err: unknown) {
   res.status(500).json({ error: String(err) });
 }
 
+/** A boot asks for every module in one request; this bounds what one request
+ *  may make the server compile. */
+const MAX_BATCH_MODULES = 500;
+
+type ModuleFacts = { runsOn: 'portable' | 'server' | 'browser'; icon: string | null };
+
 export function createNodesRouter(project: ProjectRoot): Router {
   const router = Router();
   let watcher: NodeWatcher | null = null;
+
+  /**
+   * What `GET /` reports per module, kept until the module changes.
+   *
+   * Classifying a module parses its source (see ProjectRoot.moduleRunsOn), and
+   * doing that for every module on every request cost 33 ms a call. The
+   * folder listing is still read each time — it is cheap, and it is what
+   * catches a module folder appearing, vanishing or being renamed, which the
+   * watcher reports only by path and cannot always attribute. Content edits
+   * come through the watcher; the write routes below also drop their module
+   * at once, so a read straight after a save never waits on the debounce.
+   */
+  const factsCache = new Map<string, Promise<ModuleFacts>>();
+
+  function forget(moduleName: string): void {
+    if (moduleName === ALL_MODULES) factsCache.clear();
+    else factsCache.delete(moduleName);
+  }
+
+  function ensureWatcher(): NodeWatcher {
+    if (!watcher) {
+      watcher = createNodeWatcher(project);
+      watcher.subscribe(forget);
+    }
+    return watcher;
+  }
+
+  function moduleFacts(name: string): Promise<ModuleFacts> {
+    let cached = factsCache.get(name);
+    if (!cached) {
+      cached = Promise.all([project.moduleRunsOn(name), project.moduleIcon(name)])
+        .then(([runsOn, icon]) => ({ runsOn, icon }));
+      factsCache.set(name, cached);
+      // A failure is not remembered: the next request tries again.
+      cached.catch(() => { if (factsCache.get(name) === cached) factsCache.delete(name); });
+    }
+    return cached;
+  }
 
   /**
    * Tells Studio which module changed on disk, so it can drop that module's
@@ -53,8 +97,7 @@ export function createNodesRouter(project: ProjectRoot): Router {
     res.flushHeaders?.();
     res.write('retry: 2000\n\n');
 
-    watcher ??= createNodeWatcher(project);
-    const unsubscribe = watcher.subscribe((moduleName) => {
+    const unsubscribe = ensureWatcher().subscribe((moduleName) => {
       res.write(`event: module-changed\ndata: ${JSON.stringify({ module: moduleName })}\n\n`);
     });
 
@@ -70,15 +113,51 @@ export function createNodesRouter(project: ProjectRoot): Router {
 
   router.get('/', async (_req, res) => {
     try {
+      // The cache is only as good as its invalidation, so it starts the
+      // watcher that feeds it. A headless `cascade run` never serves this.
+      ensureWatcher();
       const modules = await project.listNodeModules();
       const runsOn: Record<string, 'portable' | 'server' | 'browser'> = {};
       const icons: Record<string, string> = {};
       await Promise.all(modules.map(async (name) => {
-        runsOn[name] = await project.moduleRunsOn(name);
-        const icon = await project.moduleIcon(name);
-        if (icon) icons[name] = icon;
+        const facts = await moduleFacts(name);
+        runsOn[name] = facts.runsOn;
+        if (facts.icon) icons[name] = facts.icon;
       }));
       res.json({ modules, runsOn, icons });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  /**
+   * Every requested module's compiled bundle in one response:
+   * `GET /compiled?module=A&module=B` answers
+   * `{ modules: { A: { code }, B: { error } } }`.
+   *
+   * Studio used to fetch `/<name>/compiled` once per module on boot, about 50
+   * requests for a real sketch, queued six at a time behind the browser's
+   * connection limit. One module failing to compile is that module's entry,
+   * not the request's status, so the rest still load.
+   */
+  router.get('/compiled', async (req, res) => {
+    const raw = req.query.module;
+    const names = [...new Set((Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]).map(String).filter(Boolean))];
+    if (names.length === 0) {
+      res.status(400).json({ error: 'name at least one module: /api/nodes/compiled?module=<name>' });
+      return;
+    }
+    if (names.length > MAX_BATCH_MODULES) {
+      res.status(400).json({ error: `at most ${MAX_BATCH_MODULES} modules per request` });
+      return;
+    }
+    try {
+      const modules: Record<string, { code: string } | { error: string }> = {};
+      await Promise.all(names.map(async (name) => {
+        const result = await compileProjectModule(project, name);
+        modules[name] = result.ok ? { code: result.code } : { error: result.errors.join('\n') };
+      }));
+      res.set('Cache-Control', 'no-store').json({ modules });
     } catch (err) {
       handleError(res, err);
     }
@@ -139,6 +218,7 @@ export function createNodesRouter(project: ProjectRoot): Router {
         return;
       }
       await project.writeNodeModuleFile(req.params.moduleName, rel, content);
+      forget(req.params.moduleName);
       const { committed } = await autoCommit(project.root, `Update node ${req.params.moduleName}/${rel}`, [`nodes/${req.params.moduleName}`]);
       res.json({ ok: true, committed });
     } catch (err) {
@@ -156,6 +236,7 @@ export function createNodesRouter(project: ProjectRoot): Router {
         return;
       }
       await project.ensureNodeModuleScaffold(name);
+      forget(name);
       const { committed } = await autoCommit(project.root, `Scaffold node ${name}`, [`nodes/${name}`]);
       res.json({ ok: true, name, committed });
     } catch (err) {

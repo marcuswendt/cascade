@@ -30,6 +30,17 @@ const __dirname = path.dirname(__filename);
 // project directory.
 const CASCADE_DIST = path.resolve(__dirname, '..', '..', 'dist');
 
+/**
+ * The JSON body limit on project routes.
+ *
+ * It was 512 MB, which let any caller make the server buffer and parse half a
+ * gigabyte on every API route. The largest real graph on 2026-11-06 was under
+ * 120 KB (every `.cascade` under ~/Documents/Cascade, cache and archives
+ * included); graphs keep media on disk and reference it by path, and a frozen
+ * node saves its state, not its value. 32 MB is over 250 times that.
+ */
+export const PROJECT_JSON_LIMIT = '32mb';
+
 export interface StartServerOptions {
   readonly port?: number;
   readonly host?: string;
@@ -104,10 +115,11 @@ export function startServer(project: ProjectRoot, opts: StartServerOptions = {})
   const projectBoundary = createProjectRequestBoundary(security);
   app.use('/api', projectBoundary.guard);
   app.options('/api/{*splat}', projectBoundary.preflight);
-  // Project graphs and assets may carry large media-derived values. Process
-  // routes above use smaller independent limits.
-  app.use(express.json({ limit: '512mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '512mb' }));
+  // Graph saves are the largest JSON this parses. Process routes above use
+  // smaller independent limits; media uploads (routes/media.ts) are raw bodies
+  // with their own.
+  app.use(express.json({ limit: PROJECT_JSON_LIMIT }));
+  app.use(express.urlencoded({ extended: true, limit: PROJECT_JSON_LIMIT }));
 
   // Body-parser failures must stay JSON. The default handler renders an HTML
   // error page, and every caller here does res.json() on the response — so an

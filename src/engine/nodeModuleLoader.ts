@@ -93,18 +93,62 @@ async function importCompiledCode(code: string, source: string): Promise<LoadedM
   }
 }
 
+/**
+ * Compiled bundles requested in the same turn, waiting to go out as one request.
+ *
+ * Graph.fromJSON asks for every project module in one synchronous pass, and
+ * each ask used to be its own `GET /api/nodes/<name>/compiled`: about 50
+ * requests on a real sketch's boot, six at a time behind the browser's
+ * connection limit. Collecting the asks until the turn ends and sending
+ * `GET /api/nodes/compiled?module=…` once makes that one request. Only the
+ * in-flight ask is shared; nothing here keeps the code after it is delivered.
+ */
+type PendingCompile = { resolve: (code: string) => void; reject: (error: Error) => void };
+let pendingCompiles: Map<string, { promise: Promise<string>; waiters: PendingCompile }> | null = null;
+
+/** The server's esbuild output for one project module, batched with every
+ *  other module asked for in the same turn. */
+export function fetchCompiledProjectModule(folderName: string): Promise<string> {
+  if (!pendingCompiles) {
+    pendingCompiles = new Map();
+    setTimeout(flushCompiles, 0);
+  }
+  const existing = pendingCompiles.get(folderName);
+  if (existing) return existing.promise;
+  let waiters!: PendingCompile;
+  const promise = new Promise<string>((resolve, reject) => { waiters = { resolve, reject }; });
+  pendingCompiles.set(folderName, { promise, waiters });
+  return promise;
+}
+
+async function flushCompiles(): Promise<void> {
+  const batch = pendingCompiles;
+  pendingCompiles = null;
+  if (!batch || batch.size === 0) return;
+  const query = [...batch.keys()].map(name => `module=${encodeURIComponent(name)}`).join('&');
+  try {
+    const res = await fetch(`/api/nodes/compiled?${query}`);
+    if (!res.ok) throw new Error(await res.text());
+    const body = await res.json() as { modules?: Record<string, { code?: string; error?: string }> };
+    for (const [name, { waiters }] of batch) {
+      const entry = body.modules?.[name];
+      if (typeof entry?.code === 'string') waiters.resolve(entry.code);
+      else waiters.reject(new Error(entry?.error ?? `the server returned no bundle for ${name}`));
+    }
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error));
+    for (const { waiters } of batch.values()) waiters.reject(failure);
+  }
+}
+
 /** `modulePath` is the full `project.<folderName>` string stored on the node. */
 export function loadProjectModule(modulePath: string): Promise<LoadedModule> {
   const folderName = modulePath.replace(/^project\./, '');
   const cacheKey = `project:${folderName}`;
   let cached = moduleCache.get(cacheKey);
   if (!cached) {
-    cached = projectCompiler
-      ? projectCompiler(folderName).then(code => importCompiledCode(code, modulePath))
-      : fetch(`/api/nodes/${encodeURIComponent(folderName)}/compiled`).then(async (res) => {
-        if (!res.ok) throw new Error(await res.text());
-        return importCompiledCode(await res.text(), modulePath);
-      });
+    const code = projectCompiler ? projectCompiler(folderName) : fetchCompiledProjectModule(folderName);
+    cached = code.then(compiled => importCompiledCode(compiled, modulePath));
     moduleCache.set(cacheKey, cached);
   }
   return cached;

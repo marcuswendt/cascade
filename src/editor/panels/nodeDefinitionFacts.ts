@@ -20,6 +20,7 @@ import {
   definitionAdapterError,
   missingStudioCapabilities,
 } from '@/nodes/definition/projectDefinition';
+import { fetchCompiledProjectModule } from '@/engine/nodeModuleLoader';
 
 export type NodeOrigin = 'core' | 'library' | 'project' | 'embedded' | 'unknown';
 
@@ -201,9 +202,7 @@ async function readCompiledModule(folder: string): Promise<{ definition: NodeDef
   let cached = compiledCache.get(folder);
   if (cached) return cached;
   cached = (async () => {
-    const response = await fetch(`/api/nodes/${encodeURIComponent(folder)}/compiled`);
-    if (!response.ok) throw new Error((await response.text()) || `compile failed (${response.status})`);
-    const code = await response.text();
+    const code = await fetchCompiledProjectModule(folder);
     const inBrowser = typeof document !== 'undefined';
     const url = inBrowser
       ? URL.createObjectURL(new Blob([code], { type: 'text/javascript' }))

@@ -213,9 +213,8 @@ describe('CLI Runner', () => {
         execute: vi.fn(),
       } as any;
       vi.spyOn(Graph, 'fromJSON').mockReturnValue(graph);
-      const fetcher = vi.fn().mockResolvedValue(new Response(
-        'export function execute() {}',
-        { status: 200 },
+      const fetcher = vi.fn().mockResolvedValue(Response.json(
+        { modules: { 'after-run': { code: 'export function execute() {}' } } },
       ));
       vi.stubGlobal('fetch', fetcher);
 
@@ -226,7 +225,7 @@ describe('CLI Runner', () => {
       await expect(loadProjectModule('project.after-run')).resolves.toMatchObject({
         execute: expect.any(Function),
       });
-      expect(fetcher).toHaveBeenCalledWith('/api/nodes/after-run/compiled');
+      expect(fetcher).toHaveBeenCalledWith('/api/nodes/compiled?module=after-run');
     });
 
     it('removes process-wide compilers after a deterministic run', async () => {
@@ -235,9 +234,8 @@ describe('CLI Runner', () => {
         nodes: [{ id: 'pass', module: 'cascade.core.Null' }],
         connections: [],
       }));
-      const fetcher = vi.fn().mockResolvedValue(new Response(
-        'export function execute() {}',
-        { status: 200 },
+      const fetcher = vi.fn().mockResolvedValue(Response.json(
+        { modules: { 'after-deterministic-run': { code: 'export function execute() {}' } } },
       ));
       vi.stubGlobal('fetch', fetcher);
 
@@ -247,7 +245,7 @@ describe('CLI Runner', () => {
       await expect(loadProjectModule('project.after-deterministic-run')).resolves.toMatchObject({
         execute: expect.any(Function),
       });
-      expect(fetcher).toHaveBeenCalledWith('/api/nodes/after-deterministic-run/compiled');
+      expect(fetcher).toHaveBeenCalledWith('/api/nodes/compiled?module=after-deterministic-run');
     });
   });
 
