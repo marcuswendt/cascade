@@ -9,7 +9,9 @@
  *
  * The budgets are ratchets set at the size on main on 2026-11-06. Lower them
  * when a change makes the entry smaller; do not raise them — move the new
- * code behind a dynamic import instead.
+ * code behind a dynamic import instead. The JS budget carries 25 KB of
+ * headroom over that size (Marcus, 2026-11-06), so small Studio work lands
+ * without a split; spend it on purpose.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -17,7 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 export const BUDGET = {
-  entryJsBytes: 1071504,
+  entryJsBytes: 1071504 + 25 * 1024,
   entryCssBytes: 238640,
 };
 
