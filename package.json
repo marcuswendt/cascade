@@ -43,7 +43,8 @@
   ],
   "workspaces": [
     "packages/contracts",
-    "packages/runtime"
+    "packages/runtime",
+    "packages/kit"
   ],
   "bin": {
     "cascade": "./dist/cli/index.js"
@@ -129,10 +130,12 @@
     "dev": "vite",
     "dev:client": "vite",
     "build": "node scripts/build.mjs",
-    "build:workspaces": "npm run build --workspace @cascade/contracts && npm run build --workspace @cascade/runtime",
+    "build:workspaces": "npm run build --workspace @cascade/contracts && npm run build --workspace @cascade/runtime && npm run build --workspace @field/cascade-kit",
+    "build:kit": "npm run build --workspace @field/cascade-kit",
+    "test:kit": "npm run test --workspace @field/cascade-kit",
     "build:packages": "npm run build:workspaces && node scripts/copy-package-builds.mjs",
     "check:packages": "npm run check --workspace @cascade/contracts && npm run build --workspace @cascade/contracts && npm run check --workspace @cascade/runtime",
-    "test:packages": "npm run test --workspace @cascade/contracts && npm run test --workspace @cascade/runtime",
+    "test:packages": "npm run test --workspace @cascade/contracts && npm run test --workspace @cascade/runtime && npm run test --workspace @field/cascade-kit",
     "build:cli": "node scripts/build.mjs --cli",
     "build:server": "npm --prefix server run build",
     "prepack": "npm run build",

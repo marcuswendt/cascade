@@ -1,0 +1,75 @@
+{
+  "name": "@field/cascade-kit",
+  "version": "0.1.0",
+  "description": "Shared helpers for Cascade sketch projects: OKLCH colour and palettes, seeded random and noise, paper, pen plots, frames to MP4, Cairn and Observatory data, a code-keyed disk cache, and borrowed nodes",
+  "license": "MIT",
+  "author": "FIELD.IO <marcus@field.io>",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "bin": {
+    "cascade-kit": "./bin/cascade-kit.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./colour": {
+      "types": "./dist/colour.d.ts",
+      "default": "./dist/colour.js"
+    },
+    "./palette": {
+      "types": "./dist/palette.d.ts",
+      "default": "./dist/palette.js"
+    },
+    "./random": {
+      "types": "./dist/random.d.ts",
+      "default": "./dist/random.js"
+    },
+    "./noise": {
+      "types": "./dist/noise.d.ts",
+      "default": "./dist/noise.js"
+    },
+    "./paper": {
+      "types": "./dist/paper.d.ts",
+      "default": "./dist/paper.js"
+    },
+    "./pen": {
+      "types": "./dist/pen.d.ts",
+      "default": "./dist/pen.js"
+    },
+    "./cache": {
+      "types": "./dist/cache.d.ts",
+      "default": "./dist/cache.js"
+    },
+    "./cairn": {
+      "types": "./dist/cairn.d.ts",
+      "default": "./dist/cairn.js"
+    },
+    "./observatory": {
+      "types": "./dist/observatory.d.ts",
+      "default": "./dist/observatory.js"
+    },
+    "./video": {
+      "types": "./dist/video.d.ts",
+      "default": "./dist/video.js"
+    },
+    "./nodes": {
+      "types": "./dist/nodes.d.ts",
+      "default": "./dist/nodes.js"
+    }
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs"
+  }
+}
