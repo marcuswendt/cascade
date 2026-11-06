@@ -31,6 +31,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeFileAtomicSync } from './atomicWrite.js';
 import type { ProjectRoot } from './project.js';
 import type { StageCachePolicy, StageConfig } from './stageRunner.js';
 import { contentDigest, StageSources } from './stageSources.js';
@@ -206,9 +207,8 @@ function writeEntry(project: ProjectRoot, stage: string, key: string, result: un
   const file = entryPath(project, stage, key);
   const entry: StoredEntry = { format: CACHE_FORMAT, stage, key, result, outputs: resultFiles(project, result) };
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temporary, JSON.stringify(entry));
-  fs.renameSync(temporary, file); // atomic: an interrupted write never leaves half an entry
+  // Atomic: an interrupted write never leaves half an entry.
+  writeFileAtomicSync(file, JSON.stringify(entry));
 }
 
 /** Whether the core cache is read and written for this call, and why not.
