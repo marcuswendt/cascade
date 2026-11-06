@@ -16,6 +16,7 @@
  *
  *   GET  /capability           the handshake
  *   GET  /status[?sketch=]     allowlist + whether a run is live for that sketch
+ *   GET  /watch[?sketch=]      NDJSON: the sessions now, then on every change
  *   POST /attach               NDJSON: replay then live. Never BUSY
  *   POST /prompt               NDJSON: starts a run. BUSY if one is already live
  *   POST /cancel               kills a live run
@@ -32,6 +33,7 @@ import { AgentSessions, type AgentEvent } from '../agent/session.js';
 import { AgentRequestError } from '../agent/allowlist.js';
 
 const BODY_LIMIT = '1mb';
+const WATCH_KEEPALIVE_MS = 30_000;
 
 export function createAgentRouter(project: ProjectRoot, security: ServerSecurityOptions): Router {
   const router = Router();
@@ -49,6 +51,34 @@ export function createAgentRouter(project: ProjectRoot, security: ServerSecurity
   router.get('/status', boundary.requireCapability, (req, res) => {
     const sketch = typeof req.query?.sketch === 'string' ? req.query.sketch : undefined;
     res.json({ ok: true, ...sessions.status(undefined, sketch) });
+  });
+
+  /**
+   * The status, pushed. One held NDJSON stream per panel instead of a GET every
+   * second: the first line is the current sessions, then one line each time a
+   * run starts, ends or is reset. A blank line every half minute keeps an idle
+   * timeout from reaping it. NDJSON over fetch, not EventSource, for the same
+   * reason as `/attach`: the capability header.
+   */
+  router.get('/watch', boundary.requireCapability, (req, res) => {
+    const sketch = typeof req.query?.sketch === 'string' ? req.query.sketch : undefined;
+    res.status(200).set({
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-store, no-transform',
+      'X-Accel-Buffering': 'no',
+    });
+    res.flushHeaders?.();
+    const send = () => {
+      if (res.writableEnded) return;
+      res.write(`${JSON.stringify({ type: 'status', sessions: sessions.status([], sketch).sessions })}\n`);
+    };
+    send();
+    const unsubscribe = sessions.onChange(send);
+    const keepAlive = setInterval(() => { if (!res.writableEnded) res.write('\n'); }, WATCH_KEEPALIVE_MS);
+    res.once('close', () => {
+      clearInterval(keepAlive);
+      unsubscribe();
+    });
   });
 
   router.post('/reset', boundary.requireCapability, json({ limit: BODY_LIMIT }), (req, res) => {

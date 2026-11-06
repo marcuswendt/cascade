@@ -53,9 +53,17 @@ export class AgentUnavailableError extends Error {
 }
 
 let capability: string | null = null;
+let capabilityRequest: Promise<string> | null = null;
 
-async function token(): Promise<string> {
-  if (capability) return capability;
+/** One handshake however many callers ask at once: on boot the status read,
+ *  the attach and the watch all start together and each used to fetch its own. */
+function token(): Promise<string> {
+  if (capability) return Promise.resolve(capability);
+  capabilityRequest ??= requestCapability().finally(() => { capabilityRequest = null; });
+  return capabilityRequest;
+}
+
+async function requestCapability(): Promise<string> {
   const response = await fetch('/api/agent/capability');
   if (response.status === 404) {
     throw new AgentUnavailableError(
@@ -91,6 +99,106 @@ export async function agentStatus(sketch?: string): Promise<AgentStatus> {
     agents: Array.isArray(body?.agents) ? body.agents : [],
     sessions: Array.isArray(body?.sessions) ? body.sessions : [],
   };
+}
+
+export interface WatchAgentStatusOptions {
+  /** Every session the server holds, sent on connect and on each change. */
+  onSessions: (sessions: AgentSessionSummary[]) => void;
+  sketch?: string;
+}
+
+/** Wait after a dropped watch, doubling to the cap while the server stays away. */
+const WATCH_RETRY_MS = 2_000;
+const WATCH_RETRY_MAX_MS = 30_000;
+
+/**
+ * Hold `/api/agent/watch` open and report the sessions each time they change.
+ *
+ * Replaces a status GET every second, which was Studio's whole idle traffic
+ * (60 requests a minute) and existed only to notice a run this window did not
+ * start. Runs while the page is visible: a hidden tab drops the stream rather
+ * than holding one of the browser's six connections to the server, and
+ * re-opens it, with a fresh first status, when it is shown again. Gives up for
+ * good when the server has the agent console disabled. Returns a disposer.
+ */
+export function watchAgentStatus(options: WatchAgentStatusOptions): () => void {
+  let disposed = false;
+  let controller: AbortController | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let delay = WATCH_RETRY_MS;
+  const query = options.sketch ? `?sketch=${encodeURIComponent(options.sketch)}` : '';
+  const hasDocument = typeof document !== 'undefined';
+  const visible = () => !hasDocument || document.visibilityState !== 'hidden';
+
+  const schedule = () => {
+    if (disposed || retryTimer || !visible()) return;
+    retryTimer = setTimeout(() => { retryTimer = null; void open(); }, delay);
+    delay = Math.min(delay * 2, WATCH_RETRY_MAX_MS);
+  };
+
+  async function open(): Promise<void> {
+    if (disposed || controller || !visible()) return;
+    const own = new AbortController();
+    controller = own;
+    try {
+      const response = await call(`/api/agent/watch${query}`, { method: 'GET', signal: own.signal });
+      if (response.status === 404) { disposed = true; return; }
+      if (!response.ok) throw new Error(`agent watch ${response.status}`);
+      delay = WATCH_RETRY_MS;
+      await readNdjsonLines(response, (value) => {
+        if (value?.type === 'status' && Array.isArray(value.sessions)) options.onSessions(value.sessions);
+      });
+    } catch (error) {
+      if (error instanceof AgentUnavailableError) { disposed = true; return; }
+      if ((error as Error)?.name === 'AbortError') return;
+    } finally {
+      if (controller === own) controller = null;
+    }
+    // The server ended the stream (a restart) or dropped it: come back.
+    schedule();
+  }
+
+  const onVisibility = () => {
+    if (visible()) {
+      delay = WATCH_RETRY_MS;
+      void open();
+    } else {
+      controller?.abort();
+      controller = null;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+  };
+  if (hasDocument) document.addEventListener('visibilitychange', onVisibility);
+  void open();
+
+  return () => {
+    disposed = true;
+    controller?.abort();
+    controller = null;
+    if (retryTimer) clearTimeout(retryTimer);
+    if (hasDocument) document.removeEventListener('visibilitychange', onVisibility);
+  };
+}
+
+async function readNdjsonLines(response: Response, onValue: (value: any) => void): Promise<void> {
+  if (!response.body) return;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let carry = '';
+  const take = (line: string) => {
+    if (!line.trim()) return;
+    try { onValue(JSON.parse(line)); } catch { /* a partial or foreign line is skipped */ }
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    carry += decoder.decode(value, { stream: true });
+    const lines = carry.split('\n');
+    carry = lines.pop() ?? '';
+    for (const line of lines) take(line);
+  }
+  take(carry);
 }
 
 /** Stop a run. Since a closing socket no longer kills the agent, this is the

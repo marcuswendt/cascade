@@ -263,8 +263,25 @@ export interface AgentSessionSummary {
 
 export class AgentSessions {
   private readonly states = new Map<string, SessionState>();
+  private readonly changeListeners = new Set<() => void>();
 
   constructor(private readonly project: ProjectRoot) {}
+
+  /**
+   * Called whenever a run starts, ends or is forgotten. This is what lets the
+   * panel hold one quiet stream instead of asking for the status every second:
+   * the only thing it was polling for was a run it did not start appearing.
+   */
+  onChange(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
+  private notifyChange(): void {
+    for (const listener of [...this.changeListeners]) {
+      try { listener(); } catch { this.changeListeners.delete(listener); }
+    }
+  }
 
   availability(agent: string): AgentAvailability {
     return agentAvailability(this.project.root, agent);
@@ -316,6 +333,7 @@ export class AgentSessions {
     if (state.run?.running) throw new AgentRequestError('BUSY', `The ${agent} session for ${sketch} is still working`);
     state.sessionId = null;
     state.run = null;
+    this.notifyChange();
   }
 
   /** Stop a live run. This is the only thing that kills an agent now: a reader
@@ -410,6 +428,7 @@ export class AgentSessions {
     });
 
     this.launch(executable, request, state, run);
+    this.notifyChange();
     await reading;
   }
 
@@ -442,6 +461,7 @@ export class AgentSessions {
       liveRuns.delete(run);
       run.emit(event);
       run.listeners.clear();
+      this.notifyChange();
     };
 
     const takeLine = (line: string) => {

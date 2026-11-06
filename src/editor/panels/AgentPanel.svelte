@@ -30,9 +30,11 @@
     describeStreamLine,
     resetAgentSession,
     sendAgentPrompt,
+    watchAgentStatus,
     AgentUnavailableError,
     type AgentAvailability,
     type AgentEvent,
+    type AgentSessionSummary,
   } from '../agentConsole';
   import { studioDocument } from '../studioDocumentBridge';
   import { ownsKeyboard } from '../panelScope';
@@ -201,10 +203,19 @@
   $: launchable = !statusLoaded || Boolean(selected?.configured && selected?.resolved);
   // Polled rather than derived: the open document lives in App.svelte and a
   // panel has no reactive path to it, so the label would otherwise still name
-  // the graph that was open when the panel was created.
+  // the graph that was open when the panel was created. The tick reads local
+  // state only; whether a run is live arrives over the status watch, which is
+  // one held request rather than a GET every second.
   let sketch: string | null = studioDocument()?.file() ?? null;
+  let knownSessions: AgentSessionSummary[] = [];
   onMount(() => {
     void reconnect(sketch);
+    const stopWatch = watchAgentStatus({
+      onSessions: (sessions) => {
+        knownSessions = sessions;
+        void watchForLiveRun();
+      },
+    });
     const timer = setInterval(() => {
       const current = studioDocument()?.file() ?? null;
       if (current !== sketch) {
@@ -218,7 +229,10 @@
         void watchForLiveRun();
       }
     }, 1000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      stopWatch();
+    };
   });
 
   void loadStatus();
@@ -249,6 +263,7 @@
   function handleEvent(event: AgentEvent): void {
     if (event.type === 'attached') {
       live = event.running;
+      if (!event.running) settleKnownSession();
       if (event.dropped > 0) {
         push('system', `${event.dropped} earlier ${event.dropped === 1 ? 'line' : 'lines'} were dropped from the server's buffer.`);
       }
@@ -264,13 +279,22 @@
       push('error', event.text.trimEnd());
     } else if (event.type === 'exit') {
       live = false;
+      settleKnownSession();
       if (event.cancelled) push('system', 'Stopped.');
       else if (event.timedOut) push('error', 'The agent was still running after 15 minutes and was stopped.');
       else if (event.code !== 0) push('error', `${agent} exited with code ${event.code}.`);
     } else if (event.type === 'error') {
       live = false;
+      settleKnownSession();
       push('error', event.message);
     }
+  }
+
+  /** The run's own stream can end a beat before the watch reports it, and the
+   *  local tick must not read that stale `running` as a new run to join. */
+  function settleKnownSession(): void {
+    knownSessions = knownSessions.map((entry) =>
+      entry.sketch === sketch && entry.agent === agent ? { ...entry, running: false } : entry);
   }
 
   /**
@@ -316,20 +340,15 @@
 
   /**
    * Pick up a run this panel did not start — a second window on the same
-   * sketch, or one launched before this page loaded. Cheap status poll rather
-   * than a held-open request, so an idle console costs one small GET a second
-   * and never a process.
+   * sketch, or one launched before this page loaded. Reads the sessions the
+   * status watch last pushed, so it costs no request: it runs when the watch
+   * reports a change and on the panel's local tick, which covers a change that
+   * arrived while this panel was busy attaching.
    */
   async function watchForLiveRun(): Promise<void> {
     if (busy || live || attachController || !sketch || statusError) return;
-    try {
-      const status = await agentStatus(sketch);
-      const running = status.sessions.find((entry) => entry.sketch === sketch && entry.agent === agent && entry.running);
-      if (running && !busy && !attachController) await reconnect(sketch);
-    } catch {
-      // A transient status failure is not worth a line in the transcript; the
-      // next tick tries again.
-    }
+    const running = knownSessions.find((entry) => entry.sketch === sketch && entry.agent === agent && entry.running);
+    if (running) await reconnect(sketch);
   }
 
   function push(kind: EntryKind, text: string): void {
