@@ -140,6 +140,19 @@ Five things that are easy to get wrong:
 - **A connection is a pair of triples**: \`[[fromNode, portIndex, portName], [toNode, portIndex, portName]]\`. Direction comes from *position in the pair* — first is the source. The middle number is the **port index**, not a direction.
 - **A prop is a bare value or \`{ value, expression?, channel? }\`.** Channels take precedence over expressions, then stored values. Save the binding, not just its value at the playhead.
 
+## Design the graph, not one big node
+
+A piece is several nodes, each doing one job: load the data, lay it out, colour it, draw it, export it. Do not write one 300-line node that does all of it. The graph is the record Marcus inspects, so each node boundary should be a place worth looking at, with the parameters that matter on it.
+
+Clean graph design is clean code design:
+
+- **One responsibility per node**, named for what it does (\`layout_rings\`, not \`main\`).
+- **Data flows through typed ports**, never through module-level state or files one node writes and another reads behind the graph's back.
+- **What varies is a parameter**; seeds, counts and colours are on the node, not constants in the code.
+- **Shared helpers go in \`lib/\` or the kit**; the node is the unit you compose and reuse.
+
+Split a node when it does two of load, generate, style, render and export, or when its \`execute\` grows past about 150 lines.
+
 ## Before writing a node, check whether you need one
 
 **Parameters can hold expressions**, and this is usually the answer to anything time-based. The variables are Houdini's:

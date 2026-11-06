@@ -198,6 +198,19 @@ image-api:
 
 The proxy accepts HTTPS only, refuses undeclared hosts, strips caller-supplied authorization headers, and never returns the credential value to the page. Studio defers its initial cook when a required credential is missing and links to File → Project Settings.
 
+## Design the graph, not one big node
+
+A piece is several nodes, each doing one job: load the data, lay it out, colour it, draw it, export it. The usage survey of November 2026 found the opposite in most projects (1 to 5 nodes of 300+ lines each over `lib/`), which leaves the graph as a parameter panel around opaque code. The graph is the record Marcus inspects, so each node boundary should be a place worth looking at, with the parameters that matter on it.
+
+Clean graph design is clean code design:
+
+- **One responsibility per node**, named for what it does (`layout_rings`, not `main`).
+- **Data flows through typed ports**, never through module-level state or files one node writes and another reads behind the graph's back.
+- **What varies is a parameter**; seeds, counts and colours are on the node, not constants in the code.
+- **Shared helpers go in `lib/` or the kit** (`KIT.md`); the node is the unit you compose and reuse.
+
+Split a node when it does two of load, generate, style, render and export, or when its `execute` grows past about 150 lines.
+
 ## Add a custom node
 
 Before writing one, check whether you need one. A parameter can hold an expression, so anything time-based is usually a parameter rather than a node. See [Animate a parameter](#animate-a-parameter). A node earns its place when it produces geometry or pixels, or when several parameters share a computation. The built-in library is listed in `NODE_REFERENCE.md`, generated from the definitions themselves; read that before searching for what a node does.
