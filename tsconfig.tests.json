@@ -1,0 +1,10 @@
+{
+  "//": "Typechecks src and tests together for `npm run verify` (tsconfig.json covers src only; vitest strips types).",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["vitest/globals", "node"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.svelte", "tests/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

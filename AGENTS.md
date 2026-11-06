@@ -219,6 +219,7 @@ type system knows what a `vec2` is; nothing tells it that `offset_x` and
 - Studio uses `StudioGraphController` over its compatibility `Graph`/`Node` engine and reuses runtime mechanisms. Custom frontends consume the neutral runtime directly; full Studio migration remains incomplete.
 - User modules are trusted project code, not a sandbox. Static definitions improve tooling and portability, not isolation.
 - Keep legacy support inside the existing Studio/CLI compatibility engine; do not spread compatibility branches into the deterministic runtime.
+- `src/engine`, `src/nodes`, `src/cli` and `src/player` never import the Studio editor (`src/editor`, `src/App.svelte`); the server never imports `src/`. `tests/architecture-layers.test.ts` enforces these and the two above, and allows no new import cycle.
 
 ## Change workflow
 
@@ -228,9 +229,23 @@ the TypeScript 7 preview until it is stable and the repository gates pass.
 1. Add or update a focused regression test.
 2. Make the smallest change at the owning layer.
 3. Prefer deletion or an existing utility over another wrapper.
-4. Run the focused test, then `npm run check`, `npm run test:run`, `npm --prefix server run build`, `npm run build`, and `npm run build:cli` when the affected surface warrants it. Both builds write to a staging directory and replace `dist/` only on success, so a failed build leaves the previous CLI working.
+4. While iterating, run the focused test or `npm run verify:fast` (types for src, tests and server, the node reference, the architecture ratchets, and `vitest related` for the files you changed). Before you commit, run `npm run verify`: it builds the packages, then runs the typechecks, `check:packages`, svelte-check, the whole vitest suite, the package tests and the Studio bundle budget, stopping at the first failure. It never touches `dist/`. Run `npm run build` and `npm run build:cli` only when you need the built CLI or Studio; both replace `dist/` only on success, so a failed build leaves the previous CLI working.
 5. For package/public API changes, also test the packed tarball from an empty temporary project.
-6. When a built-in definition or a node library registry changes, regenerate the node reference with `npm run build:node-reference` and commit the result. `build:cli` runs it too, so a full build will produce the diff whether or not you meant to. Nothing tests that the committed file is current, so a stale one ships silently — and it is the first thing a project's agent reads.
+6. When a built-in definition or a node library registry changes, regenerate the node reference with `npm run build:node-reference` and commit the result. `verify` fails on a stale one (`npm run check:node-reference`).
+7. The ratchets in `tests/architecture-*.test.ts`, `scripts/bundle-budget.mjs` and the test type-error list in `scripts/verify.mjs` only go down. When one fails, fix the code: split the file, move the shared code down a layer, break the cycle, lazy-load the new Studio code. Never add to a list or raise a number; when your change lowers one, lower the number in the same commit.
+
+### Where a change goes
+
+| To add | Touch |
+| --- | --- |
+| A node in a project | `cascade node <Name>`, then `nodes/<Name>/index.ts` (see "Create a deterministic node") |
+| A built-in node in an existing namespace | `packages/runtime/src/builtins/<ns>/<node>.ts`, its entry in `builtins/<ns>/index.ts`, a test in `packages/runtime/test/`, then `npm run build:node-reference` |
+| A built-in namespace | `packages/runtime/src/builtins/<ns>/` and `builtins/index.ts`; Studio's `src/nodes/<ns>/index.ts` and `library.ts`, and `src/nodes/initializeLibraries.ts`; `scripts/build-node-reference.mjs` |
+| A CLI verb or MCP tool | One row in `src/cli/verbs.ts`, its handler, and its line in `doc/CLI_REFERENCE.md` (plus `doc/MCP.md` for a tool); `tests/cli-verbs.test.ts` checks the docs |
+| A graph edit operation | `packages/runtime/src/edit/operations.ts` and `graphEditor.ts`, then the verb row above |
+| A param type | `packages/contracts/src/values.ts`, `definition.ts`, `validate.ts`; `packages/runtime/src/runtime.ts`; `src/types/coreTypes.ts`, `node.types.ts`, `src/utils/propUtils.ts`; `src/editor/Inspector.svelte`, `CodeEditor.svelte`; `server/src/projectTemplate.ts`; `doc/PROJECT_AUTHORING.md` |
+| A Studio panel | `src/editor/panels/<Name>Panel.svelte` and its `registerPanelComponent` (or lazy) line in `src/editor/dockview/DockviewContainer.svelte`; keep it out of the entry chunk if it is not on first paint |
+| Shared code for the server and the CLI | `server/src/` (the CLI imports it); pure document code such as the `.cascade` formatter (`formatCompactJSON`) lives in `packages/contracts/src/` |
 
 Do not add dependencies without a concrete need. Do not create extra packages unless they need independent publication or versioning.
 

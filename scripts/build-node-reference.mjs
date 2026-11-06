@@ -12,8 +12,9 @@
  * build time rather than hand-maintained, because a hand-written node list is
  * wrong within a fortnight and being confidently wrong is worse than absent.
  */
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { builtinNodeRegistrations } from '../packages/runtime/src/builtins/index.ts';
 import { coreLibrary } from '../src/nodes/core/library.ts';
 import { geoLibrary } from '../src/nodes/geo/library.ts';
@@ -91,6 +92,18 @@ the running server: \`GET /api/nodes\` returns each module with its \`runsOn\` a
 icon, and \`GET /api/nodes/<name>/index.ts\` returns its source.
 `;
 
-mkdirSync(resolve('doc'), { recursive: true });
-writeFileSync(resolve('doc', 'NODE_REFERENCE.md'), document);
-console.log(`[node-reference] ${builtinNodeRegistrations.length} definitions, ${document.length} chars`);
+const target = resolve(fileURLToPath(new URL('..', import.meta.url)), 'doc', 'NODE_REFERENCE.md');
+
+// `--check` compares instead of writing, so `npm run verify` fails on a stale reference.
+if (process.argv.includes('--check')) {
+  const committed = existsSync(target) ? readFileSync(target, 'utf8') : '';
+  if (committed !== document) {
+    console.error('[node-reference] doc/NODE_REFERENCE.md is stale: run `npm run build:node-reference` and commit it.');
+    process.exit(1);
+  }
+  console.log(`[node-reference] current (${builtinNodeRegistrations.length} definitions)`);
+} else {
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, document);
+  console.log(`[node-reference] ${builtinNodeRegistrations.length} definitions, ${document.length} chars`);
+}

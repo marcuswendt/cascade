@@ -17,6 +17,22 @@ Notable changes to Cascade. Newest first.
   `shared/` symlink and hand-copied stubs; `--check` reports drift. Outside the
   core: Cascade does not import it and the published package does not ship
   it. See `doc/KIT.md`. cloud-volumes, commons and cairn-strata-hd use it.
+- **`npm run verify`, one gate for everything.** Packages build, types for
+  src, tests and server, `check:packages`, svelte-check, vitest, the package
+  tests (192, outside `test:run` until now) and a Studio bundle budget, in
+  order, stopping at the first failure; `verify:fast` for the edit loop.
+  Architecture ratchets in `tests/architecture-*.test.ts`: the layer rules
+  from ARCHITECTURE.md, no new import cycle, no new file over 750 lines, no
+  unimported source file, duplicated lines capped. `build-node-reference
+  --check` fails on a stale `doc/NODE_REFERENCE.md`.
+
+### Removed
+
+- **The Studio's single-file HTML export (File > Export…, ⌘E).** It ran a
+  third, minimal engine that understood neither definition-v1, expressions
+  nor animation. `cascade build` exports the browser player and `cascade
+  export` the shareable editor; the other exports are unchanged. Five unused Studio components and the code-history store only
+  they used are gone too.
 
 ### Changed
 
@@ -30,6 +46,9 @@ Notable changes to Cascade. Newest first.
   new verb is one row, its handler and its line in `doc/CLI_REFERENCE.md`,
   which now lists every command.
 - `cascade graph list` skips `renders/` and `out/`.
+- The `.cascade` compact formatter has one copy, `formatCompactJSON` in
+  `cascade/contracts`, used by Studio, the server and the CLI; the server and
+  CLI share one atomic-write helper.
 
 ### Fixed
 
