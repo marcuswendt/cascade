@@ -110,6 +110,28 @@ describe('/api/exec security and project boundary', () => {
     expect(JSON.parse(result.stdout)).toEqual({ stage: 'large', args: { payload }, transport: 'stdin' });
   });
 
+  /** The default stage cache (6 Nov 2026): a node's cook, which says so, is
+   *  served from the cache on its second identical call; a panel's call, which
+   *  says nothing, runs every time. */
+  it('caches a cook call by default and leaves a panel call alone', async () => {
+    const { base, headers } = await fixture();
+    const token = await capability(base, headers);
+    const post = async (body: Record<string, unknown>) => {
+      const response = await fetch(`${base}/api/exec`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json', 'X-Cascade-Exec-Capability': token },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(200);
+      return (await response.json() as { trace: { cache: string; why?: string } }).trace;
+    };
+
+    expect((await post({ stage: 'shade', args: { k: 1 }, caller: 'cook' })).cache).toBe('miss');
+    expect((await post({ stage: 'shade', args: { k: 1 }, caller: 'cook' })).cache).toBe('hit');
+    await post({ stage: 'status', args: {} });
+    expect(await post({ stage: 'status', args: {} })).toMatchObject({ cache: 'off', why: 'not a cook call' });
+  });
+
   it('resolves a project-local Python environment without relying on ambient PATH', async () => {
     const { project } = await fixture();
     fs.mkdirSync(path.join(project.root, '.venv', 'bin'), { recursive: true });

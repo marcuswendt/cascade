@@ -49,9 +49,25 @@ Notable changes to Cascade. Newest first.
 - The `.cascade` compact formatter has one copy, `formatCompactJSON` in
   `cascade/contracts`, used by Studio, the server and the CLI; the server and
   CLI share one atomic-write helper.
+- **The stage cache is on by default for node cooks.** A stage called from a
+  node's cook through `cascade/stage` is treated as pure and cached on its
+  code, arguments and input file bytes; a panel's `api.runStage` call is an
+  action and is not cached unless declared. A re-cook of
+  cloud-plots/relief.cascade went from 4.2 s to 0.45 s (all 17 stage calls
+  hit; no Python started). Opt a stage out with
+  `exec.stages.cache.exclude`, or everything with `"cache": false`; see
+  "The stage cache default" in `doc/PROJECT_AUTHORING.md`.
 
 ### Fixed
 
+- **A node fed a different image of the same size re-cooks.** The input
+  fingerprint sampled three values of a typed array and only the dimensions of
+  an image, so two same-size images looked identical and a clean node kept
+  its old picture. A connected input is now keyed by its producer's output
+  version (O(1), exact), and a value set directly on a port is hashed in full.
+- The node and graph file watchers take an injected clock and watcher, and
+  their tests no longer sleep on real FSEvents; they had failed in every
+  loaded full run.
 - The MCP `locks` tool always answered "no locks command yet": the lock tools
   probed `cascade --help` first and the probe never matched. The probe is
   gone, so `lock`, `replay` and `locks` also spawn one process instead of two.

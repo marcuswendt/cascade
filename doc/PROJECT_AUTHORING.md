@@ -613,12 +613,54 @@ in `cascade run --json` under `stages`, and in the run trace.
   keeps running its old code in a live Studio. Its bytecode cache is keyed by
   the code hash, because Python accepts a `.pyc` whose source kept its size
   within the same second.
-- `cache` turns on Cascade's own result cache: `true`, or an object with
-  `exclude` (stages whose answer changes under an identical call) and
-  `outputs` (arguments naming files a stage writes, which are not inputs). Off
-  by default. A stored result is served only while every file it names still
-  has the bytes it had, so a stage that writes a fixed path and was re-run with
-  other inputs misses rather than serving the overwritten file.
+- `cache` controls Cascade's own result cache. A stored result is served only
+  while every file it names still has the bytes it had, so a stage that writes
+  a fixed path and was re-run with other inputs misses rather than serving the
+  overwritten file. See "The stage cache default" below.
+
+#### The stage cache default
+
+Since 6 Nov 2026 the cache is **on by default for the calls a node's cook
+makes**, and off for everything else. A node is a pure function of its inputs,
+so a stage it calls through `runStage` from `cascade/stage` is treated as pure:
+same stage code, same arguments, same input file bytes, same answer. A second
+identical cook is served from `.cascade/cache/stages/` without starting Python
+at all; on `cloud-plots/relief.cascade` that takes a re-cook from about 4.2 s
+to 0.45 s. A call from a panel (`api.runStage`) or a hand-rolled
+`fetch('/api/exec')` is an action — `plot-start`, `plot-status` — and is not
+cached unless you say so.
+
+What is not pure, and must be opted out:
+
+- a stage whose answer changes under an identical call: it reads the clock,
+  draws fresh randomness, queries a device or a job's progress, or calls a
+  network service whose answer you want fresh each time;
+- a stage that reads a file its arguments do not name (a config file, a folder
+  it scans, a model downloaded on the side). Only files named in the arguments
+  are hashed into the key, so an edit to an unnamed file is invisible;
+- a stage whose purpose is a side effect (copying to a named place, posting
+  somewhere). A result whose named files still have their bytes is served, so
+  a copy that already happened is not repeated; when the effect must happen
+  every time, opt the stage out.
+
+How to opt out:
+
+```json
+"cache": { "exclude": ["plot-status", "camera-grab"], "outputs": ["out", "svg_out"] }
+```
+
+| Declaration | What is cached |
+|---|---|
+| absent | calls from node cooks, except `exclude` (none) |
+| `{ "exclude": [...], "outputs": [...] }` | calls from node cooks, except the named stages |
+| `{ "scope": "all", ... }` or `true` | every call, panel actions included, except `exclude` |
+| `false` or `{ "enabled": false }` | nothing |
+
+`CASCADE_STAGE_CACHE=off` in the environment still turns it off for one
+process (`cascade parity` sets it). Every call's trace says what happened and
+why: `hit`, `miss (no entry)`, `off (excluded)`, `off (not a cook call)`,
+`off (not enabled)`. A project that keeps its own Python-side cache can keep
+it; Cascade's sits in front, and on a hit the project's code is not called.
 - A request carries `"cascade": {"key", "code", "cache"}` beside `args` (the
   worker), or `CASCADE_STAGE_ENVELOPE` in the environment (one-shot). A
   project that keeps its own cache should stand aside when `cache` is `"off"`,

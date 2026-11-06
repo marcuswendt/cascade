@@ -72,8 +72,8 @@ describe('the core stage cache key', () => {
 });
 
 describe('callStage', () => {
-  it('reports the key on every call and is off unless the project enables it', async () => {
-    const { root, project, config } = fixture(null);
+  it('reports the key on every call and is off when the project turns it off', async () => {
+    const { root, project, config } = fixture(false);
     const { calls, invoke } = stage(root);
     const first = await callStage(project, config, 'ink', { photo: 'photo.png' }, invoke);
     const second = await callStage(project, config, 'ink', { photo: 'photo.png' }, invoke);
@@ -81,6 +81,51 @@ describe('callStage', () => {
     expect(first.trace).toMatchObject({ cache: 'off', why: 'not enabled' });
     expect(second.trace.key).toBe(first.trace.key);
     expect(calls[0]!.key).toBe(first.trace.key);
+  });
+
+  /** The guard for the default (6 Nov 2026): a project that declares nothing
+   *  gets hits on a node's second identical cook. A pure call reporting `off`
+   *  here is the regression that cost relief 4.1 s on every re-cook. */
+  it('caches a cook call by default, so a second identical run is a hit', async () => {
+    const { root, project, config } = fixture(null);
+    expect(config.cache).toMatchObject({ enabled: true, scope: 'cook' });
+    const { calls, invoke } = stage(root);
+    const traces: string[] = [];
+    await callStage(project, config, 'ink', { photo: 'photo.png' }, invoke, { onTrace: (t) => traces.push(t.cache) });
+    await callStage(project, config, 'ink', { photo: 'photo.png' }, invoke, { caller: 'cook', onTrace: (t) => traces.push(t.cache) });
+    expect(traces).toEqual(['miss', 'hit']);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.cache).toBe('use');
+  });
+
+  it('leaves an action (a panel call) uncached by default: a plotter status must keep moving', async () => {
+    const { root, project, config } = fixture(null);
+    const { calls, invoke } = stage(root);
+    await callStage(project, config, 'plot-status', { id: 'job-1' }, invoke, { caller: 'action' });
+    const again = await callStage(project, config, 'plot-status', { id: 'job-1' }, invoke, { caller: 'action' });
+    expect(calls).toHaveLength(2);
+    expect(again.trace).toMatchObject({ cache: 'off', why: 'not a cook call' });
+  });
+
+  it('caches actions too when the project declares cache: true or scope "all"', async () => {
+    for (const cache of [true, { scope: 'all' }]) {
+      const { root, project, config } = fixture(cache);
+      const { calls, invoke } = stage(root);
+      await callStage(project, config, 'assets.list', {}, invoke, { caller: 'action' });
+      const again = await callStage(project, config, 'assets.list', {}, invoke, { caller: 'action' });
+      expect(again.trace.cache).toBe('hit');
+      expect(calls).toHaveLength(1);
+    }
+  });
+
+  it('opts a cook-called stage out by name, and keeps the cook scope for an object declaration', async () => {
+    const { root, project, config } = fixture({ exclude: ['cloud-analyst'] });
+    expect(config.cache.scope).toBe('cook');
+    const { calls, invoke } = stage(root);
+    await callStage(project, config, 'cloud-analyst', { photo: 'photo.png' }, invoke, { caller: 'cook' });
+    const again = await callStage(project, config, 'cloud-analyst', { photo: 'photo.png' }, invoke, { caller: 'cook' });
+    expect(calls).toHaveLength(2);
+    expect(again.trace).toMatchObject({ cache: 'off', why: 'excluded' });
   });
 
   it('serves a hit without calling the stage, and says so', async () => {
@@ -141,5 +186,7 @@ describe('callStage', () => {
     const { project, root } = fixture();
     fs.writeFileSync(path.join(root, 'cascade.json'), JSON.stringify({ exec: { stages: { entrypoint: 'runtime/node_cli.py', cache: 'yes' } } }));
     expect(() => readStageConfig(project)).toThrow(/exec\.stages\.cache/);
+    fs.writeFileSync(path.join(root, 'cascade.json'), JSON.stringify({ exec: { stages: { entrypoint: 'runtime/node_cli.py', cache: { scope: 'some' } } } }));
+    expect(() => readStageConfig(project)).toThrow(/exec\.stages\.cache\.scope/);
   });
 });

@@ -16,10 +16,12 @@
  * from timing. The doc's item 2 is the reason: a cache that keyed without the
  * stage source served an edited stage its old answer, and nothing said so.
  *
- * Caching the result is a separate decision (`exec.stages.cache`, off by
- * default). When it is on, a stored result is served only while every file it
- * names still has the bytes it had when stored; a stage that writes to a fixed
- * path and was since re-run with other inputs is a miss, never a stale hit.
+ * Caching the result is a separate decision (`exec.stages.cache`). Undeclared,
+ * it is on for the calls a node's cook makes and off for everything else (a
+ * panel's actions): see `StageCachePolicy`. When it is on, a stored result is
+ * served only while every file it names still has the bytes it had when
+ * stored; a stage that writes to a fixed path and was since re-run with other
+ * inputs is a miss, never a stale hit.
  *
  * `CASCADE_STAGE_CACHE=off` in the environment turns reading and writing off
  * for one process, and the envelope tells the stage so (`cache: "off"`), so a
@@ -45,8 +47,8 @@ export interface StageTrace {
   /** The core cache key, 32 hex characters. */
   readonly key: string;
   readonly cache: StageCacheState;
-  /** Why it was not a hit: "not enabled", "excluded", "no entry",
-   *  "CASCADE_STAGE_CACHE=off", or the output file that changed. */
+  /** Why it was not a hit: "not enabled", "excluded", "not a cook call",
+   *  "no entry", "CASCADE_STAGE_CACHE=off", or the output file that changed. */
   readonly why?: string;
   /** The stage code hash the key was computed with. */
   readonly code: string;
@@ -211,10 +213,11 @@ function writeEntry(project: ProjectRoot, stage: string, key: string, result: un
 
 /** Whether the core cache is read and written for this call, and why not.
  *  `bypass` is the process-wide switch, passed on to the stage. */
-function cacheMode(policy: StageCachePolicy, stage: string, env: NodeJS.ProcessEnv): { use: boolean; bypass: boolean; why?: string } {
+function cacheMode(policy: StageCachePolicy, stage: string, caller: StageCaller, env: NodeJS.ProcessEnv): { use: boolean; bypass: boolean; why?: string } {
   if (env.CASCADE_STAGE_CACHE === 'off') return { use: false, bypass: true, why: 'CASCADE_STAGE_CACHE=off' };
   if (!policy.enabled) return { use: false, bypass: false, why: 'not enabled' };
   if (policy.exclude.includes(stage)) return { use: false, bypass: false, why: 'excluded' };
+  if (policy.scope === 'cook' && caller !== 'cook') return { use: false, bypass: false, why: 'not a cook call' };
   return { use: true, bypass: false };
 }
 
@@ -223,8 +226,19 @@ export function stageSources(project: ProjectRoot, config: StageConfig): StageSo
   return new StageSources(project, config.sources ?? StageSources.defaultRoots(project, config.entrypoint, config.worker));
 }
 
+/**
+ * Who is calling: a node's cook (`cascade/stage`'s `runStage`, which is
+ * inferred pure and cached by default), or an action (a panel, a direct
+ * `/api/exec` post), which is cached only when the project declares
+ * `"cache": true` or `"scope": "all"`. See `StageCachePolicy`.
+ */
+export type StageCaller = 'cook' | 'action';
+
 export interface CallStageOptions {
   readonly env?: NodeJS.ProcessEnv;
+  /** Default `cook`: the headless bridge serves node cooks only. The HTTP
+   *  route says which it got. */
+  readonly caller?: StageCaller;
   /** Receives the trace of every call, hit or miss. */
   readonly onTrace?: (trace: StageTrace) => void;
 }
@@ -245,7 +259,7 @@ export async function callStage(
   const started = performance.now();
   const code = stageSources(project, config).codeHash();
   const identity = stageCacheKey(project, stage, args, code, config.cache.outputs);
-  const mode = cacheMode(config.cache, stage, options.env ?? process.env);
+  const mode = cacheMode(config.cache, stage, options.caller ?? 'cook', options.env ?? process.env);
   const finish = (result: unknown, trace: Omit<StageTrace, 'stage' | 'key' | 'code' | 'cascade' | 'inputs' | 'ms'>) => {
     const full: StageTrace = {
       stage,

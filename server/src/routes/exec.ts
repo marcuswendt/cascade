@@ -6,7 +6,7 @@ import { allowsSensitiveCapabilities, createBrowserCapabilityBoundary, type Serv
 import { CredentialStore } from '../credentials.js';
 import { readProjectManifest } from '../projectConfig.js';
 import { readStageConfig, runProjectStage } from '../stageRunner.js';
-import { callStage, formatStageTrace, stageSources, type StageTrace } from '../stageCache.js';
+import { callStage, formatStageTrace, stageSources, type StageCaller, type StageTrace } from '../stageCache.js';
 
 const EXEC_TIMEOUT_MS = 120_000;
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -54,7 +54,7 @@ export function createExecRouter(project: ProjectRoot, security: ServerSecurityO
           res.once('close', () => { if (!res.writableEnded) workerAbort.abort(); });
           try {
             const { result, trace } = await callStage(project, config, request.stage, request.args, (envelope) =>
-              worker.callWithMeta(request.stage, request.args, { signal: workerAbort.signal, cascade: envelope }), { env, onTrace });
+              worker.callWithMeta(request.stage, request.args, { signal: workerAbort.signal, cascade: envelope }), { env, onTrace, caller: request.caller });
             res.json({ ok: true, stdout: JSON.stringify(result), stderr: '', trace });
           } catch (error) {
             if (res.destroyed || res.writableEnded) return;
@@ -75,7 +75,7 @@ export function createExecRouter(project: ProjectRoot, security: ServerSecurityO
               cascade: envelope,
               codeHash: envelope.code,
             }),
-          }), { env, onTrace });
+          }), { env, onTrace, caller: request.caller });
           res.json({ ok: true, stdout: JSON.stringify(result), stderr: '', trace });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -98,7 +98,7 @@ export function createExecRouter(project: ProjectRoot, security: ServerSecurityO
 }
 
 function parseRequest(body: unknown):
-  | { kind: 'stage'; stage: string; args: Record<string, unknown> }
+  | { kind: 'stage'; stage: string; args: Record<string, unknown>; caller: StageCaller }
   | { kind: 'entrypoint'; entrypoint: string; args: string[]; python: 'python' | 'python3' } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('body must be an object');
   const value = body as Record<string, unknown>;
@@ -107,7 +107,10 @@ function parseRequest(body: unknown):
     if (value.args !== undefined && (!value.args || typeof value.args !== 'object' || Array.isArray(value.args))) {
       throw new Error('stage args must be an object');
     }
-    return { kind: 'stage', stage: value.stage, args: (value.args ?? {}) as Record<string, unknown> };
+    // Only `cascade/stage`'s runStage says `cook`. A panel or a hand-rolled
+    // post says nothing and is an action, which the default cache leaves alone.
+    const caller: StageCaller = value.caller === 'cook' ? 'cook' : 'action';
+    return { kind: 'stage', stage: value.stage, args: (value.args ?? {}) as Record<string, unknown>, caller };
   }
   if (typeof value.entrypoint !== 'string' || !value.entrypoint) {
     throw new Error('body must include either { stage: string } or { entrypoint: string }');

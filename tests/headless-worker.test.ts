@@ -59,7 +59,9 @@ describe('headless stages', () => {
       const dispose = installProjectStages(root, options);
       try {
         const pids = [];
-        for (let call = 0; call < 2; call++) pids.push((await runStage<{ pid: number }>('double', { value: 1 })).pid);
+        // Different arguments per call: an identical call is now a stage cache
+        // hit (on by default for cooks) and would start no process at all.
+        for (let call = 0; call < 2; call++) pids.push((await runStage<{ pid: number }>('double', { value: call + 1 })).pid);
         expect(new Set(pids).size).toBe(2);
       } finally {
         dispose();

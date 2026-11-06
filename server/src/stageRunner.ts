@@ -28,22 +28,41 @@ export interface StageConfig {
 /**
  * Whether Cascade caches a stage's result itself (`exec.stages.cache`).
  *
- * Off by default, because a stage may be a query whose answer changes under
- * an identical call (a plotter's progress, a network read) and only the
- * project knows which. `true` caches every stage; an object names the ones to
- * leave out and the arguments that name files a stage WRITES, which are not
- * inputs and are kept out of the input hashes:
+ * **Undeclared, it caches the calls a node's cook makes, and only those.** A
+ * node is a pure function of its inputs (the definition contract), so a stage
+ * it calls from its cook is inferred pure: same code, same arguments, same
+ * input file bytes, same answer. A call from anywhere else — a panel's
+ * `api.runStage`, a hand-rolled `fetch('/api/exec')` — is an action until
+ * declared otherwise: a plotter's `plot-start` or `plot-status` changes under
+ * an identical call, and caching it would stop the progress bar or skip the
+ * plot. Until 6 Nov 2026 nothing was cached unless declared, and every re-cook
+ * of a Python-backed sketch paid its first stage call again (4.1 of 4.7 s for
+ * cloud-plots/relief).
  *
+ * Declared:
+ *
+ *     "cache": false                       nothing, anywhere (the old default)
+ *     "cache": true                        every call, cook or not
  *     "cache": { "exclude": ["plot-status"], "outputs": ["out", "svg_out"] }
+ *
+ * `exclude` names stages whose answer changes under an identical call (a
+ * clock, a random draw, a network read, a file the arguments do not name);
+ * they are never cached, whatever the scope. `outputs` names the arguments
+ * that are files a stage WRITES, which are not inputs and are kept out of the
+ * input hashes. An object without `"scope": "all"` keeps the cook-only scope.
  *
  * The key is computed and reported either way, so a trace always says which
  * code and inputs a result came from.
  */
 export interface StageCachePolicy {
   readonly enabled: boolean;
+  /** `cook`: only calls a node's cook makes. `all`: every call. */
+  readonly scope: StageCacheScope;
   readonly exclude: readonly string[];
   readonly outputs: readonly string[];
 }
+
+export type StageCacheScope = 'cook' | 'all';
 
 export interface StageRunOptions {
   readonly env?: NodeJS.ProcessEnv;
@@ -150,17 +169,22 @@ function readCachePolicy(value: unknown): StageCachePolicy {
     }
     return list as string[];
   };
-  if (value === undefined || value === false) return { enabled: false, exclude: [], outputs: [] };
-  if (value === true) return { enabled: true, exclude: [], outputs: [] };
+  if (value === undefined) return { enabled: true, scope: 'cook', exclude: [], outputs: [] };
+  if (value === false) return { enabled: false, scope: 'cook', exclude: [], outputs: [] };
+  if (value === true) return { enabled: true, scope: 'all', exclude: [], outputs: [] };
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     const record = value as Record<string, unknown>;
+    if (record.scope !== undefined && record.scope !== 'cook' && record.scope !== 'all') {
+      throw new Error('cascade.json exec.stages.cache.scope must be "cook" or "all"');
+    }
     return {
       enabled: record.enabled !== false,
+      scope: record.scope === 'all' ? 'all' : 'cook',
       exclude: strings(record.exclude, 'exclude'),
       outputs: strings(record.outputs, 'outputs'),
     };
   }
-  throw new Error('cascade.json exec.stages.cache must be true, false or { exclude, outputs }');
+  throw new Error('cascade.json exec.stages.cache must be true, false or { exclude, outputs, scope }');
 }
 
 /**

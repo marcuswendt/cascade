@@ -66,6 +66,8 @@ describe('cascade/stage host selection', () => {
         'Content-Type': 'application/json',
         'X-Cascade-Exec-Capability': 'fresh',
       },
+      // A node's runStage says it is a cook, which the default stage cache serves.
+      body: JSON.stringify({ stage: 'render', args: {}, caller: 'cook' }),
     }));
   });
 

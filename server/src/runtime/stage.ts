@@ -115,7 +115,10 @@ async function overHttp<T>(stage: string, args: Record<string, unknown>, signal?
   const postStage = async () => fetch('/api/exec', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Cascade-Exec-Capability': await capability() },
-    body: JSON.stringify({ stage, args }),
+    // `cook`: a node's cook is a pure function of its inputs, so the server's
+    // default stage cache may serve it (see StageCachePolicy). A panel posts
+    // through its own api.runStage, without this, and is never cached unasked.
+    body: JSON.stringify({ stage, args, caller: 'cook' }),
     signal,
   });
 
