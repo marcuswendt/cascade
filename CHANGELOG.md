@@ -2,6 +2,22 @@
 
 Notable changes to Cascade. Newest first.
 
+## Unreleased
+
+### Added
+
+- **The sketch kit, `@field/cascade-kit` (`packages/kit`).** One package for
+  what the sketch projects kept rebuilding: OKLCH colour and gamut mapping,
+  k-means palettes in OKLab, seeded random (`Rng`, mulberry32, Python-equal
+  `hashParts`) and noise, paper, pen plot documents for a 0.1 mm pen, frames
+  to MP4, Cairn and Observatory snapshot loaders, and a disk cache keyed on
+  the code's import closure. Each module's tests pin it to the exact bits of
+  the copies it replaces. `cascade-kit nodes <provider>` writes the stubs for
+  using another project's nodes from a `file:` dependency, replacing the
+  `shared/` symlink and hand-copied stubs; `--check` reports drift. Outside the
+  core: Cascade does not import it and the published package does not ship
+  it. See `doc/KIT.md`. cloud-volumes, commons and cairn-strata-hd use it.
+
 ## 0.10.2 — 2026-11-06
 
 ### Added

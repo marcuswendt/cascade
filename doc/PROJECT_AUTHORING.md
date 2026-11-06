@@ -83,6 +83,13 @@ my-artwork/
 
 Keep generated output in a project-specific directory such as `renders/`. Keep reusable algorithms in `nodes/` or a normal TypeScript package rather than in Studio components.
 
+Before writing OKLCH conversions, a seeded generator, noise, paper, a pen plot,
+an ffmpeg call, a Cairn or Observatory loader or a disk cache, use the sketch
+kit, `@field/cascade-kit` (`packages/kit`, a `file:` dependency). It also
+generates the stubs for using another project's nodes without a symlink
+(`npx cascade-kit nodes <provider>`). Read [KIT.md](KIT.md). The kit is
+outside the core: Cascade never imports it.
+
 ## Add a project panel
 
 A project can provide an optional dockable Studio panel without adding UI code to Cascade. Create `panels/asset-browser/index.ts`:
