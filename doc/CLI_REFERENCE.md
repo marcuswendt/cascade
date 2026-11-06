@@ -1,6 +1,6 @@
 # CLI reference: editing graphs
 
-Everything an agent needs to build or change a `.cascade` graph without hand-editing JSON. Each command is one graph concept (node, wire, parameter, subnet), checks the edit with the same code as `cascade check`, and writes the file atomically. For running, rendering and exporting, see `cascade --help`, `doc/EDITOR_EXPORT.md` and `doc/WEB_PLAYER.md`.
+Everything an agent needs to build or change a `.cascade` graph without hand-editing JSON. Each command is one graph concept (node, wire, parameter, subnet), checks the edit with the same code as `cascade check`, and writes the file atomically. Running, rendering, exporting and locks are listed under [The other commands](#the-other-commands); see also `cascade --help`, `doc/EDITOR_EXPORT.md` and `doc/WEB_PLAYER.md`.
 
 ## The guarantees
 
@@ -15,7 +15,7 @@ Everything an agent needs to build or change a `.cascade` graph without hand-edi
 | --- | --- |
 | `cascade graph create <graph> [--name <title>]` | A new empty graph. Never overwrites. |
 | `cascade graph read <graph> [--in <subnet>]` | Nodes with stored parameters, subnets with their ports, wires as `a.out -> b.in`. |
-| `cascade graph list [dir]` | Every `.cascade` under a directory, with node and wire counts. |
+| `cascade graph list [dir]` | Every `.cascade` under a directory, with node and wire counts. Skips `renders/`, `out/`, `dist/` and `node_modules/` below it. |
 | `cascade node add <graph> <type> [--name <id>] [--in <subnet>] [--set k=v]... [--at x,y] [--comment <text>]` | Add a node. `<type>` is a module id or a short name: `Circle` is `cascade.geo.Circle`, `InkVocabulary` is `project.InkVocabulary`. The id defaults to the type in kebab case (`copy-to-points`, then `copy-to-points-2`). |
 | `cascade node rm <graph> <node> [--recursive]` | Remove a node and its wires. A subnet with children needs `--recursive`. |
 | `cascade connect <graph> <node.output> <node.input> [--no-layout]` | Wire two ports. A port can be left off when the node has one on that side. An input that was fed is rewired, and the old wire is reported. |
@@ -30,6 +30,36 @@ Everything an agent needs to build or change a `.cascade` graph without hand-edi
 | `cascade edit <graph> <operations.json \| ->` | A batch, all or nothing. Each operation is the JSON below. |
 
 Every edit takes `--dry-run` (check, write nothing) and `--json`.
+
+## The other commands
+
+Running, sharing, locks and Studio. `cascade --help` has their options; `cascade render --help` and `cascade lock --help` have their own.
+
+| Command | What it does |
+| --- | --- |
+| `cascade [project-directory \| graph-file]` | Open Studio on a project or graph. |
+| `cascade new <name>` | Create a Cascade project. |
+| `cascade node <Name> [project-directory]` | Create a deterministic custom node. |
+| `cascade projects [directory]` | Show or set the default projects directory. |
+| `cascade serve start\|stop\|restart\|status\|logs\|install` | Run Studio as a managed background service. |
+| `cascade run <graph-file> [options]` | Cook a graph headlessly; `--frames` renders a sequence. |
+| `cascade render <graph-file>` | Render an animation across worker processes, then a preview video. |
+| `cascade validate <graph-file>` | Validate a graph file without executing. |
+| `cascade check <graph-file>` | Statically check node definitions, types and graph structure. |
+| `cascade inspect <graph-file>` | Every node with its classification and full definition. |
+| `cascade parity <graph-file>` | Cook headless twice and through Studio's path; report per-node differences. |
+| `cascade build <graph-file> --out <new-directory>` | A standalone browser player ([WEB_PLAYER.md](WEB_PLAYER.md)). |
+| `cascade export <graph-file> (--plan \| --out <dir>)` | The graph's published editor as a static site ([EDITOR_EXPORT.md](EDITOR_EXPORT.md)). |
+| `cascade publish <graph-file> <node>.<prop>` | Publish a node prop as an editor parameter. |
+| `cascade freeze <graph-file> <node> --fields <a,b>` | Snapshot chosen fields of a live data source for export. |
+| `cascade scene <graph-file> <scene.json> --out <new-graph-file>` | Apply a scene file to a copy of the graph. |
+| `cascade mcp [project-directory]` | Serve these commands as MCP tools over stdio ([MCP.md](MCP.md)). |
+| `cascade lock <graph-file> <node> --name <name>` | Record a render (graph, params, seeds, inputs, code) in `locks/<id>.json`. |
+| `cascade lock verify [<lock-id>...]` | Replay locks and report which still match. |
+| `cascade replay <lock-id>` | Re-render a lock from its stored code and compare fingerprints. |
+| `cascade locks` | List the project's locks. |
+
+Every verb is one row in `src/cli/verbs.ts`: its usage and summary for `--help`, the handler that runs it, how it treats `--json`, and the MCP tools that call it. A new verb is a row there, its handler, and its line here (`tests/cli-verbs.test.ts` checks both this page and [MCP.md](MCP.md)).
 
 ## `--json`, on every command
 

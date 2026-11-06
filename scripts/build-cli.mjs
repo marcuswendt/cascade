@@ -12,9 +12,15 @@ rmSync(outputDirectory, { recursive: true, force: true });
 mkdirSync(resolve(outputDirectory, 'runtime'), { recursive: true });
 mkdirSync(resolve(DIST, 'studio'), { recursive: true });
 
+// Split, so each verb's handler (and the packages it imports: typescript,
+// esbuild, sharp, express) loads only when that verb runs. One file hoisted
+// every package import to the top and `cascade --version` paid for all of
+// them. Chunks sit beside index.js, so `import.meta.url` paths still resolve
+// from dist/cli/. tests/cli-cold-start.test.ts measures the start-up closure.
 await build({
   entryPoints: ['src/cli/index.ts'],
-  outfile: resolve(outputDirectory, 'index.js'),
+  outdir: outputDirectory,
+  splitting: true,
   bundle: true,
   packages: 'external',
   alias: {

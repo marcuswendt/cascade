@@ -1,39 +1,117 @@
 #!/usr/bin/env node
 
-import { runGraph } from './runner.js';
-import * as path from 'path';
-import * as fs from 'fs/promises';
+/**
+ * The `cascade` executable. Which verb runs, and how it treats `--json`,
+ * `--help` and `--version`, comes from the verb table in verbs.ts; each
+ * handler is imported only when its verb runs, so `--version`, the graph
+ * commands and the MCP server's children never load the engine they do not
+ * use (tests/cli-cold-start.test.ts holds that line).
+ */
+
 import { readFileSync } from 'node:fs';
-import { superviseProcess } from './supervise.js';
-import { GRAPH_COMMANDS_HELP, isGraphCommand, runGraphCommand } from './graphCommands.js';
+import * as path from 'node:path';
 import { runWithJsonEnvelope } from './jsonEnvelope.js';
+import { mainHelp, verbFor, type Handler } from './verbs.js';
 
 const VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version as string;
 
-/** Commands that never start Studio. Anything else is a project or graph to open. */
-const COMMANDS = ['render', 'run', 'validate', 'check', 'inspect', 'build', 'export', 'freeze', 'publish', 'scene', 'projects', 'node', 'mcp', 'serve', 'parity', 'lock', 'locks', 'replay'];
+const isHelp = (args: readonly string[]) => args.includes('--help') || args.includes('-h');
+
+/** Print `Error: <message>` and set the exit code, for handlers that report rather than throw. */
+const reported = (exitCode: number, run: () => Promise<void>) => async () => {
+  try {
+    await run();
+  } catch (error) {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = exitCode;
+  }
+};
+
+/** Each handler, loaded on use. `help` is true when the verb's own help was asked for. */
+const HANDLERS: Record<Handler, (args: string[], help: boolean) => Promise<void>> = {
+  async studio(args) {
+    // Project/Studio commands share the root executable. The server entry is
+    // bundled into the published CLI, so installed projects never depend on
+    // the private server package or workspace links.
+    const { runStudioCli } = await import('../../server/src/cliCommands.js');
+    await runStudioCli(args);
+  },
+  async run(args) {
+    // Shareable editors: `run --scene/--write` is an editor command.
+    if (args.includes('--scene') || args.includes('--write')) return HANDLERS.editor(args, false);
+    const { runCommand } = await import('./runCommand.js');
+    await runCommand(args);
+  },
+  async render(args, help) {
+    const { RENDER_HELP, parseRenderArgs, renderGraph } = await import('./render.js');
+    if (help) {
+      console.log(RENDER_HELP);
+      return;
+    }
+    await reported(1, async () => {
+      const options = parseRenderArgs(args.slice(1));
+      const result = await renderGraph(options);
+      if (options.json) process.stdout.write(JSON.stringify({ status: 'completed', graph: path.resolve(options.file), ...result }) + '\n');
+    })();
+  },
+  async renderWorker(args) {
+    const { runRenderWorker } = await import('./render.js');
+    await runRenderWorker(args[1]);
+  },
+  async build(args) {
+    const { buildCommand } = await import('./runCommand.js');
+    await buildCommand(args);
+  },
+  async editor(args) {
+    const { runEditorCommand } = await import('./editorCommands.js');
+    await reported(1, () => runEditorCommand(args))();
+  },
+  async parity(args) {
+    await reported(2, async () => {
+      const { runParityCommand } = await import('./parity.js');
+      process.exitCode = await runParityCommand(args.slice(1));
+    })();
+  },
+  async graph(args) {
+    const { runGraphCommand } = await import('./graphCommands.js');
+    await reported(1, async () => { await runGraphCommand(args, { json: false }); })();
+  },
+  async lock(args, help) {
+    const { runLockCommand, LOCK_HELP } = await import('./locks/commands.js');
+    if (help) console.log(LOCK_HELP);
+    else await runLockCommand(args);
+  },
+  async mcp(args) {
+    const { runMcpServer } = await import('./mcp.js');
+    await runMcpServer(args.slice(1), VERSION);
+  },
+};
 
 async function main() {
   const args = process.argv.slice(2);
 
-  if (args[0] === 'mcp' && !args.includes('--help') && !args.includes('-h')) {
-    const { runMcpServer } = await import('./mcp.js');
-    await runMcpServer(args.slice(1), VERSION);
+  if (verbFor(args)?.handler === 'mcp' && !isHelp(args)) {
+    await HANDLERS.mcp(args, false);
     return;
   }
 
   // `--json` on any command: one `{ ok, data, warnings }` envelope on stdout.
-  // `run`, `serve`, `parity` and the lock commands keep the flag, because it
-  // makes them print their own JSON (a manifest with the run trace and stage
-  // cache states, a status, a parity report), which becomes the data.
+  // A verb whose table row says `keep` (run, render, serve, parity, the lock
+  // commands) keeps the flag, because it makes them print their own JSON (a
+  // manifest with the run trace and stage cache states, a status, a parity
+  // report), which becomes the data.
   if (args.includes('--json')) {
-    const keepFlag = ['render', 'run', 'serve', 'parity', 'lock', 'locks', 'replay'].includes(args[0] ?? '');
+    const keepFlag = verbFor(args)?.json === 'keep';
     const commandArgs = keepFlag ? args : args.filter((arg) => arg !== '--json');
-    const opensStudio = !COMMANDS.includes(commandArgs[0] ?? '') && !isGraphCommand(commandArgs) &&
+    const verb = verbFor(commandArgs);
+    const opensStudio = (!verb || verb.json === 'studio') &&
       !commandArgs.some((arg) => arg === '--help' || arg === '-h' || arg === '--version');
     await runWithJsonEnvelope(async () => {
       if (opensStudio) throw new Error('This command opens Studio, which has no --json output');
-      if (isGraphCommand(commandArgs)) return runGraphCommand(commandArgs, { json: true });
+      if (verb?.handler === 'graph') {
+        const { runGraphCommand } = await import('./graphCommands.js');
+        return runGraphCommand(commandArgs, { json: true });
+      }
       await dispatch(commandArgs);
       return undefined;
     });
@@ -44,360 +122,28 @@ async function main() {
 }
 
 async function dispatch(args: string[]) {
-  // One of `cascade render --workers`' processes, forked by it with its spec.
-  if (args[0] === '__render-worker') {
-    const { runRenderWorker } = await import('./render.js');
-    await runRenderWorker(args[1]);
+  const verb = verbFor(args);
+  const help = isHelp(args);
+  const version = args.includes('--version');
+
+  if (verb && (help ? verb.help === 'own' : !(version && verb.version === 'main'))) {
+    await HANDLERS[verb.handler](args, help);
     return;
   }
 
-  if (args[0] === 'render') {
-    const { RENDER_HELP, parseRenderArgs, renderGraph } = await import('./render.js');
-    if (args.includes('--help') || args.includes('-h')) {
-      console.log(RENDER_HELP);
-      return;
-    }
-    try {
-      const options = parseRenderArgs(args.slice(1));
-      const result = await renderGraph(options);
-      if (options.json) process.stdout.write(JSON.stringify({ status: 'completed', graph: path.resolve(options.file), ...result }) + '\n');
-    } catch (error) {
-      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-      process.exitCode = 1;
-    }
+  // Anything that is not a verb is a project or graph to open in Studio.
+  if (!verb && !help && !version) {
+    await HANDLERS.studio(args, false);
     return;
   }
 
-  if (isGraphCommand(args) && !args.includes('--help') && !args.includes('-h')) {
-    try {
-      await runGraphCommand(args, { json: false });
-    } catch (error) {
-      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-      process.exitCode = 1;
-    }
-    return;
-  }
-
-  if (args[0] === 'build' && !args.includes('--help') && !args.includes('-h')) {
-    const { buildPlayer } = await import('./webBuild.js');
-    if (!args[1] || args[1].startsWith('-')) throw new Error('cascade build requires a graph file');
-    let out: string | undefined;
-    const assets: string[] = [];
-    for (let index = 2; index < args.length; index += 2) {
-      const flag = args[index];
-      if (flag !== '--out' && flag !== '--asset') throw new Error(`Unknown build option: ${flag}`);
-      const value = args[index + 1];
-      if (!value || value.startsWith('-')) throw new Error(`${flag} requires a value`);
-      if (flag === '--out') {
-        if (out !== undefined) throw new Error('--out may only be supplied once');
-        out = value;
-      } else assets.push(value);
-    }
-    if (!out) throw new Error('cascade build requires --out <new-directory>');
-    try {
-      const result = await buildPlayer(args[1], { out, assets });
-      console.log(`Browser player built: ${result.directory}`);
-    } catch (error) {
-      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-      process.exitCode = 1;
-    }
-    return;
-  }
-
-  // Locks: `lock`, `lock verify`, `locks` and `replay` (src/cli/locks/).
-  if (['lock', 'locks', 'replay'].includes(args[0] ?? '')) {
-    const { runLockCommand, LOCK_HELP } = await import('./locks/commands.js');
-    if (args.includes('--help') || args.includes('-h')) console.log(LOCK_HELP);
-    else await runLockCommand(args);
-    return;
-  }
-
-  // Shareable editors: export, freeze, publish, scene, and `run --scene/--write`.
-  const editorCommand = ['export', 'freeze', 'publish', 'scene'].includes(args[0] ?? '') ||
-    (args[0] === 'run' && (args.includes('--scene') || args.includes('--write')));
-  if (editorCommand && !args.includes('--help') && !args.includes('-h')) {
-    const { runEditorCommand } = await import('./editorCommands.js');
-    try {
-      await runEditorCommand(args);
-    } catch (error) {
-      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-      process.exitCode = 1;
-    }
-    return;
-  }
-
-  // `cascade parity`: cook headless twice and through the Studio path, compare.
-  if (args[0] === 'parity' && !args.includes('--help') && !args.includes('-h')) {
-    const { runParityCommand } = await import('./parity.js');
-    try {
-      process.exitCode = await runParityCommand(args.slice(1));
-    } catch (error) {
-      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-      process.exitCode = 2;
-    }
-    return;
-  }
-
-  // Project/Studio commands share the root executable. The server entry is
-  // bundled into the published CLI, so installed projects never depend on the
-  // private server package or workspace links.
-  if (args[0] === 'serve' || (!['run', 'validate', 'check', 'inspect'].includes(args[0] ?? '') && !args.includes('--version') && !args.includes('--help') && !args.includes('-h'))) {
-    const { runStudioCli } = await import('../../server/src/cliCommands.js');
-    await runStudioCli(args);
-    return;
-  }
-
-  // Handle version flag
-  if (args.includes('--version')) {
+  if (version) {
     console.log(`Cascade CLI v${VERSION}`);
     process.exit(0);
   }
 
-  // Handle help flag
-  if (args.includes('--help') || args.includes('-h')) {
-    console.log(`
-Cascade Graph Execution CLI
-
-Usage:
-  cascade [project-directory | graph-file] [Studio options]
-  cascade new <name>
-  cascade node <Name> [project-directory]
-  cascade projects [directory]
-  cascade serve start|stop|restart|status|logs|install [project] [options]
-  cascade run <graph-file> [options]
-  cascade render <graph-file> [--frames <range>] [--node <id>] [--workers N] [--final] [--prores]
-  cascade validate <graph-file> [options]
-  cascade check <graph-file> [options]
-  cascade inspect <graph-file>
-  cascade build <graph-file> --out <new-directory> [--asset <file>]...
-  cascade export <graph-file> (--plan | --out <dir>) [--deploy vercel]
-  cascade publish <graph-file> <node>.<prop> [--label ...]
-  cascade freeze <graph-file> <node> --fields <a,b>
-  cascade scene <graph-file> <scene.json> --out <new-graph-file>
-  cascade mcp [project-directory]
-${GRAPH_COMMANDS_HELP}
-  cascade parity <graph-file> [--node <id>] [--seed N] [--tolerance N] [--no-studio]
-  cascade lock <graph-file> <node> --name <name> [--note ...]
-  cascade replay <lock-id> [--out <dir>]
-  cascade lock verify [<lock-id>...]
-  cascade locks
-
-Commands:
-  new       Create a Cascade project
-  node      Create a deterministic custom node
-  projects  Show or set the default projects directory
-  serve     Run Studio as a managed background service (cascade serve help)
-  run       Execute a graph file
-  render    Render an animation across worker processes, then a preview video (cascade render --help)
-  validate  Validate a graph file without executing
-  check     Statically check node definitions, types, and graph structure
-  inspect   Print a machine-readable graph and node-definition summary
-  build     Export a standalone browser player for static hosting or embedding
-  export    Export the graph's published editor as a static site (doc/EDITOR_EXPORT.md)
-  publish   Publish a node prop as an editor parameter
-  freeze    Snapshot chosen fields of a live data source for export
-  scene     Apply a scene file to a copy of the graph
-  mcp       Serve these commands as MCP tools over stdio (doc/MCP.md)
-  parity    Cook headless twice and through Studio's path; report per-node differences
-  lock      Record a render (graph, params, seeds, inputs, code) in locks/<id>.json
-  replay    Re-render a lock from its stored code and compare fingerprints
-  locks     List the project's locks (cascade lock --help for all options)
-
-Options:
-  --host <address>         Bind Studio to an address or hostname
-  --port <number>          Bind Studio HTTP to an explicit port
-  --trusted-host <name>    Allow an exact remote browser hostname (repeatable)
-  --fallback-host <addr>   Bind this instead when --host does not resolve or is
-                           not on this machine (repeatable; default 127.0.0.1).
-                           The preferred host is retried and rebound when it returns
-  --no-open                Do not open Studio in a browser
-  --node <id>        Render only this node's output. Repeatable.
-  --entry-node <id>  Older spelling of --node, single valued
-  --frames <range>   Render a frame sequence: 1-100, 1-100x2 (step), 42, or
-                     timeline (the range saved with the graph)
-  --fps <number>     Frame rate to evaluate the range at (default: the graph's timeline fps)
-  --mp4 <file>       After --frames, encode the sequence as H.264 yuv420p (needs ffmpeg)
-  --crf <n>          Quality for --mp4, 0-51, lower is better (default 18)
-  --out <dir>        Sequence directory, project-relative (default: renders)
-  --json             Print one { ok, data, warnings } envelope (any command)
-  --seed <n>         Cook with this graph seed instead of the document's
-  --fresh            With --frames, cook every node on every frame (default: only what the frame changed)
-  --timeout <ms>     Bound a run in a supervised child process (exit 124 on timeout)
-  --validate-only   Validate only (same as 'validate' command)
-  --strict          Fail when a node names a module with no file (default: warn)
-  --verbose, -v      Show verbose output
-  --version          Show version
-  --help, -h         Show this help message
-
-Examples:
-  cascade .
-  cascade . --host KURO --port 3030
-  cascade new my-artwork
-  cascade node Multiply ./my-artwork
-  cascade run graph.cascade
-  cascade run graph.cascade --entry-node node_123
-  cascade validate graph.cascade
-  cascade run graph.cascade --frames 1-100
-  cascade run graph.cascade --frames 1-100x2 --fps 25 --out frames
-  cascade run graph.cascade --verbose
-
-A frame sequence is written as <out>/<node id>.<frame>.<ext> — one file per
-image output nothing downstream consumes, or per output of --entry-node.
-
-Every run writes a trace to .cascade/runs/: each node's time and every Python
-stage call with its cache key and state (hit, miss, off). --verbose prints the
-stage lines as they happen.
-`);
-    process.exit(0);
-  }
-
-  // Parse command
-  const command = args[0];
-  const fileArg = args[1];
-
-  if (!command || !['run', 'validate', 'check', 'inspect'].includes(command)) {
-    console.error('Error: Invalid command');
-    console.error('Run "cascade --help" for usage information');
-    process.exit(1);
-  }
-
-  if (!fileArg) {
-    console.error('Error: Graph file path required');
-    console.error('Run "cascade --help" for usage information');
-    process.exit(1);
-  }
-
-  // Check if file exists
-  try {
-    await fs.access(fileArg);
-  } catch {
-    console.error(`Error: File not found: ${fileArg}`);
-    process.exit(1);
-  }
-
-  // Parse options
-  const options: {
-    file: string;
-    entryNode?: string;
-    nodes?: string[];
-    validateOnly?: boolean;
-    checkOnly?: boolean;
-    inspectOnly?: boolean;
-    /** Fail rather than warn when a node names a module with no file. */
-    strict?: boolean;
-    verbose?: boolean;
-    frames?: string;
-    fps?: number;
-    out?: string;
-    json?: boolean;
-    seed?: number;
-    fresh?: boolean;
-    mp4?: string;
-    crf?: number;
-  } = {
-    file: fileArg,
-    validateOnly: command === 'validate',
-    strict: args.includes('--strict'),
-    checkOnly: command === 'check',
-    inspectOnly: command === 'inspect'
-  };
-
-  // Parse flags
-  const verboseIndex = args.indexOf('--verbose') !== -1 ? args.indexOf('--verbose') : args.indexOf('-v');
-  if (verboseIndex !== -1) {
-    options.verbose = true;
-  }
-
-  // `--node`, repeatable. Collected before `--entry-node` so the newer
-  // spelling wins when both are present.
-  const named: string[] = [];
-  for (let index = 0; index < args.length; index += 1) {
-    if (args[index] === '--node' && args[index + 1]) named.push(args[index + 1]);
-  }
-  if (named.length) options.nodes = named;
-
-  const entryNodeIndex = args.indexOf('--entry-node');
-  if (entryNodeIndex !== -1 && args[entryNodeIndex + 1]) {
-    options.entryNode = args[entryNodeIndex + 1];
-  }
-
-  // A flag whose value is missing is a typo, not a default: rendering frame 1
-  // when somebody asked for a hundred frames is the worst of the options.
-  const valueOf = (flag: string): string | undefined => {
-    const index = args.indexOf(flag);
-    if (index === -1) return undefined;
-    const value = args[index + 1];
-    if (!value || value.startsWith('-')) {
-      console.error(`Error: ${flag} needs a value`);
-      process.exit(1);
-    }
-    return value;
-  };
-
-  const frames = valueOf('--frames');
-  if (frames) options.frames = frames;
-
-  const fps = valueOf('--fps');
-  if (fps !== undefined) {
-    const rate = Number(fps);
-    if (!Number.isFinite(rate) || rate <= 0) {
-      console.error(`Error: --fps must be a positive number (got "${fps}")`);
-      process.exit(1);
-    }
-    options.fps = rate;
-  }
-
-  const out = valueOf('--out');
-  if (out) options.out = out;
-
-  const mp4 = valueOf('--mp4');
-  if (mp4) {
-    if (command !== 'run' || !options.frames) throw new Error('--mp4 requires run --frames (try --frames timeline)');
-    options.mp4 = mp4;
-  }
-  const crf = valueOf('--crf');
-  if (crf !== undefined) {
-    const value = Number(crf);
-    if (!options.mp4 || !Number.isInteger(value) || value < 0 || value > 51) throw new Error('--crf needs --mp4 and an integer from 0 to 51');
-    options.crf = value;
-  }
-
-  if (args.includes('--json') && command === 'run') options.json = true;
-  if (args.includes('--fresh')) options.fresh = true;
-  const seed = valueOf('--seed');
-  if (seed !== undefined) {
-    const value = Number(seed);
-    if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
-      throw new Error(`--seed must be an integer from 0 to 4294967295 (got "${seed}")`);
-    }
-    options.seed = value;
-  }
-  const timeout = valueOf('--timeout');
-  if (timeout !== undefined) {
-    const ms = Number(timeout);
-    if (command !== 'run' || !Number.isSafeInteger(ms) || ms <= 0 || ms > 2_147_483_647) {
-      throw new Error('--timeout requires run and a positive integer number of milliseconds up to 2147483647');
-    }
-    const index = args.indexOf('--timeout');
-    const childArgs = [...args.slice(0, index), ...args.slice(index + 2)];
-    if (childArgs.includes('--timeout')) throw new Error('--timeout may only be specified once');
-    process.exitCode = await superviseProcess(process.execPath, [...process.execArgv, process.argv[1], ...childArgs], ms);
-    return;
-  }
-
-  // Run graph
-  try {
-    // Preserve stdout as a machine-readable channel, even when trusted nodes
-    // log during execution. The final manifest writes stdout directly.
-    if (options.json) console.log = console.error;
-    await runGraph(options);
-  } catch (error: any) {
-    console.error(`Error: ${error.message}`);
-    if (options.verbose && error.stack) {
-      console.error(error.stack);
-    }
-    process.exit(1);
-  }
+  console.log(mainHelp());
+  process.exit(0);
 }
 
 main().catch(error => {

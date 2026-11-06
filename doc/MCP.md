@@ -38,7 +38,9 @@ With a global install (`npm i -g @field/cascade`), use `"command": "cascade", "a
 | `export` | `cascade export <graph> --plan \| --out <dir>` |
 | `lock`, `replay`, `locks` | `cascade lock <graph> <node> --name`, `cascade replay <id> [--live]`, `cascade locks` |
 
-The editing tools take `dryRun`. Reads and edits run inside the server through the same functions the CLI commands call. Cooking, rendering, checking and exporting run `cascade <command> --json` as a child process, so a long render leaves nothing behind in the server and returns exactly what the CLI would print. Calls run one at a time, so two edits to one file never interleave.
+The editing tools take `dryRun`. Reads and edits run inside the server through the same functions the CLI commands call. Cooking, rendering, checking, exporting and the lock tools run `cascade <command> --json` as one child process each, so a long render leaves nothing behind in the server and returns exactly what the CLI would print. Calls run one at a time, so two edits to one file never interleave.
+
+Each tool is an `mcp` entry on its command's row in `src/cli/verbs.ts`, with its description and input schema, so a tool cannot name a command this build does not have (`tests/cli-verbs.test.ts` checks every tool against the table and this page).
 
 ## A session
 
