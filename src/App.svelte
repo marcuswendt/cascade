@@ -20,7 +20,6 @@
   import type { CookStatus } from '@/nodes/CookScheduler';
 
   // Lazy-loaded dialog components
-  let ExportDialog: any = null;
   let SettingsDialog: any = null;
   let VersionHistoryDialog: any = null;
   let OpenGraphDialog: any = null;
@@ -38,13 +37,6 @@
     if (!VersionHistoryDialog) {
       const module = await import('./editor/VersionHistoryDialog.svelte');
       VersionHistoryDialog = module.default;
-    }
-  }
-
-  async function loadExportDialog() {
-    if (!ExportDialog) {
-      const module = await import('./editor/ExportDialog.svelte');
-      ExportDialog = module.default;
     }
   }
 
@@ -88,7 +80,6 @@
   let activeTool = 'select';
   let mousePosition = { x: 0, y: 0 };
   let globalMousePosition = { x: 0, y: 0 }; // Track mouse position globally
-  let exportDialogOpen = false;
   let settingsDialogOpen = false;
   let projectSettingsOpen = false;
   let graph: Graph | undefined = undefined;
@@ -264,9 +255,6 @@
         break;
       case 'duplicate':
         handleDuplicate();
-        break;
-      case 'export':
-        loadExportDialog().then(() => exportDialogOpen = true);
         break;
       case 'openScene':
         handleOpenScene();
@@ -1353,12 +1341,6 @@
         }
       }
 
-      // ⌘E - Export project
-      if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
-        e.preventDefault();
-        loadExportDialog().then(() => exportDialogOpen = true);
-      }
-
       // ⌘, - Settings
       if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault();
@@ -1625,15 +1607,6 @@
         activeCategory = null;
         nodePanelFixedPosition = null;
       }}
-    />
-  {/if}
-
-  {#if graph && ExportDialog}
-    <svelte:component
-      this={ExportDialog}
-      {graph}
-      bind:open={exportDialogOpen}
-      on:close={() => exportDialogOpen = false}
     />
   {/if}
 

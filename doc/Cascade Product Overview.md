@@ -35,7 +35,6 @@ Provider SDKs, credentials, model choice, cost, retries, and result normalizatio
 | Offline animation | `cascade run --frames …` | Supported by both homogeneous graph forms. |
 | Custom applications | `cascade/runtime` with a Node or browser host | Definition-v1 only; the application supplies modules and capabilities. |
 | GPU computation | Studio `gpu` capability | One shared WebGPU device and per-node caches; texture transport/readback is not implemented. |
-| Single-file export | Studio compatibility exporter | A separate minimal runtime with partial graph support; test each artifact. |
 | Remote or AI services | Project-owned integration | Optional; Cascade core requires no paid provider. |
 
 ## Why deterministic nodes

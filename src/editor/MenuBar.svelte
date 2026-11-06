@@ -82,7 +82,6 @@
     { label: 'Save As...', action: 'saveAs', shortcut: `⇧${fileModKey}S` },
     { label: 'Version History...', action: 'versionHistory' },
     { type: 'separator' },
-    { label: 'Export...', action: 'export', shortcut: '⌘E' },
     { label: 'Open Scene...', action: 'openScene' },
     { label: 'Save Scene...', action: 'saveScene' },
     { type: 'separator' },

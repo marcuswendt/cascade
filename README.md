@@ -383,7 +383,6 @@ a second set of node algorithms.
 | Embedded runtime | `cascade/runtime` is the neutral definition-v1 API for Node and browser hosts. It does not load Studio or interpret dynamic nodes. |
 | Static browser player | `cascade build` exports definition-v1 browser/portable graphs with assets and optional browser WebGPU. No server operations, dynamic modules or project Studio panels. Same-origin JavaScript controls; ordinary cross-origin iframe embeds. |
 | GPU | Studio and the optional Dawn CLI host provide a shared device, adapter metadata, limits, and per-node caches. Portable GPU nodes render offscreen and explicitly read RGBA8 pixels through `cascade/gpu`; graph ports still carry images. See [headless GPU rendering](doc/HEADLESS_GPU.md). |
-| Studio HTML export | The older Studio exporter uses a separate minimal runtime and supports only a subset of graph behavior. Use `cascade build` for supported definition-v1 web deployment. |
 | External services | Project-owned and optional. Cascade itself requires no paid provider or model subscription. |
 
 ## Repository map

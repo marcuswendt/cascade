@@ -13,8 +13,6 @@ Confirm scope and acceptance criteria against a real project before implementati
   deterministic definitions and `cascade/runtime`.
 - Make subnet collapse/extract a fully transactional runtime operation.
 - Reduce the existing Svelte accessibility and unused-style warnings.
-- Replace or retire the separate minimal HTML export runtime with a supported
-  deployment path built on `cascade/runtime`.
 
 ## Creative workspace
 
