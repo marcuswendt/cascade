@@ -18,6 +18,25 @@ Notable changes to Cascade. Newest first.
   core: Cascade does not import it and the published package does not ship
   it. See `doc/KIT.md`. cloud-volumes, commons and cairn-strata-hd use it.
 
+### Changed
+
+- **The CLI starts in 30 ms, not 300.** Each verb's handler loads when the
+  verb runs and the published bundle is split, so `cascade --version`, the
+  graph commands and every child the MCP server spawns no longer load the
+  engine, TypeScript, esbuild, sharp and express first (start-up: 3 modules,
+  was 225; `--version` 29 ms and 46 MB, was 286 ms and 155 MB).
+- **One verb table, `src/cli/verbs.ts`.** Dispatch, `--help`, `--json`
+  handling, the graph commands' options and the MCP tools all read it, so a
+  new verb is one row, its handler and its line in `doc/CLI_REFERENCE.md`,
+  which now lists every command.
+- `cascade graph list` skips `renders/` and `out/`.
+
+### Fixed
+
+- The MCP `locks` tool always answered "no locks command yet": the lock tools
+  probed `cascade --help` first and the probe never matched. The probe is
+  gone, so `lock`, `replay` and `locks` also spawn one process instead of two.
+
 ## 0.10.2 — 2026-11-06
 
 ### Added
