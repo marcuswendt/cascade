@@ -54,3 +54,14 @@ render       { "graph": "index.cascade", "frames": "1-48", "out": "renders/check
 ```
 
 See `doc/CLI_REFERENCE.md` for what each operation guarantees about diffs, placement and subnet boundaries.
+
+## Another project, per call
+
+Every tool takes an optional `project`: the project directory for that call, absolute or relative to the directory the server was started in. Without it nothing changes. With it, the call's paths (`graph`, `out`, `scene`, `directory`) resolve against that project and may not leave it, and `cook`, `render`, `check` and the others run their CLI child there. So one server started in `commons` can edit and render a sketch next to it:
+
+```text
+graph_read { "project": "/Users/me/Documents/Cascade/cloud-volumes", "graph": "index.cascade" }
+cook       { "project": "../cloud-volumes", "graph": "index.cascade", "out": "renders/check" }
+```
+
+A `project` that is not a directory is refused.

@@ -23,6 +23,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { statSync } from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { captureEnvelope, type JsonEnvelope } from './jsonEnvelope.js';
@@ -44,16 +45,46 @@ export interface McpContext {
   /** A project-relative or absolute path, checked to be inside the project. */
   resolve(file: string): string;
   cli(args: readonly string[], timeoutMs?: number): Promise<JsonEnvelope>;
+  /** The same server's view of another project directory, for a call's `project`. Default: `createMcpContext(root)`. */
+  forProject?(root: string): McpContext;
 }
+
+/**
+ * `project` on every tool: the project directory for this call, instead of
+ * the one the server was started in. One server can then serve an agent
+ * working across several sketches. Every path in the call is resolved against
+ * and contained in that directory, exactly as the server's own.
+ */
+const PROJECT_PARAMETER = {
+  type: 'string',
+  description: 'Project directory for this call (absolute, or relative to the server\'s). Default: the directory the server was started in. Graph and output paths stay inside it.',
+};
+
+const withProject = (schema: Record<string, unknown>) => ({
+  ...schema,
+  properties: { ...(schema.properties as Record<string, unknown> ?? {}), project: PROJECT_PARAMETER },
+});
 
 /** The MCP tools, one per `mcp` entry in the verb table. */
 export const TOOLS: readonly Tool[] = mcpTools().map(({ verb, tool }) => ({
   name: tool.name,
   description: tool.description,
-  inputSchema: tool.inputSchema,
+  inputSchema: withProject(tool.inputSchema),
   verb: verb.name,
   run: toolRunner(tool.call),
 }));
+
+/** The context a call runs in: its own `project`, or the server's. */
+export function contextForCall(args: Record<string, any>, server: McpContext): { args: Record<string, any>; context: McpContext } {
+  const { project, ...rest } = args;
+  if (project === undefined || project === null || project === '') return { args: rest, context: server };
+  if (typeof project !== 'string') throw new Error('project must be a path to a project directory');
+  const root = path.resolve(server.root, project);
+  let directory = false;
+  try { directory = statSync(root).isDirectory(); } catch { /* reported below */ }
+  if (!directory) throw new Error(`project ${project} is not a directory (resolved to ${root})`);
+  return { args: rest, context: server.forProject ? server.forProject(root) : createMcpContext(root) };
+}
 
 function toolRunner(call: McpCall): Tool['run'] {
   switch (call.kind) {
@@ -125,7 +156,7 @@ export async function handle(message: { method?: string; params?: any }, context
           protocolVersion: typeof message.params?.protocolVersion === 'string' ? message.params.protocolVersion : PROTOCOL_VERSION,
           capabilities: { tools: {} },
           serverInfo: { name: 'cascade', version },
-          instructions: 'Cascade graph tools. Graph paths are relative to the project directory. Read a graph with graph_read before editing it; every result is { ok, data, warnings }.',
+          instructions: 'Cascade graph tools. Graph paths are relative to the project directory; pass `project` on any call to work in another project directory. Read a graph with graph_read before editing it; every result is { ok, data, warnings }.',
         },
       };
     case 'ping':
@@ -137,7 +168,8 @@ export async function handle(message: { method?: string; params?: any }, context
       if (!tool) return { error: { code: -32602, message: `Unknown tool: ${message.params?.name}` } };
       let envelope: JsonEnvelope;
       try {
-        envelope = await tool.run(message.params?.arguments ?? {}, context);
+        const call = contextForCall(message.params?.arguments ?? {}, context);
+        envelope = await tool.run(call.args, call.context);
       } catch (error) {
         envelope = { ok: false, error: { message: error instanceof Error ? error.message : String(error) }, warnings: [] };
       }

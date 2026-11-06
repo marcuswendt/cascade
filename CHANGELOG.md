@@ -50,6 +50,10 @@ Notable changes to Cascade. Newest first.
   transparent. Each passes its input through. Headless only for now: the CLI
   registers them, Studio does not (its entry bundle has no room) and shows
   them unresolved. Listed in `doc/NODE_REFERENCE.md`.
+- **MCP: the project directory per call.** Every tool takes an optional
+  `project`; the call's paths resolve against it and may not leave it, and
+  CLI-backed tools run there. One server started in commons can work on any
+  sketch. See `doc/MCP.md`.
 
 ### Removed
 
