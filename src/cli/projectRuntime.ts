@@ -16,6 +16,7 @@ import { ProjectRoot } from '../../server/src/project.js';
 import { createNodeFileCapability } from './nodeFiles.js';
 import { createNodeAssetCapability } from './nodeAssets.js';
 import { imagePath, sequenceFileName, sequenceWidth } from './sequence.js';
+import { collectImageOutputs, outDirectory, unknownNodes } from './imageOutputs.js';
 import { createDawnGpuHost } from './headlessGpu.js';
 
 interface ProjectNode {
@@ -294,6 +295,8 @@ export async function runDeterministicProjectGraph(
   document: any,
   entryNode?: string,
   observe?: GraphObserver,
+  /** Called after a completed run, before the runtime is disposed: saving outputs, checking assertions. */
+  afterRun?: (graph: LoadedCascadeGraph) => Promise<void>,
 ): Promise<boolean> {
   const prepared = await prepare(file, document, true);
   reportUnresolved(prepared);
@@ -327,6 +330,7 @@ export async function runDeterministicProjectGraph(
     if (result.status !== 'completed') {
       throw new Error(result.diagnostics.map((item) => item.message).join('\n') || `Graph ${result.status}`);
     }
+    await afterRun?.(graph);
     return true;
   } finally {
     try { await runtime.dispose(); }
@@ -377,6 +381,8 @@ export interface DeterministicFrameRenderOptions {
   entryNode?: string;
   /** `--node`, repeatable. Supersedes `entryNode` when both are given. */
   nodes?: readonly string[];
+  /** `--out-node`, repeatable: mid-graph nodes whose image outputs are saved as well. */
+  outNodes?: readonly string[];
   verbose?: boolean;
   signal?: { readonly aborted: boolean };
   observe?: GraphObserver;
@@ -396,7 +402,7 @@ export interface DeterministicFrameRenderOptions {
 
 export interface RenderedFrame {
   frame: number;
-  outputs: { nodeId: string; source: string; file: string }[];
+  outputs: { nodeId: string; port?: string; source: string; file: string }[];
   durationMs: number;
 }
 
@@ -459,8 +465,11 @@ export async function renderDeterministicProjectFrames(
     const targets = options.nodes?.length
       ? options.nodes
       : options.entryNode ? [options.entryNode] : [];
-    const outDirectory = project.resolve(options.out);
-    await fs.mkdir(outDirectory, { recursive: true });
+    const extra = options.outNodes ?? [];
+    const out = outDirectory(options.out, (relative) => project.resolve(relative));
+    await fs.mkdir(out.directory, { recursive: true });
+    const missing = unknownNodes(graph, [...targets, ...extra]);
+    if (missing.length) throw new Error(`No node ${missing.map((id) => `"${id}"`).join(', ')} in this graph (--node/--out-node take node ids; cascade graph read lists them).`);
     for await (const frame of options.frameSource ?? frameRange(options.start, options.end, options.step ?? 1)) {
       const frameStarted = performance.now();
       if (options.signal?.aborted) {
@@ -485,7 +494,7 @@ export async function renderDeterministicProjectFrames(
          * narrows — which is still the bulk of the win when the outputs are
          * 18 MB PNGs.
          */
-        ...(targets.length === 1
+        ...(targets.length === 1 && !extra.length
           ? { target: { kind: 'node' as const, nodeId: targets[0]! } }
           : {}),
       });
@@ -495,24 +504,24 @@ export async function renderDeterministicProjectFrames(
         );
       }
 
-      const outputs = imageOutputs(graph, targets);
+      const outputs = collectImageOutputs(graph, { nodes: targets, extra });
       if (!outputs.length) {
         throw new Error(
-          targets.length
-            ? `No image output on ${targets.join(', ')} — check the node id, and that it has an image output.`
+          targets.length || extra.length
+            ? `No image output on ${[...targets, ...extra].join(', ')} — check that the node has an image output (or a Null passing one).`
             : 'No image output to save: the graph has no unconsumed image port. '
-              + 'Name the node to render with --node.',
+              + 'Name the node to render with --node, or a mid-graph one to save as well with --out-node.',
         );
       }
       const written: RenderedFrame['outputs'] = [];
-      for (const { nodeId, value } of outputs) {
-        const source = imagePath(value);
+      for (const output of outputs) {
+        const source = imagePath(output.value);
         if (!source) continue;
-        const name = sequenceFileName(nodeId, frame, source, width);
+        const name = sequenceFileName(output.nodeId, frame, source, width, output.shared ? output.port : undefined);
         const relative = source.replace(/^\.?\//, '');
-        await fs.copyFile(project.resolveMedia(relative), path.join(outDirectory, name));
-        files.push(path.posix.join(options.out, name));
-        written.push({ nodeId, source: relative, file: path.posix.join(options.out, name) });
+        await fs.copyFile(project.resolveMedia(relative), path.join(out.directory, name));
+        files.push(out.spell(name));
+        written.push({ nodeId: output.nodeId, port: output.port, source: relative, file: out.spell(name) });
       }
       frames.push(frame);
       await options.onFrame?.({ frame, outputs: written, durationMs: performance.now() - frameStarted });
@@ -531,34 +540,6 @@ export async function renderDeterministicProjectFrames(
 
 async function disposeProjectGpu(host: RuntimeHost): Promise<void> {
   await (host.capabilities.gpu as ReturnType<typeof createDawnGpuHost> | undefined)?.dispose();
-}
-
-/**
- * The image outputs a frame should be saved from: the named nodes', or every
- * image output nothing downstream consumes.
- *
- * **Naming nodes also lifts the "unconsumed" rule**, which is the point of it:
- * a wall you want to render is usually wired into something else, and an
- * intermediate output is exactly what you ask for by name.
- *
- * Read off the runtime's inspection rather than off port objects.
- */
-function imageOutputs(
-  graph: LoadedCascadeGraph,
-  nodes: readonly string[] = [],
-): { nodeId: string; value: unknown }[] {
-  const wanted = new Set(nodes);
-  const found: { nodeId: string; value: unknown }[] = [];
-  for (const node of graph.inspect().nodes) {
-    if (wanted.size && !wanted.has(node.id)) continue;
-    for (const port of Object.values(node.outputs)) {
-      if (port.type !== 'image') continue;
-      if (!wanted.size && port.connected) continue;
-      if (port.value === undefined) continue;
-      found.push({ nodeId: node.id, value: port.value });
-    }
-  }
-  return found;
 }
 
 export async function inspectProjectGraph(file: string, document: any) {

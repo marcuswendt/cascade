@@ -30,6 +30,7 @@ export async function runCommand(args: string[]): Promise<void> {
     file: string;
     entryNode?: string;
     nodes?: string[];
+    outNodes?: string[];
     validateOnly?: boolean;
     checkOnly?: boolean;
     inspectOnly?: boolean;
@@ -65,6 +66,19 @@ export async function runCommand(args: string[]): Promise<void> {
     if (args[index] === '--node' && args[index + 1]) named.push(args[index + 1]);
   }
   if (named.length) options.nodes = named;
+
+  // `--out-node`, repeatable: a mid-graph node whose image outputs are saved too.
+  const outNodes: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== '--out-node') continue;
+    const value = args[index + 1];
+    if (!value || value.startsWith('-')) {
+      console.error('Error: --out-node needs a node id');
+      process.exit(1);
+    }
+    outNodes.push(value);
+  }
+  if (outNodes.length) options.outNodes = outNodes;
 
   const entryNodeIndex = args.indexOf('--entry-node');
   if (entryNodeIndex !== -1 && args[entryNodeIndex + 1]) {

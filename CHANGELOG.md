@@ -35,6 +35,13 @@ Notable changes to Cascade. Newest first.
   worktree. Both are MCP tools (`ladder`, `pick`). New built-in
   `cascade.image.ContactSheet` (definition-v1, headless; not yet in Studio):
   images in, one labelled grid out.
+- **`cascade run --out`, outputs as files.** A still run with `--out <dir>`
+  copies each image output to `<dir>/<node>[.<port>].<ext>` (it was ignored
+  without `--frames`), and `run --json` lists every image output with its file
+  in `data.images`. A node with several image outputs writes one file per port
+  instead of overwriting itself; a `cascade.core.Null` passing an image counts
+  as an output; `--out-node <id>` (repeatable, MCP `outNodes`) saves a
+  mid-graph node as well; an absolute `--out` is accepted.
 
 ### Removed
 

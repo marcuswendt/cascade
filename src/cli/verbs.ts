@@ -89,6 +89,7 @@ export interface Verb {
 
 const graph = { type: 'string', description: 'Path to the .cascade file, relative to the project directory' };
 const dryRun = { type: 'boolean', description: 'Validate without writing' };
+const outNodes = { type: 'array', items: { type: 'string' }, description: 'Mid-graph node ids whose image outputs are saved as well (--out-node)' };
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required, additionalProperties: false });
 
 const edit = (operation: (args: Record<string, any>) => GraphEditOperation): McpCall => ({ kind: 'edit', operations: (args) => [operation(args)] });
@@ -115,9 +116,18 @@ export const VERBS: readonly Verb[] = [
     mcp: [
       {
         name: 'cook',
-        description: 'Run a graph headlessly, optionally only the given node (cascade run).',
-        inputSchema: object({ graph, node: { type: 'string' }, timeoutMs: { type: 'number' } }, ['graph']),
-        call: { kind: 'cli', argv: (args, resolve) => ['run', resolve(args.graph), ...(args.node ? ['--node', args.node] : [])], timeoutMs: (args) => args.timeoutMs },
+        description: 'Run a graph headlessly, optionally only the given node (cascade run). `data.images` lists each image output\'s file; `out` copies them there as <node>[.<port>].<ext>, `outNodes` adds mid-graph nodes.',
+        inputSchema: object({ graph, node: { type: 'string' }, out: { type: 'string', description: 'Directory to save image outputs to, project-relative' }, outNodes, timeoutMs: { type: 'number' } }, ['graph']),
+        call: {
+          kind: 'cli',
+          argv: (args, resolve) => [
+            'run', resolve(args.graph),
+            ...(args.node ? ['--node', args.node] : []),
+            ...(args.out ? ['--out', resolve(args.out)] : []),
+            ...(args.outNodes ?? []).flatMap((node: string) => ['--out-node', node]),
+          ],
+          timeoutMs: (args) => args.timeoutMs,
+        },
       },
       {
         name: 'render',
@@ -128,6 +138,7 @@ export const VERBS: readonly Verb[] = [
           fps: { type: 'number' },
           out: { type: 'string', description: 'Output directory, project-relative (default renders)' },
           nodes: { type: 'array', items: { type: 'string' } },
+          outNodes,
           scene: { type: 'string', description: 'A scene file to apply first' },
           timeoutMs: { type: 'number' },
         }, ['graph', 'frames']),
@@ -136,9 +147,10 @@ export const VERBS: readonly Verb[] = [
           argv: (args, resolve) => [
             'run', resolve(args.graph), '--frames', String(args.frames),
             ...(args.fps ? ['--fps', String(args.fps)] : []),
-            ...(args.out ? ['--out', args.out] : []),
+            ...(args.out ? ['--out', resolve(args.out)] : []),
             ...(args.scene ? ['--scene', resolve(args.scene)] : []),
             ...(args.nodes ?? []).flatMap((node: string) => ['--node', node]),
+            ...(args.outNodes ?? []).flatMap((node: string) => ['--out-node', node]),
           ],
           timeoutMs: (args) => args.timeoutMs ?? 30 * 60_000,
         },
@@ -584,7 +596,9 @@ Options:
   --fps <number>     Frame rate to evaluate the range at (default: the graph's timeline fps)
   --mp4 <file>       After --frames, encode the sequence as H.264 yuv420p (needs ffmpeg)
   --crf <n>          Quality for --mp4, 0-51, lower is better (default 18)
-  --out <dir>        Sequence directory, project-relative (default: renders)
+  --out <dir>        Save image outputs here, project-relative or absolute: the
+                     sequence with --frames (default: renders), else the still
+  --out-node <id>    Also save this (mid-graph) node's image outputs. Repeatable.
   --json             Print one { ok, data, warnings } envelope (any command)
   --seed <n>         Cook with this graph seed instead of the document's
   --fresh            With --frames, cook every node on every frame (default: only what the frame changed)
@@ -608,7 +622,11 @@ Examples:
   cascade run graph.cascade --verbose
 
 A frame sequence is written as <out>/<node id>.<frame>.<ext> — one file per
-image output nothing downstream consumes, or per output of --entry-node.
+image output nothing downstream consumes (a Null passing an image counts), or
+per output of --node, plus those of each --out-node. A node with several image
+outputs adds the port: <node id>.<port>.<frame>.<ext>. Without --frames, --out
+writes <out>/<node id>[.<port>].<ext>, and run --json lists every image output
+in data.images either way.
 
 Every run writes a trace to .cascade/runs/: each node's time and every Python
 stage call with its cache key and state (hit, miss, off). --verbose prints the

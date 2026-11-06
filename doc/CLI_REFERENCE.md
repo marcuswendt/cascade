@@ -130,3 +130,7 @@ cascade check index.cascade && cascade run index.cascade --frames 1 --json
 ```
 
 Opened in Studio, the top level reads `motif → transform → render`, with the camera beside `transform`, and `motif` holds the circle and rectangle side by side above `copy-to-points` and its output.
+
+## Outputs as files (`run --out`)
+
+`cascade run <graph> --out <dir>` copies each image output to `<dir>/<node>.<ext>`, or `<dir>/<node>.<port>.<ext>` for a node with more than one image output. With `--frames` the same names carry the frame: `<node>[.<port>].<frame>.<ext>`. Which outputs: every image output nothing downstream consumes (a `cascade.core.Null` passing an image counts), or those of `--node`; `--out-node <id>` (repeatable) adds a mid-graph node's. `--out` may be project-relative or absolute; `files` in the result is spelled the same way. `run --json` lists every image output as `data.images: [{ node, port, source, file? }]`, with or without `--out`. The MCP `cook` and `render` tools take `out` and `outNodes`.

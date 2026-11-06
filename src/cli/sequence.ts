@@ -2,7 +2,9 @@
  * The naming contract for a rendered frame sequence, in one place because two
  * hosts now write one.
  *
- *     <out>/<node id>.<frame, 4 digits>.<ext>
+ *     <out>/<node id>[.<port>].<frame, 4 digits>.<ext>
+ *
+ * The port is there only when the node has several image outputs.
  *
  * A dynamic graph renders through the compatibility engine and a definition-v1
  * graph through the deterministic runtime. A rule that differed between them
@@ -18,10 +20,12 @@ export function sequenceWidth(end: number): number {
   return Math.max(4, String(Math.floor(end)).length);
 }
 
-export function sequenceFileName(nodeId: string, frame: number, source: string, width: number): string {
+/** `<node>[.<port>].<frame>.<ext>`; `port` is given only for a node with several image outputs. */
+export function sequenceFileName(nodeId: string, frame: number, source: string, width: number, port?: string): string {
   const extension = path.extname(source) || '.png';
-  const safeId = nodeId.replace(/[^a-zA-Z0-9_-]/g, '_');
-  return `${safeId}.${String(Math.floor(frame)).padStart(width, '0')}${extension}`;
+  const safe = (text: string) => text.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const stem = port ? `${safe(nodeId)}.${safe(port)}` : safe(nodeId);
+  return `${stem}.${String(Math.floor(frame)).padStart(width, '0')}${extension}`;
 }
 
 /** The file an image-typed port points at, however the host expressed it. */

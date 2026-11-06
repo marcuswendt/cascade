@@ -14,6 +14,7 @@ import { installHeadlessCanvas, MISSING_CANVAS_MESSAGE, type CanvasHost } from '
 import { parseFrameSpec } from './frames.js';
 import type { RenderedFrame } from './projectRuntime.js';
 import { encodeMp4, timelineFrameSpec } from './encode.js';
+import { saveStillImages, type SavedImage } from './imageOutputs.js';
 /**
  * The class-based standard library used to be registered here, because the
  * dynamic executor built a Studio `Graph` and needed the class registry to
@@ -43,6 +44,8 @@ export interface RunOptions {
    * name somebody would look for, and now repeatable.
    */
   nodes?: readonly string[];
+  /** `--out-node <id>`, repeatable: also save these (usually mid-graph) nodes' image outputs. */
+  outNodes?: readonly string[];
   validateOnly?: boolean;
   checkOnly?: boolean;
   inspectOnly?: boolean;
@@ -61,7 +64,11 @@ export interface RunOptions {
   frames?: string;
   /** Frame rate to evaluate the range at. Leaves the graph's own rate alone when absent. */
   fps?: number;
-  /** Sequence directory, project-relative. Default `renders/`. */
+  /**
+   * Where to save image outputs: project-relative, or absolute. With
+   * `--frames` the sequence directory (default `renders/`); without, the
+   * still's outputs are copied here as `<node>[.<port>].<ext>`.
+   */
   out?: string;
   json?: boolean;
   /** `--seed N`: cook with this graph seed instead of the document's. */
@@ -246,6 +253,7 @@ export async function runGraph(options: RunOptions): Promise<void> {
       out: out ?? 'renders',
       ...(entryNode ? { entryNode } : {}),
       ...(nodes?.length ? { nodes } : {}),
+      ...(options.outNodes?.length ? { outNodes: options.outNodes } : {}),
       ...(verbose ? { verbose } : {}),
       ...(options.fresh ? { fresh: true } : {}),
       ...(options.worker ? { frameSource: options.worker.frameSource, onFrame: options.worker.onFrame } : {}),
@@ -281,7 +289,19 @@ export async function runGraph(options: RunOptions): Promise<void> {
     if (options.json) throw new Error('--json rendering requires a fully definition-v1 graph');
   } else {
     const started = performance.now();
-    if (await runDeterministicProjectGraph(file, graphData, nodes?.[0] ?? entryNode, observe)) {
+    let images: SavedImage[] = [];
+    // One named node narrows the cook to it; a mid-graph `--out-node` beside
+    // it may not be upstream, so then the whole graph cooks.
+    const target = options.outNodes?.length || (nodes?.length ?? 0) > 1 ? undefined : nodes?.[0] ?? entryNode;
+    const saveImages = async (graph: Parameters<typeof saveStillImages>[0]) => {
+      if (!project) return;
+      images = await saveStillImages(graph, project, {
+        ...(out ? { out } : {}),
+        ...(nodes?.length ? { nodes } : entryNode ? { nodes: [entryNode] } : {}),
+        ...(options.outNodes?.length ? { extra: options.outNodes } : {}),
+      });
+    };
+    if (await runDeterministicProjectGraph(file, graphData, target, observe, saveImages)) {
       if (verbose) console.log('Graph execution completed');
       releaseHost();
       const tracePath = writeTrace();
@@ -291,9 +311,13 @@ export async function runGraph(options: RunOptions): Promise<void> {
           graph: path.resolve(file),
           durationMs: performance.now() - started,
           seed: graphSeed(graphData),
+          images,
+          ...(out ? { files: images.map((image) => image.file) } : {}),
           ...(tracePath ? { trace: tracePath } : {}),
           stages: trace.stages(),
         }) + '\n');
+      } else if (out) {
+        console.log(`Saved ${images.length} ${images.length === 1 ? 'image' : 'images'} -> ${out}/`);
       }
       return;
     }
