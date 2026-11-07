@@ -110,6 +110,10 @@ Read \`node_modules/cascade/AGENTS.md\` for the framework itself. What follows i
 Do not start another Cascade process on an occupied port. Remote access requires
 both the explicit bind address and the exact trusted browser hostname.
 
+## Choosing a variant
+
+\`npx --no-install cascade ladder index.cascade <node> --name <name> --seeds 1,2,3\` cooks the variants side by side; \`cascade pick <ladder id> <n>\` locks the approved one. To let Marcus pick on his phone in the Cairn web chat, add \`--cairn <Substrate vault>/<space>/_attachments/ladders/<ladder id> --json\`, post \`data.cairnChoice\` (a \`cairn:choice\` fence, at most 8 pictures) in the reply as is, and when "Picked: <label> (pick:<id>:<n>)" comes back run \`cascade pick <id> <n>\` and reply with that locked image. See \`node_modules/cascade/doc/CLI_REFERENCE.md\`, "Picking a ladder variant in Cairn".
+
 ## The \`.cascade\` document format
 
 Hand-editing is supported. Preserve metadata, source fields, IDs, and valid connection endpoints, then run the static checks. This example uses the node below; save it at \`nodes/Multiply/index.ts\` before running the graph.

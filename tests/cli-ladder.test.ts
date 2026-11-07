@@ -18,6 +18,7 @@ import { canvasAvailable } from '@/cli/headlessCanvas';
 import { cookNode } from '@/cli/locks/cook';
 import { createLadder, parseValues, pickVariant, readLadder, variantPlan, withVariant } from '@/cli/locks/ladder';
 import { readLock, replayLock } from '@/cli/locks/lock';
+import { MAX_CHOICE_OPTIONS, checkCardSize, choiceFence, choiceLabel, parsePickValue, pickValue, writeLadderCard } from '@/cli/locks/ladderCard';
 import { runLockCommand } from '@/cli/locks/commands';
 import { captureEnvelope } from '@/cli/jsonEnvelope';
 import { handle, type McpContext } from '@/cli/mcp';
@@ -232,6 +233,68 @@ describe('pick and replay', () => {
   }, 60_000);
 });
 
+describe('a ladder as a Cairn choice card (--cairn)', () => {
+  /** The JSON inside a ```cairn:choice fence; throws when the fence is malformed. */
+  function fenceJson(fence: string): { prompt: string; options: { label: string; value: string; image: string }[] } {
+    const match = /^```cairn:choice\n(.+)\n```$/s.exec(fence);
+    expect(match, fence).not.toBeNull();
+    return JSON.parse(match![1]!);
+  }
+
+  it('labels say what varied, values round-trip to cascade pick, and more than 8 is refused', () => {
+    expect(choiceLabel({ set: {}, seed: 42 }, true)).toBe('seed 42');
+    expect(choiceLabel({ set: { 'ink.hue': 0.3 }, seed: 1 }, false)).toBe('ink.hue=0.3');
+    expect(choiceLabel({ set: { 'ink.mode': 'soft' }, seed: 7 }, true)).toBe('ink.mode=soft, seed 7');
+    expect(pickValue('level-dial', 3)).toBe('pick:level-dial:3');
+    expect(parsePickValue('pick:level-dial:3')).toEqual({ ladder: 'level-dial', variant: 3 });
+    expect(parsePickValue('seed 3')).toBeUndefined();
+    expect(() => checkCardSize(MAX_CHOICE_OPTIONS)).not.toThrow();
+    expect(() => checkCardSize(9)).toThrow(/at most 8/);
+    expect(fenceJson(choiceFence({ prompt: 'p', options: [{ label: 'a', value: 'pick:x:1', image: 'a.png' }] })).options).toHaveLength(1);
+  });
+
+  it('refuses a ladder of more than 8 before cooking anything', async () => {
+    const { root, file } = project();
+    const vault = path.join(root, 'vault');
+    const envelope = await captureEnvelope(() => runLockCommand([
+      'ladder', file, 'swatch', '--name', 'nine', '--seeds', '1,2,3,4,5,6,7,8,9', '--cairn', path.join(vault, 'x'), '--json',
+    ]));
+    expect(envelope).toMatchObject({ ok: false, error: { message: expect.stringMatching(/at most 8/) } });
+    expect(fs.existsSync(path.join(root, 'ladders'))).toBe(false);
+  });
+
+  it('copies each variant into the vault and returns a valid fence with vault-relative images', async (context) => {
+    await needsCanvas(context);
+    const { root, file } = project();
+    const vault = path.join(root, 'Substrate');
+    fs.mkdirSync(path.join(vault, '.obsidian'), { recursive: true });
+    const attachments = path.join(vault, 'Work', 'Projects', 'Cascade', '_attachments', 'ladders', 'seeds');
+    const laddered = await captureEnvelope(() => runLockCommand([
+      'ladder', file, 'swatch', '--name', 'seeds', '--seeds', '4,5,6', '--live', '--cairn', attachments, '--json',
+    ])) as JsonEnvelope & { data: { cairnChoice: string; variants: { image: string }[]; cairn: { vault: string } } };
+    expect(laddered).toMatchObject({ ok: true, data: { status: 'laddered', cairn: { vault } } });
+    const card = fenceJson(laddered.data.cairnChoice);
+    expect(card.prompt).toMatch(/seeds/);
+    expect(card.options.length).toBeLessThanOrEqual(MAX_CHOICE_OPTIONS);
+    expect(card.options).toEqual([4, 5, 6].map((seed, index) => ({
+      label: `seed ${seed}`,
+      value: `pick:seeds:${index + 1}`,
+      image: `Work/Projects/Cascade/_attachments/ladders/seeds/seeds-0${index + 1}.png`,
+    })));
+    for (const [index, option] of card.options.entries()) {
+      expect(path.isAbsolute(option.image)).toBe(false);
+      const copied = path.join(vault, option.image);
+      expect(fs.readFileSync(copied).equals(fs.readFileSync(laddered.data.variants[index]!.image))).toBe(true);
+    }
+    // The tap's value is what cascade pick takes.
+    const { ladder, variant } = parsePickValue(card.options[1]!.value)!;
+    const picked = await captureEnvelope(() => runLockCommand(['pick', ladder, String(variant), '--project', root, '--json']));
+    expect(picked).toMatchObject({ ok: true, data: { status: 'locked', ladder: 'seeds', variant: 2, lock: { seeds: { graph: 5 } } } });
+    // Outside the vault named with --vault is refused.
+    await expect(writeLadderCard(root, (await readLadder(root, 'seeds')).ladder, path.join(root, 'elsewhere'), vault)).rejects.toThrow(/not inside the vault/);
+  }, 60_000);
+});
+
 describe('end to end, as an agent drives it', () => {
   it('a ladder of five makes a sheet, a pick makes a lock, and replay reproduces it', async (context) => {
     await needsCanvas(context);
@@ -269,5 +332,8 @@ describe('end to end, as an agent drives it', () => {
     expect(calls[0]).toEqual(expect.arrayContaining(['ladder', '/project/g.cascade', 'ink', '--name', 'x', '--vary', 'ink.width=1,2.5', '--vary', 'ink.mode="soft","hard"', '--seeds', '1,2']));
     expect(parseValues('"soft","hard"')).toEqual(['soft', 'hard']);
     expect(calls[1]).toEqual(expect.arrayContaining(['pick', 'x', '2', '--project', '/project', '--note', 'yes']));
+    // The vault is outside the project, so `cairn` passes as given.
+    await handle({ method: 'tools/call', params: { name: 'ladder', arguments: { graph: 'g.cascade', node: 'ink', name: 'x', seeds: [1, 2], cairn: '/vault/Space/_attachments/ladders/x' } } }, mcp, 'test');
+    expect(calls[2]).toEqual(expect.arrayContaining(['--cairn', '/vault/Space/_attachments/ladders/x']));
   });
 });

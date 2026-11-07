@@ -37,7 +37,7 @@ With a global install (`npm i -g @field/cascade`), use `"command": "cascade", "a
 | `render` | `cascade run <graph> --frames … [--fps] [--out] [--node]… [--scene]` |
 | `export` | `cascade export <graph> --plan \| --out <dir>` |
 | `lock`, `replay`, `locks` | `cascade lock <graph> <node> --name`, `cascade replay <id> [--live]`, `cascade locks` |
-| `ladder`, `pick` | `cascade ladder <graph> <node> --name --vary node.prop=a,b,c \| --seeds a,b,c` (`vary` is `{ "node.prop": [a, b, c] }`), `cascade pick <ladder> <n>` |
+| `ladder`, `pick` | `cascade ladder <graph> <node> --name --vary node.prop=a,b,c \| --seeds a,b,c` (`vary` is `{ "node.prop": [a, b, c] }`; `cairn`, an absolute vault directory, returns `data.cairnChoice`, a tap-to-pick card for the Cairn chat: see [Picking in Cairn](CLI_REFERENCE.md#picking-a-ladder-variant-in-cairn)), `cascade pick <ladder> <n>` (on "Picked: … (pick:<id>:<n>)", `ladder` <id>, `variant` <n>) |
 | `node_help` | `cascade help node [<type>]` (a node type's declaration; every type without one) |
 | `doctor` | `cascade doctor [--fix]` (Python environment, stage interpreter, ffmpeg, canvas; `fix` builds the environment) |
 
