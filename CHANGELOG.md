@@ -43,6 +43,18 @@ Notable changes to Cascade. Newest first.
   --deploy vercel` uses the same one and now checks the production alias
   Vercel reports rather than assuming `<project>.vercel.app`.
 
+### Changed
+
+- **Intermediate images encode six times faster headlessly.** `saveImage`
+  (`cascade/io`) and `writeImage` (`cascade/image`) hand a canvas to the
+  headless host as pixels, and it writes a lossless PNG at zlib level 1
+  through sharp instead of Skia's default encoder: 157 → 26 ms per 1024²
+  image. field-logo renders at 887 ms a frame instead of 1,791, with
+  pixel-identical outputs. The CLI now bundles `cascade/io` from its own
+  install, as it already did `cascade/image`, so a sketch pinned to an older
+  package gets it too. New optional `IoBridge.keep` and
+  `AssetCapability.keepImage`; Studio and the browser player are unchanged.
+
 ## 0.11.0 — 2026-11-07
 
 ### Added

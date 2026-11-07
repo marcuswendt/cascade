@@ -31,6 +31,18 @@ afterEach(() => {
   while (disposers.length) disposers.pop()!();
 });
 
+/** The two zlib header bytes of a PNG's first IDAT chunk: 78 01 is level 1, 78 9c the default. */
+function zlibLevelHeader(png: Uint8Array): [number, number] {
+  const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  for (let offset = 8; offset + 8 <= png.length;) {
+    const length = view.getUint32(offset);
+    const type = String.fromCharCode(...png.subarray(offset + 4, offset + 8));
+    if (type === 'IDAT') return [png[offset + 8]!, png[offset + 9]!];
+    offset += 12 + length;
+  }
+  throw new Error('no IDAT chunk');
+}
+
 function scratchProject(): ProjectRoot {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-headless-'));
   return new ProjectRoot(root);
@@ -177,6 +189,41 @@ describe('cascade/io over the local transport', () => {
     const source = { encode: async () => encoded };
     const stored = await saveImage(source, '.cascade-cache/raw.png');
     expect(Array.from(fs.readFileSync(project.resolve(stored)))).toEqual([137, 80, 78, 71]);
+  });
+
+  /**
+   * Round 2's first move: a 1024² intermediate cost 157 ms in Skia's default
+   * PNG encoder, eight times a frame in field-logo. Counted rather than timed,
+   * so the guard holds on a loaded machine: no canvas encode at all, and the
+   * zlib stream in the file says level 1 (FLEVEL 0, header 78 01).
+   */
+  it('saves an intermediate as a level-1 PNG, never through the canvas encoder', async () => {
+    if (!(await canvasAvailable())) return;
+    const host = await installHeadlessCanvas();
+    disposers.push(() => host.dispose());
+    const project = scratchProject();
+    disposers.push(installIoBridge(createIoBridge(project)));
+
+    const canvas = new OffscreenCanvas(1024, 1024);
+    const ctx = canvas.getContext('2d')!;
+    const gradient = ctx.createLinearGradient(0, 0, 1024, 1024);
+    gradient.addColorStop(0, '#203040');
+    gradient.addColorStop(1, '#f0e0d0');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 1024, 1024);
+    let encodes = 0;
+    for (const name of ['convertToBlob', 'encode', 'encodeSync', 'toBuffer'] as const) {
+      const original = (canvas as any)[name];
+      (canvas as any)[name] = (...args: unknown[]) => { encodes += 1; return original.apply(canvas, args); };
+    }
+
+    const stored = await saveImage(canvas, '.cascade-cache/filter.png');
+    expect(encodes).toBe(0);
+    expect(zlibLevelHeader(fs.readFileSync(project.resolve(stored)))).toEqual([0x78, 0x01]);
+    const bitmap = await loadBitmap(stored);
+    const back = new OffscreenCanvas(1024, 1024).getContext('2d')!;
+    back.drawImage(bitmap, 0, 0);
+    expect(Buffer.from(back.getImageData(0, 0, 1024, 1024).data).equals(Buffer.from(ctx.getImageData(0, 0, 1024, 1024).data))).toBe(true);
   });
 
   it('writes bytes through the bridge and returns the stored path', async () => {

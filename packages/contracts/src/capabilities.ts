@@ -1,4 +1,4 @@
-import type { AssetRef, ImageRef, JsonValue } from "./values.js";
+import type { AssetRef, ImagePixels, ImageRef, JsonValue } from "./values.js";
 
 export interface CascadeAbortSignal {
   readonly aborted: boolean;
@@ -51,6 +51,23 @@ export interface AssetCapability {
     options: { signal: CascadeAbortSignal },
   ): Promise<AssetRef>;
   resolveUrl?(ref: AssetRef | ImageRef): Promise<ResourceLease<string>>;
+  /**
+   * Store an intermediate image from its pixels. Optional; a host without it
+   * gets encoded bytes through `write`. The host chooses how: the headless
+   * host holds the pixels in memory and writes a fast lossless PNG behind
+   * (zlib level 1), or encodes that PNG at once when the run does not keep
+   * pixels. The returned path is content-addressed like `write`'s and is a
+   * whole file before anything reads it from disk. Finals are not encoded
+   * here: a run's saved outputs are encoded at full compression when copied.
+   */
+  keepImage?(
+    pixels: ImagePixels,
+    metadata: { suggestedName?: string },
+    options: { signal: CascadeAbortSignal },
+  ): Promise<AssetRef>;
+  /** The pixels behind a stored image while the host still holds them in
+   *  memory, so a reader skips the read and the decode. */
+  imagePixels?(ref: AssetRef | ImageRef): ImagePixels | undefined;
 }
 export interface MediaCapability {
   decodeImage(

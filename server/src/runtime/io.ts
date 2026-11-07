@@ -51,6 +51,25 @@ export interface IoBridge {
   write(path: string, data: Uint8Array): Promise<string>;
   /** Host-owned display URL, valid until the host releases its stored asset. */
   url?(path: string, options?: MediaOptions): string;
+  /**
+   * Store an intermediate image from its pixels and return the stored path,
+   * as `write` would. Optional. The headless host has it: it writes a fast
+   * lossless PNG, and in a run that keeps pixels it holds them in memory and
+   * writes behind (`pixels` below). Without it `saveImage` encodes and writes.
+   */
+  keep?(path: string, pixels: ImagePixels): Promise<string>;
+  /** The pixels behind a path `keep` returned, while the host holds them. */
+  pixels?(path: string): ImagePixels | undefined;
+}
+
+/**
+ * An image's pixels in memory. Mirrors Cascade's core `ImagePixels`: 8-bit
+ * RGBA, sRGB, unpremultiplied, top row first — `ImageData`'s layout.
+ */
+export interface ImagePixels {
+  readonly width: number;
+  readonly height: number;
+  readonly data: Uint8ClampedArray;
 }
 
 const IO_BRIDGE_KEY = '__cascadeIoBridge';
@@ -177,6 +196,15 @@ export async function saveImage(
   const type = `image/${format}`;
   let blob: Blob;
 
+  // A host that keeps intermediates gets the pixels, not an encode: the
+  // headless host writes a fast PNG (or holds them in memory), where the
+  // canvas's own encoder would spend six times as long.
+  const bridge = localIo();
+  if (format === 'png' && bridge?.keep) {
+    const pixels = canvasPixels(source);
+    if (pixels) return bridge.keep(path.replace(/^\.?\//, ''), pixels);
+  }
+
   if (source instanceof Blob) {
     blob = source;
   } else if (typeof (source as OffscreenCanvas).convertToBlob === 'function') {
@@ -198,6 +226,21 @@ export async function saveImage(
   }
 
   return saveBytes(blob, path);
+}
+
+/**
+ * A canvas's pixels as `ImagePixels`, or null for anything that is not a 2D
+ * canvas (a Blob, an encoder-only source, a WebGL canvas, whose `getContext('2d')`
+ * is null).
+ */
+export function canvasPixels(source: unknown): ImagePixels | null {
+  const canvas = source as { width?: unknown; height?: unknown; getContext?: (kind: '2d') => CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null };
+  if (typeof canvas?.getContext !== 'function' || typeof canvas.width !== 'number' || typeof canvas.height !== 'number') return null;
+  if (!canvas.width || !canvas.height) return null;
+  const context = canvas.getContext('2d');
+  if (!context || typeof context.getImageData !== 'function') return null;
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  return { width: image.width, height: image.height, data: image.data };
 }
 
 /** Write any bytes into the project cache and return the path. */

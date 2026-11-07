@@ -780,18 +780,26 @@ async function compileExecute(projectRoot: string, moduleFile: string) {
  * portable image node under a CLI that has it. The module holds no state of
  * its own (the font door is a global the CLI installs), so bundling this copy
  * into the node is safe.
+ *
+ * `cascade/io` likewise, since round 2 (7 Nov): the in-memory image handoff
+ * lives in its `saveImage`/`loadBitmap`, and a sketch pinned to an older
+ * package would otherwise encode every intermediate with the old path. Its
+ * state is the bridge global the CLI installs, so a bundled copy is as safe.
  */
 function cliImageModule(): import('esbuild').Plugin {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const source = [
-    path.join(here, 'runtime', 'image.ts'), // dist/cli/runtime, copied by build-cli
-    path.join(here, '..', '..', 'server', 'src', 'runtime', 'image.ts'), // running from src
+  const shim = (name: string) => [
+    path.join(here, 'runtime', `${name}.ts`), // dist/cli/runtime, copied by build-cli
+    path.join(here, '..', '..', 'server', 'src', 'runtime', `${name}.ts`), // running from src
   ].find((candidate) => existsSync(candidate));
+  const sources = { image: shim('image'), io: shim('io') };
   return {
     name: 'cascade-cli-image',
     setup(builder) {
-      if (!source) return;
-      builder.onResolve({ filter: /^(?:@field\/)?cascade\/image$/ }, () => ({ path: source }));
+      builder.onResolve({ filter: /^(?:@field\/)?cascade\/(?:image|io)$/ }, (args) => {
+        const source = sources[args.path.endsWith('/io') ? 'io' : 'image'];
+        return source ? { path: source } : undefined;
+      });
     },
   };
 }

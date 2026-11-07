@@ -48,6 +48,13 @@ export function createNodeAssetCapability(project: ProjectRoot): AssetCapability
       return { path: written, ...(metadata.mediaType ? { mediaType: metadata.mediaType } : {}) };
     },
 
+    // `cascade/image`'s `writeImage` hands an intermediate over as pixels:
+    // the same file policy as `write`, through the bridge's fast PNG.
+    async keepImage(pixels, metadata): Promise<AssetRef> {
+      const written = await io.keep(`${CACHE_DIR}/${assetFileName(metadata.suggestedName)}`, pixels);
+      return { path: written, mediaType: 'image/png' };
+    },
+
     async resolveUrl(ref) {
       const full = project.resolveMedia(String(ref.path).replace(/^\.?\//, ''));
       return { value: pathToFileURL(full).href, release: () => {} };
