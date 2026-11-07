@@ -120,6 +120,30 @@ export const Color = Object.freeze({
   },
 
   /**
+   * A colour saved in an older shape, as the one colour: `{ r, g, b, a? }`
+   * (the class-based image nodes stored that until 2026-11-07) or three
+   * components, with alpha 1. Components above 1 are read as 0–255, the way
+   * those nodes read them. Anything else comes back unchanged, so a reader can
+   * apply this to every stored `color` value and validate the result.
+   */
+  upgrade(value: unknown): unknown {
+    type Legacy = { r: unknown; g: unknown; b: unknown; a?: unknown };
+    const legacy: Legacy | null =
+      value !== null && typeof value === "object" && !Array.isArray(value) && "r" in value && "g" in value && "b" in value
+        ? value as Legacy
+        : Array.isArray(value) && value.length === 3
+          ? { r: value[0], g: value[1], b: value[2] }
+          : null;
+    if (!legacy) return value;
+    const parts = [legacy.r, legacy.g, legacy.b, legacy.a ?? 1];
+    if (!parts.every((part) => typeof part === "number" && Number.isFinite(part))) return value;
+    const numbers = parts as number[];
+    const unit = numbers.slice(0, 3).every((part) => part <= 1);
+    const read = (part: number) => (unit ? part : part / 255);
+    return [read(numbers[0]!), read(numbers[1]!), read(numbers[2]!), legacy.a === undefined ? 1 : read(numbers[3]!)] as const;
+  },
+
+  /**
    * Four unit components from anything indexable, clamping and defaulting a
    * missing alpha to 1. The reader for a `Cd` attribute's flat array, and the
    * one place that decides what an under-sized colour means.

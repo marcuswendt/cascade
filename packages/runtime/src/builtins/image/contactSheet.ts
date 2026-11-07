@@ -1,6 +1,6 @@
-import type { NodeDefinition, NodeExecutionContext } from "@cascade/contracts";
+import type { NodeExecutionContext } from "@cascade/contracts";
 
-import type { DefinitionNodeRegistration } from "../../types.js";
+import type { contactSheetDefinition } from "./definitions.js";
 
 /**
  * `cascade.image.ContactSheet` — several images as one labelled grid.
@@ -13,38 +13,9 @@ import type { DefinitionNodeRegistration } from "../../types.js";
  * `portable` with `assets`, like `cascade.geo.Render`: it reads each image
  * through the asset capability, decodes it with `createImageBitmap` and draws
  * on an `OffscreenCanvas`, which both hosts supply (the headless one through
- * @napi-rs/canvas). It lives in `cascade.image.*` beside Studio's image
- * library, as the first definition-v1 node there; Studio does not register it
- * yet, so today it runs headless and is listed in `../headless.ts` rather
- * than in the built-ins Studio bundles.
+ * @napi-rs/canvas). Its declaration is in `definitions.ts` with the rest of
+ * the library, so Studio's first paint carries the literal and not this body.
  */
-export const contactSheetDefinition = {
-  apiVersion: 1,
-  label: "Contact Sheet",
-  description: "Lay images out as one labelled grid.",
-  icon: "LayoutGrid",
-  runsOn: "portable",
-  capabilities: ["assets"],
-  inputs: {
-    images: { kind: "data", type: "image", variadic: true },
-    /** More images after the wired ones: image values or project-relative paths. */
-    list: { kind: "data", type: "array" },
-  },
-  outputs: {
-    image: { kind: "data", type: "image" },
-    asset: { kind: "data", type: "asset" },
-  },
-  props: {
-    columns: { type: "int", default: 0, min: 0, max: 64, description: "0: as square as the count allows." },
-    gap: { type: "int", default: 16, min: 0, max: 512 },
-    background: { type: "color", default: [1, 1, 1, 1], label: "Background" },
-    cellWidth: { type: "int", default: 0, min: 0, max: 8192, description: "0: images at their own size. Otherwise each is scaled to fit this width." },
-    labels: { type: "string", default: "", description: "One label per line, in image order." },
-    labelSize: { type: "int", default: 14, min: 6, max: 128 },
-    labelColor: { type: "color", default: [0.1, 0.1, 0.1, 1], label: "Label Colour" },
-    filename: { type: "string", default: "contact-sheet.png", label: "Filename" },
-  },
-} as const satisfies NodeDefinition;
 
 export interface ContactSheetOptions {
   readonly columns?: number;
@@ -266,10 +237,3 @@ export async function executeContactSheet(
     space: "srgb",
   });
 }
-
-export const contactSheetRegistration = {
-  kind: "definition-v1",
-  moduleId: "cascade.image.ContactSheet",
-  definition: contactSheetDefinition,
-  loadExecute: async () => executeContactSheet,
-} satisfies DefinitionNodeRegistration<typeof contactSheetDefinition>;

@@ -1,6 +1,8 @@
 import type { DefinitionNodeRegistration } from "../types.js";
+import { assertNodeRegistrations } from "./assert/index.js";
 import { coreNodeRegistrations } from "./core/index.js";
 import { geoNodeRegistrations } from "./geo/index.js";
+import { imageNodeRegistrations } from "./image/index.js";
 import { mathNodeRegistrations } from "./math/index.js";
 import { popNodeRegistrations } from "./pop/index.js";
 import { sceneNodeRegistrations } from "./scene/index.js";
@@ -12,6 +14,9 @@ import { sceneNodeRegistrations } from "./scene/index.js";
  * set — which speaks the same `geometry` type as `geo`, so any of its outputs
  * fits any geometry node's input. `cascade.scene.*` is the assembly: geometry
  * plus a viewpoint plus lights, which is what the Viewer's 3D mode renders.
+ * `cascade.image.*` makes and filters images, and `cascade.assert.*` fails a
+ * run whose result is wrong. Those two load their bodies lazily: this list is
+ * in Studio's first-paint bundle.
  */
 export const builtinNodeRegistrations: readonly DefinitionNodeRegistration[] =
   Object.freeze([
@@ -20,6 +25,8 @@ export const builtinNodeRegistrations: readonly DefinitionNodeRegistration[] =
     ...mathNodeRegistrations,
     ...popNodeRegistrations,
     ...sceneNodeRegistrations,
+    ...imageNodeRegistrations,
+    ...assertNodeRegistrations,
   ]);
 
 const registrationsById = new Map(

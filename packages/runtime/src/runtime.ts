@@ -3,6 +3,7 @@ import {
   bundleSchemasCompatible,
   bundleValueProblem,
   canConnectTypes,
+  Color,
   isBundleValue,
   selectBundleFields,
   suggestName,
@@ -1844,8 +1845,10 @@ function materialize(
     const object = saved && typeof saved === "object" && "value" in saved
       ? (saved as { value: unknown; expression?: unknown; channel?: unknown })
       : null;
+    const stored = object ? object.value : saved;
     const value = runtimeValue(
-      object ? object.value : saved,
+      // A colour saved as `{ r, g, b }` by the class image nodes reads as one.
+      definition.type === "color" ? Color.upgrade(stored) : stored,
       definition.type,
       false,
       `${authored.id}.${name}`,

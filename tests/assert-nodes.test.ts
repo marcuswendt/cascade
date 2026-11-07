@@ -9,7 +9,7 @@ import path from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { captureEnvelope } from '@/cli/jsonEnvelope';
 import { runGraph } from '@/cli/runner';
-import { blankness, decodeImage } from '@/cli/assertNodes';
+import { blankness, decodeImage } from '../packages/runtime/src/builtins/assert/checks.js';
 import { moduleDefinitions } from '@/cli/projectRuntime';
 
 const roots: string[] = [];
@@ -38,14 +38,14 @@ function png(pixels: number[][]): Buffer {
 }
 
 describe('image blankness', () => {
-  it('decodes a PNG and tells content from a flat colour and from transparency', () => {
-    const flat = decodeImage(png([[9, 9, 9, 255], [9, 9, 9, 255], [9, 9, 9, 255], [9, 9, 9, 255]]))!;
+  it('decodes a PNG and tells content from a flat colour and from transparency', async () => {
+    const flat = (await decodeImage(png([[9, 9, 9, 255], [9, 9, 9, 255], [9, 9, 9, 255], [9, 9, 9, 255]])))!;
     expect(flat.width).toBe(2);
     expect(blankness(flat)).toMatch(/one flat colour \(rgb 9, 9, 9\)/);
-    const clear = decodeImage(png([[1, 2, 3, 0], [4, 5, 6, 0], [7, 8, 9, 0], [0, 0, 0, 0]]))!;
+    const clear = (await decodeImage(png([[1, 2, 3, 0], [4, 5, 6, 0], [7, 8, 9, 0], [0, 0, 0, 0]])))!;
     expect(blankness(clear)).toBe('fully transparent');
-    const mark = decodeImage(png([[9, 9, 9, 255], [9, 9, 9, 255], [9, 9, 9, 255], [200, 9, 9, 255]]))!;
-    expect(Array.from(mark.data.subarray(12))).toEqual([200, 9, 9, 255]);
+    const mark = (await decodeImage(png([[9, 9, 9, 255], [9, 9, 9, 255], [9, 9, 9, 255], [200, 9, 9, 255]])))!;
+    expect(Array.from(mark.data).slice(12)).toEqual([200, 9, 9, 255]);
     expect(blankness(mark)).toBeNull();
     expect(blankness(mark, 255)).not.toBeNull();
   });

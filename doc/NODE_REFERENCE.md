@@ -589,6 +589,104 @@ Runs on `portable`.
 | --- | --- | --- | --- |
 | `geometry` | `geometry` |  |  |
 
+### `cascade.image.Blur`
+
+Blur — Box (three passes, fast) or true Gaussian blur.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `method` | `string` | `"box"` |  |
+| `radius` | `float` | `5` | 0…100 |
+| `wrapEdges` | `bool` | `false` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+### `cascade.image.Checkers`
+
+Checkers — A checkerboard.
+
+Runs on `portable`.
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `color1` | `color` | `[1,1,1,1]` |  |
+| `color2` | `color` | `[0,0,0,1]` |  |
+| `mode` | `string` | `"size"` |  |
+| `size` | `float` | `32` | 1…512 |
+| `divisions` | `int` | `16` | 1…512 |
+| `centered` | `bool` | `false` |  |
+| `resolution` | `vec2i` | `[512,512]` | 1…4096 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+### `cascade.image.Color`
+
+Color — A solid colour.
+
+Runs on `portable`.
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `color` | `color` | `[1,1,1,1]` |  |
+| `resolution` | `vec2i` | `[512,512]` | 1…4096 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+### `cascade.image.Composite`
+
+Composite — Blend image2 over image1.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image1` | `image` |  |  |
+| `image2` | `image` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `blendMode` | `string` | `"multiply"` |  |
+| `opacity` | `float` | `1` | 0…1 |
+| `outputResolution` | `string` | `"input1"` |  |
+| `customResolution` | `vec2i` | `[512,512]` | 1…4096 |
+| `fitMode` | `string` | `"fill"` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
 ### `cascade.image.ContactSheet`
 
 Contact Sheet — Lay images out as one labelled grid.
@@ -621,6 +719,190 @@ Runs on `portable`.
 | --- | --- | --- | --- |
 | `image` | `image` |  |  |
 | `asset` | `asset` |  |  |
+
+### `cascade.image.Image`
+
+File — An image file from the project, or an image input, optionally resized.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `file` | `string` | `""` |  |
+| `resolutionMode` | `string` | `"original"` |  |
+| `maxResolution` | `vec2i` | `[2048,2048]` | 1…4096 |
+| `fixedResolution` | `vec2i` | `[512,512]` | 1…4096 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+### `cascade.image.Noise`
+
+Noise — Fractal simplex noise, grey.
+
+Runs on `portable`.
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `seed` | `int` | `0` | 0…10000 |
+| `scale` | `float` | `0.01` | 0.001…1 |
+| `iterations` | `int` | `4` | 1…8 |
+| `resolution` | `vec2i` | `[512,512]` | 1…4096 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+### `cascade.image.NormalMap`
+
+Normal Map — A normal map from the red (or grey) channel as height.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `scale` | `float` | `1` | 0…10 |
+| `flipX` | `bool` | `false` |  |
+| `flipY` | `bool` | `false` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+### `cascade.image.Ramp`
+
+Ramp — A colour ramp: horizontal, vertical, radial or concentric.
+
+Runs on `portable`.
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `type` | `string` | `"horizontal"` |  |
+| `points` | `array` | `[{"position":0,"color":{"r":0,"g":0,"b":0},"interpolation":"linear"},{"position":1,"color":{"r":1,"g":1,"b":1},"interpolation":"linear"}]` |  |
+| `resolution` | `vec2i` | `[512,512]` | 1…4096 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+### `cascade.image.Resize`
+
+Resize — Scale an image, or resize it to a fixed size, bilinear.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `mode` | `string` | `"scale"` |  |
+| `scale` | `float` | `1` | 0.1…10 |
+| `width` | `int` | `512` | 1…4096 |
+| `height` | `int` | `512` | 1…4096 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+### `cascade.image.Text`
+
+Text — Text drawn with a CSS font family, or a font file from the project.
+
+Runs on `portable`.
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `text` | `string` | `"Hello, World!"` |  |
+| `font` | `string` | `"Inter, system-ui, sans-serif"` |  |
+| `fontSize` | `float` | `48` | 1…500 |
+| `fontWeight` | `string` | `"normal"` |  |
+| `fontStyle` | `string` | `"normal"` |  |
+| `alignH` | `string` | `"center"` |  |
+| `alignV` | `string` | `"middle"` |  |
+| `color` | `color` | `[1,1,1,1]` |  |
+| `backgroundColor` | `color` | `[0,0,0,0]` |  |
+| `resolution` | `vec2i` | `[512,512]` | 1…4096 |
+| `offset` | `vec2` | `[0,0]` | -2048…2048 |
+| `rotation` | `float` | `0` | -180…180 |
+| `letterSpacing` | `float` | `0` | -50…100 |
+| `lineHeight` | `float` | `1.2` | 0.5…3 |
+| `opacity` | `float` | `1` | 0…1 |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+### `cascade.image.Transform`
+
+Transform — Rotate, translate and scale an image about a pivot.
+
+Runs on `portable`.
+
+**Inputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
+
+**Props**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `translate` | `vec2` | `[0,0]` | -2048…2048 |
+| `rotation` | `float` | `0` | -180…180 |
+| `scale` | `vec2` | `[1,1]` | 0.01…10 |
+| `uniformScale` | `bool` | `true` |  |
+| `pivot` | `string` | `"center"` |  |
+| `customPivot` | `vec2` | `[0.5,0.5]` | 0…1 |
+| `filter` | `string` | `"bilinear"` |  |
+| `wrap` | `string` | `"clamp"` |  |
+
+**Outputs**
+
+| name | type | default | range |
+| --- | --- | --- | --- |
+| `image` | `image` |  |  |
 
 ### `cascade.math.Binary`
 
@@ -1006,13 +1288,13 @@ Runs on `portable`.
 | --- | --- | --- | --- |
 | `scene` | `scene` |  |  |
 
-## Assertions, headless only
+## Assertions
 
 `cascade.assert.*` fail a `cascade run` (non-zero exit, the message in
 `run --json`'s `error.message`) when their check does not hold, and pass
-their input through. The CLI registers them; Studio does not yet, and shows
-them as unresolved. An image wired only into assertions still counts as the
-graph's final image for `run --out`.
+their input through. In Studio a failed assertion is the node's error. An image
+wired only into assertions still counts as the graph's final image for
+`run --out`.
 
 ### `cascade.assert.Equals`
 
@@ -1133,16 +1415,6 @@ under `src/nodes/<library>/nodes/`.
 ### Geometry — `cascade.geo.*`
 
 **Geometry.** `cascade.geo.Rectangle` (A closed four-point polygon, counter-clockwise from bottom-left.), `cascade.geo.Circle` (A closed circle, as one cubic Bezier chain or as a polygon of divisions segments.), `cascade.geo.Transform` (Translate, rotate and scale geometry about a pivot.), `cascade.geo.Merge` (Concatenate geometries, taking the union of their attributes.), `cascade.geo.CopyToPoints` (Instance one geometry onto every point of another.), `cascade.geo.SvgExport` (Write geometry as an SVG document, one group element per group.), `cascade.geo.Render` (Draw a scene through a camera, as a raster.), `cascade.geo.FromRects` (Convert rects into geometry, one closed polygon each, keeping the tag.)
-
-### Image — `cascade.image.*`
-
-**Create.** `Image` (Load images from files), `Color` (Create a solid color canvas), `Checkers` (Generate a checkerboard pattern), `Noise` (Generate procedural noise patterns), `Ramp` (Generate color ramps), `Text` (Render text with customizable font and style)
-
-**Filter.** `Blur` (Gaussian blur), `NormalMap` (Compute normal map from height map)
-
-**Transform.** `Transform` (2D rotation, translation, and scaling), `Resize` (Scale or resize an image)
-
-**Composite.** `Composite` (Blend two images together)
 ## A project's own nodes
 
 Not listed here, because they belong to the project rather than to Cascade. Ask

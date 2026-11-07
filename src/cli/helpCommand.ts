@@ -9,7 +9,7 @@
  * `nodes/`) is read statically from the project, as `cascade check` reads it.
  * Without a type it lists every node it knows.
  *
- * Studio's class-based libraries (`cascade.image.*` and friends) have no
+ * Studio's class-based libraries (`cascade.core.*` routing and friends) have no
  * static definition to print; for those it says so and points at the
  * reference shipped beside the CLI (doc/NODE_REFERENCE.md).
  */
