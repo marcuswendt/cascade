@@ -61,6 +61,40 @@ difference. Use a deliberate local package override
 for framework development rather than committing a machine-specific
 `file:../../Dev/cascade` dependency to a shared project.
 
+### Pin the core
+
+A sketch pins one published Cascade, exactly, rather than linking the live
+checkout, so a change on Cascade main cannot move its pixels until it opts in:
+
+```json
+"devDependencies": {
+  "cascade": "npm:@field/cascade@0.11.0",
+  "@field/cascade-kit": "file:../../Dev/cascade/packages/kit"
+}
+```
+
+Keep the dependency name `cascade`: imports stay `cascade/io`,
+`cascade/stage` and so on, which is what Studio's compiler resolves. Only the
+core is pinned; the kit is not on npm and stays a `file:` dependency. Commit
+the lockfile, since it holds the core's own dependencies (a newer
+`@napi-rs/canvas` shifts antialiasing by a few levels). To move from a link:
+
+```bash
+npm install --save-dev --save-exact cascade@npm:@field/cascade@0.11.0
+```
+
+If `node_modules/cascade` is still a link afterwards, or npm fails with
+`Cannot destructure property 'package' of 'node.target'`, the kit link is the
+cause: its target sits inside the checkout, whose own package is
+`@field/cascade`, so npm reuses the checkout. Move `node_modules` and
+`package-lock.json` aside, install with the kit removed from `package.json`,
+then add it back with `npm install --save-dev ../../Dev/cascade/packages/kit`.
+
+To bump: change the version, `npm install`, `npx cascade check <graph>`, and
+render a frame to compare. A sketch that needs something only on main (for
+example `cascade share` before it ships) keeps the `file:` link and says why in
+its README until the next release.
+
 `index.cascade` is the default graph name. A project may contain several `.cascade` files; pass one explicitly when there is no unambiguous default:
 
 ```bash

@@ -22,7 +22,8 @@ npm install --save-dev ../../Dev/cascade/packages/kit   # "@field/cascade-kit": 
 `dist/` is not committed, so a fresh checkout of Cascade needs
 `npm run build:kit` (or the full `npm run build`) before a project can load the
 kit. A `file:` dependency is a link, so a rebuilt kit reaches every project at
-once.
+once. The core is the opposite: pin a published `@field/cascade` exactly (see
+"Pin the core" in [PROJECT_AUTHORING.md](PROJECT_AUTHORING.md)).
 
 Import from the module you need:
 
