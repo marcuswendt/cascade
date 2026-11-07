@@ -67,6 +67,15 @@ Notable changes to Cascade. Newest first.
   outputs pixel-identical; what remains is the nodes' own pixel loops. The
   contract is in `doc/PROJECT_AUTHORING.md`, "How an image travels between
   nodes".
+- **`cascade render` workers start Python during the probe frames.** Each
+  worker process starts the project's warm Python worker as it boots
+  (`installProjectStages(…, { prewarm: true })`, `PythonWorker.warm()`), so
+  the interpreter start and imports overlap the first two serial frames
+  instead of following them. A project whose worker takes 3 s to import
+  renders 24 frames on 4 workers in 4.0 s instead of 7.0. A worker whose
+  interpreter cannot start now fails the call that needs it instead of
+  crashing the process. `run --frames` over 30 frames prints one line naming
+  `cascade render` for the same range.
 
 ## 0.11.0 — 2026-11-07
 

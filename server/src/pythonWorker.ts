@@ -195,6 +195,18 @@ export class PythonWorker {
     readline.createInterface({ input: proc.stdout }).on('line', (line) => this.handleLine(proc, line));
     proc.stderr.on('data', (chunk) => this.onStderr(chunk.toString().trimEnd()));
     proc.stdin.on('error', () => { /* the exit handler reports it */ });
+    // An interpreter that cannot start (a missing venv) emits `error`, not
+    // `exit`; unheard, it would take the process down, which a prewarm that
+    // nothing has asked of yet must never do. The call that needs it fails.
+    proc.on('error', (error) => {
+      if (this.proc !== proc) return;
+      this.proc = null;
+      const current = this.inFlight;
+      this.inFlight = null;
+      this.inFlightCancelled = false;
+      if (current) this.settle(current, new Error(`python worker could not start (${this.python}): ${error.message}`));
+      else this.onStderr(`python worker could not start (${this.python}): ${error.message}`);
+    });
     proc.on('exit', (code, signal) => {
       if (this.proc !== proc) return;
       this.proc = null;
@@ -300,6 +312,17 @@ export class PythonWorker {
     this.inFlight = next;
     this.inFlightCancelled = false;
     proc.stdin.write(next.line);
+  }
+
+  /**
+   * Start the process now rather than on the first call, so its interpreter
+   * start and imports (4.7 s for cloud-plots) overlap other work. A render
+   * worker warms while the probe frames run. A no-op when one is running.
+   */
+  warm(): void {
+    if (this.inFlight || this.queue.length) return;
+    this.restartIfCodeChanged();
+    this.ensureStarted();
   }
 
   /** Run a stage and return its result. */

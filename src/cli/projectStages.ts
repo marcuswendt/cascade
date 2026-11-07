@@ -37,6 +37,12 @@ export interface ProjectStageOptions {
    * printing; the run uses it to put stage output in the trace.
    */
   readonly onOutput?: (stage: string | null, stream: 'stdout' | 'stderr', line: string) => void;
+  /**
+   * Start the project's warm worker now instead of at the first stage call.
+   * `cascade render` workers do, so the Python start (seconds, for a project
+   * importing torch) overlaps the probe frames instead of following them.
+   */
+  readonly prewarm?: boolean;
 }
 
 /** Install the bridge; returns the disposer. */
@@ -66,6 +72,12 @@ export function installProjectStages(project: ProjectRoot, options: ProjectStage
     }
     return worker.process;
   };
+
+  if (options.prewarm) {
+    // A project without stages, or with no worker, has nothing to warm.
+    try { warmWorker(readStageConfig(project))?.warm(); }
+    catch { /* stages not configured: the first call says so */ }
+  }
 
   const dispose = installStageBridge(async (stage, args, callOptions) => {
     // Python reads image paths as files: an image still held in memory and

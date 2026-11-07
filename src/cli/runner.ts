@@ -13,6 +13,7 @@ import { applyEnv } from './runEnv.js';
 import { installProjectIo } from './headlessIo.js';
 import { installHeadlessCanvas, MISSING_CANVAS_MESSAGE, type CanvasHost } from './headlessCanvas.js';
 import { parseFrameSpec } from './frames.js';
+import { frameRange } from '../../packages/runtime/src/animation/index.js';
 import type { RenderedFrame } from './projectRuntime.js';
 import { encodeMp4, timelineFrameSpec } from './encode.js';
 import { saveStillImages, type SavedImage } from './imageOutputs.js';
@@ -92,6 +93,20 @@ export interface RunOptions {
     frameSource: AsyncIterable<number>;
     onFrame: (frame: RenderedFrame) => void | Promise<void>;
   };
+}
+
+/** From this many frames `run --frames` names `cascade render`. */
+export const RENDER_SUGGESTION_FRAMES = 30;
+
+/**
+ * `run --frames` cooks one frame at a time in one process; `cascade render`
+ * spreads the range over worker processes (2.3 against 0.8 fps on the morph,
+ * round 2). A long range gets one line saying so, before it starts.
+ */
+export function renderSuggestion(file: string, frames: string, count: number): string | null {
+  if (count < RENDER_SUGGESTION_FRAMES) return null;
+  return `${count} frames in one process. cascade render ${file} --frames ${frames} renders them across worker processes `
+    + '(and encodes a preview mp4; --no-video for frames only).';
 }
 
 /**
@@ -197,6 +212,8 @@ export async function runGraph(options: RunOptions): Promise<void> {
     // calls this in a headless run, so one Python-backed node renders either way.
     disposeStageBridge = installProjectStages(project, {
       verbose,
+      // A render worker starts Python while the probe frames run.
+      prewarm: Boolean(options.worker),
       onTrace: (stage) => {
         trace.recordStage(stage);
         if (verbose) console.log(`[stage] ${formatStageTrace(stage)}`);
@@ -234,6 +251,11 @@ export async function runGraph(options: RunOptions): Promise<void> {
 
   // `--frames timeline` is the range saved with the graph.
   const frameSpec = frames ? (frames === 'timeline' ? timelineFrameSpec(graphData) : parseFrameSpec(frames)) : null;
+  if (frameSpec && frames && !options.worker) {
+    const hint = renderSuggestion(file, frames, frameRange(frameSpec.start, frameSpec.end, frameSpec.step ?? 1).length);
+    // Under --json stdout is the result; the hint goes with the warnings.
+    if (hint) (options.json ? console.error : console.log)(hint);
+  }
 
   // What nodes print while they cook goes into the trace as well.
   const restoreConsole = captureNodeConsole(trace);
