@@ -43,6 +43,17 @@ Notable changes to Cascade. Newest first.
   --deploy vercel` uses the same one and now checks the production alias
   Vercel reports rather than assuming `<project>.vercel.app`.
 
+### Changed
+
+- **Studio paints the viewed node first.** After the Viewer's node cooks,
+  nothing outside its upstream starts until the Viewer has shown the new
+  picture (image loaded, then a frame; at most 300 ms), and while a slider
+  is held or a number field scrubs, only the viewed node's upstream cooks:
+  the rest waits for release. field-logo hue slider, input to painted:
+  440 → 141 ms median; a held drag no longer runs watercolor (~300 ms long
+  task) at all until release. Studio only (`src/editor/stores/viewedFirstCook.ts`);
+  the CLI and the scheduler are unchanged.
+
 ## 0.11.0 — 2026-11-07
 
 ### Added
