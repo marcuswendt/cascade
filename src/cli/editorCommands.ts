@@ -20,12 +20,13 @@ import { installHeadlessCanvas } from './headlessCanvas.js';
 import { installProjectIo } from './headlessIo.js';
 import { cookProjectGraph } from './projectRuntime.js';
 
-export const EDITOR_COMMANDS = ['export', 'freeze', 'publish', 'scene'] as const;
+export const EDITOR_COMMANDS = ['export', 'share', 'freeze', 'publish', 'scene'] as const;
 
 export const EDITOR_HELP = `
 Shareable editors (see doc/EDITOR_EXPORT.md):
   cascade export <graph> --plan                 Print what would ship, build nothing
   cascade export <graph> --out <dir> [--deploy vercel [--project <name>] [--scope <team>] [--public]]
+  cascade share <graph | site-dir> [--name <slug>] [--scope <team>] [--protected]   Deploy as cascade-<slug>, print the link
   cascade publish <graph> <node>.<prop> [--id <id>] [--label <text>] [--group <name>]
                   [--control <kind>] [--min n] [--max n] [--step n] [--help <text>] [--remove]
   cascade freeze <graph> <node> --fields <a,b.c> [--output <port>] [--personal <a,..>]
@@ -35,6 +36,10 @@ Shareable editors (see doc/EDITOR_EXPORT.md):
 
 export async function runEditorCommand(args: readonly string[]): Promise<void> {
   const [command, graph] = args;
+  if (command === 'share') {
+    const { runShareCommand } = await import('./share.js');
+    return runShareCommand(args);
+  }
   if (!graph || graph.startsWith('-')) throw new Error(`cascade ${command} requires a graph file`);
   const flags = parseFlags(args.slice(2));
   switch (command) {

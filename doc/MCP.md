@@ -36,6 +36,7 @@ With a global install (`npm i -g @field/cascade`), use `"command": "cascade", "a
 | `cook` | `cascade run <graph> [--node <id>]` |
 | `render` | `cascade run <graph> --frames … [--fps] [--out] [--node]… [--scene]` |
 | `export` | `cascade export <graph> --plan \| --out <dir>` |
+| `share` | `cascade share <graph \| directory> [--name] [--scope] [--protected]` (deploys; `data.url` is the link) |
 | `lock`, `replay`, `locks` | `cascade lock <graph> <node> --name`, `cascade replay <id> [--live]`, `cascade locks` |
 | `ladder`, `pick` | `cascade ladder <graph> <node> --name --vary node.prop=a,b,c \| --seeds a,b,c` (`vary` is `{ "node.prop": [a, b, c] }`), `cascade pick <ladder> <n>` |
 | `node_help` | `cascade help node [<type>]` (a node type's declaration; every type without one) |

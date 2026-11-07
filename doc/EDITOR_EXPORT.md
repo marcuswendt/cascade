@@ -95,6 +95,32 @@ prints the same manifest without building anything.
    Vercel Authentication. Add `--public` when the editor is meant to be open to
    anyone: a readable site is then reported as intended instead of failing.
 
+## Share as a link
+
+`cascade share` is the one step from a graph to a URL for the team:
+
+```sh
+cascade share plotter-social.cascade               # https://cascade-plotter-social.vercel.app
+cascade share renders/shelf --name commons-shelf   # any static directory with an index.html
+```
+
+It exports the editor into a scratch directory with the same allowlist and
+leak scan as `cascade export` (a directory is copied without dotfiles or
+`licensed/` and scanned the same way), deploys it to production in the Vercel
+project `cascade-<slug>` (team `field-io`, `--scope` for another), and prints
+the project's production URL. The slug is `--name`, else the editor id or the
+directory name. `--json` gives `data.url`, `data.deployment` and `data.shares`.
+
+Each share is recorded in the project's `shares.json` (the directory holding
+the graph, or the nearest `cascade.json` above a shared directory), one entry
+per source with its `name`, `project`, `url` and `sharedAt`. Sharing again
+replaces the entry and redeploys to the same URL.
+
+A share is public: that is what a link someone can open is. The export
+boundary above is the gate, so review `cascade export --plan` first.
+`--protected` instead requires Vercel Authentication on the project, as
+`cascade export --deploy vercel` does without `--public`.
+
 ## The `editor` section
 
 It sits beside `nodes` in the `.cascade` file. The runtime ignores it, and
