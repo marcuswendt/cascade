@@ -22,8 +22,9 @@ const ENTRY_POINTS = [
 ];
 
 /** Lines in a repeated 10-line window across src, packages and server/src.
- *  2,360 on 2026-11-06 before the formatter and dead components went. */
-const DUPLICATED_LINES_CEILING = 1487;
+ *  2,360 on 2026-11-06 before the formatter and dead components went; 1,421
+ *  on 2026-11-07 once the class image library went. */
+const DUPLICATED_LINES_CEILING = 1421;
 
 describe('architecture: dead code', () => {
   it('has no source file that nothing imports', () => {

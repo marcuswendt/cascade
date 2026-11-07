@@ -1,9 +1,9 @@
 /**
  * The core library's class map and metadata, with no source text beside it.
  *
- * Same split as `../image/classes.ts`, and for the same reason: `index.ts`
- * imports every node's source with Vite's `?raw` for Studio's code viewer, and
- * a Node host cannot resolve that. The classes are what the CLI needs.
+ * Split from `index.ts` because that imports every node's source with Vite's
+ * `?raw` for Studio's code viewer, and a Node host cannot resolve that. The
+ * classes are what a Node host needs.
  */
 import type { NodeClass } from '@/utils/nodeTypeUtils';
 

@@ -4,7 +4,6 @@
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
   import type { Annotation } from '@/nodes/annotations/Annotation';
-  import { ImageBuffer } from '@/nodes/image/ImageBuffer';
   import { coerceImageRef, normalizeType, typeColor } from '@/types/coreTypes';
   import CoreValue from './components/CoreValue.svelte';
   import { inferCascadeType, mediaUrl } from './components/typePresentation';
@@ -229,7 +228,7 @@
       // shared Svelte presentation layer rather than a JSON/text fallback.
     const outputPort = activeOutput;
       if (outputPort && outputPort.value !== undefined) {
-        if (outputPort.value instanceof HTMLCanvasElement || outputPort.value instanceof ImageBuffer) {
+        if (outputPort.value instanceof HTMLCanvasElement) {
           currentViewer = 'canvas';
         } else if (outputPort.value instanceof HTMLImageElement) {
           currentViewer = 'image';
@@ -285,13 +284,8 @@
 
     // First check output ports directly (bypasses throttled preview for immediate updates)
       const outputPort = activeOutput;
-    if (outputPort?.value) {
-      if (outputPort.value instanceof HTMLCanvasElement) {
-        canvas = outputPort.value;
-      } else if (outputPort.value instanceof ImageBuffer) {
-        // Convert ImageBuffer to canvas on-demand (bypasses throttled preview)
-        canvas = outputPort.value.toCanvas();
-      }
+    if (outputPort?.value instanceof HTMLCanvasElement) {
+      canvas = outputPort.value;
     }
 
     // Fall back to preview property if no output port canvas

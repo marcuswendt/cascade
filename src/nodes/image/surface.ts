@@ -1,4 +1,8 @@
-/** Host drawing primitives used by the legacy image-node compatibility layer. */
+/**
+ * Host drawing primitives for the compatibility engine's classes (Freeze's
+ * snapshot of a canvas). The image library itself draws through
+ * `packages/runtime/src/builtins/image/io.ts`.
+ */
 export interface RenderSurface {
   width: number;
   height: number;
@@ -40,6 +44,14 @@ interface SurfaceGlobals {
 }
 
 const globals = () => globalThis as unknown as SurfaceGlobals;
+
+/** Identify canvases and decoded images without accepting arbitrary sized data. */
+export function hasPixels(value: unknown): value is RenderSurface | RenderDrawable {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as { width?: unknown; height?: unknown; getContext?: unknown; src?: unknown; close?: unknown };
+  if (typeof candidate.width !== 'number' || typeof candidate.height !== 'number') return false;
+  return typeof candidate.getContext === 'function' || 'src' in candidate || typeof candidate.close === 'function';
+}
 
 export class MissingRenderSurfaceError extends Error {
   readonly name = 'MissingRenderSurfaceError';

@@ -23,9 +23,9 @@
       template: 'node'
     },
     {
-      id: 'cascade.image.ImageNodeBase',
-      label: 'ImageNodeBase',
-      description: 'Image processing base class with canvas/image utilities',
+      id: 'cascade.image',
+      label: 'Image',
+      description: 'Image processing template: an image input drawn to a canvas output',
       template: 'image'
     },
     {
