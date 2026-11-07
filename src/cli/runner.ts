@@ -212,8 +212,10 @@ export async function runGraph(options: RunOptions): Promise<void> {
     });
     // And the same for files: `cascade/io` reads and writes over `/api/media`
     // in the page and against the directory here, so a node that saves an image
-    // works under both hosts without knowing which it has.
-    disposeIoBridge = installProjectIo(project);
+    // works under both hosts without knowing which it has. Resident: an image
+    // passed between nodes stays in memory and its file is written behind,
+    // so the next node skips the encode, the write, the read and the decode.
+    disposeIoBridge = installProjectIo(project, { resident: true });
   } catch (error) {
     if (verbose) console.warn(`No project context for ${file}: ${error instanceof Error ? error.message : error}`);
   }

@@ -54,6 +54,19 @@ Notable changes to Cascade. Newest first.
   install, as it already did `cascade/image`, so a sketch pinned to an older
   package gets it too. New optional `IoBridge.keep` and
   `AssetCapability.keepImage`; Studio and the browser player are unchanged.
+- **Images pass between nodes in memory under `cascade run`/`render`.** The
+  headless host holds an intermediate's pixels (`ImagePixels` in contracts:
+  RGBA8, sRGB, unpremultiplied), names its file by their hash and writes the
+  level-1 PNG behind the run; `readImage`/`loadBitmap` get those pixels back
+  with no read and no decode (`AssetCapability.imagePixels`,
+  `IoBridge.pixels`). Every file reader still finds a whole file: Python stage
+  calls, `assets.read`, server nodes, the end of a run, freeze/lock/ladder all
+  wait for the write behind. Saved outputs are encoded from the pixels at
+  full compression (zlib 6, adaptive filtering), not copied from the
+  intermediate. field-logo 887 → 834 ms a frame (1,791 before round 2),
+  outputs pixel-identical; what remains is the nodes' own pixel loops. The
+  contract is in `doc/PROJECT_AUTHORING.md`, "How an image travels between
+  nodes".
 
 ## 0.11.0 — 2026-11-07
 

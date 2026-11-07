@@ -44,7 +44,7 @@
  * copy are not always the same module instance.
  */
 
-import { canvasPixels, type ImagePixels } from './io.js';
+import { canvasPixels, pixelsBitmap, type ImagePixels } from './io.js';
 
 export type { ImagePixels } from './io.js';
 
@@ -262,6 +262,9 @@ export async function readBytes(context: ImageNodeContext, ref: ImageSourceRef):
 
 /** Read and decode an image input, an asset, or a project file. */
 export async function readImage(context: ImageNodeContext, ref: ImageSourceRef): Promise<ImageBitmap> {
+  // An image the host still holds in memory skips the read and the decode.
+  const pixels = assetsOf(context).imagePixels?.(refOf(ref));
+  if (pixels) return pixelsBitmap(pixels);
   return decodeImage(await readBytes(context, ref));
 }
 

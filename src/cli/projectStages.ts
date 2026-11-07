@@ -22,6 +22,7 @@ import { readStageConfig, runProjectStage } from '../../server/src/stageRunner.j
 import { PythonWorker } from '../../server/src/pythonWorker.js';
 import { stageSources } from '../../server/src/stageCache.js';
 import type { ProjectRoot } from '../../server/src/project.js';
+import { settleProjectImages } from './headlessIo.js';
 
 export interface ProjectStageOptions {
   /** Forward what a stage prints on success, prefixed with its name. */
@@ -67,6 +68,9 @@ export function installProjectStages(project: ProjectRoot, options: ProjectStage
   };
 
   const dispose = installStageBridge(async (stage, args, callOptions) => {
+    // Python reads image paths as files: an image still held in memory and
+    // being written behind is on disk before the stage, or the cache key, sees it.
+    await settleProjectImages(project);
     // Read per call, as the server does, so an edit to cascade.json applies.
     const config = readStageConfig(project);
     const warm = warmWorker(config);

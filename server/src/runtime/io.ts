@@ -115,6 +115,8 @@ export async function loadBytes(path: string, options: MediaOptions = { raw: tru
  * to hand it. Pass a width explicitly to work at a smaller size on purpose.
  */
 export async function loadImage(path: string, options: MediaOptions = { raw: true }): Promise<HTMLImageElement> {
+  const held = heldBitmap(path);
+  if (held) return held as unknown as HTMLImageElement;
   const image = new Image();
   const bridge = localIo();
   let temporaryUrl: string | undefined;
@@ -142,8 +144,41 @@ export async function loadImage(path: string, options: MediaOptions = { raw: tru
   }
 }
 
+/**
+ * Pixels the host still holds in memory for `path` (a path `keep` returned),
+ * as something `drawImage` takes, or null to read the file. Bypasses the read
+ * and the decode; the image is the same either way (`ImagePixels` is what a
+ * PNG decodes to).
+ */
+function heldBitmap(path: string): ImageBitmap | null {
+  if (/^(https?:|data:|blob:)/.test(path)) return null;
+  const pixels = localIo()?.pixels?.(path.replace(/^\.?\//, ''));
+  return pixels ? pixelsBitmap(pixels) : null;
+}
+
+/**
+ * `ImagePixels` as a drawable: a canvas holding them, with an `ImageBitmap`'s
+ * `width`, `height` and `close()` (and an image's `naturalWidth`/`naturalHeight`).
+ */
+export function pixelsBitmap(pixels: ImagePixels): ImageBitmap {
+  const Canvas = (globalThis as { OffscreenCanvas?: new (w: number, h: number) => OffscreenCanvas }).OffscreenCanvas;
+  if (!Canvas) throw new Error('cascade/io: this host has no OffscreenCanvas to hold the image');
+  const canvas = new Canvas(pixels.width, pixels.height);
+  const context = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | null;
+  if (!context) throw new Error('cascade/io: the canvas has no 2D context');
+  const data = new ImageData(pixels.data as Uint8ClampedArray<ArrayBuffer>, pixels.width, pixels.height);
+  context.putImageData(data, 0, 0);
+  const drawable = canvas as unknown as Record<string, unknown>;
+  drawable.close = () => {};
+  drawable.naturalWidth = pixels.width;
+  drawable.naturalHeight = pixels.height;
+  return canvas as unknown as ImageBitmap;
+}
+
 /** Same, as an ImageBitmap — the right input for `texImage2D`. */
 export async function loadBitmap(path: string, options: MediaOptions = { raw: true }): Promise<ImageBitmap> {
+  const held = heldBitmap(path);
+  if (held) return held;
   const bridge = localIo();
   if (bridge?.url) return createImageBitmap(await loadImage(path, options));
   if (bridge) return createImageBitmap(new Blob([await loadBytes(path, options)]));

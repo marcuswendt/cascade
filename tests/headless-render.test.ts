@@ -21,23 +21,37 @@ import {
   canvasAvailable,
   installHeadlessCanvas,
 } from '@/cli/headlessCanvas';
-import { contentAddressed, createIoBridge } from '@/cli/headlessIo';
+import {
+  contentAddressed,
+  copyImageFile,
+  createIoBridge,
+  installProjectIo,
+  residentImages,
+  ResidentImages,
+  settleProjectImages,
+} from '@/cli/headlessIo';
 import { parseFrameSpec } from '@/cli/frames';
 import { installIoBridge, saveImage, loadBitmap, saveBytes } from '../server/src/runtime/io';
 import { ProjectRoot } from '../server/src/project';
+import { readImage, surface, writeImage } from '../server/src/runtime/image';
+import { createNodeAssetCapability } from '@/cli/nodeAssets';
 
 const disposers: (() => void)[] = [];
 afterEach(() => {
   while (disposers.length) disposers.pop()!();
 });
 
-/** The two zlib header bytes of a PNG's first IDAT chunk: 78 01 is level 1, 78 9c the default. */
-function zlibLevelHeader(png: Uint8Array): [number, number] {
+/**
+ * FLEVEL of the zlib stream in a PNG's first IDAT chunk, from its header's
+ * second byte: 0 for zlib level 1 (fastest), 2 for the default level 6,
+ * 3 for 7-9.
+ */
+function zlibLevel(png: Uint8Array): number {
   const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
   for (let offset = 8; offset + 8 <= png.length;) {
     const length = view.getUint32(offset);
     const type = String.fromCharCode(...png.subarray(offset + 4, offset + 8));
-    if (type === 'IDAT') return [png[offset + 8]!, png[offset + 9]!];
+    if (type === 'IDAT') return png[offset + 9]! >> 6;
     offset += 12 + length;
   }
   throw new Error('no IDAT chunk');
@@ -195,7 +209,7 @@ describe('cascade/io over the local transport', () => {
    * Round 2's first move: a 1024² intermediate cost 157 ms in Skia's default
    * PNG encoder, eight times a frame in field-logo. Counted rather than timed,
    * so the guard holds on a loaded machine: no canvas encode at all, and the
-   * zlib stream in the file says level 1 (FLEVEL 0, header 78 01).
+   * zlib stream in the file says level 1 (FLEVEL 0).
    */
   it('saves an intermediate as a level-1 PNG, never through the canvas encoder', async () => {
     if (!(await canvasAvailable())) return;
@@ -219,11 +233,112 @@ describe('cascade/io over the local transport', () => {
 
     const stored = await saveImage(canvas, '.cascade-cache/filter.png');
     expect(encodes).toBe(0);
-    expect(zlibLevelHeader(fs.readFileSync(project.resolve(stored)))).toEqual([0x78, 0x01]);
+    expect(zlibLevel(fs.readFileSync(project.resolve(stored)))).toBe(0);
     const bitmap = await loadBitmap(stored);
     const back = new OffscreenCanvas(1024, 1024).getContext('2d')!;
     back.drawImage(bitmap, 0, 0);
     expect(Buffer.from(back.getImageData(0, 0, 1024, 1024).data).equals(Buffer.from(ctx.getImageData(0, 0, 1024, 1024).data))).toBe(true);
+  });
+
+  /**
+   * Move 1 M: in a run that keeps pixels, the next node gets them from memory
+   * (no read, no decode), the PNG is written behind, and the path is a whole
+   * file by the time anything reads it from disk.
+   */
+  it('hands an image on in memory and writes its file behind', async () => {
+    if (!(await canvasAvailable())) return;
+    const host = await installHeadlessCanvas();
+    disposers.push(() => host.dispose());
+    const project = scratchProject();
+    disposers.push(installProjectIo(project, { resident: true }));
+    const store = residentImages(project)!;
+    expect(store).toBeDefined();
+
+    const canvas = new OffscreenCanvas(64, 32);
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#c04020';
+    ctx.fillRect(0, 0, 64, 32);
+    ctx.fillStyle = 'rgba(32, 64, 200, 0.5)';
+    ctx.fillRect(8, 8, 24, 12);
+    const expected = Buffer.from(ctx.getImageData(0, 0, 64, 32).data);
+
+    const stored = await saveImage(canvas, '.cascade-cache/held.png');
+    expect(stored).toMatch(/^\.cascade-cache\/held\.[0-9a-f]{12}\.png$/);
+    expect(store.pixels(stored)?.width).toBe(64);
+
+    // Read back from memory: a canvas holding the pixels, not a decoded file.
+    const bitmap = await loadBitmap(stored);
+    expect(typeof (bitmap as unknown as { getContext?: unknown }).getContext).toBe('function');
+    const back = new OffscreenCanvas(64, 32).getContext('2d')!;
+    back.drawImage(bitmap, 0, 0);
+    expect(Buffer.from(back.getImageData(0, 0, 64, 32).data).equals(expected)).toBe(true);
+
+    // Behind: a level-1 PNG with the same pixels, once settled.
+    await settleProjectImages(project);
+    const file = fs.readFileSync(project.resolve(stored));
+    expect(zlibLevel(file)).toBe(0);
+    expect(store.encodes).toBe(1);
+
+    // The same pixels again are the same path, and not encoded twice.
+    expect(await saveImage(canvas, '.cascade-cache/held.png')).toBe(stored);
+    await settleProjectImages(project);
+    expect(store.encodes).toBe(1);
+
+    // A saved output is written from the pixels at full compression.
+    const final = path.join(project.root, 'final.png');
+    await copyImageFile(project, stored, final);
+    expect(zlibLevel(fs.readFileSync(final))).toBe(2);
+    const decoded = await createImageBitmap(new Blob([fs.readFileSync(final)]));
+    const check = new OffscreenCanvas(64, 32).getContext('2d')!;
+    check.drawImage(decoded, 0, 0);
+    expect(Buffer.from(check.getImageData(0, 0, 64, 32).data).equals(expected)).toBe(true);
+  });
+
+  it('cascade/image writeImage and readImage hand on in memory through the assets capability', async () => {
+    if (!(await canvasAvailable())) return;
+    const host = await installHeadlessCanvas();
+    disposers.push(() => host.dispose());
+    const project = scratchProject();
+    disposers.push(installProjectIo(project, { resident: true }));
+    const context = { capabilities: { assets: createNodeAssetCapability(project) } };
+    const { canvas, context: g } = surface(16, 8);
+    g.fillStyle = '#10a0f0';
+    g.fillRect(0, 0, 16, 8);
+    const ref = await writeImage(context, canvas, 'swatch.png');
+    expect(ref.path).toMatch(/^\.cascade-cache\/swatch\.[0-9a-f]{12}\.png$/);
+    const image = await readImage(context, ref);
+    expect(typeof (image as unknown as { getContext?: unknown }).getContext).toBe('function');
+    await settleProjectImages(project);
+    expect(fs.existsSync(project.resolve(ref.path))).toBe(true);
+  });
+
+  it('reading a held image as a file waits for the write behind', async () => {
+    if (!(await canvasAvailable())) return;
+    const host = await installHeadlessCanvas();
+    disposers.push(() => host.dispose());
+    const project = scratchProject();
+    disposers.push(installProjectIo(project, { resident: true }));
+    const canvas = new OffscreenCanvas(32, 32);
+    canvas.getContext('2d')!.fillRect(0, 0, 32, 32);
+    const stored = await saveImage(canvas, '.cascade-cache/wait.png');
+    // No settle: `read` is the door a Python-bound or byte reader uses.
+    const bytes = await createIoBridge(project).read(stored);
+    expect([...bytes.subarray(1, 4)]).toEqual([0x50, 0x4e, 0x47]);
+  });
+
+  it('lets old written images go past the budget, never one still being written', async () => {
+    const project = scratchProject();
+    const store = new ResidentImages(project, 100);
+    const pixels = (value: number) => ({ width: 4, height: 4, data: new Uint8ClampedArray(64).fill(value) });
+    const first = store.keep('.cascade-cache/a.png', pixels(1));
+    const second = store.keep('.cascade-cache/b.png', pixels(2));
+    // Both pending: over budget, both held.
+    expect(store.pixels(first)).toBeDefined();
+    await store.settle();
+    store.keep('.cascade-cache/c.png', pixels(3));
+    expect(store.pixels(first)).toBeUndefined();
+    expect(fs.existsSync(project.resolve(first))).toBe(true);
+    expect(fs.existsSync(project.resolve(second))).toBe(true);
   });
 
   it('writes bytes through the bridge and returns the stored path', async () => {

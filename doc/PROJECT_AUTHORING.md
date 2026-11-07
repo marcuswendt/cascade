@@ -423,8 +423,8 @@ export async function execute(context: NodeExecutionContext<typeof definition>) 
 | | Browser (Studio, exported editor) | Headless (CLI, MCP) |
 | --- | --- | --- |
 | `createCanvas`, `surface` | the realm's `OffscreenCanvas` | Skia's, from `@napi-rs/canvas` |
-| `decodeImage`, `readImage` | `createImageBitmap` | Skia's decoder |
-| `writeImage` | an in-memory generated asset | `.cascade-cache/<name>.<hash>.png` |
+| `decodeImage`, `readImage` | `createImageBitmap` | the pixels from memory while the run holds them, else Skia's decoder |
+| `writeImage` | an in-memory generated asset | `.cascade-cache/<name>.<hash>.png`, pixels held in memory and the file written behind |
 | `registerFont` | `FontFace` added to the page's or worker's font set | Skia's `GlobalFonts` |
 | `readBytes` | shipped files only (`editor.assets`, literal asset props, frozen files) | any project file |
 
@@ -444,6 +444,35 @@ export async function execute(context: NodeExecutionContext<typeof definition>) 
   the filesystem, a network fetch or ffmpeg stays `runsOn: 'server'`; to put
   its output in an editor, freeze it (`cascade freeze <graph> <node> --fields
   path,size,channels,depth,space` ships the image file with the snapshot).
+
+#### How an image travels between nodes
+
+An `image` port carries an `ImageRef` (a path plus size, channels, depth and
+space), never the pixels, so a value stays cheap to snapshot, hash, trace and
+send to Python. What sits behind the path is the host's business, and the
+headless host keeps it in memory:
+
+- `writeImage` (and `saveImage` in `cascade/io`) hands the canvas to the host
+  as `ImagePixels` (8-bit RGBA, sRGB, unpremultiplied, top row first: what
+  `getImageData` returns and what a PNG decodes to) through the optional
+  `assets.keepImage`. Under `cascade run`/`render` the host holds those pixels,
+  names the file by their hash, and writes a lossless PNG at zlib level 1
+  behind the run, off the main thread.
+- `readImage` (and `loadBitmap`/`loadImage`) asks `assets.imagePixels` first
+  and gets a canvas holding the pixels: no file read and no decode. The next
+  node sees the same numbers a PNG round trip would give it.
+- Anything that reads the path as a file gets a whole file: a Python stage
+  call, `assets.read`, a run's end, `freeze`, `lock` and `ladder` all wait for
+  the write behind, and so does every `runsOn: 'server'` node before it
+  starts, since it may read an input with `node:fs`. A run's saved outputs
+  (`--out`, `run --frames`, `render`) are encoded from the pixels at full
+  compression, never copied from the level-1 intermediate.
+- Hosts without `keepImage` (Studio, an exported editor) encode and store as
+  before, so a node written against `readImage`/`writeImage` works unchanged
+  in each.
+
+On field-logo (12 canvas nodes at 1024²) this took a frame from 1,791 ms to
+about 860 ms; most of what remains is the nodes' own pixel loops.
 
 ### GPU nodes today
 
