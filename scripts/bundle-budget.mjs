@@ -24,7 +24,8 @@ export const BUDGET = {
   // theme.css (ruler, limit edge, steppers), net of merging VectorInput's
   // duplicated button rules; it is on the Inspector's first paint, so it
   // cannot be split off. Raised by that exact amount, on Marcus's go-ahead.
-  entryCssBytes: 239446,
+  // −19 the same day: CoreValue's vectors joined the shared rules.
+  entryCssBytes: 239427,
 };
 
 const root = path.resolve(import.meta.dirname, '..');

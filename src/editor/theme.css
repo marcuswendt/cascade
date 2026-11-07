@@ -815,38 +815,38 @@ input[data-scrubbing] {
   cursor: ew-resize;
   touch-action: pan-y;
   --t: linear-gradient(90deg, var(--scrub-tick, #0000) 1px, #0000 0) var(--scrub-x, 0) 100%;
-  background: var(--t) / 8px 3px repeat-x, var(--t) / 40px 6px repeat-x var(--shade-weak);
+  --r: var(--t) / 8px 3px repeat-x, var(--t) / 40px 6px repeat-x var(--scrub-bg, var(--shade-weak));
+  /* --fill: where a bounded CoreValue component sits in its range. */
+  background: linear-gradient(var(--accent) 0 0) 0 100% / var(--fill, 0) 2px no-repeat, var(--r);
 }
 .scrub-field:hover > input {
   --scrub-tick: var(--tint);
 }
 .scrub-field > input[data-scrubbing] {
   --scrub-tick: var(--tint-strong);
-  background: linear-gradient(var(--text-bright) 0 0) var(--scrub-needle) 100% / 1px 8px no-repeat, var(--t) / 8px 3px repeat-x, var(--t) / 40px 6px repeat-x var(--shade-weak);
+  background: linear-gradient(var(--text-bright) 0 0) var(--scrub-needle) 100% / 1px 8px no-repeat, var(--r);
 }
 .scrub-field > input:focus {
   cursor: text;
   --scrub-tick: #0000;
 }
-.scrub-field.at-min::after,
-.scrub-field.at-max::after {
+.scrub-min::after,
+.scrub-max::after {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
   background: linear-gradient(90deg, var(--tint-strong), #0000 14px);
 }
-.scrub-field.at-max::after {
+.scrub-max::after {
   transform: scaleX(-1);
 }
 .scrub-field > button {
+  all: unset;
   position: absolute;
   inset-block: 0;
-  z-index: 1;
   width: 11px;
-  padding: 0;
-  border: 0;
-  background: none;
+  text-align: center;
   color: var(--text-muted);
   cursor: pointer;
   visibility: hidden;

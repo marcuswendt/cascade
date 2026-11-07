@@ -63,13 +63,58 @@ describe('scrubbing a vector component', () => {
     expect(last[1]).toBeCloseTo(-0.2);
   });
 
-  it('a plain left-drag on the field does not scrub; alt-drag does', async () => {
+  it('a plain left-drag anywhere on the field scrubs (the scrub number); alt-drag still does', async () => {
     const plain = vec2();
     await drag(plain.view.getByLabelText('X'), { button: 0 }, 50);
-    expect(plain.onChange).not.toHaveBeenCalled();
+    expect(plain.onChange).toHaveBeenLastCalledWith([expect.closeTo(0.4), 0]);
+    expect(document.activeElement).not.toBe(plain.view.getByLabelText('X'));
     const alt = vec2();
     await drag(alt.view.getByLabelText('X'), { button: 0, altKey: true }, 50);
     expect(alt.onChange).toHaveBeenCalled();
+  });
+
+  it('a click without a drag opens typing, and a sum works out', async () => {
+    const { view, onChange } = vec2();
+    const y = view.getByLabelText('Y') as HTMLInputElement;
+    await fireEvent.mouseDown(y, { button: 0, clientX: 10 });
+    await fireEvent.mouseUp(window, { button: 0, clientX: 10 });
+    expect(document.activeElement).toBe(y);
+    expect(onChange).not.toHaveBeenCalled();
+    await fireEvent.change(y, { target: { value: '10+5' } });
+    expect(onChange).toHaveBeenLastCalledWith([-0.1, 15]);
+    expect(y.value).toBe('15');
+    // Not a number and not a sum: put back, nothing sent.
+    await fireEvent.change(y, { target: { value: 'oops' } });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(y.value).toBe('15');
+  });
+
+  it('stops at a declared limit, lights that edge, and steps with ‹ ›', async () => {
+    const { view, onChange } = vec2(vi.fn(), { min: -1, max: 1 });
+    const x = view.getByLabelText('X');
+    await drag(x, { button: 0 }, 2000);
+    expect(onChange).toHaveBeenLastCalledWith([1, 0]);
+    expect(x.closest('.scrub-field')!.classList.contains('scrub-max')).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await fireEvent.click(view.getAllByLabelText('Decrease')[0]);
+    expect(onChange).toHaveBeenLastCalledWith([expect.closeTo(0.99), 0]);
+  });
+
+  it('keeps the ruler moving while the range hairline updates under it', async () => {
+    const { view } = vec2(vi.fn(), { min: -1, max: 1 });
+    const x = view.getByLabelText('X') as HTMLInputElement;
+    await fireEvent.mouseDown(x, { button: 0, clientX: 100 });
+    await fireEvent.mouseMove(window, { clientX: 130 });
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    // The value moved, so the hairline was rewritten; the ruler must survive it.
+    expect(x.style.getPropertyValue('--fill')).not.toBe('45.00%');
+    expect(x.style.getPropertyValue('--scrub-x')).toBe('30px');
+    await fireEvent.mouseUp(window, { button: 0 });
+  });
+
+  it('is not a scrub field when read-only', () => {
+    const view = render(CoreValue, { props: { type: 'vec2', value: [1, 2], readOnly: true } });
+    expect(view.container.querySelector('[data-scrub-field]')).toBeNull();
   });
 
   it('clamps to a declared range and Escape restores the start', async () => {

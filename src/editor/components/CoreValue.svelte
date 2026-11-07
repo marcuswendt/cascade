@@ -5,6 +5,9 @@
   import { typeRenderer } from './typeRenderers';
   import './registerRenderers';
   import { scrub, type ScrubMeta, type ScrubOptions } from './scrub';
+  import { evaluateArithmetic, nudgeValue } from './fieldMaths';
+  import { NUMBER_PATTERN } from './numberFieldCommit';
+  import ScrubField from './ScrubField.svelte';
   import {
     colorCss,
     colorHex,
@@ -97,10 +100,12 @@
     };
   }
 
-  /** Scrub one component of a vector or matrix. */
-  function componentScrub(index: number, handle = false): ScrubOptions {
+  /** Scrub one component of a vector or matrix. A vector component is a
+   *  scrub number (`field`): drag anywhere on it, click to type. */
+  function componentScrub(index: number, handle = false, field = false): ScrubOptions {
     return {
       handle,
+      field: field && editable,
       getValue: () => (Array.isArray(value) ? Number(value[index] ?? 0) : 0),
       setValue: (next) => setComponent(index, next),
       meta: scrubMeta,
@@ -131,12 +136,48 @@
     };
   }
 
-  /** Where a bounded component sits in its range, for the thin fill under it. */
-  function fill(component: unknown): string {
-    if (!bounded) return '';
+  $: editable = !readOnly && Boolean(onChange);
+  const component = (index: number) => (Array.isArray(value) ? Number(value[index] ?? 0) : 0);
+
+  /** Enter or blur on a vector component: a number, or a sum such as `10+5`
+   *  worked out. Anything else puts the value back; an expression is made
+   *  with the Σ beside the row, as before. */
+  function commitComponent(input: HTMLInputElement, index: number) {
+    const text = input.value.trim();
+    const typed = NUMBER_PATTERN.test(text) ? Number(text) : evaluateArithmetic(text);
+    if (typed !== null) setComponent(index, typed);
+    input.value = String(component(index));
+  }
+
+  /** Arrow keys and the ‹ › buttons: one step, ten with Shift. */
+  function stepComponent(index: number, direction: number, coarse: boolean) {
+    const meta = scrubMeta();
+    const step = typeof meta.step === 'number' ? meta.step : wantsInteger ? 1 : 0.01;
+    setComponent(index, nudgeValue(component(index), direction, step, meta, coarse));
+  }
+
+  function componentKeydown(event: KeyboardEvent, index: number) {
+    const input = event.currentTarget as HTMLInputElement;
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      stepComponent(index, event.key === 'ArrowUp' ? 1 : -1, event.shiftKey);
+      input.value = String(component(index));
+    } else if (event.key === 'Enter') {
+      input.blur();
+    } else if (event.key === 'Escape') {
+      input.value = String(component(index));
+      input.blur();
+    }
+  }
+
+  /** Where a bounded component sits in its range, for the thin fill under it.
+   *  Set as the one property (`style:--fill`), never the whole style, which
+   *  would wipe the scrub ruler's `--scrub-x` on every value a drag writes. */
+  function fill(component: unknown): string | null {
+    if (!bounded) return null;
     const fraction = (Number(component) - bounds.min) / (bounds.max - bounds.min);
     const clamped = Number.isFinite(fraction) ? Math.min(1, Math.max(0, fraction)) : 0;
-    return `--fill: ${(clamped * 100).toFixed(2)}%`;
+    return `${(clamped * 100).toFixed(2)}%`;
   }
 
   function identity() {
@@ -225,22 +266,37 @@
   {:else if components > 0}
     <div class="vector">
       {#each Array(components) as _, index}
-        <label class="component">
+        {@const current = Array.isArray(value) ? Number(value[index] ?? 0) : 0}
+        <!-- A div, not a label: a label would hand its clicks to the first
+             ‹ › button inside it. -->
+        <div class="component">
           <span use:scrub={componentScrub(index, true)}>{labels[index]}</span>
-          <input
-            aria-label={labels[index]}
-            class:ranged={bounded}
-            style={fill(Array.isArray(value) ? value[index] ?? 0 : 0)}
-            type="number"
-            min={Number.isFinite(bounds.min) ? bounds.min : undefined}
-            max={Number.isFinite(bounds.max) ? bounds.max : undefined}
-            step={port?.options?.step ?? (wantsInteger ? 1 : 'any')}
-            disabled={readOnly}
-            value={Array.isArray(value) ? value[index] ?? 0 : 0}
-            use:scrub={componentScrub(index)}
-            on:change={(event) => setComponent(index, event.currentTarget.value)}
-          />
-        </label>
+          <ScrubField
+            grow
+            atMin={bounded && current <= bounds.min}
+            atMax={bounded && current >= bounds.max}
+            disabled={!editable}
+            onStep={(direction, event) => stepComponent(index, direction, event.shiftKey)}
+          >
+            <input
+              aria-label={labels[index]}
+              class:ranged={bounded}
+              style:--fill={fill(current)}
+              type="text"
+              inputmode="decimal"
+              spellcheck="false"
+              autocomplete="off"
+              min={Number.isFinite(bounds.min) ? bounds.min : undefined}
+              max={Number.isFinite(bounds.max) ? bounds.max : undefined}
+              step={port?.options?.step ?? (wantsInteger ? 1 : 'any')}
+              disabled={readOnly}
+              value={current}
+              use:scrub={componentScrub(index, false, true)}
+              on:keydown={(event) => componentKeydown(event, index)}
+              on:change={(event) => commitComponent(event.currentTarget, index)}
+            />
+          </ScrubField>
+        </div>
       {/each}
     </div>
   {:else if choices.length > 0}
@@ -353,10 +409,11 @@
   .component { display: flex; align-items: center; gap: 3px; flex: 1; min-width: 0; }
   .component span { width: 9px; flex: none; color: var(--text-faint); font-size: 9px; user-select: none; }
   /* A bounded component shows where it sits in its range: a hairline along
-     the bottom edge, not a second control. */
-  .vector input.ranged { background-image: linear-gradient(var(--accent), var(--accent)); background-repeat: no-repeat; background-position: left bottom; background-size: var(--fill, 0%) 2px; }
+     the bottom edge, not a second control. An editable one is a scrub field,
+     whose theme.css background draws the same hairline from --fill. */
+  .vector input.ranged:disabled { background: linear-gradient(var(--accent) 0 0) 0 100% / var(--fill, 0) 2px no-repeat var(--surface-raised); }
   .matrix { display: grid; gap: 4px; }
-  input[type='number'], input[type='text'], select { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border-raised); border-radius: 3px; background: var(--surface-panel-alt); color: var(--text-primary); padding: 3px 5px; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  input[type='number'], input[type='text'], select { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border-raised); border-radius: 3px; background: var(--surface-panel-alt); --scrub-bg: var(--surface-panel-alt); color: var(--text-primary); padding: 3px 5px; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
   input:disabled { background: var(--surface-raised); color: var(--text-dim); }
   input:focus { outline: none; border-color: var(--accent-alt-deep); }
   .reset { margin-top: 4px; border: 1px solid var(--border-raised); border-radius: 3px; background: none; color: var(--text-dim); font-size: 9px; cursor: pointer; }

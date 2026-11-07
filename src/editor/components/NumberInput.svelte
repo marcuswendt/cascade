@@ -375,7 +375,8 @@
   .number-input,
   .number-input-full {
     width: 70px;
-    padding: 4px 6px;
+    /* Inline padding is the scrub field's (theme.css). */
+    padding: 4px;
     background: var(--shade-weak);
     border: 1px solid var(--tint);
     border-radius: 3px;

@@ -307,7 +307,8 @@
   .number-input {
     flex: 1;
     min-width: 0;
-    padding: 3px 4px;
+    /* Inline padding is the scrub field's (theme.css). */
+    padding: 3px;
     background: var(--shade-weak);
     border: 1px solid var(--tint);
     border-radius: 3px;

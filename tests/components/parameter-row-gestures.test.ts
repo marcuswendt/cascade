@@ -174,7 +174,7 @@ describe('the scrub number', () => {
     expect(onValueChange).toHaveBeenLastCalledWith(10);
     // Past the limit the ruler gives only a little.
     expect(parseFloat(field.style.getPropertyValue('--scrub-x')) - parseFloat(rulerAtLimit)).toBeCloseTo(6);
-    expect(view.container.querySelector('.scrub-field')!.classList.contains('at-max')).toBe(true);
+    expect(view.container.querySelector('.scrub-field')!.classList.contains('scrub-max')).toBe(true);
   });
 
   it('opens for typing on a click without a drag, and works out sums', async () => {

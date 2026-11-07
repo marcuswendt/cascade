@@ -15,6 +15,12 @@ Notable changes to Cascade. Newest first.
   sideways touch drag scrubs and a vertical one still scrolls. Middle-drag,
   label-drag and Alt-drag are unchanged. Vector fields are now text, so they
   take the same sums and arrow-key steps.
+- **Scrub number on every node's vector parameters.** The vector components
+  most nodes render through (CoreValue: `vec2`/`vec3`/`vec2i`… params and
+  ports) are the same scrub field: drag anywhere, click to type `10+5`, ‹ ›
+  and arrow-key steps, the ruler stopping at a declared range with the edge
+  lit. A bounded component keeps its range hairline. Read-only values stay
+  plain. Middle-, Alt- and label-drag and the Σ expression path are unchanged.
 - **`cascade check` warns on nodes that have grown into a pipeline.**
   `shape/long-execute` when `execute` passes 150 lines; `shape/mixed-jobs`
   when one module loads, generates, colours, draws and exports (four of the
