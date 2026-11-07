@@ -21,6 +21,18 @@ import { imagePath, sequenceFileName, sequenceWidth } from './sequence.js';
 import { outDirectory, planImageOutputs, unknownNodes } from './imageOutputs.js';
 import { createDawnGpuHost } from './headlessGpu.js';
 import { nodeShapeWarnings, reportNodeShape } from './nodeShape.js';
+import { installedStageLanes } from './projectStages.js';
+import { traceNodeScope } from './runTrace.js';
+
+/**
+ * How a headless run executes: values trusted rather than walked (see
+ * RuntimeValuePolicy), and as many nodes cooking at once as the installed
+ * stage bridge has warm workers (1 without one), each cook's async work
+ * tagged with its node for the trace.
+ */
+function headlessExecution() {
+  return { values: 'trust' as const, concurrency: installedStageLanes(), nodeScope: traceNodeScope };
+}
 
 interface ProjectNode {
   id: string;
@@ -313,8 +325,8 @@ export async function runDeterministicProjectGraph(
     host,
     nodes: prepared.registrations,
     // A run trusts what its nodes hand over instead of walking it to freeze
-    // (Studio and `cook` keep `"freeze"`); see RuntimeValuePolicy.
-    values: 'trust',
+    // (Studio and `cook` keep `"freeze"`), and overlaps independent stages.
+    ...headlessExecution(),
   });
   let graph: LoadedCascadeGraph | undefined;
   try {
@@ -461,8 +473,9 @@ export async function renderDeterministicProjectFrames(
     host,
     nodes: prepared.registrations,
     // Every frame hands over fresh values; walking them to freeze was most
-    // of a big-array frame. See RuntimeValuePolicy.
-    values: 'trust',
+    // of a big-array frame. Independent stages (the morph's four renders)
+    // cook side by side on the stage pool.
+    ...headlessExecution(),
   });
   let graph: LoadedCascadeGraph | undefined;
   const width = sequenceWidth(options.end);

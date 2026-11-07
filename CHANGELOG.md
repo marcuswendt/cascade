@@ -51,6 +51,17 @@ Notable changes to Cascade. Newest first.
 
 ### Changed
 
+- **Independent nodes cook at once in a headless run.** A project with a
+  warm stage worker gets a small pool of them (2–4, sized from cores and
+  memory; `exec.stages.workers` or `CASCADE_STAGE_WORKERS` sets it, a
+  `cascade render` worker keeps one), and the run cooks that many nodes at
+  once, a node only after everything it reads. Nodes still start in
+  topological order, so the run trace's order is the same every run, and a
+  stage call or log line goes to the node that made it. cloud-plots
+  `morph.cascade`, cold (Python cache missed), frames 101–107: 873 → 271 ms a
+  frame with 4 workers, the four renders overlapping; the first frame, which
+  starts the workers, 6.3 → 5.1 s. Runtime option `concurrency` (default 1);
+  feedback, trigger-wired and GPU nodes still cook alone.
 - **The runtime stops copying values.** A value a node hands to `set()` is
   checked and deep-frozen where it stands (`values: "freeze"`, the default)
   instead of being cloned, and every later read (the `node:output` event,

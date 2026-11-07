@@ -211,9 +211,21 @@ export function createRuntime(options: CreateRuntimeOptions): CascadeRuntime {
   return new Runtime(
     options.host,
     [...builtinNodeRegistrations, ...(options.nodes ?? [])],
-    options.values === "trust" ? "trust" : "freeze",
+    {
+      values: options.values === "trust" ? "trust" : "freeze",
+      concurrency: Math.max(1, Math.floor(Number(options.concurrency ?? 1)) || 1),
+      ...(options.nodeScope ? { nodeScope: options.nodeScope } : {}),
+    },
   );
 }
+
+/** How a graph executes: see `CreateRuntimeOptions`. */
+interface ExecutionOptions {
+  readonly values: RuntimeValuePolicy;
+  readonly concurrency: number;
+  readonly nodeScope?: <T>(nodeId: string, run: () => T) => T;
+}
+const SERIAL_EXECUTION: ExecutionOptions = { values: "freeze", concurrency: 1 };
 
 class Runtime implements CascadeRuntime {
   private readonly registrations = new Map<string, NodeRegistration>();
@@ -223,7 +235,7 @@ class Runtime implements CascadeRuntime {
   constructor(
     private readonly host: RuntimeHost,
     registrations: readonly NodeRegistration[],
-    private readonly values: RuntimeValuePolicy = "freeze",
+    private readonly execution: ExecutionOptions = SERIAL_EXECUTION,
   ) {
     for (const registration of registrations) this.registerNode(registration);
   }
@@ -304,7 +316,7 @@ class Runtime implements CascadeRuntime {
       () => this.graphs.delete(graph),
       document.annotations,
       graphSeed(document),
-      this.values,
+      this.execution,
     );
     // The graph's own frame rate, saved with it; a run's `fps` still overrides.
     const fps = document.timeline?.fps;
@@ -354,6 +366,8 @@ class Graph implements LoadedCascadeGraph {
   private readonly animator: PropAnimator<RuntimeNode>;
   private frame = MIN_FRAME;
   private fps = DEFAULT_FPS;
+  /** What happens to a value a node hands over; see `RuntimeValuePolicy`. */
+  private readonly values: RuntimeValuePolicy;
   constructor(
     private readonly host: RuntimeHost,
     private readonly nodes: readonly RuntimeNode[],
@@ -362,9 +376,10 @@ class Graph implements LoadedCascadeGraph {
     annotations: CascadeDocument["annotations"] = [],
     /** The document's seed; each node's `context.seed` derives from it. */
     private readonly seed: number = DEFAULT_GRAPH_SEED,
-    /** What happens to a value a node hands over; see `RuntimeValuePolicy`. */
-    private readonly values: RuntimeValuePolicy = "freeze",
+    /** Value policy, concurrency, node scope; see `CreateRuntimeOptions`. */
+    private readonly execution: ExecutionOptions = SERIAL_EXECUTION,
   ) {
+    this.values = execution.values;
     this.byId = new Map(nodes.map((node) => [node.id, node]));
     const byInput = new Map<string, RuntimeConnection[]>();
     const byNode = new Map<string, RuntimeConnection[]>();
@@ -837,17 +852,22 @@ class Graph implements LoadedCascadeGraph {
       );
       /** Nodes that cooked in this run, for `reuse: "strict"`. */
       const cooked = new Set<string>();
-      for (const node of ordered) {
-        if (signal.aborted) break;
-        if (reuse && this.reusable(node) && !(reuse === "strict" && this.feedsFrom(node, cooked))) {
-          this.emit({ type: "node:start", runId, nodeId: node.id });
-          this.emit({ type: "node:complete", runId, nodeId: node.id });
-          continue;
+      const skip = (node: RuntimeNode) =>
+        !!reuse && this.reusable(node) && !(reuse === "strict" && this.feedsFrom(node, cooked));
+      if (this.execution.concurrency > 1)
+        await this.cookConcurrently(ordered, runId, signal, enqueue, skip, cooked);
+      else
+        for (const node of ordered) {
+          if (signal.aborted) break;
+          if (skip(node)) {
+            this.emit({ type: "node:start", runId, nodeId: node.id });
+            this.emit({ type: "node:complete", runId, nodeId: node.id });
+            continue;
+          }
+          await this.executeNode(node, runId, signal, {}, enqueue);
+          cooked.add(node.id);
+          if (!signal.aborted) node.lastCook = this.cookKey(node);
         }
-        await this.executeNode(node, runId, signal, {}, enqueue);
-        cooked.add(node.id);
-        if (!signal.aborted) node.lastCook = this.cookKey(node);
-      }
       if (injection && !signal.aborted)
         enqueue(injection.nodeId, injection.inputName, injection.payload, {
           kind: "external",
@@ -898,7 +918,108 @@ class Graph implements LoadedCascadeGraph {
       this.active = undefined;
     }
   }
+  /**
+   * The run's main order with up to `concurrency` nodes cooking at once.
+   *
+   * Nodes START strictly in topological order: the next node starts once
+   * everything it reads has completed and a slot is free, and nothing later
+   * in the order overtakes it. So the `node:start` events — and a run trace
+   * built from them — come in the same order as a serial run on every run;
+   * only completions interleave. A Kahn order puts siblings side by side (the
+   * morph's four renders are adjacent), which is where the overlap is.
+   *
+   * A feedback container, a node with trigger ports and a GPU node cook
+   * alone: their state (the carried step, the trigger queue's sequence, one
+   * device) is ordered by the serial loop and not worth sharing.
+   *
+   * On a failure nothing new starts, the nodes already cooking finish, and
+   * the failure earliest in the order is the run's, so the message does not
+   * depend on which stage happened to answer first.
+   */
+  private async cookConcurrently(
+    ordered: readonly RuntimeNode[],
+    runId: string,
+    signal: MutableAbortSignal,
+    enqueue: (
+      nodeId: string,
+      inputName: string,
+      payload: JsonValue | undefined,
+      source: TriggerEvent["source"],
+    ) => void,
+    skip: (node: RuntimeNode) => boolean,
+    cooked: Set<string>,
+  ): Promise<void> {
+    const position = new Map(ordered.map((node, index) => [node.id, index]));
+    const needs = new Map<string, string[]>();
+    for (const dependency of graphDependencies(this.nodes, this.connections)) {
+      if (!position.has(dependency.sourceId) || !position.has(dependency.targetId)) continue;
+      const list = needs.get(dependency.targetId) ?? [];
+      list.push(dependency.sourceId);
+      needs.set(dependency.targetId, list);
+    }
+    const done = new Set<string>();
+    const running = new Map<string, Promise<void>>();
+    let exclusiveRunning = false;
+    let failure: { index: number; error: unknown } | undefined;
+    let next = 0;
+    for (;;) {
+      while (
+        !failure &&
+        !signal.aborted &&
+        !exclusiveRunning &&
+        next < ordered.length &&
+        running.size < this.execution.concurrency
+      ) {
+        const node = ordered[next]!;
+        if (!(needs.get(node.id) ?? []).every((id) => done.has(id))) break;
+        const alone = cooksAlone(node);
+        if (alone && running.size) break;
+        next++;
+        if (skip(node)) {
+          this.emit({ type: "node:start", runId, nodeId: node.id });
+          this.emit({ type: "node:complete", runId, nodeId: node.id });
+          done.add(node.id);
+          continue;
+        }
+        if (alone) exclusiveRunning = true;
+        const index = position.get(node.id)!;
+        const task = this.executeNode(node, runId, signal, {}, enqueue).then(
+          () => {
+            cooked.add(node.id);
+            if (!signal.aborted) node.lastCook = this.cookKey(node);
+            done.add(node.id);
+          },
+          (error: unknown) => {
+            if (!failure || index < failure.index) failure = { index, error };
+          },
+        ).finally(() => {
+          running.delete(node.id);
+          if (alone) exclusiveRunning = false;
+        });
+        running.set(node.id, task);
+      }
+      if (!running.size) break;
+      await Promise.race(running.values());
+    }
+    if (failure) throw failure.error;
+  }
   private async executeNode(
+    node: RuntimeNode,
+    runId: string,
+    signal: MutableAbortSignal,
+    triggers: Record<string, TriggerEvent>,
+    enqueue: (
+      nodeId: string,
+      inputName: string,
+      payload: JsonValue | undefined,
+      source: TriggerEvent["source"],
+    ) => void,
+  ): Promise<void> {
+    const scope = this.execution.nodeScope;
+    if (!scope) return this.cookNode(node, runId, signal, triggers, enqueue);
+    return scope(node.id, () => this.cookNode(node, runId, signal, triggers, enqueue));
+  }
+  private async cookNode(
     node: RuntimeNode,
     runId: string,
     signal: MutableAbortSignal,
@@ -2262,6 +2383,17 @@ function snapshotRegistration(
     return Object.freeze({ ...registration });
   const definition = snapshot(registration.definition) as NodeDefinition;
   return Object.freeze({ ...registration, definition });
+}
+
+/** A node `cookConcurrently` never overlaps with another; see there. */
+function cooksAlone(node: RuntimeNode): boolean {
+  if (node.definition.container === "feedback") return true;
+  if (node.definition.capabilities?.includes("gpu")) return true;
+  const ports = [
+    ...Object.values(node.definition.inputs ?? {}),
+    ...Object.values(node.definition.outputs ?? {}),
+  ];
+  return ports.some((port) => port.kind === "trigger");
 }
 
 function isGated(node: RuntimeNode): boolean {

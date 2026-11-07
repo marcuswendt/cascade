@@ -282,6 +282,20 @@ export interface CreateRuntimeOptions {
   readonly nodes?: readonly NodeRegistration[];
   /** See `RuntimeValuePolicy`. Default `"freeze"`. */
   readonly values?: RuntimeValuePolicy;
+  /**
+   * How many nodes one run may cook at once (default 1: one after another).
+   * Nodes still START in topological order, a node only once everything it
+   * reads has completed, so the `node:start` sequence and the outputs are the
+   * same as a serial run; only completions interleave. Feedback containers,
+   * trigger-wired and GPU nodes always cook alone.
+   */
+  readonly concurrency?: number;
+  /**
+   * Wraps each node's execute. A Node host uses it to carry the node id
+   * through the cook's async work (AsyncLocalStorage), so a stage call or a
+   * log line is attributed to its node when several cook at once.
+   */
+  readonly nodeScope?: <T>(nodeId: string, run: () => T) => T;
 }
 export interface CascadeRuntime {
   registerNode(registration: NodeRegistration): void;

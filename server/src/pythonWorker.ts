@@ -171,6 +171,11 @@ export class PythonWorker {
     };
   }
 
+  /** Requests sent or waiting: what a pool balances on. */
+  get pending(): number {
+    return (this.inFlight ? 1 : 0) + this.queue.length;
+  }
+
   /** The code hash the running worker started with; null before the first
    *  request or when sources are not watched. */
   get codeHash(): string | null {
@@ -391,5 +396,69 @@ export class PythonWorker {
     const proc = this.proc;
     this.proc = null;
     proc?.kill();
+  }
+}
+
+/**
+ * How many warm workers a headless run keeps for one project: 2 to 4, a
+ * slot per four cores and per 8 GB of memory (a worker importing torch holds
+ * a couple of GB), so a 16-core 128 GB machine gets 4 and a 16 GB laptop 2.
+ * `cascade.json` `exec.stages.workers` or `CASCADE_STAGE_WORKERS` overrides.
+ */
+export function defaultStageWorkerCount(
+  cores: number = os.availableParallelism?.() ?? os.cpus().length,
+  memoryBytes: number = os.totalmem(),
+): number {
+  const byCores = Math.floor(cores / 4);
+  const byMemory = Math.floor(memoryBytes / (8 * 1024 ** 3));
+  return Math.max(2, Math.min(4, byCores, byMemory));
+}
+
+/**
+ * Several warm workers for one project, so independent stage calls in one
+ * frame (the morph's four renders) run side by side instead of queueing on
+ * one single-threaded Python process.
+ *
+ * Grown on demand: the first worker is started (or warmed) as before, a
+ * second only when a call arrives while every existing one is busy, up to
+ * `size`. A call goes to an idle worker, else the one with the shortest
+ * queue. Each worker keeps its own code-hash restart and cancel behaviour.
+ */
+export class PythonWorkerPool {
+  private readonly workers: PythonWorker[] = [];
+
+  constructor(
+    readonly size: number,
+    private readonly create: () => PythonWorker,
+  ) {}
+
+  /** The workers started so far. */
+  get members(): readonly PythonWorker[] {
+    return this.workers;
+  }
+
+  /** Start the first worker now (see `PythonWorker.warm`). */
+  warm(): void {
+    if (!this.workers.length) this.workers.push(this.create());
+    this.workers[0]!.warm();
+  }
+
+  callWithMeta(stage: string, args: Record<string, unknown>, options: WorkerCallOptions = {}): Promise<WorkerAnswer> {
+    return this.pick().callWithMeta(stage, args, options);
+  }
+
+  private pick(): PythonWorker {
+    const idle = this.workers.find((worker) => worker.pending === 0);
+    if (idle) return idle;
+    if (this.workers.length < Math.max(1, this.size)) {
+      const worker = this.create();
+      this.workers.push(worker);
+      return worker;
+    }
+    return this.workers.reduce((best, worker) => (worker.pending < best.pending ? worker : best));
+  }
+
+  shutdown(): void {
+    for (const worker of this.workers.splice(0)) worker.shutdown();
   }
 }
