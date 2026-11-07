@@ -19,6 +19,8 @@
  *     and uploaded a 1.55 MB PNG.
  */
 
+import { evaluateArithmetic } from "./fieldMaths";
+
 /** A COMPLETE number. `parseFloat` accepts "1.2abc" and "1." and would commit
  *  halfway through typing an expression; this does not. */
 export const NUMBER_PATTERN = /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/;
@@ -61,6 +63,10 @@ export function numberFieldCommit(
   if (NUMBER_PATTERN.test(trimmed)) {
     return { kind: "value", text: trimmed, value: Number(trimmed) };
   }
+
+  // Plain arithmetic is a number worked out, not a binding: `320/2` is 160.
+  const worked = evaluateArithmetic(trimmed);
+  if (worked !== null) return { kind: "value", text: trimmed, value: worked };
 
   if (trimmed && context.allowExpression) {
     const reason = context.expressionError(trimmed);

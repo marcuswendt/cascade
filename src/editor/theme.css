@@ -802,3 +802,58 @@ input[data-scrubbing] {
   color: var(--text-primary) !important;
   box-shadow: 0 0 0 1px var(--accent);
 }
+/* The scrub number (ScrubField.svelte): the tick ruler is the field's own
+   background, faint on hover, firm with a needle while dragging, and slid by
+   --scrub-x; a field at its limit lights that edge; ‹ › show on hover. */
+.scrub-field {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+.scrub-field > input[data-scrub-field] {
+  padding-inline: 11px;
+  cursor: ew-resize;
+  touch-action: pan-y;
+  --t: linear-gradient(90deg, var(--scrub-tick, #0000) 1px, #0000 0) var(--scrub-x, 0) 100%;
+  background: var(--t) / 8px 3px repeat-x, var(--t) / 40px 6px repeat-x var(--shade-weak);
+}
+.scrub-field:hover > input {
+  --scrub-tick: var(--tint);
+}
+.scrub-field > input[data-scrubbing] {
+  --scrub-tick: var(--tint-strong);
+  background: linear-gradient(var(--text-bright) 0 0) var(--scrub-needle) 100% / 1px 8px no-repeat, var(--t) / 8px 3px repeat-x, var(--t) / 40px 6px repeat-x var(--shade-weak);
+}
+.scrub-field > input:focus {
+  cursor: text;
+  --scrub-tick: #0000;
+}
+.scrub-field.at-min::after,
+.scrub-field.at-max::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, var(--tint-strong), #0000 14px);
+}
+.scrub-field.at-max::after {
+  transform: scaleX(-1);
+}
+.scrub-field > button {
+  position: absolute;
+  inset-block: 0;
+  z-index: 1;
+  width: 11px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  visibility: hidden;
+}
+.scrub-field > button:last-child {
+  right: 0;
+}
+.scrub-field:hover > button {
+  visibility: visible;
+}

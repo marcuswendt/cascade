@@ -14,6 +14,13 @@
  * - **Option/Alt-left-drag on the field itself**; an Alt-click without
  *   movement still reaches the row (which keys the parameter).
  *
+ * A **field** (`field: true`, the scrub number Marcus approved on 2026-11-07)
+ * adds a fourth: a plain left-drag anywhere on the field scrubs it, and a press
+ * without movement opens it for typing. It also takes a sideways touch drag;
+ * `touch-action: pan-y` (theme.css) leaves a vertical one to scroll the panel.
+ * While it drags, `--scrub-x` slides the field's tick ruler with the hand, and
+ * stops it at a declared limit (see `ScrubField.svelte`).
+ *
  * Shift is ten times coarser, Ctrl/Cmd ten times finer, read on every move so
  * the modifier can change mid-drag. Ctrl is a modifier only once the drag has
  * begun: Ctrl-click deletes a key here, and on a Mac it is also a right-click.
@@ -92,6 +99,8 @@ export function createScrubState(startValue: number, meta: ScrubMeta) {
       return quantizeScrub(raw, perPixel, meta);
     },
     get perPixel() { return base; },
+    /** Pressed against a declared limit: the ruler stops here. */
+    get atLimit() { return raw === meta.min || raw === meta.max; },
   };
 }
 
@@ -102,6 +111,9 @@ export interface ScrubOptions {
   /** A label: a plain left-drag scrubs. Otherwise the element is a field, and
    *  only middle-drag or Alt-left-drag do. */
   handle?: boolean;
+  /** A value field: a plain left-drag scrubs it too, and a press without
+   *  movement focuses it for typing. Ignored while the field has focus. */
+  field?: boolean;
   disabled?: () => boolean;
 }
 
@@ -111,13 +123,24 @@ const ACTIVE_ROOT_CLASS = 'cascade-scrubbing';
 /** A Svelte action, also callable by hand on an element supplied from outside. */
 export function scrub(element: HTMLElement, initial: ScrubOptions) {
   let options = initial;
-  if (options.handle) element.setAttribute('data-scrub-handle', '');
+  const mark = () => {
+    element.toggleAttribute('data-scrub-handle', Boolean(options.handle));
+    element.toggleAttribute('data-scrub-field', Boolean(options.field));
+  };
+  mark();
+  /** Where the field's ruler sits; kept between drags so it never jumps. */
+  let rulerX = 0;
 
   let session: {
     button: number;
     active: boolean;
+    /** A plain left press on a field: released unmoved, it opens typing. */
+    tap: boolean;
+    /** The touch pointer driving this drag, or null for a mouse. */
+    touch: number | null;
     travelled: number;
     lastX: number;
+    lastY: number;
     start: number;
     state: ReturnType<typeof createScrubState> | null;
     pending: number | null;
@@ -153,7 +176,10 @@ export function scrub(element: HTMLElement, initial: ScrubOptions) {
     session.emitted = session.start;
     session.state = createScrubState(session.start, options.meta?.() ?? {});
     element.setAttribute('data-scrubbing', '');
+    // The needle on the ruler: the pointer, which the lock below hides.
+    element.style.setProperty('--scrub-needle', `${session.lastX - element.getBoundingClientRect().left}px`);
     document.documentElement.classList.add(ACTIVE_ROOT_CLASS);
+    if (session.touch !== null) return;
     // Pointer lock so the drag is not stopped by the screen edge. Optional:
     // without it (refused, or jsdom) the window listeners still follow the
     // pointer, bounded by the screen.
@@ -163,8 +189,21 @@ export function scrub(element: HTMLElement, initial: ScrubOptions) {
     } catch { /* fallback: unlocked drag */ }
   }
 
+  function advance(dx: number, event: MouseEvent): void {
+    event.preventDefault();
+    const before = session!.pending ?? session!.emitted;
+    session!.pending = session!.state!.move(dx, event);
+    if (options.field) {
+      // The ruler moves with the hand while the value can; at a limit it
+      // stops, with only a little give so the push is still felt.
+      rulerX += session!.pending !== before || !session!.state!.atLimit ? dx : dx * 0.15;
+      element.style.setProperty('--scrub-x', `${rulerX}px`);
+    }
+    schedule();
+  }
+
   function onMove(event: MouseEvent): void {
-    if (!session) return;
+    if (!session || session.touch !== null) return;
     const dx = pointerLocked() || (event.movementX !== undefined && event.movementX !== 0)
       ? event.movementX
       : event.clientX - session.lastX;
@@ -176,9 +215,53 @@ export function scrub(element: HTMLElement, initial: ScrubOptions) {
       if (session.travelled < THRESHOLD_PX) return;
       activate();
     }
-    event.preventDefault();
-    session.pending = session.state!.move(dx, event);
-    schedule();
+    advance(dx, event);
+  }
+
+  /** A finger on a field. Sideways past the threshold scrubs; mostly
+   *  vertical first lets go, so the panel scrolls (the field is pan-y). A tap
+   *  is left to the mouse events the browser sends after it. */
+  function onTouchMove(event: PointerEvent): void {
+    if (!session || event.pointerId !== session.touch) return;
+    const dx = event.clientX - session.lastX;
+    if (!session.active) {
+      const dy = Math.abs(event.clientY - session.lastY);
+      if (dy > Math.abs(dx) && dy > THRESHOLD_PX) { finish(true); return; }
+      if (Math.abs(dx) < THRESHOLD_PX) return;
+      activate();
+    }
+    session.lastX = event.clientX;
+    advance(dx, event);
+  }
+
+  function onTouchEnd(event: PointerEvent): void {
+    if (session && event.pointerId === session.touch) finish(event.type === 'pointercancel');
+  }
+
+  function onPointerDown(event: PointerEvent): void {
+    if (event.pointerType === 'mouse' || !options.field || session || options.disabled?.()) return;
+    if (document.activeElement === element) return;
+    session = newSession(0, event, event.pointerId);
+    window.addEventListener('pointermove', onTouchMove, { capture: true, passive: false });
+    window.addEventListener('pointerup', onTouchEnd, true);
+    window.addEventListener('pointercancel', onTouchEnd, true);
+  }
+
+  function newSession(button: number, event: MouseEvent, touch: number | null = null): NonNullable<typeof session> {
+    return {
+      button,
+      active: false,
+      tap: false,
+      touch,
+      travelled: 0,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      start: 0,
+      state: null,
+      pending: null,
+      emitted: 0,
+      frame: null,
+    };
   }
 
   function swallowOnce(type: string): void {
@@ -193,7 +276,7 @@ export function scrub(element: HTMLElement, initial: ScrubOptions) {
     setTimeout(() => window.removeEventListener(type, swallow, true), 0);
   }
 
-  function finish(cancel: boolean): void {
+  function finish(cancel: boolean, released = false): void {
     if (!session) return;
     const ending = session;
     window.removeEventListener('mousemove', onMove, true);
@@ -201,6 +284,13 @@ export function scrub(element: HTMLElement, initial: ScrubOptions) {
     window.removeEventListener('keydown', onKey, true);
     window.removeEventListener('blur', onBlur);
     window.removeEventListener('contextmenu', onContextMenu, true);
+    window.removeEventListener('pointermove', onTouchMove, true);
+    window.removeEventListener('pointerup', onTouchEnd, true);
+    window.removeEventListener('pointercancel', onTouchEnd, true);
+    if (released && ending.tap && !ending.active && element instanceof HTMLInputElement) {
+      element.focus();
+      element.select();
+    }
     if (ending.frame !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(ending.frame);
     ending.frame = null;
     if (ending.active) {
@@ -221,7 +311,7 @@ export function scrub(element: HTMLElement, initial: ScrubOptions) {
   /** Capture phase on window, so the last value lands before the Inspector's
    *  own mouseup resets its once-per-gesture undo flag: one drag, one entry. */
   function onUp(event: MouseEvent): void {
-    if (session && event.button === session.button) finish(false);
+    if (session && session.touch === null && event.button === session.button) finish(false, true);
   }
 
   function onKey(event: KeyboardEvent): void {
@@ -241,27 +331,21 @@ export function scrub(element: HTMLElement, initial: ScrubOptions) {
 
   function onDown(event: MouseEvent): void {
     if (session || options.disabled?.()) return;
+    // A field being typed into takes its clicks as a text box does.
+    if (options.field && document.activeElement === element) return;
     const middle = event.button === 1;
     const left = event.button === 0 && !event.ctrlKey;
     const wanted = middle
       || (left && options.handle && !event.altKey)
-      || (left && !options.handle && event.altKey);
+      || (left && !options.handle && (event.altKey || options.field));
     if (!wanted) return;
     // Stops middle-button autoscroll, text selection, the native drag of a
     // draggable label, and the field taking focus. A click with no movement
-    // still arrives afterwards, so a label still focuses its field.
+    // still arrives afterwards, so a label still focuses its field; a field
+    // focuses itself on release, and an Alt-click still reaches the row.
     event.preventDefault();
-    session = {
-      button: event.button,
-      active: false,
-      travelled: 0,
-      lastX: event.clientX,
-      start: 0,
-      state: null,
-      pending: null,
-      emitted: 0,
-      frame: null,
-    };
+    session = newSession(event.button, event);
+    session.tap = left && Boolean(options.field) && !event.altKey;
     window.addEventListener('mousemove', onMove, true);
     window.addEventListener('mouseup', onUp, true);
     window.addEventListener('keydown', onKey, true);
@@ -277,19 +361,21 @@ export function scrub(element: HTMLElement, initial: ScrubOptions) {
   }
 
   element.addEventListener('mousedown', onDown);
+  element.addEventListener('pointerdown', onPointerDown);
   element.addEventListener('auxclick', onAuxClick);
 
   return {
     update(next: ScrubOptions) {
       options = next;
-      if (options.handle) element.setAttribute('data-scrub-handle', '');
-      else element.removeAttribute('data-scrub-handle');
+      mark();
     },
     destroy() {
       finish(false);
       element.removeEventListener('mousedown', onDown);
+      element.removeEventListener('pointerdown', onPointerDown);
       element.removeEventListener('auxclick', onAuxClick);
       element.removeAttribute('data-scrub-handle');
+      element.removeAttribute('data-scrub-field');
     },
   };
 }

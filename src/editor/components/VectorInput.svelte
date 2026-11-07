@@ -2,7 +2,10 @@
   import type { Prop } from '@/types/node.types';
   import { onMount, tick } from 'svelte';
   import { scrub, type ScrubOptions } from './scrub';
-  
+  import { evaluateArithmetic, nudgeValue } from './fieldMaths';
+  import { NUMBER_PATTERN } from './numberFieldCommit';
+  import ScrubField from './ScrubField.svelte';
+
   export let prop: Prop;
   export let id: string;
   export let onValueChange: (value: number[]) => void;
@@ -114,22 +117,33 @@
     }
     
     onValueChange(newArray);
+    return newValue;
   }
   
-  /** Middle-drag or Alt-drag a component to scrub it. The local array is
-   *  updated too, because the next frame of the drag builds on it. */
+  const limit = (bound: number | number[] | undefined, index: number) => (Array.isArray(bound) ? bound[index] : bound);
+
+  /** Writes one component and the local array, because the next frame of a
+   *  drag (or the next step) builds on it. */
+  function withComponent(index: number, next: number): number[] {
+    const updated = [...value];
+    if (locked) updated.fill(next); else updated[index] = next;
+    return updated;
+  }
+
+  function setComponent(index: number, typed: number) {
+    value = withComponent(index, updateComponent(index, typed));
+  }
+
+  /** Each component is a scrub number: drag anywhere on it, click to type,
+   *  middle-drag and Alt-drag as before. */
   function componentScrub(index: number): ScrubOptions {
     return {
+      field: true,
       getValue: () => Number(value[index] ?? 0),
-      setValue: (next: number) => {
-        updateComponent(index, next);
-        const updated = [...value];
-        if (locked) updated.fill(next); else updated[index] = next;
-        value = updated;
-      },
+      setValue: (next: number) => setComponent(index, next),
       meta: () => ({
-        min: Array.isArray(min) ? min[index] : min,
-        max: Array.isArray(max) ? max[index] : max,
+        min: limit(min, index),
+        max: limit(max, index),
         step: typeof prop.params?.step === 'number' ? prop.params.step : undefined,
         integer: isInteger,
       }),
@@ -137,22 +151,48 @@
     };
   }
 
-  function handleNumberInput(e: Event, index: number) {
-    const input = e.target as HTMLInputElement;
-    let newValue = parseFloat(input.value);
-    
-    if (isNaN(newValue)) {
-      input.value = String(value[index]);
-      return;
-    }
-    
-    updateComponent(index, newValue);
+  function nudgeComponent(index: number, direction: number, coarse: boolean) {
+    const meta = { min: limit(min, index), max: limit(max, index), integer: isInteger };
+    setComponent(index, nudgeValue(Number(value[index] ?? 0), direction, typeof step === 'number' ? step : 1, meta, coarse));
   }
-  
-  function handleBlur(e: Event, index: number) {
+
+  /** What typing last sent live, so blur does not send it a second time. */
+  let typedLive: (number | undefined)[] = [];
+
+  /** Live while the text is a whole number, as before. */
+  function handleNumberInput(e: Event, index: number) {
+    const text = (e.target as HTMLInputElement).value.trim();
+    if (NUMBER_PATTERN.test(text)) typedLive[index] = updateComponent(index, Number(text));
+  }
+
+  /** Enter or blur: `320/2` and `10+5` work out; anything else reverts. */
+  function commitText(input: HTMLInputElement, index: number) {
+    const text = input.value.trim();
+    const live = typedLive[index];
+    typedLive[index] = undefined;
+    if (NUMBER_PATTERN.test(text)) {
+      // Already sent while typing; only the local copy is behind.
+      if (live !== undefined) value = withComponent(index, live);
+    } else {
+      const worked = evaluateArithmetic(text);
+      if (worked !== null) setComponent(index, worked);
+    }
+    const shown = value[index];
+    input.value = String(isInteger ? Math.round(shown) : shown);
+  }
+
+  function handleKeydown(e: KeyboardEvent, index: number) {
     const input = e.target as HTMLInputElement;
-    if (input.value === '' || isNaN(parseFloat(input.value))) {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      nudgeComponent(index, e.key === 'ArrowUp' ? 1 : -1, e.shiftKey);
       input.value = String(value[index]);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === 'Escape') {
+      input.value = String(value[index]);
+      input.blur();
     }
   }
   
@@ -168,21 +208,31 @@
   <div class="vector-row">
     {#each Array(componentCount) as _, i}
       {@const inputValue = value[i] !== undefined ? (isInteger ? Math.round(value[i]) : value[i]) : 0}
-      {@const inputRef = inputElements[i]}
-      <input
-        type="number"
-        id="{id}-{i}"
-        class="number-input"
-        bind:this={inputElements[i]}
-        min={min !== undefined ? (Array.isArray(min) ? min[i] : min) : undefined}
-        max={max !== undefined ? (Array.isArray(max) ? max[i] : max) : undefined}
-        step={step}
-        value={inputValue}
-        disabled={disabled}
-        use:scrub={componentScrub(i)}
-        on:input={(e) => handleNumberInput(e, i)}
-        on:blur={(e) => handleBlur(e, i)}
-      />
+      {@const low = limit(min, i)}
+      {@const high = limit(max, i)}
+      <ScrubField
+        grow
+        atMin={low !== undefined && inputValue <= low}
+        atMax={high !== undefined && inputValue >= high}
+        {disabled}
+        onStep={(direction, e) => nudgeComponent(i, direction, e.shiftKey)}
+      >
+        <input
+          type="text"
+          inputmode="decimal"
+          spellcheck="false"
+          autocomplete="off"
+          id="{id}-{i}"
+          class="number-input"
+          bind:this={inputElements[i]}
+          value={inputValue}
+          disabled={disabled}
+          use:scrub={componentScrub(i)}
+          on:input={(e) => handleNumberInput(e, i)}
+          on:keydown={(e) => handleKeydown(e, i)}
+          on:blur={(e) => commitText(e.currentTarget, i)}
+        />
+      </ScrubField>
     {/each}
     {#if componentCount === 2}
       <div class="preset-container">
@@ -272,48 +322,8 @@
     outline: none;
     border-color: var(--accent);
   }
-  
-  .number-input:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  
-  .lock-button {
-    padding: 4px;
-    background: transparent;
-    border: 1px solid var(--tint);
-    border-radius: 3px;
-    color: var(--text-muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s ease;
-    flex-shrink: 0;
-  }
-  
-  .lock-button:hover:not(:disabled) {
-    background: var(--tint-weak);
-    border-color: var(--tint-strong);
-    color: var(--text-bright);
-  }
-  
-  .lock-button.locked {
-    background: var(--accent-tint-medium);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  
-  .lock-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  
-  .preset-container {
-    position: relative;
-    flex-shrink: 0;
-  }
-  
+
+  .lock-button,
   .preset-button {
     padding: 4px;
     background: transparent;
@@ -325,17 +335,32 @@
     align-items: center;
     justify-content: center;
     transition: all 0.15s ease;
+    flex-shrink: 0;
   }
-  
+
+  .lock-button:hover:not(:disabled),
   .preset-button:hover:not(:disabled) {
     background: var(--tint-weak);
     border-color: var(--tint-strong);
     color: var(--text-bright);
   }
-  
+
+  .lock-button.locked {
+    background: var(--accent-tint-medium);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .number-input:disabled,
+  .lock-button:disabled,
   .preset-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .preset-container {
+    position: relative;
+    flex-shrink: 0;
   }
   
   .preset-dropdown {

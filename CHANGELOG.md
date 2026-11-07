@@ -6,6 +6,15 @@ Notable changes to Cascade. Newest first.
 
 ### Added
 
+- **Scrub number in the Inspector.** Every number field and each vector
+  component drags anywhere on the field (at `scrub.ts`'s rates, Shift ×10,
+  Cmd ÷10), with a tick ruler that slides under the pointer and stops at a
+  declared min/max while that edge lights; hover shows the ruler and ‹ ›
+  steppers; a click without a drag opens typing, and plain arithmetic
+  (`320/2`, `10+5`) commits the number it works out to, not an expression. A
+  sideways touch drag scrubs and a vertical one still scrolls. Middle-drag,
+  label-drag and Alt-drag are unchanged. Vector fields are now text, so they
+  take the same sums and arrow-key steps.
 - **`cascade check` warns on nodes that have grown into a pipeline.**
   `shape/long-execute` when `execute` passes 150 lines; `shape/mixed-jobs`
   when one module loads, generates, colours, draws and exports (four of the

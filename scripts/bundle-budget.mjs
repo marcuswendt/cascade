@@ -20,7 +20,11 @@ import path from 'node:path';
 
 export const BUDGET = {
   entryJsBytes: 1071504 + 25 * 1024,
-  entryCssBytes: 238640,
+  // +806 on 2026-11-07 for the scrub number's shared field rules in
+  // theme.css (ruler, limit edge, steppers), net of merging VectorInput's
+  // duplicated button rules; it is on the Inspector's first paint, so it
+  // cannot be split off. Raised by that exact amount, on Marcus's go-ahead.
+  entryCssBytes: 239446,
 };
 
 const root = path.resolve(import.meta.dirname, '..');

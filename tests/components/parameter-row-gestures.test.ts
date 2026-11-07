@@ -3,6 +3,7 @@ import { fireEvent, render } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import Inspector from '@/editor/Inspector.svelte';
 import NumberInput from '@/editor/components/NumberInput.svelte';
+import VectorInput from '@/editor/components/VectorInput.svelte';
 import { Graph } from '@/nodes/Graph';
 import { Node } from '@/nodes/Node';
 import { expressionEngine } from '@/engine/expressions/index';
@@ -134,5 +135,86 @@ describe('the value field itself', () => {
     const slider = view.getByRole('slider') as HTMLInputElement;
     fireEvent.input(slider, { target: { value: '7' } });
     expect(onValueChange).toHaveBeenLastCalledWith(7);
+  });
+});
+
+describe('the scrub number', () => {
+  /** A drag swallows the click that follows it, until the next task. */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  function mount() {
+    const onValueChange = vi.fn();
+    const view = render(NumberInput, {
+      props: { prop: { value: 1, params: { min: 0, max: 10 } }, id: 'field', onValueChange },
+    });
+    const field = view.container.querySelector('input[type="text"]') as HTMLInputElement;
+    return { view, field, onValueChange };
+  }
+
+  it('scrubs on a plain left-drag anywhere on the field, at the scrub.ts rate', async () => {
+    const { field, onValueChange } = mount();
+    await fireEvent.mouseDown(field, { button: 0, clientX: 100 });
+    await fireEvent.mouseMove(window, { clientX: 140 });
+    await fireEvent.mouseUp(window, { button: 0, clientX: 140 });
+    await settle();
+    // 10 across 300 px: 40 px is 1.333.
+    expect(onValueChange).toHaveBeenLastCalledWith(2.333);
+    expect(document.activeElement).not.toBe(field);
+  });
+
+  it('stops at the limit and lights that edge', async () => {
+    const { view, field, onValueChange } = mount();
+    await fireEvent.mouseDown(field, { button: 0, clientX: 100 });
+    await fireEvent.mouseMove(window, { clientX: 399 });
+    await fireEvent.mouseMove(window, { clientX: 450 });
+    const rulerAtLimit = field.style.getPropertyValue('--scrub-x');
+    await fireEvent.mouseMove(window, { clientX: 490 });
+    await fireEvent.mouseUp(window, { button: 0 });
+    await settle();
+    expect(onValueChange).toHaveBeenLastCalledWith(10);
+    // Past the limit the ruler gives only a little.
+    expect(parseFloat(field.style.getPropertyValue('--scrub-x')) - parseFloat(rulerAtLimit)).toBeCloseTo(6);
+    expect(view.container.querySelector('.scrub-field')!.classList.contains('at-max')).toBe(true);
+  });
+
+  it('opens for typing on a click without a drag, and works out sums', async () => {
+    const { field, onValueChange } = mount();
+    await fireEvent.mouseDown(field, { button: 0, clientX: 100 });
+    await fireEvent.mouseUp(window, { button: 0, clientX: 100 });
+    expect(document.activeElement).toBe(field);
+    expect(onValueChange).not.toHaveBeenCalled();
+
+    await fireEvent.input(field, { target: { value: '9/2' } });
+    await fireEvent.keyDown(field, { key: 'Enter' });
+    expect(onValueChange).toHaveBeenLastCalledWith(4.5);
+  });
+
+  it('steps with the ‹ › buttons', async () => {
+    const { view, onValueChange } = mount();
+    await fireEvent.click(view.getByLabelText('Increase'));
+    expect(onValueChange).toHaveBeenLastCalledWith(1.01);
+  });
+
+  it('gives every vector component the same field', async () => {
+    // The Inspector writes the prop in place, which is what the field reads back.
+    const prop = { value: [1, 2, 3], params: { min: 0, max: 30 } };
+    const onValueChange = vi.fn((next: number[]) => { prop.value = next; });
+    const view = render(VectorInput, { props: { prop, id: 'vec', onValueChange } });
+    const fields = view.container.querySelectorAll<HTMLInputElement>('.scrub-field > input');
+    expect(fields).toHaveLength(3);
+
+    await fireEvent.mouseDown(fields[1], { button: 0, clientX: 0 });
+    await fireEvent.mouseMove(window, { clientX: 20 });
+    await fireEvent.mouseUp(window, { button: 0 });
+    await settle();
+    // 30 across 300 px: 20 px is 2.
+    expect(onValueChange).toHaveBeenLastCalledWith([1, 4, 3]);
+
+    await fireEvent.mouseDown(fields[2], { button: 0, clientX: 0 });
+    await fireEvent.mouseUp(window, { button: 0 });
+    expect(document.activeElement).toBe(fields[2]);
+    await fireEvent.input(fields[2], { target: { value: '10+5' } });
+    await fireEvent.blur(fields[2]);
+    expect(onValueChange).toHaveBeenLastCalledWith([1, 4, 15]);
   });
 });

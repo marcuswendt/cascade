@@ -4,6 +4,8 @@
   import { onDestroy } from 'svelte';
   import { numberFieldCommit, NUMBER_PATTERN } from './numberFieldCommit';
   import { scrub, type ScrubOptions } from './scrub';
+  import { nudgeValue } from './fieldMaths';
+  import ScrubField from './ScrubField.svelte';
 
   export let prop: Prop;
   export let id: string;
@@ -53,6 +55,8 @@
   /** The slider follows the field, so it moves with typing and scrubbing
    *  alike; `prop.value` changes in place, where this component cannot see. */
   $: sliderValue = NUMBER_PATTERN.test(text.trim()) ? Number(text.trim()) : value;
+  $: atMin = min !== undefined && sliderValue <= min;
+  $: atMax = max !== undefined && sliderValue >= max;
 
   /** What the field is showing. Held locally because the field is now text: a
    *  half-typed "1." or "-" is a legitimate intermediate state, and rewriting
@@ -118,11 +122,15 @@
     switch (outcome.kind) {
       case 'unchanged':
         return;
-      case 'value':
+      case 'value': {
         rejected = null;
         lastCommitted = outcome.text;
-        onValueChange(clamp(outcome.value));
+        const next = clamp(outcome.value);
+        // `320/2` shows as the 160 it committed.
+        if (!NUMBER.test(outcome.text)) text = String(next);
+        onValueChange(next);
         return;
+      }
       case 'expression':
         rejected = null;
         lastCommitted = outcome.text;
@@ -161,20 +169,23 @@
   /** Arrow keys still nudge. They came free with `type="number"` and would
    *  have been lost with it — a field that gains expressions and loses nudging
    *  is a bad trade. Shift for ten steps, as everywhere else. */
+  /** One step, from an arrow key or a ‹ › button. */
+  function nudge(direction: number, coarse: boolean): void {
+    const trimmed = text.trim();
+    const base = NUMBER.test(trimmed) ? Number(trimmed) : value;
+    const next = nudgeValue(base, direction, typeof step === 'number' ? step : 1, { min, max, integer: isInteger }, coarse);
+    text = String(next);
+    rejected = null;
+    lastCommitted = text;
+    onValueChange(next);
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       const trimmed = text.trim();
       if (trimmed && !NUMBER.test(trimmed)) return;
       e.preventDefault();
-      const base = NUMBER.test(trimmed) ? Number(trimmed) : value;
-      const amount = (typeof step === 'number' ? step : 1) * (e.shiftKey ? 10 : 1);
-      const next = clamp(base + (e.key === 'ArrowUp' ? amount : -amount));
-      // Floating-point step arithmetic prints 0.30000000000000004 otherwise.
-      const rounded = isInteger ? next : Number(next.toFixed(6));
-      text = String(rounded);
-      rejected = null;
-      lastCommitted = text;
-      onValueChange(rounded);
+      nudge(e.key === 'ArrowUp' ? 1 : -1, e.shiftKey);
       return;
     }
     if (e.key === 'Enter') {
@@ -192,6 +203,7 @@
    *  through these closures at call time, so nothing has to be re-passed. */
   const scrubOptions = (handle: boolean): ScrubOptions => ({
     handle,
+    field: !handle,
     getValue: () => (NUMBER_PATTERN.test(text.trim()) ? Number(text.trim()) : value),
     setValue: (next: number) => {
       text = String(next);
@@ -244,12 +256,34 @@
         disabled={disabled}
         on:input={handleSliderInput}
       />
+      <ScrubField {atMin} {atMax} {disabled} onStep={(direction, e) => nudge(direction, e.shiftKey)}>
+        <input
+          type="text"
+          inputmode="decimal"
+          spellcheck="false"
+          autocomplete="off"
+          class="number-input"
+          class:rejected={rejected !== null}
+          title={rejected ?? undefined}
+          value={text}
+          disabled={disabled}
+          use:scrub={scrubOptions(false)}
+          on:input={handleTextInput}
+          on:keydown={handleKeydown}
+          on:focus={handleFocus}
+          on:blur={handleBlur}
+        />
+      </ScrubField>
+    </div>
+  {:else}
+    <ScrubField {atMin} {atMax} {disabled} onStep={(direction, e) => nudge(direction, e.shiftKey)}>
       <input
         type="text"
         inputmode="decimal"
         spellcheck="false"
         autocomplete="off"
-        class="number-input"
+        id={id}
+        class="number-input-full"
         class:rejected={rejected !== null}
         title={rejected ?? undefined}
         value={text}
@@ -260,25 +294,7 @@
         on:focus={handleFocus}
         on:blur={handleBlur}
       />
-    </div>
-  {:else}
-    <input
-      type="text"
-      inputmode="decimal"
-      spellcheck="false"
-      autocomplete="off"
-      id={id}
-      class="number-input-full"
-      class:rejected={rejected !== null}
-      title={rejected ?? undefined}
-      value={text}
-      disabled={disabled}
-      use:scrub={scrubOptions(false)}
-      on:input={handleTextInput}
-      on:keydown={handleKeydown}
-      on:focus={handleFocus}
-      on:blur={handleBlur}
-    />
+    </ScrubField>
   {/if}
 </div>
 
