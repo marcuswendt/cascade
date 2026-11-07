@@ -8,7 +8,7 @@ import { ProjectRoot } from '../../server/src/project.js';
 import { cascadeVersion, formatStageTrace } from '../../server/src/stageCache.js';
 import { graphSeed } from '../../packages/runtime/src/seed.js';
 import { installProjectStages } from './projectStages.js';
-import { captureNodeConsole, RunTrace } from './runTrace.js';
+import { captureNodeConsole, cookingNode, RunTrace } from './runTrace.js';
 import { applyEnv } from './runEnv.js';
 import { installProjectIo } from './headlessIo.js';
 import { installHeadlessCanvas, MISSING_CANVAS_MESSAGE, type CanvasHost } from './headlessCanvas.js';
@@ -214,6 +214,8 @@ export async function runGraph(options: RunOptions): Promise<void> {
       verbose,
       // A render worker starts Python while the probe frames run.
       prewarm: Boolean(options.worker),
+      // A render worker is already one of several processes: one Python each.
+      ...(options.worker ? { poolSize: 1 } : {}),
       onTrace: (stage) => {
         trace.recordStage(stage);
         if (verbose) console.log(`[stage] ${formatStageTrace(stage)}`);
@@ -224,6 +226,10 @@ export async function runGraph(options: RunOptions): Promise<void> {
       onOutput: (stage, stream, line) => {
         const text = `[${stage ?? 'stage-worker'}] ${line}`;
         if (verbose) (stream === 'stderr' ? console.warn : console.log)(text);
+        // A warm worker's stderr arrives in the context of whichever cook
+        // spawned the process, not the one it is serving: attribute it to the
+        // node that started last, as before the pool.
+        else if (stage === null) cookingNode.exit(() => trace.recordLog(stream, text));
         else trace.recordLog(stream, text);
       },
     });

@@ -18,9 +18,21 @@ import { createNodeFileCapability } from './nodeFiles.js';
 import { createNodeAssetCapability } from './nodeAssets.js';
 import { copyImageFile, settleProjectImages } from './headlessIo.js';
 import { imagePath, sequenceFileName, sequenceWidth } from './sequence.js';
-import { collectImageOutputs, outDirectory, unknownNodes } from './imageOutputs.js';
+import { outDirectory, planImageOutputs, unknownNodes } from './imageOutputs.js';
 import { createDawnGpuHost } from './headlessGpu.js';
 import { nodeShapeWarnings, reportNodeShape } from './nodeShape.js';
+import { installedStageLanes } from './projectStages.js';
+import { traceNodeScope } from './runTrace.js';
+
+/**
+ * How a headless run executes: values trusted rather than walked (see
+ * RuntimeValuePolicy), and as many nodes cooking at once as the installed
+ * stage bridge has warm workers (1 without one), each cook's async work
+ * tagged with its node for the trace.
+ */
+function headlessExecution() {
+  return { values: 'trust' as const, concurrency: installedStageLanes(), nodeScope: traceNodeScope };
+}
 
 interface ProjectNode {
   id: string;
@@ -312,6 +324,9 @@ export async function runDeterministicProjectGraph(
   const runtime = createRuntime({
     host,
     nodes: prepared.registrations,
+    // A run trusts what its nodes hand over instead of walking it to freeze
+    // (Studio and `cook` keep `"freeze"`), and overlaps independent stages.
+    ...headlessExecution(),
   });
   let graph: LoadedCascadeGraph | undefined;
   try {
@@ -457,6 +472,10 @@ export async function renderDeterministicProjectFrames(
   const runtime = createRuntime({
     host,
     nodes: prepared.registrations,
+    // Every frame hands over fresh values; walking them to freeze was most
+    // of a big-array frame. Independent stages (the morph's four renders)
+    // cook side by side on the stage pool.
+    ...headlessExecution(),
   });
   let graph: LoadedCascadeGraph | undefined;
   const width = sequenceWidth(options.end);
@@ -479,6 +498,9 @@ export async function renderDeterministicProjectFrames(
     await fs.mkdir(out.directory, { recursive: true });
     const missing = unknownNodes(graph, [...targets, ...extra]);
     if (missing.length) throw new Error(`No node ${missing.map((id) => `"${id}"`).join(', ')} in this graph (--node/--out-node take node ids; cascade graph read lists them).`);
+    // The graph's shape is fixed for the run: plan which ports to save once,
+    // then read just those outputs per frame.
+    const imageOutputs = planImageOutputs(graph, { nodes: targets, extra });
     for await (const frame of options.frameSource ?? frameRange(options.start, options.end, options.step ?? 1)) {
       const frameStarted = performance.now();
       if (options.signal?.aborted) {
@@ -513,7 +535,7 @@ export async function renderDeterministicProjectFrames(
         );
       }
 
-      const outputs = collectImageOutputs(graph, { nodes: targets, extra });
+      const outputs = imageOutputs.collect();
       if (!outputs.length) {
         throw new Error(
           targets.length || extra.length

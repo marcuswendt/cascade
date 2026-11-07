@@ -9,10 +9,14 @@
  * doc/PRODUCTION_READINESS.md asks for exactly this: every headless run leaves
  * a trace with each stage's timing and cache state.
  *
- * The deterministic runtime cooks one node at a time, so a stage call is
- * attributed to the node whose `node:start` came last. That is the same
- * single-lane fact the ambient cook signal in `cascade/stage` relies on.
+ * A headless run may cook several nodes at once (a stage pool, round 2), so a
+ * stage call or a printed line is attributed to the node whose cook it came
+ * from through `cookingNode`, which the runtime's `nodeScope` sets around each
+ * node's execute. Without it (a runtime that does not set the scope) the node
+ * whose `node:start` came last is used, which is right for a serial run.
+ * Nodes start in topological order either way, so entries are in that order.
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { StageTrace } from '../../server/src/stageCache.js';
@@ -75,9 +79,29 @@ export interface StageSummary extends StageTrace {
   readonly node: string | null;
 }
 
+/** The id of the node whose cook the current async work belongs to. */
+export const cookingNode = new AsyncLocalStorage<string>();
+
+/** `CreateRuntimeOptions.nodeScope` for a headless run: see `cookingNode`. */
+export function traceNodeScope<T>(nodeId: string, run: () => T): T {
+  return cookingNode.run(nodeId, run);
+}
+
 export class RunTrace {
   private readonly runs: TracedRun[] = [];
   private current: { node: TracedNode; started: number } | null = null;
+  /** Nodes of the latest run still cooking, by id. */
+  private readonly cooking = new Map<string, { node: TracedNode; started: number }>();
+
+  /** The node a stage call or log line belongs to. */
+  private owner(): TracedNode | undefined {
+    const id = cookingNode.getStore();
+    if (id !== undefined) {
+      const scoped = this.cooking.get(id)?.node;
+      if (scoped) return scoped;
+    }
+    return this.current?.node;
+  }
   /** Stage calls made outside any node (a run with no graph events). */
   private readonly loose: StageTrace[] = [];
   private readonly startedAt = new Date();
@@ -105,9 +129,13 @@ export class RunTrace {
         const node: TracedNode = { id: event.nodeId, module: modules.get(event.nodeId) ?? '', ms: 0, stages: [] };
         run.nodes.push(node);
         this.current = { node, started: performance.now() };
-      } else if (event.type === 'node:complete' && this.current?.node.id === event.nodeId) {
-        this.current.node.ms = Math.round(performance.now() - this.current.started);
-        this.current = null;
+        this.cooking.set(event.nodeId, this.current);
+      } else if (event.type === 'node:complete') {
+        const cooking = this.cooking.get(event.nodeId);
+        if (!cooking) return;
+        cooking.node.ms = Math.round(performance.now() - cooking.started);
+        this.cooking.delete(event.nodeId);
+        if (this.current === cooking) this.current = null;
       }
     });
   }
@@ -128,7 +156,8 @@ export class RunTrace {
 
   /** Record a stage call against the node cooking now. */
   recordStage(trace: StageTrace): void {
-    if (this.current) this.current.node.stages.push(trace);
+    const node = this.owner();
+    if (node) node.stages.push(trace);
     else this.loose.push(trace);
   }
 
@@ -138,7 +167,7 @@ export class RunTrace {
    * CLI's own messages are not node output).
    */
   recordLog(level: string, text: string): boolean {
-    const node = this.current?.node;
+    const node = this.owner();
     if (!node) return false;
     for (const line of text.split('\n')) {
       if (!line.trim()) continue;

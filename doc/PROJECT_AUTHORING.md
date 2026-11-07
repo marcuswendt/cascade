@@ -750,6 +750,15 @@ in `cascade run --json` under `stages`, and in the run trace.
   keeps running its old code in a live Studio. Its bytecode cache is keyed by
   the code hash, because Python accepts a `.pyc` whose source kept its size
   within the same second.
+- `workers` (headless runs only) is how many warm workers `cascade run` keeps
+  for the project, and so how many independent nodes it cooks at once: sibling
+  stage calls in one frame (the morph's four renders) run side by side. Default
+  2–4, one per four cores and per 8 GB of memory; `CASCADE_STAGE_WORKERS`
+  overrides it, and `cascade render` workers keep one each. A second worker
+  starts only when a call finds the first busy. Nodes still start in the
+  graph's order, so the run trace lists them the same way every run; a stage
+  that writes a fixed path shared with another node is the one thing this can
+  break, and `"workers": 1` turns it off.
 - `cache` controls Cascade's own result cache. A stored result is served only
   while every file it names still has the bytes it had, so a stage that writes
   a fixed path and was re-run with other inputs misses rather than serving the

@@ -54,6 +54,7 @@ import type {
   RuntimeEvent,
   RuntimeCapabilities,
   RuntimeHost,
+  RuntimeValuePolicy,
 } from "./types.js";
 
 interface RuntimeConnection extends ConnectionInspection {
@@ -207,8 +208,24 @@ class MutableAbortSignal implements CascadeAbortSignal {
 }
 
 export function createRuntime(options: CreateRuntimeOptions): CascadeRuntime {
-  return new Runtime(options.host, [...builtinNodeRegistrations, ...(options.nodes ?? [])]);
+  return new Runtime(
+    options.host,
+    [...builtinNodeRegistrations, ...(options.nodes ?? [])],
+    {
+      values: options.values === "trust" ? "trust" : "freeze",
+      concurrency: Math.max(1, Math.floor(Number(options.concurrency ?? 1)) || 1),
+      ...(options.nodeScope ? { nodeScope: options.nodeScope } : {}),
+    },
+  );
 }
+
+/** How a graph executes: see `CreateRuntimeOptions`. */
+interface ExecutionOptions {
+  readonly values: RuntimeValuePolicy;
+  readonly concurrency: number;
+  readonly nodeScope?: <T>(nodeId: string, run: () => T) => T;
+}
+const SERIAL_EXECUTION: ExecutionOptions = { values: "freeze", concurrency: 1 };
 
 class Runtime implements CascadeRuntime {
   private readonly registrations = new Map<string, NodeRegistration>();
@@ -218,6 +235,7 @@ class Runtime implements CascadeRuntime {
   constructor(
     private readonly host: RuntimeHost,
     registrations: readonly NodeRegistration[],
+    private readonly execution: ExecutionOptions = SERIAL_EXECUTION,
   ) {
     for (const registration of registrations) this.registerNode(registration);
   }
@@ -298,6 +316,7 @@ class Runtime implements CascadeRuntime {
       () => this.graphs.delete(graph),
       document.annotations,
       graphSeed(document),
+      this.execution,
     );
     // The graph's own frame rate, saved with it; a run's `fps` still overrides.
     const fps = document.timeline?.fps;
@@ -347,6 +366,8 @@ class Graph implements LoadedCascadeGraph {
   private readonly animator: PropAnimator<RuntimeNode>;
   private frame = MIN_FRAME;
   private fps = DEFAULT_FPS;
+  /** What happens to a value a node hands over; see `RuntimeValuePolicy`. */
+  private readonly values: RuntimeValuePolicy;
   constructor(
     private readonly host: RuntimeHost,
     private readonly nodes: readonly RuntimeNode[],
@@ -355,7 +376,10 @@ class Graph implements LoadedCascadeGraph {
     annotations: CascadeDocument["annotations"] = [],
     /** The document's seed; each node's `context.seed` derives from it. */
     private readonly seed: number = DEFAULT_GRAPH_SEED,
+    /** Value policy, concurrency, node scope; see `CreateRuntimeOptions`. */
+    private readonly execution: ExecutionOptions = SERIAL_EXECUTION,
   ) {
+    this.values = execution.values;
     this.byId = new Map(nodes.map((node) => [node.id, node]));
     const byInput = new Map<string, RuntimeConnection[]>();
     const byNode = new Map<string, RuntimeConnection[]>();
@@ -474,7 +498,7 @@ class Graph implements LoadedCascadeGraph {
               type: definition.kind === "trigger" ? "trigger" : definition.type,
               connected: this.connectedOutputs.has(`${node.id}\0${name}`),
               ...(definition.kind === "data" && node.outputs.has(name)
-                ? { value: snapshot(node.outputs.get(name)) }
+                ? { value: this.expose(node.outputs.get(name)) }
                 : {}),
             },
           ],
@@ -695,7 +719,15 @@ class Graph implements LoadedCascadeGraph {
     return () => this.listeners.delete(listener);
   }
   getOutput(nodeId: string, outputName: string): unknown {
-    return snapshot(this.requireNode(nodeId).outputs.get(outputName));
+    return this.expose(this.requireNode(nodeId).outputs.get(outputName));
+  }
+  /**
+   * An output value as callers see it. Under `"freeze"` every output was
+   * deep-frozen when it was set, so this is the value itself (the snapshot is
+   * a lookup); under `"trust"` it is handed out as the producer made it.
+   */
+  private expose(value: unknown): unknown {
+    return this.values === "trust" ? value : snapshot(value);
   }
   getGraphOutput(name: string): unknown {
     const node = this.graphOutputs.get(name);
@@ -707,7 +739,7 @@ class Graph implements LoadedCascadeGraph {
     return immutableMap(
       [...this.requireNode(nodeId).outputs].map(([name, value]) => [
         name,
-        snapshot(value),
+        this.expose(value),
       ]),
     );
   }
@@ -820,17 +852,22 @@ class Graph implements LoadedCascadeGraph {
       );
       /** Nodes that cooked in this run, for `reuse: "strict"`. */
       const cooked = new Set<string>();
-      for (const node of ordered) {
-        if (signal.aborted) break;
-        if (reuse && this.reusable(node) && !(reuse === "strict" && this.feedsFrom(node, cooked))) {
-          this.emit({ type: "node:start", runId, nodeId: node.id });
-          this.emit({ type: "node:complete", runId, nodeId: node.id });
-          continue;
+      const skip = (node: RuntimeNode) =>
+        !!reuse && this.reusable(node) && !(reuse === "strict" && this.feedsFrom(node, cooked));
+      if (this.execution.concurrency > 1)
+        await this.cookConcurrently(ordered, runId, signal, enqueue, skip, cooked);
+      else
+        for (const node of ordered) {
+          if (signal.aborted) break;
+          if (skip(node)) {
+            this.emit({ type: "node:start", runId, nodeId: node.id });
+            this.emit({ type: "node:complete", runId, nodeId: node.id });
+            continue;
+          }
+          await this.executeNode(node, runId, signal, {}, enqueue);
+          cooked.add(node.id);
+          if (!signal.aborted) node.lastCook = this.cookKey(node);
         }
-        await this.executeNode(node, runId, signal, {}, enqueue);
-        cooked.add(node.id);
-        if (!signal.aborted) node.lastCook = this.cookKey(node);
-      }
       if (injection && !signal.aborted)
         enqueue(injection.nodeId, injection.inputName, injection.payload, {
           kind: "external",
@@ -881,7 +918,108 @@ class Graph implements LoadedCascadeGraph {
       this.active = undefined;
     }
   }
+  /**
+   * The run's main order with up to `concurrency` nodes cooking at once.
+   *
+   * Nodes START strictly in topological order: the next node starts once
+   * everything it reads has completed and a slot is free, and nothing later
+   * in the order overtakes it. So the `node:start` events — and a run trace
+   * built from them — come in the same order as a serial run on every run;
+   * only completions interleave. A Kahn order puts siblings side by side (the
+   * morph's four renders are adjacent), which is where the overlap is.
+   *
+   * A feedback container, a node with trigger ports and a GPU node cook
+   * alone: their state (the carried step, the trigger queue's sequence, one
+   * device) is ordered by the serial loop and not worth sharing.
+   *
+   * On a failure nothing new starts, the nodes already cooking finish, and
+   * the failure earliest in the order is the run's, so the message does not
+   * depend on which stage happened to answer first.
+   */
+  private async cookConcurrently(
+    ordered: readonly RuntimeNode[],
+    runId: string,
+    signal: MutableAbortSignal,
+    enqueue: (
+      nodeId: string,
+      inputName: string,
+      payload: JsonValue | undefined,
+      source: TriggerEvent["source"],
+    ) => void,
+    skip: (node: RuntimeNode) => boolean,
+    cooked: Set<string>,
+  ): Promise<void> {
+    const position = new Map(ordered.map((node, index) => [node.id, index]));
+    const needs = new Map<string, string[]>();
+    for (const dependency of graphDependencies(this.nodes, this.connections)) {
+      if (!position.has(dependency.sourceId) || !position.has(dependency.targetId)) continue;
+      const list = needs.get(dependency.targetId) ?? [];
+      list.push(dependency.sourceId);
+      needs.set(dependency.targetId, list);
+    }
+    const done = new Set<string>();
+    const running = new Map<string, Promise<void>>();
+    let exclusiveRunning = false;
+    let failure: { index: number; error: unknown } | undefined;
+    let next = 0;
+    for (;;) {
+      while (
+        !failure &&
+        !signal.aborted &&
+        !exclusiveRunning &&
+        next < ordered.length &&
+        running.size < this.execution.concurrency
+      ) {
+        const node = ordered[next]!;
+        if (!(needs.get(node.id) ?? []).every((id) => done.has(id))) break;
+        const alone = cooksAlone(node);
+        if (alone && running.size) break;
+        next++;
+        if (skip(node)) {
+          this.emit({ type: "node:start", runId, nodeId: node.id });
+          this.emit({ type: "node:complete", runId, nodeId: node.id });
+          done.add(node.id);
+          continue;
+        }
+        if (alone) exclusiveRunning = true;
+        const index = position.get(node.id)!;
+        const task = this.executeNode(node, runId, signal, {}, enqueue).then(
+          () => {
+            cooked.add(node.id);
+            if (!signal.aborted) node.lastCook = this.cookKey(node);
+            done.add(node.id);
+          },
+          (error: unknown) => {
+            if (!failure || index < failure.index) failure = { index, error };
+          },
+        ).finally(() => {
+          running.delete(node.id);
+          if (alone) exclusiveRunning = false;
+        });
+        running.set(node.id, task);
+      }
+      if (!running.size) break;
+      await Promise.race(running.values());
+    }
+    if (failure) throw failure.error;
+  }
   private async executeNode(
+    node: RuntimeNode,
+    runId: string,
+    signal: MutableAbortSignal,
+    triggers: Record<string, TriggerEvent>,
+    enqueue: (
+      nodeId: string,
+      inputName: string,
+      payload: JsonValue | undefined,
+      source: TriggerEvent["source"],
+    ) => void,
+  ): Promise<void> {
+    const scope = this.execution.nodeScope;
+    if (!scope) return this.cookNode(node, runId, signal, triggers, enqueue);
+    return scope(node.id, () => this.cookNode(node, runId, signal, triggers, enqueue));
+  }
+  private async cookNode(
     node: RuntimeNode,
     runId: string,
     signal: MutableAbortSignal,
@@ -997,6 +1135,7 @@ class Graph implements LoadedCascadeGraph {
             response.outputs[name],
             definition,
             `${node.id}.${name}`,
+            this.values,
           );
           node.outputs.set(name, value);
           this.emit({
@@ -1035,7 +1174,7 @@ class Graph implements LoadedCascadeGraph {
                 set: (value: unknown) =>
                   pendingData.set(
                     name,
-                    outputValue(value, definition, `${node.id}.${name}`),
+                    outputValue(value, definition, `${node.id}.${name}`, this.values),
                   ),
               },
         ],
@@ -1103,12 +1242,14 @@ class Graph implements LoadedCascadeGraph {
       if (pendingData.has(name)) {
         const value = pendingData.get(name);
         node.outputs.set(name, value);
+        // The stored value is already frozen (or trusted), so the event
+        // carries it as is rather than a fresh copy nobody may read.
         this.emit({
           type: "node:output",
           runId,
           nodeId: node.id,
           outputName: name,
-          value: snapshot(value),
+          value: this.expose(value),
         });
       }
     for (const emitted of pendingTriggers)
@@ -1658,7 +1799,8 @@ class Graph implements LoadedCascadeGraph {
       }
       return Object.freeze({
         result: carried,
-        history: Object.freeze(history),
+        // Recorded as settled, so reading `history` back is not a copy.
+        history: settle(history),
       });
     } finally {
       this.feedbackState.delete(node.id);
@@ -2243,6 +2385,17 @@ function snapshotRegistration(
   return Object.freeze({ ...registration, definition });
 }
 
+/** A node `cookConcurrently` never overlaps with another; see there. */
+function cooksAlone(node: RuntimeNode): boolean {
+  if (node.definition.container === "feedback") return true;
+  if (node.definition.capabilities?.includes("gpu")) return true;
+  const ports = [
+    ...Object.values(node.definition.inputs ?? {}),
+    ...Object.values(node.definition.outputs ?? {}),
+  ];
+  return ports.some((port) => port.kind === "trigger");
+}
+
 function isGated(node: RuntimeNode): boolean {
   return Object.values(node.definition.inputs ?? {}).some(
     (input) => input.kind === "trigger",
@@ -2445,7 +2598,108 @@ function misuse(code: string, message: string): never {
   throw runtimeError(code, message);
 }
 function snapshot<T>(value: T): T {
-  return cloneValue(value, new WeakSet()) as T;
+  const clone = cloneValue(value, new WeakSet()) as T;
+  if (clone !== null && typeof clone === "object") settled.add(clone);
+  return clone;
+}
+
+/**
+ * Plain arrays and objects already checked and deep-frozen — by `cloneValue`
+ * or `settle` — so a second snapshot of the same value is a lookup, not a
+ * copy. A runtime value is read far more often than it is made: the producer
+ * sets it once, then the event, `getOutputs`, `finish` and `inspect` each
+ * used to clone it again (a 1M-point array four times a frame).
+ *
+ * Only roots and containers of objects are recorded; a leaf of primitives
+ * (a `[x, y]` point) is cheaper to re-walk than to record a million times.
+ */
+const settled = new WeakSet<object>();
+
+/** Plain containers copied by `cloneValue`, for the copy-count tests. */
+let copiedContainers = 0;
+/** How many plain arrays/objects the runtime has copied in this process. */
+export function runtimeValueCopies(): number {
+  return copiedContainers;
+}
+
+function isPlainContainer(value: object): boolean {
+  if (Array.isArray(value)) return true;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function checkScalar(value: unknown): void {
+  if (typeof value === "number" && !Number.isFinite(value))
+    misuse("runtime/non-serializable-value", "Runtime numbers must be finite");
+  if (
+    typeof value === "function" ||
+    typeof value === "symbol" ||
+    typeof value === "bigint"
+  )
+    misuse(
+      "runtime/non-serializable-value",
+      `Runtime values cannot contain ${typeof value}`,
+    );
+}
+
+/**
+ * Check a value a node handed over and deep-freeze it where it stands: the
+ * same rules as `cloneValue` (finite numbers, no functions, no cycles, class
+ * instances and typed arrays passed through untouched), without allocating.
+ * The producer gave it away with `set()`; freezing is what keeps the
+ * consumers' view of it from changing under them.
+ */
+function settle<T>(value: T): T {
+  if (value === null || typeof value !== "object") {
+    checkScalar(value);
+    return value;
+  }
+  if (!settled.has(value) && isPlainContainer(value)) {
+    settleContainer(value, new WeakSet());
+    settled.add(value);
+  }
+  return value;
+}
+
+/** Returns whether `value` held any plain container (and so was recorded). */
+function settleContainer(value: object, ancestors: WeakSet<object>): boolean {
+  let nested = false;
+  const visit = (item: unknown) => {
+    if (item === null || typeof item !== "object") {
+      checkScalar(item);
+      return;
+    }
+    if (settled.has(item) || !isPlainContainer(item)) return;
+    if (ancestors.has(item))
+      misuse(
+        "runtime/non-serializable-value",
+        "Runtime values cannot contain cycles",
+      );
+    if (!nested) {
+      nested = true;
+      ancestors.add(value);
+    }
+    if (settleContainer(item, ancestors)) settled.add(item);
+  };
+  if (Array.isArray(value)) for (let index = 0; index < value.length; index++) visit(value[index]);
+  else for (const key of Object.keys(value)) visit((value as Record<string, unknown>)[key]);
+  if (nested) ancestors.delete(value);
+  Object.freeze(value);
+  return nested;
+}
+
+/**
+ * `"trust"`: the top level is checked by `runtimeValue`'s type test and
+ * frozen shallowly, so `push` or `sort` on a handed-over array still throws;
+ * nested contents are not walked.
+ */
+function trust<T>(value: T): T {
+  if (value === null || typeof value !== "object") {
+    checkScalar(value);
+    return value;
+  }
+  if (isPlainContainer(value)) Object.freeze(value);
+  return value;
 }
 
 function immutableMap<K, V>(entries: Iterable<readonly [K, V]>): ReadonlyMap<K, V> {
@@ -2466,32 +2720,17 @@ function immutableMap<K, V>(entries: Iterable<readonly [K, V]>): ReadonlyMap<K, 
   return view;
 }
 function cloneValue(value: unknown, ancestors: WeakSet<object>): unknown {
-  if (typeof value === "number" && !Number.isFinite(value))
-    misuse("runtime/non-serializable-value", "Runtime numbers must be finite");
-  if (
-    typeof value === "function" ||
-    typeof value === "symbol" ||
-    typeof value === "bigint"
-  )
-    misuse(
-      "runtime/non-serializable-value",
-      `Runtime values cannot contain ${typeof value}`,
-    );
+  checkScalar(value);
   if (value === undefined || value === null || typeof value !== "object")
     return value;
-  const prototype = Object.getPrototypeOf(value);
-  if (
-    !Array.isArray(value) &&
-    prototype !== Object.prototype &&
-    prototype !== null
-  )
-    return value;
+  if (settled.has(value) || !isPlainContainer(value)) return value;
   if (ancestors.has(value))
     misuse(
       "runtime/non-serializable-value",
       "Runtime values cannot contain cycles",
     );
   ancestors.add(value);
+  copiedContainers++;
   const clone = Array.isArray(value)
     ? value.map((item) => cloneValue(item, ancestors))
     : Object.fromEntries(
@@ -2525,16 +2764,19 @@ function outputValue(
   value: unknown,
   definition: { readonly type: string; readonly fields?: unknown },
   path: string,
+  policy: RuntimeValuePolicy,
 ): unknown {
+  // Handed over by the producer, so adopted (frozen where it stands), not copied.
+  const adopt = policy === "trust" ? trust : settle;
   if (definition.type !== "bundle" || !definition.fields)
-    return runtimeValue(value, definition.type, false, path);
+    return runtimeValue(value, definition.type, false, path, adopt);
   const fields = definition.fields as BundleFieldDefinitions;
   const problem = bundleValueProblem(value, fields);
   if (problem) misuse("runtime/value-type", `${path} ${problem}`);
   if (isBundleValue(value))
     for (const [field, item] of Object.entries(value))
-      runtimeValue(item, bundleFieldType(fields[field]), true, `${path}.${field}`);
-  return runtimeValue(value, "bundle", false, path);
+      runtimeValue(item, bundleFieldType(fields[field]), true, `${path}.${field}`, (checked) => checked);
+  return runtimeValue(value, "bundle", false, path, adopt);
 }
 
 /** Every path an expression names through ch/chs/chv. */
@@ -2562,6 +2804,8 @@ function runtimeValue(
   type: string,
   allowUndefined: boolean,
   path: string,
+  /** How a checked value is kept: copied (a caller's value) by default. */
+  keep: (value: unknown) => unknown = snapshot,
 ): unknown {
   if (value === undefined) {
     if (allowUndefined) return undefined;
@@ -2589,7 +2833,7 @@ function runtimeValue(
       type !== "bool" &&
       type !== "string");
   if (!valid) misuse("runtime/value-type", `${path} is not a valid ${type}`);
-  return snapshot(value);
+  return keep(value);
 }
 
 function sameValues(a: readonly unknown[], b: readonly unknown[], equal: (x: unknown, y: unknown) => boolean): boolean {

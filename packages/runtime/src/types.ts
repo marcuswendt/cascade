@@ -263,9 +263,39 @@ export type RuntimeEvent =
       readonly reason?: string;
     }
   | { readonly type: "run:complete"; readonly result: RunResult };
+/**
+ * What the runtime does with a value a node hands to `outputs.x.set()`.
+ *
+ * - `"freeze"` (default): checked and deep-frozen in place, never copied. A
+ *   node that mutates its output after handing it over, or mutates an input,
+ *   throws instead of corrupting another node's view.
+ * - `"trust"`: checked at the top level only and shallow-frozen; nested
+ *   contents are the producer's word. For headless runs (`cascade run`), where
+ *   a 1M-point array walked every frame was most of the frame.
+ *
+ * Either way nothing is cloned on the way through: reading an output back
+ * (`getOutputs`, `inspect`, `node:output`) hands out the same frozen value.
+ */
+export type RuntimeValuePolicy = "freeze" | "trust";
 export interface CreateRuntimeOptions {
   readonly host: RuntimeHost;
   readonly nodes?: readonly NodeRegistration[];
+  /** See `RuntimeValuePolicy`. Default `"freeze"`. */
+  readonly values?: RuntimeValuePolicy;
+  /**
+   * How many nodes one run may cook at once (default 1: one after another).
+   * Nodes still START in topological order, a node only once everything it
+   * reads has completed, so the `node:start` sequence and the outputs are the
+   * same as a serial run; only completions interleave. Feedback containers,
+   * trigger-wired and GPU nodes always cook alone.
+   */
+  readonly concurrency?: number;
+  /**
+   * Wraps each node's execute. A Node host uses it to carry the node id
+   * through the cook's async work (AsyncLocalStorage), so a stage call or a
+   * log line is attributed to its node when several cook at once.
+   */
+  readonly nodeScope?: <T>(nodeId: string, run: () => T) => T;
 }
 export interface CascadeRuntime {
   registerNode(registration: NodeRegistration): void;

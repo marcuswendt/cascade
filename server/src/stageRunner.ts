@@ -22,6 +22,9 @@ export interface StageConfig {
   /** Project-relative files or folders whose `.py` files are the stage code
    *  (`exec.stages.sources`). Absent: see `StageSources.defaultRoots`. */
   sources?: string[];
+  /** `exec.stages.workers`: warm workers a headless run may keep (see
+   *  `defaultStageWorkerCount`). Absent: sized from the machine. */
+  workers?: number;
   /** `exec.stages.cache`: the core result cache, off unless declared. */
   cache: StageCachePolicy;
 }
@@ -156,11 +159,16 @@ export function readStageConfig(project: ProjectRoot): StageConfig {
   if (sources !== undefined && (!Array.isArray(sources) || sources.some((item) => typeof item !== 'string' || !item))) {
     throw new Error('cascade.json exec.stages.sources must be a list of project-relative paths');
   }
+  const workers = value?.workers;
+  if (workers !== undefined && (typeof workers !== 'number' || !Number.isInteger(workers) || workers < 1)) {
+    throw new Error('cascade.json exec.stages.workers must be a whole number of at least 1');
+  }
   return {
     python,
     entrypoint,
     ...(worker ? { worker } : {}),
     ...(sources ? { sources: sources as string[] } : {}),
+    ...(workers !== undefined ? { workers: workers as number } : {}),
     cache: readCachePolicy(value?.cache),
   };
 }
