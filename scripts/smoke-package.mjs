@@ -163,8 +163,11 @@ try {
     encoding: 'utf8',
     timeout: 30_000,
   });
-  if (missingGpu.status === 0 || !missingGpu.stderr.includes('Cascade cannot load the optional Dawn WebGPU renderer')) {
-    throw new Error(`Packed GPU run without optional dependencies returned the wrong diagnostic:\n${missingGpu.stderr}`);
+  // `run --json` reports a failure as `{ ok: false, error: { message } }` on stdout.
+  let missingGpuMessage = missingGpu.stderr;
+  try { missingGpuMessage += JSON.parse(missingGpu.stdout).error?.message ?? ''; } catch { /* not JSON */ }
+  if (missingGpu.status === 0 || !missingGpuMessage.includes('Cascade cannot load the optional Dawn WebGPU renderer')) {
+    throw new Error(`Packed GPU run without optional dependencies returned the wrong diagnostic (status ${missingGpu.status}, signal ${missingGpu.signal}, error ${missingGpu.error?.message ?? 'none'}):\nstderr: ${missingGpu.stderr}\nstdout: ${missingGpu.stdout}`);
   }
   console.log('Packed optional-absent: CPU run passed and GPU run returned the Dawn install diagnostic');
   console.log(`Packed ${manifest.name}@${manifest.version}: imports, CLI, installed types, and linked types passed`);

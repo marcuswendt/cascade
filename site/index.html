@@ -105,7 +105,7 @@
   <header>
     <h1>Cascade</h1>
     <p class="tagline">An open-source node-graph runtime with a visual Studio, for building generative design systems that move between print, motion, installations, and the web. Built at FIELD.IO and used for our own work.</p>
-    <p class="release">Current release: 0.9.2. The npm package is still 0.8.0, so <code>cascade export</code> needs a checkout of the repository until 0.9 is published.</p>
+    <p class="release">Current release: 0.11.0, on npm as <code>@field/cascade</code>.</p>
   </header>
 
   <h2>What it is</h2>
@@ -281,6 +281,10 @@ cascade --help                all of it</pre>
   <h2>Versions</h2>
   <p>Notable changes, newest first. Every release, in full, is in the <a href="https://github.com/marcuswendt/cascade/blob/main/CHANGELOG.md">changelog</a> and on <a href="https://github.com/marcuswendt/cascade/releases">GitHub releases</a>.</p>
   <dl class="versions">
+    <dt>0.11.0 <span>7 Nov 2026</span></dt>
+    <dd><ul><li><code>cascade/image</code>: one node body draws, reads and writes images in the browser and headless.</li><li><code>cascade ladder</code>, <code>pick</code> and <code>lock</code>. Cook three to five variants with a contact sheet, pick one, and replay it pixel for pixel.</li><li><code>cascade run --out &lt;dir&gt;</code> writes every image output as a file.</li><li>Assertion nodes (<code>cascade.assert.Range</code>, <code>Equals</code>, <code>True</code>, <code>NotBlank</code>) fail a run when a check does not hold.</li><li><code>cascade help node [&lt;type&gt;]</code> and <code>cascade doctor</code>, with a declared Python environment for stages.</li><li>The CLI starts in 30 ms, not 300, and the stage cache is on by default.</li></ul></dd>
+    <dt>0.10.0 <span>12 Oct 2026</span></dt>
+    <dd><ul><li>The timeline is saved with the graph.</li><li><code>run --frames … --mp4 &lt;file&gt; [--crf N]</code> encodes the rendered sequence with ffmpeg as H.264 yuv420p at the run's fps, and reports it as <code>video</code> in the <code>--json</code> manifest.</li><li>Stage cache keys Cascade owns.</li><li>Run traces. Every <code>cascade run</code> writes <code>.cascade/runs/&lt;time&gt;-&lt;graph&gt;.json</code> with each node's time and its stage calls.</li></ul></dd>
     <dt>0.9.2 <span>12 Oct 2026</span></dt>
     <dd><ul><li>Exported editors work on phones.</li><li><code>editor.peek</code> and <code>editor.draft</code>. These choose the controls kept in reach at the sheet's lowest point, and the values cooked while a slider is dragged (a lower density, say).</li></ul></dd>
     <dt>0.9.1 <span>11 Oct 2026</span></dt>

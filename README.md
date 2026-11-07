@@ -36,7 +36,7 @@ cascade .                          # reopen it later
 cascade run index.cascade --frames 1 --json   # render headlessly
 ```
 
-The npm package is at 0.8.0. The 0.9 commands below (`export`, `publish`, `freeze`, `scene`) need a checkout of this repository until 0.9 is published.
+The npm package is at 0.11.0 and includes every command below. 0.11 adds `cascade/image`, `ladder`/`pick`, `run --out`, assertion nodes, `help node` and `doctor`; see the [changelog](CHANGELOG.md).
 
 ## New in 0.9: shareable editors
 

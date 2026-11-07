@@ -4,6 +4,8 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+## 0.11.0 — 2026-11-07
+
 ### Added
 
 - **`cascade/image`: one node body for the browser and headless.** A
@@ -39,7 +41,7 @@ Notable changes to Cascade. Newest first.
   from ARCHITECTURE.md, no new import cycle, no new file over 750 lines, no
   unimported source file, duplicated lines capped. `build-node-reference
   --check` fails on a stale `doc/NODE_REFERENCE.md`.
-- **Ladder, pick, lock (0.10.3).** `cascade ladder <graph> <node> --name
+- **Ladder, pick, lock.** `cascade ladder <graph> <node> --name
   --vary node.prop=a,b,c | --seeds a,b,c` cooks three to five variants from
   the stored code and writes each image, a labelled contact sheet and
   `ladders/<id>.json` (per variant: graph, params, seed, inputs, output
