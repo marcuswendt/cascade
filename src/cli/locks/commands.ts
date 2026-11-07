@@ -13,6 +13,7 @@ import path from 'node:path';
 import { createLock, listLocks, readLock, replayLock, type LockFile, type ReplayResult } from './lock.js';
 import { short } from './store.js';
 import { createLadder, parseValues, pickVariant } from './ladder.js';
+import { checkCardSize, writeLadderCard } from './ladderCard.js';
 
 export const LOCK_COMMANDS = ['lock', 'locks', 'replay', 'ladder', 'pick'] as const;
 
@@ -44,13 +45,18 @@ Ladders: three to five options side by side, and a lock at approval.
 
   cascade ladder <graph> <node> --name <name> [--vary <node.prop>=<a,b,c>]...
                  [--seeds <a,b,c>] [--columns N] [--port <output>]... [--input <file>]...
-                 [--note <text>] [--live] [--json]
+                 [--note <text>] [--live] [--cairn <vault dir> [--vault <dir>]] [--json]
       Cook <node> once per variant and write ladders/<id>/<n>.png, a labelled
       contact sheet ladders/<id>/sheet.png, and the record ladders/<id>.json
       (per variant: graph, params, seed, inputs, output fingerprint; the
       stored code and git commit once). Values are a JSON list without its
       brackets (0.5,1,2 or [1,2],[3,4]); lists are zipped, one value applies
       to every variant. Cooks from the stored code in a fresh copy unless --live.
+      --cairn copies each variant to <dir>/<id>-<nn>.png (a space's
+      _attachments/ladders/<id>/) and prints a cairn:choice card (--json:
+      data.cairnChoice) whose images are relative to the vault (the nearest
+      .obsidian or .git above, or --vault); at most 8 variants. A tap answers
+      "Picked: <label> (pick:<id>:<n>)": run cascade pick <id> <n>.
 
   cascade pick <ladder-id | ladders/<id>.json> <n> [--name <lock name>] [--note <text>]
                [--status approved] [--supersedes <id>] [--project <dir>] [--json]
@@ -222,6 +228,10 @@ async function ladderCommand(parsed: Parsed, json: boolean, print: (value: unkno
     vary[pair.slice(0, at)] = parseValues(pair.slice(at + 1));
   }
   const seedsText = one(parsed, '--seeds');
+  const seeds = seedsText === undefined ? undefined : seedsText.split(',').map((text) => seedValue(text.trim())!);
+  const cairn = one(parsed, '--cairn');
+  // Before cooking: a choice card holds at most eight pictures.
+  if (cairn) checkCardSize(Math.max(0, ...Object.values(vary).map((values) => values.length), seeds?.length ?? 0));
   const columns = one(parsed, '--columns');
   const { ladder, file } = await createLadder({
     graph,
@@ -229,7 +239,7 @@ async function ladderCommand(parsed: Parsed, json: boolean, print: (value: unkno
     name,
     note: one(parsed, '--note'),
     vary,
-    seeds: seedsText === undefined ? undefined : seedsText.split(',').map((text) => seedValue(text.trim())!),
+    seeds,
     columns: columns === undefined ? undefined : Number(columns),
     ports: parsed.values.get('--port'),
     inputs: parsed.values.get('--input'),
@@ -237,19 +247,25 @@ async function ladderCommand(parsed: Parsed, json: boolean, print: (value: unkno
     verbose: parsed.switches.has('--verbose'),
   });
   const root = path.dirname(path.dirname(file));
+  const card = cairn ? await writeLadderCard(root, ladder, cairn, one(parsed, '--vault')) : undefined;
   if (json) {
     return print({
       status: 'laddered',
       file,
       sheet: path.join(root, ladder.sheet.file),
       variants: ladder.variants.map((variant) => ({ index: variant.index, label: variant.label, image: path.join(root, variant.image), set: variant.set, seed: variant.seed })),
+      ...(card ? { cairnChoice: card.fence, cairn: { vault: card.vault, files: card.files, choice: card.choice } } : {}),
       ladder,
     });
   }
   console.log(`Ladder ${ladder.id} -> ${shown(file)}, cooked from the ${ladder.host.cooked}`);
   console.log(`  sheet ${shown(path.join(root, ladder.sheet.file))}`);
   for (const variant of ladder.variants) console.log(`  ${variant.label}  ${variant.image}  (${seconds(variant.output.durationMs)})`);
-  console.log(`Pick one with: cascade pick ${ladder.id} <n>`);
+  console.log(`Pick one with: cascade pick ${ladder.id} <n> --project ${root}`);
+  if (card) {
+    console.log(`\nCairn choice card (images in ${shown(path.dirname(card.files[0]!))}); post it as is, and on "Picked: … (pick:${ladder.id}:<n>)" run cascade pick ${ladder.id} <n> --project ${root}:\n`);
+    console.log(card.fence);
+  }
 }
 
 async function pickCommand(parsed: Parsed, json: boolean, print: (value: unknown) => void): Promise<void> {

@@ -58,7 +58,7 @@ Running, sharing, locks and Studio. `cascade --help` has their options; `cascade
 | `cascade lock verify [<lock-id>...]` | Replay locks and report which still match. |
 | `cascade replay <lock-id>` | Re-render a lock from its stored code and compare fingerprints. |
 | `cascade locks` | List the project's locks. |
-| `cascade ladder <graph-file> <node> --name <name> --vary <node.prop>=<a,b,c> \| --seeds <a,b,c>` | Cook 3 to 5 variants (values zipped across params, or graph seeds) from the stored code; write `ladders/<id>/<n>.png`, a labelled contact sheet `ladders/<id>/sheet.png` and the record `ladders/<id>.json` (per variant: graph, params, seed, inputs, fingerprint; the code and git commit once). |
+| `cascade ladder <graph-file> <node> --name <name> --vary <node.prop>=<a,b,c> \| --seeds <a,b,c> [--cairn <vault dir> [--vault <dir>]]` | Cook 3 to 5 variants (values zipped across params, or graph seeds) from the stored code; write `ladders/<id>/<n>.png`, a labelled contact sheet `ladders/<id>/sheet.png` and the record `ladders/<id>.json` (per variant: graph, params, seed, inputs, fingerprint; the code and git commit once). `--cairn` copies each variant to `<dir>/<id>-<nn>.png` and prints a `cairn:choice` card (`--json`: `data.cairnChoice`) to post in the Cairn chat; see [Picking on the phone](#picking-a-ladder-variant-in-cairn). |
 | `cascade pick <ladder-id> <n> [--name <lock name>]` | At approval, write `locks/<id>.json` for variant `n` from the ladder's record, without cooking again; `cascade replay` reproduces that image pixel for pixel. |
 | `cascade help node [<type>] [--project <dir>]` | A node type's inputs, props and outputs (type, default, range, description), where it runs and its capabilities, read from the installed package or the project's `nodes/`; without a type, every node type. No repository checkout needed. |
 | `cascade doctor [project-directory] [--fix]` | What a headless run here will find: the declared Python environment, the stage interpreter, ffmpeg, the canvas. `--fix` builds the environment. See [Python for stages](#python-for-stages-cascadejson-python). |
@@ -136,6 +136,23 @@ Opened in Studio, the top level reads `motif → transform → render`, with the
 ## Outputs as files (`run --out`)
 
 `cascade run <graph> --out <dir>` copies each image output to `<dir>/<node>.<ext>`, or `<dir>/<node>.<port>.<ext>` for a node with more than one image output. With `--frames` the same names carry the frame: `<node>[.<port>].<frame>.<ext>`. Which outputs: every image output nothing downstream consumes (a `cascade.core.Null` passing an image counts), or those of `--node`; `--out-node <id>` (repeatable) adds a mid-graph node's. `--out` may be project-relative or absolute; `files` in the result is spelled the same way. `run --json` lists every image output as `data.images: [{ node, port, source, file? }]`, with or without `--out`. The MCP `cook` and `render` tools take `out` and `outNodes`.
+
+## Picking a ladder variant in Cairn
+
+Marcus picks on his phone, in the Cairn web chat, by tapping a picture; the tap locks it. The loop for an agent:
+
+1. `cascade ladder <graph> <node> --name <name> --seeds 1,2,3 --cairn <vault>/<space>/_attachments/ladders/<id> --json` (`<id>` is the name lower-cased with dashes). Each variant is copied to `<dir>/<id>-<nn>.png`, and `data.cairnChoice` is the card. At most 8 variants.
+2. Post `data.cairnChoice` in the reply exactly as returned:
+
+   ````text
+   ```cairn:choice
+   {"prompt":"Dial: which one? (ladder dial, index.cascade render)","options":[{"label":"seed 1","value":"pick:dial:1","image":"Work/Projects/Cascade/_attachments/ladders/dial/dial-01.png"}, …]}
+   ```
+   ````
+
+   `label` says what the variant changed (`seed 1`, `hue=0.3`); `image` is relative to the vault, the nearest `.obsidian` (then `.git`) above `--cairn`, or `--vault`.
+3. A tap comes back as `Picked: seed 1 (pick:dial:1)`. Run `cascade pick dial 1 --project <project>` (MCP: `pick { "ladder": "dial", "variant": 1 }`).
+4. Reply with the locked image, `![[<that option's image>]]`, and the lock id.
 
 ## Checks that fail a run (`cascade.assert.*`)
 

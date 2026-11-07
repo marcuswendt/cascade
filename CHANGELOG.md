@@ -4,6 +4,19 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+### Added
+
+- **Ladder variants as a Cairn choice card.** `cascade ladder … --cairn
+  <vault dir>` (MCP `ladder` `cairn`) copies each variant to
+  `<dir>/<id>-<nn>.png` in the Substrate vault and prints a `cairn:choice`
+  fence (`--json`: `data.cairnChoice`): one option per variant, labelled with
+  what it changed (`seed 42`, `hue=0.3`), its image relative to the vault
+  (nearest `.obsidian` or `.git`, or `--vault`), and the value
+  `pick:<id>:<n>`. Marcus taps a picture on his phone; the agent gets
+  "Picked: … (pick:<id>:<n>)", runs `cascade pick <id> <n>` and replies with
+  the locked image. At most 8 variants, refused before cooking. The loop is in
+  AGENTS.md, `doc/CLI_REFERENCE.md` and the `cascade new` template.
+
 ## 0.11.0 — 2026-11-07
 
 ### Added

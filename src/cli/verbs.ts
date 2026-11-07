@@ -462,10 +462,10 @@ export const VERBS: readonly Verb[] = [
     }],
   },
   {
-    ...lockVerb, name: 'ladder', usage: '<graph-file> <node> --name <name> --vary <node.prop>=<a,b,c> | --seeds <a,b,c>', summary: 'Cook 3-5 variants, write a labelled contact sheet and ladders/<id>.json',
+    ...lockVerb, name: 'ladder', usage: '<graph-file> <node> --name <name> --vary <node.prop>=<a,b,c> | --seeds <a,b,c> [--cairn <vault dir>]', summary: 'Cook 3-5 variants, write a labelled contact sheet and ladders/<id>.json; --cairn makes a tap-to-pick card',
     mcp: [{
       name: 'ladder',
-      description: 'Cook `node` once per variant (cascade ladder) and return the contact sheet, each variant image and the record ladders/<id>.json. `vary` maps node.prop to a list of values (zipped; one value applies to all); `seeds` varies the graph seed. Three to five variants is the usual.',
+      description: 'Cook `node` once per variant (cascade ladder) and return the contact sheet, each variant image and the record ladders/<id>.json. `vary` maps node.prop to a list of values (zipped; one value applies to all); `seeds` varies the graph seed. Three to five variants is the usual. `cairn` is a directory in the Substrate vault (the space\'s _attachments/ladders/<id>): each variant is copied there and `data.cairnChoice` is a cairn:choice fence to post as is (at most 8 variants); a tap comes back as "Picked: <label> (pick:<id>:<n>)", then call `pick` with ladder <id> and variant <n>.',
       inputSchema: object({
         graph,
         node: { type: 'string' },
@@ -475,11 +475,16 @@ export const VERBS: readonly Verb[] = [
         columns: { type: 'integer' },
         note: { type: 'string' },
         live: { type: 'boolean' },
+        cairn: { type: 'string', description: 'Absolute vault directory for the variant images; returns data.cairnChoice' },
+        vault: { type: 'string', description: 'Absolute vault root the cairnChoice image paths are relative to (default: nearest .obsidian or .git above `cairn`)' },
       }, ['graph', 'node', 'name']),
       call: {
         kind: 'cli',
         argv: (args, resolve) => [
           'ladder', resolve(args.graph), args.node, '--name', args.name,
+          // Outside the project by design (the vault), so passed as given: absolute.
+          ...(args.cairn ? ['--cairn', String(args.cairn)] : []),
+          ...(args.vault ? ['--vault', String(args.vault)] : []),
           ...Object.entries((args.vary ?? {}) as Record<string, unknown>).flatMap(([key, values]) => [
             '--vary', `${key}=${(Array.isArray(values) ? values : [values]).map((value) => JSON.stringify(value)).join(',')}`,
           ]),
