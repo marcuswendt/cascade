@@ -60,6 +60,16 @@ Notable changes to Cascade. Newest first.
   273 KB), CSS 239,446 → 223,490 B. `scripts/bundle-budget.mjs` now counts
   the chunks the entry modulepreloads too, and its budgets are lowered to the
   new size plus 25 KB of JS and 10 KB of CSS headroom.
+- **Faster dev loop.** `npm run build:cli` skips the package build when
+  every `packages/*/dist` is newer than its sources (3.5 → 2.0 s; `--force`
+  rebuilds). Vitest runs two projects, `node` and `studio` (the Svelte
+  plugin only where components are tested): `vitest run --project node` is
+  1,767 tests in ~10 s against ~18 s for the whole suite, which `verify`
+  still runs in full; `verify --fast` uses the node project when nothing
+  Studio-side changed. The plain-tsc gates in `verify` run on TypeScript 7
+  (`typescript7` devDependency), same errors per file, src + tests 3.0 →
+  0.4 s; the build, the CLI's node compiler and svelte-check stay on
+  TypeScript 6.
 
 ## 0.11.0 — 2026-11-07
 
