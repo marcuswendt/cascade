@@ -51,6 +51,17 @@ Notable changes to Cascade. Newest first.
 
 ### Changed
 
+- **The runtime stops copying values.** A value a node hands to `set()` is
+  checked and deep-frozen where it stands (`values: "freeze"`, the default)
+  instead of being cloned, and every later read (the `node:output` event,
+  `getOutputs`, a run's result, `inspect()`, the next node's input) is that
+  same value rather than another copy. `cascade run` uses `values: "trust"`:
+  the top-level type is checked and the value frozen shallowly, its contents
+  are not walked. `run --frames` works out which ports to save once per run
+  instead of calling `inspect()` every frame. A 1M-point plain array through
+  three nodes: 1,335 → 8 ms a frame under `trust` (105 ms under `freeze`),
+  `inspect()` 427 → 0 ms. A node that mutates a plain array or object after
+  handing it to `set()` now throws; it used to change nothing.
 - **The image library is definition-v1 and runs everywhere.** Color,
   Checkers, Noise, Ramp, Text, File (`cascade.image.Image`), Blur, Normal Map,
   Resize, Transform and Composite were Studio classes over `ImageNodeBase`;

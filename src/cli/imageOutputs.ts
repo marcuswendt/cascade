@@ -52,9 +52,21 @@ export function collectImageOutputs(
   graph: LoadedCascadeGraph,
   options: { nodes?: readonly string[]; extra?: readonly string[] } = {},
 ): ImageOutput[] {
+  return planImageOutputs(graph, options).collect();
+}
+
+/**
+ * Which ports could carry a saved image, worked out once from the graph's
+ * shape; `collect()` then reads only those nodes' outputs. A frame loop plans
+ * once per run: `inspect()` per frame used to walk (and, before the runtime
+ * stopped copying, deep-clone) every input, output and prop of every node.
+ */
+export function planImageOutputs(
+  graph: LoadedCascadeGraph,
+  options: { nodes?: readonly string[]; extra?: readonly string[] } = {},
+): { collect(): ImageOutput[] } {
   const wanted = new Set(options.nodes ?? []);
   const extra = new Set(options.extra ?? []);
-  const found: ImageOutput[] = [];
   const inspection = graph.inspect();
   // An assertion is a check, not an output, and not a consumer: an image
   // wired only into assertions is still the graph's final image, and the
@@ -64,18 +76,39 @@ export function collectImageOutputs(
   const consumed = new Set(inspection.connections
     .filter((connection) => !assertions.has(connection.target.nodeId))
     .map((connection) => `${connection.source.nodeId}\u0000${connection.source.outputName}`));
+  const candidates: { nodeId: string; ports: { name: string; type: string; skip: boolean }[] }[] = [];
   for (const node of inspection.nodes) {
     const named = wanted.has(node.id) || extra.has(node.id);
     if (wanted.size && !named) continue;
     if (!named && assertions.has(node.id)) continue;
-    const ports = Object.entries(node.outputs).filter(([, port]) => port.value !== undefined
-      && (port.type === 'image' || (port.type === 'any' && looksLikeImage(port.value))));
-    for (const [name, port] of ports) {
-      if (!named && port.connected && consumed.has(`${node.id}\u0000${name}`)) continue;
-      found.push({ nodeId: node.id, port: name, value: port.value, shared: ports.length > 1 });
-    }
+    const ports = Object.entries(node.outputs)
+      .filter(([, port]) => port.type === 'image' || port.type === 'any')
+      .map(([name, port]) => ({
+        name,
+        type: port.type,
+        // Consumed downstream: not a final image, though it still counts
+        // towards `shared` when it carries one.
+        skip: !named && port.connected && consumed.has(`${node.id}\u0000${name}`),
+      }));
+    if (ports.length) candidates.push({ nodeId: node.id, ports });
   }
-  return found;
+  return {
+    collect() {
+      const found: ImageOutput[] = [];
+      for (const candidate of candidates) {
+        const values = graph.getOutputs(candidate.nodeId);
+        const ports = candidate.ports
+          .map((port) => ({ ...port, value: values.get(port.name) }))
+          .filter((port) => port.value !== undefined
+            && (port.type === 'image' || looksLikeImage(port.value)));
+        for (const port of ports) {
+          if (port.skip) continue;
+          found.push({ nodeId: candidate.nodeId, port: port.name, value: port.value, shared: ports.length > 1 });
+        }
+      }
+      return found;
+    },
+  };
 }
 
 /** Node ids that `--node`/`--out-node` named and the graph does not have. */

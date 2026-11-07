@@ -124,7 +124,7 @@ Callbacks and destruction hooks run after a valid structural commit. They are no
 
 Data runs follow graph dependencies. Explicit triggers use a FIFO queue, authored fan-out order, monotonic per-run sequence IDs, and cycle rejection. A triggered node receives cooked data ancestors before delivery.
 
-Execution failures resolve to a failed `RunResult`; API misuse and invalid preflight reject. Cancellation propagates through capability calls. Inspection and output values are immutable snapshots; browser-only live resources remain host-owned handles.
+Execution failures resolve to a failed `RunResult`; API misuse and invalid preflight reject. Cancellation propagates through capability calls. Inspection and output values are immutable; browser-only live resources remain host-owned handles. A value a node hands to `set()` is adopted, not copied: under the default `values: "freeze"` it is checked and deep-frozen where it stands, and every later read (`getOutputs`, `inspect`, `node:output`, the next node's input) is that same value. Headless runs (`cascade run`) use `values: "trust"`, which checks the top-level type and freezes shallowly without walking the contents. Caller-supplied values (`setInput`, presets, definitions) are still copied.
 
 ### Geometry, simulation and feedback
 

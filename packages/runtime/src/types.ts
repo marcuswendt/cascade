@@ -263,9 +263,25 @@ export type RuntimeEvent =
       readonly reason?: string;
     }
   | { readonly type: "run:complete"; readonly result: RunResult };
+/**
+ * What the runtime does with a value a node hands to `outputs.x.set()`.
+ *
+ * - `"freeze"` (default): checked and deep-frozen in place, never copied. A
+ *   node that mutates its output after handing it over, or mutates an input,
+ *   throws instead of corrupting another node's view.
+ * - `"trust"`: checked at the top level only and shallow-frozen; nested
+ *   contents are the producer's word. For headless runs (`cascade run`), where
+ *   a 1M-point array walked every frame was most of the frame.
+ *
+ * Either way nothing is cloned on the way through: reading an output back
+ * (`getOutputs`, `inspect`, `node:output`) hands out the same frozen value.
+ */
+export type RuntimeValuePolicy = "freeze" | "trust";
 export interface CreateRuntimeOptions {
   readonly host: RuntimeHost;
   readonly nodes?: readonly NodeRegistration[];
+  /** See `RuntimeValuePolicy`. Default `"freeze"`. */
+  readonly values?: RuntimeValuePolicy;
 }
 export interface CascadeRuntime {
   registerNode(registration: NodeRegistration): void;
