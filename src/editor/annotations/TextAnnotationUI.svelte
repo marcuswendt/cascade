@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { renderMarkdown } from '@/editor/utils/renderMarkdown';
+  import { markdownRenderer } from '@/editor/utils/lazyMarkdown';
   import { getPortColor } from '@/utils/portColors';
   import type { Annotation } from '@/nodes/annotations/Annotation';
 
@@ -78,8 +78,11 @@
     ></textarea>
   {:else}
     <div class="annotation-content">
-      {#if annotation.content}
-        {@html renderMarkdown(annotation.content)}
+      {#if annotation.content && $markdownRenderer}
+        {@html $markdownRenderer(annotation.content)}
+      {:else if annotation.content}
+        <!-- marked + DOMPurify load on demand (utils/lazyMarkdown.ts) -->
+        <p style="white-space: pre-wrap">{annotation.content}</p>
       {/if}
     </div>
   {/if}

@@ -53,6 +53,13 @@ Notable changes to Cascade. Newest first.
   440 → 141 ms median; a held drag no longer runs watercolor (~300 ms long
   task) at all until release. Studio only (`src/editor/stores/viewedFirstCook.ts`);
   the CLI and the scheduler are unchanged.
+- **Smaller Studio first paint.** The Agent, Definition, Node Info and
+  Timeline panels load when their panel is created, and marked + DOMPurify
+  load with the Agent panel or the first text annotation (which shows plain
+  text for that moment). First-paint JS 1,135,042 → 968,597 B (gzip 325 →
+  273 KB), CSS 239,446 → 223,490 B. `scripts/bundle-budget.mjs` now counts
+  the chunks the entry modulepreloads too, and its budgets are lowered to the
+  new size plus 25 KB of JS and 10 KB of CSS headroom.
 
 ## 0.11.0 — 2026-11-07
 

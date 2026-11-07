@@ -11,15 +11,11 @@
   import InspectorPanel from '../panels/InspectorPanel.svelte';
   import ViewerPanel from '../panels/ViewerPanel.svelte';
   import LogPanel from '../panels/LogPanel.svelte';
-  import AgentPanel from '../panels/AgentPanel.svelte';
-  // CodePanel is intentionally NOT statically imported — round 32: "load
-  // Monaco only on demand when someone opens that editor view (mostly
-  // they don't)". It (and CodeEditor.svelte, and monaco-editor itself)
-  // are only fetched the first time a 'code' panel is actually created —
-  // see registerLazyPanelComponent below and renderer.ts's own note.
-  import DefinitionPanel from '../panels/DefinitionPanel.svelte';
-  import CookInfoPanel from '../panels/CookInfoPanel.svelte';
-  import TimelinePanel from '../panels/TimelinePanel.svelte';
+  // Code, Agent, Definition, Node Info and Timeline are NOT statically
+  // imported: they are not on first paint, so each is fetched the first time
+  // its panel is created (registerLazyPanelComponent below, renderer.ts's own
+  // note). Code carries Monaco (round 32); Agent carries marked + DOMPurify
+  // (perf round 2, move 5: ~115 KB off the entry chunk together).
   import ProjectPanelHost from '../panels/ProjectPanelHost.svelte';
   import { discoverProjectPanels } from '../projectPanels';
   import { clampToViewport } from '../menuPlacement';
@@ -188,13 +184,13 @@
     // it would silently drop the panel from existing documents. Only the title
     // is the reader-facing half, and that is what changed.
     registerPanelComponent('inspector', InspectorPanel, 'Parameters');
-    registerPanelComponent('definition', DefinitionPanel, 'Definition');
+    registerLazyPanelComponent('definition', () => import('../panels/DefinitionPanel.svelte'), 'Definition');
     registerPanelComponent('viewer', ViewerPanel, 'Viewer');
     registerPanelComponent('log', LogPanel, 'Log');
-    registerPanelComponent('agent', AgentPanel, 'Agent');
+    registerLazyPanelComponent('agent', () => import('../panels/AgentPanel.svelte'), 'Agent');
     registerLazyPanelComponent('code', () => import('../panels/CodePanel.svelte'), 'Code');
-    registerPanelComponent('info', CookInfoPanel, 'Node Info');
-    registerPanelComponent('timeline', TimelinePanel, 'Timeline');
+    registerLazyPanelComponent('info', () => import('../panels/CookInfoPanel.svelte'), 'Node Info');
+    registerLazyPanelComponent('timeline', () => import('../panels/TimelinePanel.svelte'), 'Timeline');
 
     try {
       const panels = await discoverProjectPanels();
