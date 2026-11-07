@@ -4,6 +4,16 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+### Added
+
+- **`cascade check` warns on nodes that have grown into a pipeline.**
+  `shape/long-execute` when `execute` passes 150 lines; `shape/mixed-jobs`
+  when one module loads, generates, colours, draws and exports (four of the
+  five, or loading and exporting together), judged from the calls it makes.
+  Advice only: the check still passes, `--strict` included, and `validate`
+  and `run` stay quiet. Points at "Design the graph" in
+  `doc/PROJECT_AUTHORING.md`.
+
 ## 0.11.0 — 2026-11-07
 
 ### Added

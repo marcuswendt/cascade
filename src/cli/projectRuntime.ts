@@ -19,6 +19,7 @@ import { createNodeAssetCapability } from './nodeAssets.js';
 import { imagePath, sequenceFileName, sequenceWidth } from './sequence.js';
 import { collectImageOutputs, outDirectory, unknownNodes } from './imageOutputs.js';
 import { createDawnGpuHost } from './headlessGpu.js';
+import { nodeShapeWarnings, reportNodeShape } from './nodeShape.js';
 
 interface ProjectNode {
   id: string;
@@ -38,6 +39,8 @@ interface PreparedGraph {
    * looked for. See `unresolvedModule`.
    */
   unresolved: Diagnostic[];
+  /** Advice on node size and mixed jobs; printed by `check` only. See ./nodeShape.ts. */
+  shape: Diagnostic[];
 }
 
 /**
@@ -285,6 +288,7 @@ export async function checkProjectGraph(
     throw new Error(`Static check requires definition-v1 modules; dynamic modules: ${dynamic.join(', ')}`);
   }
   await preflightAgainstRunHost(file, prepared.registrations, document);
+  reportNodeShape(prepared.shape);
   return unresolved;
 }
 
@@ -576,6 +580,7 @@ async function prepare(file: string, document: any, compileExecutors: boolean): 
   const deterministic = new Set<string>();
   const seen = new Set<string>();
   const unresolved: Diagnostic[] = [];
+  const shape: Diagnostic[] = [];
 
   for (const node of document.nodes as ProjectNode[]) {
     const id = moduleId(node);
@@ -617,6 +622,7 @@ async function prepare(file: string, document: any, compileExecutors: boolean): 
     if (architectureDiagnostics.length) {
       throw new Error(architectureDiagnostics.map(formatDiagnostic).join('\n'));
     }
+    shape.push(...nodeShapeWarnings(source, moduleFile, ts, id));
 
     // Instances load executors concurrently. Share this preparation's build so
     // they cannot import the .mjs while another instance is rewriting it.
@@ -631,7 +637,7 @@ async function prepare(file: string, document: any, compileExecutors: boolean): 
         : async () => { throw new Error('Static validation never loads execute'); },
     });
   }
-  return { registrations, deterministic, unresolved };
+  return { registrations, deterministic, unresolved, shape };
 }
 
 /**

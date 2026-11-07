@@ -209,7 +209,7 @@ Clean graph design is clean code design:
 - **What varies is a parameter**; seeds, counts and colours are on the node, not constants in the code.
 - **Shared helpers go in `lib/` or the kit** (`KIT.md`); the node is the unit you compose and reuse.
 
-Split a node when it does two of load, generate, style, render and export, or when its `execute` grows past about 150 lines.
+Split a node when it does two of load, generate, style, render and export, or when its `execute` grows past about 150 lines. `cascade check` warns on both (`shape/long-execute`, `shape/mixed-jobs`); the warnings are advice and never fail the check. Drawing with noise and colour is one job's worth of calls, so it only flags a module doing four of the five, or loading and exporting in the same node.
 
 ## Add a custom node
 
