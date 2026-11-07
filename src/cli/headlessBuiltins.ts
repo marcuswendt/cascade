@@ -1,21 +1,16 @@
 /**
- * The reserved modules the CLI host resolves without a project file: the
- * runtime's headless built-ins (`builtins/headless.ts`: the Studio set plus
- * those Studio does not register yet), and the `cascade.assert.*` set, which
- * lives on the Node side because it decodes images with `node:zlib`
- * (./assertNodes.ts).
+ * The reserved modules the CLI host resolves without a project file.
+ *
+ * Since 2026-11-07 that is exactly the runtime's built-in list: the image
+ * library and the `cascade.assert.*` set became portable and Studio registers
+ * them too, so the headless-only list they used to need is gone. These names
+ * stay because the CLI reads built-ins through them.
  */
-import { headlessNodeRegistration, headlessNodeRegistrations } from '../../packages/runtime/src/builtins/headless.js';
+import { builtinNodeRegistration, builtinNodeRegistrations } from '../../packages/runtime/src/builtins/index.js';
 import type { DefinitionNodeRegistration } from '../../packages/runtime/src/types.js';
-import { assertNodeRegistrations } from './assertNodes.js';
 
-export const headlessBuiltinRegistrations: readonly DefinitionNodeRegistration[] = Object.freeze([
-  ...headlessNodeRegistrations,
-  ...assertNodeRegistrations,
-]);
-
-const asserts = new Map(assertNodeRegistrations.map((registration) => [registration.moduleId, registration]));
+export const headlessBuiltinRegistrations: readonly DefinitionNodeRegistration[] = builtinNodeRegistrations;
 
 export function headlessBuiltin(moduleId: string): DefinitionNodeRegistration | undefined {
-  return headlessNodeRegistration(moduleId) ?? asserts.get(moduleId);
+  return builtinNodeRegistration(moduleId);
 }

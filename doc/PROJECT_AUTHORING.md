@@ -501,9 +501,12 @@ headless host keeps it in memory:
   starts, since it may read an input with `node:fs`. A run's saved outputs
   (`--out`, `run --frames`, `render`) are encoded from the pixels at full
   compression, never copied from the level-1 intermediate.
-- Hosts without `keepImage` (Studio, an exported editor) encode and store as
-  before, so a node written against `readImage`/`writeImage` works unchanged
-  in each.
+- Hosts without `keepImage` (an exported editor, the web player, and Studio
+  for project nodes) encode and store as before, so a node written against
+  `readImage`/`writeImage` works unchanged in each. Studio gives `keepImage`
+  to the built-in image library only: its images stay in the page under
+  `.cascade-studio/…` paths, which `readImage`, `assets.read` and the Viewer
+  all resolve, but which name no file a server stage could open.
 
 On field-logo (12 canvas nodes at 1024²) this took a frame from 1,791 ms to
 about 860 ms; most of what remains is the nodes' own pixel loops.

@@ -238,11 +238,14 @@ async function cookHeadless(file: string, document: unknown, node: string | unde
  * the browser's. Imported lazily, so `run` never loads the Studio engine.
  */
 async function cookStudio(file: string, document: unknown, node: string | undefined, project: ProjectRoot): Promise<Snapshots> {
-  const [{ Graph }, { registerStandardNodes }, { studioCapabilities }, { cookUntilSettled }] = await Promise.all([
+  const [{ Graph }, { registerStandardNodes }, { studioCapabilities }, { cookUntilSettled }, { registerDefinitionNodes }, { imageNodeRegistrations }, { assertNodeRegistrations }] = await Promise.all([
     import('../nodes/Graph.js'),
     import('../nodes/registerStandardNodes.js'),
     import('../nodes/definition/projectDefinition.js'),
     import('./frames.js'),
+    import('../nodes/definition/DefinitionNode.js'),
+    import('../../packages/runtime/src/builtins/image/index.js'),
+    import('../../packages/runtime/src/builtins/assert/index.js'),
   ]);
   // The definition libraries Studio's entry imports, which register on import.
   await Promise.all([
@@ -254,6 +257,9 @@ async function cookStudio(file: string, document: unknown, node: string | undefi
   registerStandardNodes();
   const host = createProjectHost(file, []);
   Object.assign(studioCapabilities, host.capabilities);
+  // The image library and the assertions, on the headless host's assets
+  // rather than the page's (Studio registers them in their own index files).
+  registerDefinitionNodes([...imageNodeRegistrations, ...assertNodeRegistrations], host.capabilities);
 
   const graph = Graph.fromJSON(structuredClone(document));
   graph.restoreConnections();

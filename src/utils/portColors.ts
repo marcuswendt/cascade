@@ -1,5 +1,4 @@
 import type { InputPort, OutputPort, DataType } from '@/types/node.types';
-import { ImageBuffer } from '@/nodes/image/ImageBuffer';
 import { TYPE_COLORS, typeColor, isImageRef } from '@/types/coreTypes';
 
 /**
@@ -41,9 +40,8 @@ export function getPortColor(port: InputPort | OutputPort): string {
     return DATA_TYPE_COLORS.trigger;
   }
 
-  // Check if the value is an image (ImageBuffer, HTMLCanvasElement, HTMLImageElement, OffscreenCanvas)
-  if (port.value instanceof ImageBuffer ||
-      port.value instanceof HTMLCanvasElement ||
+  // Check if the value is an image (HTMLCanvasElement, HTMLImageElement, OffscreenCanvas)
+  if (port.value instanceof HTMLCanvasElement ||
       port.value instanceof HTMLImageElement ||
       port.value instanceof OffscreenCanvas) {
     return DATA_TYPE_COLORS.image;

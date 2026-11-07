@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
-import { contactSheetLayout } from '../packages/runtime/src/builtins/image/index.js';
+import { contactSheetLayout } from '../packages/runtime/src/builtins/image/contactSheet.js';
 import { canvasAvailable } from '@/cli/headlessCanvas';
 import { cookNode } from '@/cli/locks/cook';
 import { createLadder, parseValues, pickVariant, readLadder, variantPlan, withVariant } from '@/cli/locks/ladder';

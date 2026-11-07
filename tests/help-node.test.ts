@@ -58,8 +58,9 @@ export function execute() {}
     const typo = cli(['help', 'node', 'Circel', '--json']);
     expect(typo.status).toBe(1);
     expect(JSON.parse(typo.stdout).error.message).toMatch(/No node type "Circel"/);
-    const studio = JSON.parse(cli(['help', 'node', 'cascade.image.Blur', '--json']).stdout);
-    expect(studio.data.message).toMatch(/class-based Studio node/);
+    // The image library was class-based until 2026-11-07; now it prints like any built-in.
+    const blur = JSON.parse(cli(['help', 'node', 'cascade.image.Blur', '--json']).stdout);
+    expect(blur).toMatchObject({ ok: true, data: { module: 'cascade.image.Blur', definition: { runsOn: 'portable', props: { radius: { type: 'float' } } } } });
   }, 60_000);
 
   it('ships what it reads in the package', () => {

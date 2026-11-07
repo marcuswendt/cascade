@@ -8,8 +8,7 @@
 import { Node } from '../../Node.js';
 import type { Graph } from '../../Graph.js';
 import type { InputPort, OutputPort } from '@/types/node.types';
-import { createSurface } from '../../image/surface.js';
-import { hasPixels } from '@/nodes/image/ImageBuffer';
+import { createSurface, hasPixels } from '../../image/surface.js';
 
 function previewWanted(): boolean {
 	return typeof document !== 'undefined';

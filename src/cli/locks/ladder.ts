@@ -27,7 +27,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ProjectRoot } from '../../../server/src/project.js';
-import { composeContactSheet } from '../../../packages/runtime/src/builtins/image/index.js';
+import { composeContactSheet } from '../../../packages/runtime/src/builtins/image/contactSheet.js';
 import { graphSeed } from '../../../packages/runtime/src/seed.js';
 import { installHeadlessCanvas } from '../headlessCanvas.js';
 import { fingerprintFile, type OutputFingerprint } from './fingerprint.js';

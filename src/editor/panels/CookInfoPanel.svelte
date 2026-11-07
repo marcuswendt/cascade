@@ -3,7 +3,8 @@
   import type { Graph } from '@/nodes/Graph';
   import type { Node } from '@/nodes/Node';
   import { sharedContextStore, panelLockStore } from '../dockview/renderer';
-  import { ImageNodeBase } from '@/nodes/image/ImageNodeBase';
+  import { coerceImageRef } from '@/types/coreTypes';
+  import { isStudioImage } from '@/nodes/definition/studioImages';
 
   export let panelId: string;
   export let panelApi: any;
@@ -116,15 +117,22 @@
     }
   }
 
-  // Check if node is a ImageNodeBase
-  function isImageNodeBase(node: Node): node is ImageNodeBase {
-    return node instanceof ImageNodeBase;
-  }
-
-  // Get buffer info for image nodes
+  // The first image output: its size and format, from the ImageRef itself.
   function getBufferInfo(node: Node) {
-    if (isImageNodeBase(node)) {
-      return node.getBufferInfo();
+    for (const port of node.outputs) {
+      const image = port.value ? coerceImageRef(port.value) : null;
+      if (!image || !Array.isArray(image.size)) continue;
+      const [width, height] = image.size;
+      if (!width || !height) continue;
+      const channels = image.channels.length;
+      const bytesPerChannel = image.depth === 'u8' ? 1 : image.depth === 'f32' ? 4 : 2;
+      return {
+        width,
+        height,
+        channels,
+        layout: channels === 1 ? 'gray' : image.channels,
+        memorySizeStr: `${formatBytes(width * height * channels * bytesPerChannel)}${isStudioImage(image.path) ? ' in memory' : ''}`,
+      };
     }
     return null;
   }
@@ -219,7 +227,7 @@
         </div>
       </section>
 
-      <!-- ImageBuffer Info (for ImageNodeBases) -->
+      <!-- Image output info -->
       {#if bufferInfo}
         <section class="info-section buffer-section">
           <h3>Output Buffer</h3>

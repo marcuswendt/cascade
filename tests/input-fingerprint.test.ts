@@ -10,14 +10,15 @@
 import { describe, expect, it } from 'vitest';
 import { Graph } from '@/nodes/Graph';
 import { Node } from '@/nodes/Node';
-import { ImageBuffer } from '@/nodes/image/ImageBuffer';
 import { hashBytes, valueFingerprint } from '@/nodes/inputFingerprint';
+import { Planar } from '../packages/runtime/src/builtins/image/planar.js';
 
 /** Two same-size images that agree on every value the old fingerprint read:
- *  first, middle and last of every channel. They differ in one pixel. */
-function twins(width = 64, height = 64): [ImageBuffer, ImageBuffer] {
-  const a = ImageBuffer.rgba(width, height);
-  const b = ImageBuffer.rgba(width, height);
+ *  first, middle and last of every channel. They differ in one pixel. (A
+ *  planar float image, the shape the class image nodes passed around.) */
+function twins(width = 64, height = 64): [Planar, Planar] {
+  const a = Planar.rgba(width, height);
+  const b = Planar.rgba(width, height);
   for (const image of [a, b]) for (const channel of image.channels) channel.fill(0.5);
   b.channels[0]![7] = 0.9;
   return [a, b];
