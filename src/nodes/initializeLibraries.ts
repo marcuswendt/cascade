@@ -26,7 +26,8 @@ export async function initializeNodeLibraries(): Promise<void> {
     import('./geo/index'),
     import('./math/index'),
     import('./pop/index'),
-    import('./image/index')
+    import('./image/index'),
+    import('./assert/index')
   ]);
 
   initialized = true;

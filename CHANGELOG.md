@@ -51,6 +51,31 @@ Notable changes to Cascade. Newest first.
 
 ### Changed
 
+- **The image library is definition-v1 and runs everywhere.** Color,
+  Checkers, Noise, Ramp, Text, File (`cascade.image.Image`), Blur, Normal Map,
+  Resize, Transform and Composite were Studio classes over `ImageNodeBase`;
+  they are portable built-ins in `packages/runtime` with the same module ids,
+  ports and props, so saved graphs load unchanged and now also run under
+  `cascade run`/`render`, MCP, exported editors and the web player. Images pass
+  between them through the in-memory image contract; in Studio they stay in
+  the page (`.cascade-studio/…` paths the Viewer draws from memory) rather than
+  becoming files. 53 golden fixtures captured on the class nodes render pixel
+  for pixel the same on the runtime and in Studio. A colour saved as
+  `{ r, g, b, a }` reads as the four-component colour on load
+  (`Color.upgrade`). Noise no longer fetches simplex-noise from esm.sh (4.0.3
+  is vendored). Text takes a project font file in `font` and falls back to
+  sans-serif when it is missing. The Ramp's stops edit as JSON in the
+  Parameters section rather than with the ramp widget, and File's path is a
+  text field. A dynamic node that read an `ImageBuffer` from these ports now
+  gets an `ImageRef`.
+- **Contact Sheet and the assertions are in Studio.** `cascade.image.ContactSheet`
+  is in the Image library's Composite category and `cascade.assert.*` has its
+  own Assert library. The assertions are portable now (Not Blank takes kept
+  pixels or decodes with `DecompressionStream`), so they live in the runtime's
+  built-in list and `src/cli/assertNodes.ts` and the headless-only list are
+  gone. Their bodies load lazily: Studio's first-paint JS went down, 969,706 →
+  964,958 B, with the class library and `ImageBuffer` gone; the budget is
+  lowered to match.
 - **Studio paints the viewed node first.** After the Viewer's node cooks,
   nothing outside its upstream starts until the Viewer has shown the new
   picture (image loaded, then a frame; at most 300 ms), and while a slider

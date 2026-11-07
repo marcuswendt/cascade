@@ -15,46 +15,26 @@
  * re-captured (delete the PNG and run the class capture from git history), not
  * loosened.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import type { AssetCapability, ImagePixels, ImageRef } from '../packages/contracts/src/index.js';
 import { createBrowserRuntimeHost } from '../packages/runtime/src/browser.js';
 import { createRuntime } from '../packages/runtime/src/index.js';
 import { Graph } from '@/nodes/Graph';
-import { ImageBuffer } from '@/nodes/image/ImageBuffer';
-import { registerStandardNodes } from '@/nodes/registerStandardNodes';
+import { studioImagePixels } from '@/nodes/definition/studioImages';
 import { canvasAvailable, installHeadlessCanvas, type CanvasHost } from '@/cli/headlessCanvas';
 import { cookUntilSettled } from '@/cli/frames';
-import { encodePixelsPng, FINAL_PNG } from '@/cli/headlessIo';
 import { decodeImage } from '../packages/runtime/src/builtins/assert/checks.js';
-import { fixtureDocument, fixtures, inputPixels, INPUT_SIZE, INPUT2_SIZE, type GoldenFixture } from './fixtures/image-golden/fixtures';
+import { fixtureDocument, fixtures, type GoldenFixture } from './fixtures/image-golden/fixtures';
 
 const DIR = path.resolve('tests/fixtures/image-golden');
-const INPUT = path.join(DIR, 'input.png');
-const INPUT2 = path.join(DIR, 'input2.png');
-// The class Noise node loads simplex-noise from esm.sh through the graph's
-// package manager; the capture used the same release (4.0.3) from disk, and
-// without it on disk the noise fixtures are skipped rather than fetched.
-const SIMPLEX_FILE = '/Users/marcus/.field-io/cairn/agents/C-CASCADE-EVOLUTION-BUILD/work/image-port/simplex/node_modules/simplex-noise/dist/esm/simplex-noise.js';
-const SIMPLEX = fs.existsSync(SIMPLEX_FILE) ? SIMPLEX_FILE : null;
 
 let host: CanvasHost | null = null;
 const available = await canvasAvailable();
 
-async function writeInput(file: string, [width, height]: readonly [number, number], salt: number): Promise<void> {
-  if (fs.existsSync(file)) return;
-  fs.mkdirSync(DIR, { recursive: true });
-  fs.writeFileSync(file, await encodePixelsPng({ width, height, data: inputPixels(width, height, salt) }, FINAL_PNG));
-}
-
 beforeAll(async () => {
-  if (!available) return;
-  host = await installHeadlessCanvas();
-  registerStandardNodes();
-  await writeInput(INPUT, INPUT_SIZE, 1);
-  await writeInput(INPUT2, INPUT2_SIZE, 2);
+  if (available) host = await installHeadlessCanvas();
 });
 
 afterAll(() => host?.dispose());
@@ -132,34 +112,40 @@ async function renderOnRuntime(fixture: GoldenFixture, keep = true): Promise<Ima
   return pixels;
 }
 
-async function renderOnClasses(fixture: GoldenFixture): Promise<ImageBuffer> {
-  const graph = Graph.fromJSON(fixtureDocument(fixture, { input: INPUT, input2: INPUT2 }));
-  if (SIMPLEX) {
-    const simplex = await import(pathToFileURL(SIMPLEX).href);
-    (graph.packageManager as unknown as { load: () => Promise<unknown> }).load = async () => simplex;
-  }
+/**
+ * Studio's path: the compatibility `Graph`, the definition adapter and the
+ * page's asset capability, which keeps images in memory
+ * (`src/nodes/definition/studioImages.ts`). Project files arrive over
+ * the media route, stubbed here with the fixture files.
+ */
+async function renderInStudio(fixture: GoldenFixture): Promise<ImagePixels> {
+  const graph = Graph.fromJSON(fixtureDocument(fixture, { input: 'input.png', input2: 'input2.png' }));
   graph.restoreConnections();
-  await cookUntilSettled(graph, undefined, { fixpoint: true });
+  // Not to a fixpoint: every cook keeps a fresh image under a fresh path, so
+  // re-cooking a clean graph would never read as settled.
+  await cookUntilSettled(graph, undefined);
   graph.scheduler?.dispose?.();
   const failed = graph.nodes.filter((node) => node.error !== null);
   expect(failed.map((node) => `${node.id}: ${node.error?.message}`)).toEqual([]);
-  const value = graph.getNode('out')?.outputs.find((port) => port.name === 'image')?.value;
-  if (!(value instanceof ImageBuffer)) throw new Error(`${fixture.name}: no image (${String(value)})`);
-  return value;
+  const ref = graph.getNode('out')?.outputs.find((port) => port.name === 'image')?.value as ImageRef | undefined;
+  const pixels = ref && studioImagePixels(ref.path);
+  if (!pixels) throw new Error(`${fixture.name}: no kept image (${JSON.stringify(ref)})`);
+  return pixels;
 }
 
-const usesNoise = (fixture: GoldenFixture) => fixture.nodes.some((node) => node.module === 'cascade.image.Noise');
+describe.skipIf(!available)('cascade.image.* golden images (definition-v1, Studio)', () => {
+  beforeAll(async () => {
+    vi.stubGlobal('fetch', async (url: string) => {
+      const name = decodeURIComponent(String(url).replace(/^\/api\/media\//, '').replace(/\?.*$/, ''));
+      return new Response(new Uint8Array(fs.readFileSync(path.join(DIR, name))));
+    });
+    await import('@/nodes/image/index');
+  });
+  afterAll(() => vi.unstubAllGlobals());
 
-describe.skipIf(!available)('cascade.image.* golden images (class nodes)', () => {
   for (const fixture of fixtures) {
-    it.skipIf(!SIMPLEX && usesNoise(fixture))(fixture.name, async () => {
-      const buffer = await renderOnClasses(fixture);
-      const rgba = new Uint8ClampedArray(buffer.toImageData().data);
-      const file = path.join(DIR, `${fixture.name}.png`);
-      if (!fs.existsSync(file)) {
-        fs.writeFileSync(file, await encodePixelsPng({ width: buffer.width, height: buffer.height, data: rgba }, FINAL_PNG));
-      }
-      expectSame({ width: buffer.width, height: buffer.height, data: rgba }, await golden(fixture));
+    it(fixture.name, async () => {
+      expectSame(await renderInStudio(fixture), await golden(fixture));
     });
   }
 });

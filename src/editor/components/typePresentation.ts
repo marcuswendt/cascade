@@ -1,5 +1,6 @@
 import { coerceImageRef, isImageRef } from '@/types/coreTypes';
 import { coreGeometryView } from '@/utils/geometryView';
+import { studioImageUrl } from '@/nodes/definition/studioImages';
 
 export type PresentationMode = 'compact' | 'inspect' | 'view';
 export type Point2 = [number, number];
@@ -37,6 +38,9 @@ export function inferCascadeType(value: unknown): string {
 
 export function mediaUrl(path: string, options: { width?: number; raw?: boolean; version?: number } = {}): string {
   if (/^(https?:|data:|blob:)/.test(path)) return path;
+  // An image the image library kept in the page has no file behind it.
+  const kept = studioImageUrl(path);
+  if (kept) return kept;
   const clean = path.replace(/^\.?\//, '');
   const encoded = clean.split('/').map(encodeURIComponent).join('/');
   const params = new URLSearchParams();

@@ -4,6 +4,7 @@ import { imageLibrary } from '@/nodes/image/library';
 import { coreLibrary } from '@/nodes/core/library';
 import { geoLibrary } from '@/nodes/geo/library';
 import { popLibrary } from '@/nodes/pop/library';
+import { assertLibrary } from '@/nodes/assert/library';
 import type { Library, NodeTemplate } from '@/types/library.types';
 
 // Re-export types for backward compatibility
@@ -34,7 +35,8 @@ export const nodeLibraries: Library[] = [
   coreLibrary,
   geoLibrary,
   popLibrary,
-  imageLibrary
+  imageLibrary,
+  assertLibrary
 ];
 
 export function projectNodeLibrary(modules: string[], icons: Record<string, string> = {}): Library {
@@ -102,16 +104,9 @@ node.onReady = () => process();
 `,
 
   image: (name: string) => `// ${name} - Image Processing Node
-// Extends ImageNodeBase for canvas/image utilities
-//
-// Available helpers from ImageNodeBase:
-//   this.createCanvas(width, height) - Create a canvas
-//   this.getImageSize(img) - Get {width, height} from image/canvas
-//   this.getImageData(img, w?, h?) - Get ImageData from image
-//   this.putImageData(imageData) - Create canvas from ImageData
-//   this.colorToCss(color) - Convert {r,g,b,a} to CSS string
-//   this.normalizeColor(color) - Normalize color values to 0-1
-//   this.setOutputAndPreview(output, canvas) - Set output and preview
+// Draws on a canvas and outputs it. For a node that also runs headless and in
+// exported editors, write it as definition-v1 with cascade/image instead
+// (doc/PROJECT_AUTHORING.md, "Draw an image in any host").
 
 // Define image input
 const imageInput = node.in('image', null);

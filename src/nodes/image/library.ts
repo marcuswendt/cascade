@@ -41,7 +41,8 @@ export const imageLibrary: Library = {
       id: 'composite',
       label: 'Composite',
       nodes: [
-        { name: 'Composite', icon: 'Layers', description: 'Blend two images together', type: 'Composite' }
+        { name: 'Composite', icon: 'Layers', description: 'Blend two images together', type: 'Composite' },
+        { name: 'Contact Sheet', icon: 'LayoutGrid', description: 'Lay images out as one labelled grid', type: 'ContactSheet' }
       ]
     }
   ]

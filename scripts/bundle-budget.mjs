@@ -28,7 +28,10 @@ export const BUDGET = {
   // 2026-11-07, perf round 2 move 5: Agent (with marked + DOMPurify),
   // Definition, Node Info and Timeline panels lazy; first-paint JS
   // 1,135,042 -> 968,597 B (entry 1,078,049 -> 859,801).
-  firstPaintJsBytes: 968597 + 25 * 1024,
+  // 2026-11-07, image-node port: the class image library and ImageBuffer
+  // left Studio, ContactSheet and cascade.assert.* arrived (definitions in
+  // the built-in list, bodies lazy): 969,706 -> 964,958 B.
+  firstPaintJsBytes: 964958 + 25 * 1024,
   // Same change: those panels' CSS left the entry, 239,446 -> 223,490 B.
   // The scrub number's shared field rules in theme.css (+806, then −19,
   // 2026-11-07, on Marcus's go-ahead) sit on the Inspector's first paint and
