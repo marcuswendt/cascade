@@ -226,7 +226,15 @@ describe('one node body, two hosts', () => {
     const browser = await engine.output('tint', 'image') as { path: string; size: number[] };
     expect(browser.path).toMatch(/^\.cascade-player\/generated\/\d+-tint\.png$/);
     expect(browser.size).toEqual([16, 12]);
-    expect(Buffer.from(await engine.readAsset(browser as never)).equals(Buffer.from(cliBytes))).toBe(true);
+    // The same pixels, not the same bytes: the CLI writes an intermediate as a
+    // fast level-1 PNG, the editor engine with the canvas's own encoder.
+    const pixelsOf = async (bytes: Uint8Array) => {
+      const image = await decodeImage(bytes);
+      const { canvas, context: g } = surface(image.width, image.height);
+      g.drawImage(image, 0, 0);
+      return Buffer.from(g.getImageData(0, 0, canvas.width, canvas.height).data);
+    };
+    expect((await pixelsOf(await engine.readAsset(browser as never))).equals(await pixelsOf(cliBytes))).toBe(true);
 
     // And the export accepts it: portable, declared assets, the input shipped.
     expect(prepared.plan.files.map((item) => item.path)).toContain('assets/assets/in.png');

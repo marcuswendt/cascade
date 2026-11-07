@@ -126,12 +126,37 @@ export type Mat4 = readonly [
   number,
 ];
 
+/**
+ * The value on an `image` port: a path naming stored pixels, plus what they
+ * are. The port carries the reference, never the pixels, so a value stays
+ * small to snapshot, hash, trace and send to a Python stage.
+ *
+ * The path is always readable as a file by whoever needs a file. A host may
+ * still hold the pixels in memory and write the file behind (see
+ * {@link ImagePixels} and `AssetCapability.keepImage`): a reader in the same
+ * process gets the pixels without a decode, and the host makes the file whole
+ * before anything reads it from disk (a final copy, a Python stage, the end of
+ * a run).
+ */
 export interface ImageRef {
   readonly path: string;
   readonly size: Vec2i;
   readonly channels: "r" | "a" | "rg" | "rgb" | "rgba";
   readonly depth: "u8" | "u16" | "f16" | "f32";
   readonly space: "srgb" | "linear";
+}
+
+/**
+ * An image's pixels in memory: 8-bit RGBA, sRGB, unpremultiplied, row-major
+ * with the top row first. This is the layout of `ImageData` and of a PNG's
+ * decoded rows, so handing pixels on in memory and handing them on through a
+ * PNG give the next node the same numbers.
+ */
+export interface ImagePixels {
+  readonly width: number;
+  readonly height: number;
+  /** `width * height * 4` bytes. Owned by the host once kept: never mutate. */
+  readonly data: Uint8ClampedArray;
 }
 
 declare const textureHandleBrand: unique symbol;

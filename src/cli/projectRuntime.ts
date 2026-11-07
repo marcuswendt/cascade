@@ -16,6 +16,7 @@ import type { DefinitionNodeRegistration, LoadedCascadeGraph, RuntimeHost } from
 import { ProjectRoot } from '../../server/src/project.js';
 import { createNodeFileCapability } from './nodeFiles.js';
 import { createNodeAssetCapability } from './nodeAssets.js';
+import { copyImageFile, settleProjectImages } from './headlessIo.js';
 import { imagePath, sequenceFileName, sequenceWidth } from './sequence.js';
 import { collectImageOutputs, outDirectory, unknownNodes } from './imageOutputs.js';
 import { createDawnGpuHost } from './headlessGpu.js';
@@ -335,6 +336,8 @@ export async function runDeterministicProjectGraph(
     if (result.status !== 'completed') {
       throw new Error(result.diagnostics.map((item) => item.message).join('\n') || `Graph ${result.status}`);
     }
+    // Whatever reads the outputs next may read them as files.
+    await settleProjectImages({ root: path.dirname(path.resolve(file)) });
     await afterRun?.(graph);
     return true;
   } finally {
@@ -366,6 +369,7 @@ export async function cookProjectGraph(
     const result = await graph.run(target ? { target: { kind: 'node', nodeId: target } } : {});
     if (result.status !== 'completed')
       throw new Error(result.diagnostics.map((item) => item.message).join('\n') || `Graph ${result.status}`);
+    await settleProjectImages({ root: path.dirname(path.resolve(file)) });
     const outputs = new Map<string, ReadonlyMap<string, unknown>>();
     for (const node of graph.inspect().nodes) outputs.set(node.id, new Map(graph.getOutputs(node.id)));
     return { outputs, assets: (host as any).capabilities?.assets };
@@ -524,7 +528,9 @@ export async function renderDeterministicProjectFrames(
         if (!source) continue;
         const name = sequenceFileName(output.nodeId, frame, source, width, output.shared ? output.port : undefined);
         const relative = source.replace(/^\.?\//, '');
-        await fs.copyFile(project.resolveMedia(relative), path.join(out.directory, name));
+        // From the pixels when the run still holds them (full compression,
+        // no wait for the file written behind), else a copy of the file.
+        await copyImageFile(project, relative, path.join(out.directory, name));
         files.push(out.spell(name));
         written.push({ nodeId: output.nodeId, port: output.port, source: relative, file: out.spell(name) });
       }
@@ -532,6 +538,8 @@ export async function renderDeterministicProjectFrames(
       await options.onFrame?.({ frame, outputs: written, durationMs: performance.now() - frameStarted });
       if (options.verbose) console.log(`  frame ${frame}`);
     }
+    // Intermediates are written behind the frames; the run ends with them on disk.
+    await settleProjectImages(project);
     // CPU graphs never initialize the lazy optional GPU host.
     try { gpu = { renderer: 'dawn', adapter: host.capabilities.gpu!.adapterInfo }; }
     catch { /* No GPU node was executed. */ }
@@ -633,7 +641,17 @@ async function prepare(file: string, document: any, compileExecutors: boolean): 
       moduleId: id,
       definition: extracted.definition,
       loadExecute: compileExecutors
-        ? () => executor ??= compileExecute(projectRoot, moduleFile)
+        ? () => executor ??= compileExecute(projectRoot, moduleFile).then((execute) =>
+          // A server node may read an image input with `node:fs`, the one
+          // reader the host cannot make wait, so it starts once every image
+          // written behind is on disk. Portable and browser nodes cannot
+          // reach the filesystem and keep the in-memory handoff.
+          extracted.definition.runsOn === 'server'
+            ? async (...args: unknown[]) => {
+              await settleProjectImages({ root: projectRoot });
+              return execute(...args);
+            }
+            : execute)
         : async () => { throw new Error('Static validation never loads execute'); },
     });
   }
@@ -780,18 +798,26 @@ async function compileExecute(projectRoot: string, moduleFile: string) {
  * portable image node under a CLI that has it. The module holds no state of
  * its own (the font door is a global the CLI installs), so bundling this copy
  * into the node is safe.
+ *
+ * `cascade/io` likewise, since round 2 (7 Nov): the in-memory image handoff
+ * lives in its `saveImage`/`loadBitmap`, and a sketch pinned to an older
+ * package would otherwise encode every intermediate with the old path. Its
+ * state is the bridge global the CLI installs, so a bundled copy is as safe.
  */
 function cliImageModule(): import('esbuild').Plugin {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const source = [
-    path.join(here, 'runtime', 'image.ts'), // dist/cli/runtime, copied by build-cli
-    path.join(here, '..', '..', 'server', 'src', 'runtime', 'image.ts'), // running from src
+  const shim = (name: string) => [
+    path.join(here, 'runtime', `${name}.ts`), // dist/cli/runtime, copied by build-cli
+    path.join(here, '..', '..', 'server', 'src', 'runtime', `${name}.ts`), // running from src
   ].find((candidate) => existsSync(candidate));
+  const sources = { image: shim('image'), io: shim('io') };
   return {
     name: 'cascade-cli-image',
     setup(builder) {
-      if (!source) return;
-      builder.onResolve({ filter: /^(?:@field\/)?cascade\/image$/ }, () => ({ path: source }));
+      builder.onResolve({ filter: /^(?:@field\/)?cascade\/(?:image|io)$/ }, (args) => {
+        const source = sources[args.path.endsWith('/io') ? 'io' : 'image'];
+        return source ? { path: source } : undefined;
+      });
     },
   };
 }

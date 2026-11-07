@@ -25,7 +25,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AssetCapability, AssetRef } from '../../packages/contracts/src/index.js';
 import type { ProjectRoot } from '../../server/src/project.js';
-import { createIoBridge } from './headlessIo.js';
+import { createIoBridge, settleProjectImages } from './headlessIo.js';
 
 const CACHE_DIR = '.cascade-cache';
 
@@ -48,7 +48,21 @@ export function createNodeAssetCapability(project: ProjectRoot): AssetCapability
       return { path: written, ...(metadata.mediaType ? { mediaType: metadata.mediaType } : {}) };
     },
 
+    // `cascade/image`'s `writeImage` hands an intermediate over as pixels:
+    // the same file policy as `write`, through the bridge's fast PNG.
+    async keepImage(pixels, metadata): Promise<AssetRef> {
+      const written = await io.keep(`${CACHE_DIR}/${assetFileName(metadata.suggestedName)}`, pixels);
+      return { path: written, mediaType: 'image/png' };
+    },
+
+    // And reads them back from memory while the run holds them.
+    imagePixels(ref) {
+      return io.pixels(String(ref.path));
+    },
+
     async resolveUrl(ref) {
+      // A URL is read as a file, so an image still being written behind is waited for.
+      await settleProjectImages(project);
       const full = project.resolveMedia(String(ref.path).replace(/^\.?\//, ''));
       return { value: pathToFileURL(full).href, release: () => {} };
     },

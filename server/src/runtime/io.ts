@@ -51,6 +51,25 @@ export interface IoBridge {
   write(path: string, data: Uint8Array): Promise<string>;
   /** Host-owned display URL, valid until the host releases its stored asset. */
   url?(path: string, options?: MediaOptions): string;
+  /**
+   * Store an intermediate image from its pixels and return the stored path,
+   * as `write` would. Optional. The headless host has it: it writes a fast
+   * lossless PNG, and in a run that keeps pixels it holds them in memory and
+   * writes behind (`pixels` below). Without it `saveImage` encodes and writes.
+   */
+  keep?(path: string, pixels: ImagePixels): Promise<string>;
+  /** The pixels behind a path `keep` returned, while the host holds them. */
+  pixels?(path: string): ImagePixels | undefined;
+}
+
+/**
+ * An image's pixels in memory. Mirrors Cascade's core `ImagePixels`: 8-bit
+ * RGBA, sRGB, unpremultiplied, top row first — `ImageData`'s layout.
+ */
+export interface ImagePixels {
+  readonly width: number;
+  readonly height: number;
+  readonly data: Uint8ClampedArray;
 }
 
 const IO_BRIDGE_KEY = '__cascadeIoBridge';
@@ -96,6 +115,8 @@ export async function loadBytes(path: string, options: MediaOptions = { raw: tru
  * to hand it. Pass a width explicitly to work at a smaller size on purpose.
  */
 export async function loadImage(path: string, options: MediaOptions = { raw: true }): Promise<HTMLImageElement> {
+  const held = heldBitmap(path);
+  if (held) return held as unknown as HTMLImageElement;
   const image = new Image();
   const bridge = localIo();
   let temporaryUrl: string | undefined;
@@ -123,8 +144,41 @@ export async function loadImage(path: string, options: MediaOptions = { raw: tru
   }
 }
 
+/**
+ * Pixels the host still holds in memory for `path` (a path `keep` returned),
+ * as something `drawImage` takes, or null to read the file. Bypasses the read
+ * and the decode; the image is the same either way (`ImagePixels` is what a
+ * PNG decodes to).
+ */
+function heldBitmap(path: string): ImageBitmap | null {
+  if (/^(https?:|data:|blob:)/.test(path)) return null;
+  const pixels = localIo()?.pixels?.(path.replace(/^\.?\//, ''));
+  return pixels ? pixelsBitmap(pixels) : null;
+}
+
+/**
+ * `ImagePixels` as a drawable: a canvas holding them, with an `ImageBitmap`'s
+ * `width`, `height` and `close()` (and an image's `naturalWidth`/`naturalHeight`).
+ */
+export function pixelsBitmap(pixels: ImagePixels): ImageBitmap {
+  const Canvas = (globalThis as { OffscreenCanvas?: new (w: number, h: number) => OffscreenCanvas }).OffscreenCanvas;
+  if (!Canvas) throw new Error('cascade/io: this host has no OffscreenCanvas to hold the image');
+  const canvas = new Canvas(pixels.width, pixels.height);
+  const context = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | null;
+  if (!context) throw new Error('cascade/io: the canvas has no 2D context');
+  const data = new ImageData(pixels.data as Uint8ClampedArray<ArrayBuffer>, pixels.width, pixels.height);
+  context.putImageData(data, 0, 0);
+  const drawable = canvas as unknown as Record<string, unknown>;
+  drawable.close = () => {};
+  drawable.naturalWidth = pixels.width;
+  drawable.naturalHeight = pixels.height;
+  return canvas as unknown as ImageBitmap;
+}
+
 /** Same, as an ImageBitmap — the right input for `texImage2D`. */
 export async function loadBitmap(path: string, options: MediaOptions = { raw: true }): Promise<ImageBitmap> {
+  const held = heldBitmap(path);
+  if (held) return held;
   const bridge = localIo();
   if (bridge?.url) return createImageBitmap(await loadImage(path, options));
   if (bridge) return createImageBitmap(new Blob([await loadBytes(path, options)]));
@@ -177,6 +231,15 @@ export async function saveImage(
   const type = `image/${format}`;
   let blob: Blob;
 
+  // A host that keeps intermediates gets the pixels, not an encode: the
+  // headless host writes a fast PNG (or holds them in memory), where the
+  // canvas's own encoder would spend six times as long.
+  const bridge = localIo();
+  if (format === 'png' && bridge?.keep) {
+    const pixels = canvasPixels(source);
+    if (pixels) return bridge.keep(path.replace(/^\.?\//, ''), pixels);
+  }
+
   if (source instanceof Blob) {
     blob = source;
   } else if (typeof (source as OffscreenCanvas).convertToBlob === 'function') {
@@ -198,6 +261,21 @@ export async function saveImage(
   }
 
   return saveBytes(blob, path);
+}
+
+/**
+ * A canvas's pixels as `ImagePixels`, or null for anything that is not a 2D
+ * canvas (a Blob, an encoder-only source, a WebGL canvas, whose `getContext('2d')`
+ * is null).
+ */
+export function canvasPixels(source: unknown): ImagePixels | null {
+  const canvas = source as { width?: unknown; height?: unknown; getContext?: (kind: '2d') => CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null };
+  if (typeof canvas?.getContext !== 'function' || typeof canvas.width !== 'number' || typeof canvas.height !== 'number') return null;
+  if (!canvas.width || !canvas.height) return null;
+  const context = canvas.getContext('2d');
+  if (!context || typeof context.getImageData !== 'function') return null;
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  return { width: image.width, height: image.height, data: image.data };
 }
 
 /** Write any bytes into the project cache and return the path. */

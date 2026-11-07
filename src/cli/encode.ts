@@ -134,7 +134,10 @@ export async function encodeSequence(options: {
     if (frames[index] !== frames[index - 1]! + 1) throw new Error('--mp4 needs a contiguous range of whole frames (no step)');
   }
   const { prefix, width, extension } = options.sequence;
-  const pattern = path.join(options.root, `${prefix}.%0${width}d${extension}`);
+  // `resolve`, not `join`: with an absolute `--out` the files, and so the
+  // prefix, are absolute, and joining them onto the project root asked
+  // ffmpeg for `<project>/Users/…`.
+  const pattern = path.resolve(options.root, `${prefix}.%0${width}d${extension}`);
   const output = path.resolve(options.root, options.file);
   await fs.mkdir(path.dirname(output), { recursive: true });
 
@@ -147,7 +150,7 @@ export async function encodeSequence(options: {
   let pixelFormat: string;
   let codecArgs: string[];
   if (options.codec === 'prores') {
-    const first = path.join(options.root, `${prefix}.${String(frames[0]).padStart(width, '0')}${extension}`);
+    const first = path.resolve(options.root, `${prefix}.${String(frames[0]).padStart(width, '0')}${extension}`);
     const alpha = await hasTransparency(first);
     pixelFormat = alpha ? 'yuva444p10le' : 'yuv422p10le';
     codecArgs = ['-c:v', 'prores_ks', '-profile:v', alpha ? '4' : '3', '-vendor', 'apl0', '-pix_fmt', pixelFormat];

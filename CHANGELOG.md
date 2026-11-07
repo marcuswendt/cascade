@@ -76,6 +76,51 @@ Notable changes to Cascade. Newest first.
   (`typescript7` devDependency), same errors per file, src + tests 3.0 →
   0.4 s; the build, the CLI's node compiler and svelte-check stay on
   TypeScript 6.
+- **Intermediate images encode six times faster headlessly.** `saveImage`
+  (`cascade/io`) and `writeImage` (`cascade/image`) hand a canvas to the
+  headless host as pixels, and it writes a lossless PNG at zlib level 1
+  through sharp instead of Skia's default encoder: 157 → 26 ms per 1024²
+  image. field-logo renders at 887 ms a frame instead of 1,791, with
+  pixel-identical outputs. The CLI now bundles `cascade/io` from its own
+  install, as it already did `cascade/image`, so a sketch pinned to an older
+  package gets it too. New optional `IoBridge.keep` and
+  `AssetCapability.keepImage`; Studio and the browser player are unchanged.
+- **Images pass between nodes in memory under `cascade run`/`render`.** The
+  headless host holds an intermediate's pixels (`ImagePixels` in contracts:
+  RGBA8, sRGB, unpremultiplied), names its file by their hash and writes the
+  level-1 PNG behind the run; `readImage`/`loadBitmap` get those pixels back
+  with no read and no decode (`AssetCapability.imagePixels`,
+  `IoBridge.pixels`). Every file reader still finds a whole file: Python stage
+  calls, `assets.read`, server nodes, the end of a run, freeze/lock/ladder all
+  wait for the write behind. Saved outputs are encoded from the pixels at
+  full compression (zlib 6, adaptive filtering), not copied from the
+  intermediate. field-logo 887 → 834 ms a frame (1,791 before round 2),
+  outputs pixel-identical; what remains is the nodes' own pixel loops. The
+  contract is in `doc/PROJECT_AUTHORING.md`, "How an image travels between
+  nodes".
+- **`cascade render` workers start Python during the probe frames.** Each
+  worker process starts the project's warm Python worker as it boots
+  (`installProjectStages(…, { prewarm: true })`, `PythonWorker.warm()`), so
+  the interpreter start and imports overlap the first two serial frames
+  instead of following them. A project whose worker takes 3 s to import
+  renders 24 frames on 4 workers in 4.0 s instead of 7.0. A worker whose
+  interpreter cannot start now fails the call that needs it instead of
+  crashing the process. `run --frames` over 30 frames prints one line naming
+  `cascade render` for the same range.
+- **Run traces time the frame and the save.** Each run in
+  `.cascade/runs/*.json` has `ms` (the cook), `frameMs` (to outputs on disk)
+  and `saveMs` (the difference), so a slow save shows without a profiler
+  (field-logo now: 747 ms cook, 82 ms save a frame).
+
+### Fixed
+
+- **`run --frames … --mp4` with an absolute `--out`.** ffmpeg was handed the
+  project root joined to the absolute sequence path and found no files; the
+  sequence is now resolved, not joined.
+- **`cascade doctor` fails a project whose stages cannot import numpy.** With
+  no `python` environment declared, a stage source importing numpy and an
+  interpreter without it is a `stage imports` failure naming the file and the
+  fix. cloud-wall and cloud-volumes passed doctor and could not render.
 
 ## 0.11.0 — 2026-11-07
 

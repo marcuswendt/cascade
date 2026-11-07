@@ -13,6 +13,7 @@ import { applyEnv } from './runEnv.js';
 import { installProjectIo } from './headlessIo.js';
 import { installHeadlessCanvas, MISSING_CANVAS_MESSAGE, type CanvasHost } from './headlessCanvas.js';
 import { parseFrameSpec } from './frames.js';
+import { frameRange } from '../../packages/runtime/src/animation/index.js';
 import type { RenderedFrame } from './projectRuntime.js';
 import { encodeMp4, timelineFrameSpec } from './encode.js';
 import { saveStillImages, type SavedImage } from './imageOutputs.js';
@@ -92,6 +93,20 @@ export interface RunOptions {
     frameSource: AsyncIterable<number>;
     onFrame: (frame: RenderedFrame) => void | Promise<void>;
   };
+}
+
+/** From this many frames `run --frames` names `cascade render`. */
+export const RENDER_SUGGESTION_FRAMES = 30;
+
+/**
+ * `run --frames` cooks one frame at a time in one process; `cascade render`
+ * spreads the range over worker processes (2.3 against 0.8 fps on the morph,
+ * round 2). A long range gets one line saying so, before it starts.
+ */
+export function renderSuggestion(file: string, frames: string, count: number): string | null {
+  if (count < RENDER_SUGGESTION_FRAMES) return null;
+  return `${count} frames in one process. cascade render ${file} --frames ${frames} renders them across worker processes `
+    + '(and encodes a preview mp4; --no-video for frames only).';
 }
 
 /**
@@ -197,6 +212,8 @@ export async function runGraph(options: RunOptions): Promise<void> {
     // calls this in a headless run, so one Python-backed node renders either way.
     disposeStageBridge = installProjectStages(project, {
       verbose,
+      // A render worker starts Python while the probe frames run.
+      prewarm: Boolean(options.worker),
       onTrace: (stage) => {
         trace.recordStage(stage);
         if (verbose) console.log(`[stage] ${formatStageTrace(stage)}`);
@@ -212,8 +229,10 @@ export async function runGraph(options: RunOptions): Promise<void> {
     });
     // And the same for files: `cascade/io` reads and writes over `/api/media`
     // in the page and against the directory here, so a node that saves an image
-    // works under both hosts without knowing which it has.
-    disposeIoBridge = installProjectIo(project);
+    // works under both hosts without knowing which it has. Resident: an image
+    // passed between nodes stays in memory and its file is written behind,
+    // so the next node skips the encode, the write, the read and the decode.
+    disposeIoBridge = installProjectIo(project, { resident: true });
   } catch (error) {
     if (verbose) console.warn(`No project context for ${file}: ${error instanceof Error ? error.message : error}`);
   }
@@ -232,6 +251,11 @@ export async function runGraph(options: RunOptions): Promise<void> {
 
   // `--frames timeline` is the range saved with the graph.
   const frameSpec = frames ? (frames === 'timeline' ? timelineFrameSpec(graphData) : parseFrameSpec(frames)) : null;
+  if (frameSpec && frames && !options.worker) {
+    const hint = renderSuggestion(file, frames, frameRange(frameSpec.start, frameSpec.end, frameSpec.step ?? 1).length);
+    // Under --json stdout is the result; the hint goes with the warnings.
+    if (hint) (options.json ? console.error : console.log)(hint);
+  }
 
   // What nodes print while they cook goes into the trace as well.
   const restoreConsole = captureNodeConsole(trace);
@@ -276,7 +300,11 @@ export async function runGraph(options: RunOptions): Promise<void> {
       ...(options.outNodes?.length ? { outNodes: options.outNodes } : {}),
       ...(verbose ? { verbose } : {}),
       ...(options.fresh ? { fresh: true } : {}),
-      ...(options.worker ? { frameSource: options.worker.frameSource, onFrame: options.worker.onFrame } : {}),
+      ...(options.worker ? { frameSource: options.worker.frameSource } : {}),
+      onFrame: async (frame) => {
+        trace.recordSaved(frame.durationMs);
+        await options.worker?.onFrame(frame);
+      },
       observe,
     });
     if (rendered && options.worker) {
@@ -316,11 +344,15 @@ export async function runGraph(options: RunOptions): Promise<void> {
     const target = options.outNodes?.length || (nodes?.length ?? 0) > 1 ? undefined : nodes?.[0] ?? entryNode;
     const saveImages = async (graph: Parameters<typeof saveStillImages>[0]) => {
       if (!project) return;
+      const saving = performance.now();
       images = await saveStillImages(graph, project, {
         ...(out ? { out } : {}),
         ...(nodes?.length ? { nodes } : entryNode ? { nodes: [entryNode] } : {}),
         ...(options.outNodes?.length ? { extra: options.outNodes } : {}),
       });
+      const runs = trace.toJSON().runs;
+      const cook = runs[runs.length - 1]?.ms;
+      if (cook !== undefined) trace.recordSaved(cook + performance.now() - saving);
     };
     if (await runDeterministicProjectGraph(file, graphData, target, observe, saveImages)) {
       if (verbose) console.log('Graph execution completed');

@@ -13,6 +13,17 @@ import type { DefinitionNodeRegistration } from '../packages/runtime/src/types';
 import { ProjectRoot } from '../server/src/project.js';
 import { runStage } from '../server/src/runtime/stage.js';
 import { installProjectStages } from '@/cli/projectStages';
+import { pythonWorkerStatuses } from '../server/src/pythonWorker.js';
+import { renderSuggestion, RENDER_SUGGESTION_FRAMES } from '@/cli/runner';
+
+describe('run --frames over a long range', () => {
+  it('names cascade render from about thirty frames, and not below', () => {
+    expect(renderSuggestion('g.cascade', '1-29', RENDER_SUGGESTION_FRAMES - 1)).toBeNull();
+    const hint = renderSuggestion('g.cascade', '1-120', 120);
+    expect(hint).toContain('cascade render g.cascade --frames 1-120');
+    expect(hint).toMatch(/^120 frames in one process/);
+  });
+});
 
 const roots: string[] = [];
 afterEach(() => {
@@ -52,6 +63,32 @@ describe('headless stages', () => {
     } finally {
       dispose();
     }
+  });
+
+  /**
+   * Round 2 move 3a: a `cascade render` worker starts Python while the probe
+   * frames run, so its interpreter start no longer follows them.
+   */
+  it('start the warm worker before the first call when asked to prewarm', async () => {
+    const root = project(true);
+    const dispose = installProjectStages(root, { prewarm: true });
+    try {
+      const warmed = pythonWorkerStatuses().find((status) => status.entrypoint === 'runtime/worker.py' && status.pid !== null);
+      expect(warmed).toBeDefined();
+      const answer = await runStage<{ pid: number }>('double', { value: 21 });
+      expect(answer.pid).toBe(warmed!.pid);
+    } finally {
+      dispose();
+    }
+  });
+
+  it('prewarm is a no-op for a project without stages', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-headless-worker-'));
+    roots.push(root);
+    const before = pythonWorkerStatuses().length;
+    const dispose = installProjectStages(new ProjectRoot(root), { prewarm: true });
+    expect(pythonWorkerStatuses().length).toBe(before);
+    dispose();
   });
 
   it('keep one process per call without a worker, or when asked (parity)', async () => {

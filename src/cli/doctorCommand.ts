@@ -61,9 +61,33 @@ export async function doctor(root: string, options: { fix?: boolean; log?: (line
     try {
       const { ProjectRoot } = await import('../../server/src/project.js');
       const { readStageConfig } = await import('../../server/src/stageRunner.js');
-      const { python } = readStageConfig(new ProjectRoot(root));
+      const { stageSources } = await import('../../server/src/stageCache.js');
+      const project = new ProjectRoot(root);
+      const config = readStageConfig(project);
+      const { python } = config;
       const version = await output(python, ['-c', 'import sys; print(sys.version.split()[0], sys.executable)'], root);
       checks.push({ name: 'stage interpreter', ok: true, detail: `Python ${version}` });
+      // cloud-wall and cloud-volumes passed doctor and could not render: their
+      // stages import numpy, nothing declares an environment, and the
+      // interpreter they fall back to (system Python 3.9) has none.
+      if (env?.state === 'none') {
+        const sources = stageSources(project, config);
+        const importer = sources.files().find((file) => importsModule(project.resolveMedia(file), 'numpy'));
+        if (importer) {
+          try {
+            await output(python, ['-c', 'import numpy'], root);
+            checks.push({ name: 'stage imports', ok: true, detail: `numpy (imported by ${importer}) loads in ${python}` });
+          } catch {
+            checks.push({
+              name: 'stage imports',
+              ok: false,
+              detail: `${importer} imports numpy, which ${python} (Python ${version.split(' ')[0]}) does not have, and no environment is declared. `
+                + 'Declare one in cascade.json ("python": { "requirements": ["numpy"] }) and run cascade doctor --fix, '
+                + 'or point exec.stages.python at an interpreter that has it',
+            });
+          }
+        }
+      }
     } catch (error) {
       checks.push({ name: 'stage interpreter', ok: false, detail: error instanceof Error ? error.message : String(error) });
     }
@@ -89,6 +113,14 @@ function hasStages(root: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Whether a Python file imports `module` at any depth (`import numpy as np`, `from numpy import …`). */
+export function importsModule(file: string, module: string): boolean {
+  let source: string;
+  try { source = fs.readFileSync(file, 'utf8'); } catch { return false; }
+  const name = module.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^\\s*(?:import\\s+(?:[\\w.]+\\s*(?:as\\s+\\w+)?\\s*,\\s*)*${name}\\b|from\\s+${name}(?:\\.|\\s))`, 'm').test(source);
 }
 
 function output(command: string, args: string[], cwd: string): Promise<string> {

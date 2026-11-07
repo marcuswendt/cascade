@@ -20,6 +20,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { LoadedCascadeGraph } from '../../packages/runtime/src/types.js';
 import { imagePath } from './sequence.js';
+import { copyImageFile } from './headlessIo.js';
 
 export interface ImageOutput {
   readonly nodeId: string;
@@ -111,7 +112,7 @@ export interface SavedImage {
  */
 export async function saveStillImages(
   graph: LoadedCascadeGraph,
-  project: { resolve(relative: string): string; resolveMedia(relative: string): string },
+  project: { root: string; resolve(relative: string): string; resolveMedia(relative: string): string },
   options: { out?: string; nodes?: readonly string[]; extra?: readonly string[] },
 ): Promise<SavedImage[]> {
   const missing = unknownNodes(graph, [...(options.nodes ?? []), ...(options.extra ?? [])]);
@@ -129,7 +130,8 @@ export async function saveStillImages(
       continue;
     }
     const name = stillFileName(output, relative);
-    await fs.copyFile(source, path.join(out.directory, name));
+    if (path.isAbsolute(relative)) await fs.copyFile(source, path.join(out.directory, name));
+    else await copyImageFile(project, relative, path.join(out.directory, name));
     saved.push({ node: output.nodeId, port: output.port, source, file: out.spell(name) });
   }
   if (out && !saved.length) {

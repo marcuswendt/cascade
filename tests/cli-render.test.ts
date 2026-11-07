@@ -6,7 +6,8 @@
  * that refuses a fixed work path before any other worker renders, and the
  * merged sequence.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { runGraph } from '@/cli/runner';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -171,4 +172,21 @@ describe('cascade render across workers', () => {
     expect(final.videos.map((video) => video.file)).toEqual(['renders/ramp.mp4']);
     expect(probe('renders/ramp.mp4')).toMatchObject({ width: 4, height: 4 });
   }, 90_000);
+});
+
+describe('run --frames --mp4', () => {
+  /** ffmpeg was handed `<project>/<absolute out>/ramp.%04d.ppm` and found nothing. */
+  it.skipIf(!hasFfmpeg)('encodes a sequence written to an absolute --out', async () => {
+    const { root, file } = project('Ramp');
+    const out = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-render-out-'));
+    roots.push(out);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await runGraph({ file, frames: '1-4', out, mp4: 'ramp.mp4' });
+    } finally {
+      log.mockRestore();
+    }
+    expect(fs.readdirSync(out).filter((name) => name.endsWith('.ppm'))).toHaveLength(4);
+    expect(fs.statSync(path.join(root, 'ramp.mp4')).size).toBeGreaterThan(0);
+  }, 60_000);
 });

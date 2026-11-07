@@ -44,6 +44,10 @@
  * copy are not always the same module instance.
  */
 
+import { canvasPixels, pixelsBitmap, type ImagePixels } from './io.js';
+
+export type { ImagePixels } from './io.js';
+
 /** An image port value. Mirrors Cascade's core `ImageRef`. */
 export interface ImageRef {
   path: string;
@@ -64,6 +68,14 @@ export interface ImageAssets {
     metadata: { mediaType?: string; suggestedName?: string },
     options: { signal: unknown },
   ): Promise<{ path: string; mediaType?: string }>;
+  /** Optional: store an intermediate from its pixels (see core `AssetCapability.keepImage`). */
+  keepImage?(
+    pixels: ImagePixels,
+    metadata: { suggestedName?: string },
+    options: { signal: unknown },
+  ): Promise<{ path: string; mediaType?: string }>;
+  /** Optional: the pixels behind a stored image while the host holds them in memory. */
+  imagePixels?(ref: { path: string }): ImagePixels | undefined;
 }
 
 /**
@@ -250,6 +262,9 @@ export async function readBytes(context: ImageNodeContext, ref: ImageSourceRef):
 
 /** Read and decode an image input, an asset, or a project file. */
 export async function readImage(context: ImageNodeContext, ref: ImageSourceRef): Promise<ImageBitmap> {
+  // An image the host still holds in memory skips the read and the decode.
+  const pixels = assetsOf(context).imagePixels?.(refOf(ref));
+  if (pixels) return pixelsBitmap(pixels);
   return decodeImage(await readBytes(context, ref));
 }
 
@@ -265,8 +280,18 @@ export async function writeImage(
   options: { type?: ImageType; quality?: number; space?: 'srgb' | 'linear' } = {},
 ): Promise<ImageRef> {
   const type = options.type ?? 'image/png';
-  const bytes = await encodeImage(canvas, { type, ...(options.quality === undefined ? {} : { quality: options.quality }) });
-  const stored = await assetsOf(context).write(bytes, { mediaType: type, suggestedName: name }, { signal: context.signal ?? NEVER });
+  const assets = assetsOf(context);
+  const signal = context.signal ?? NEVER;
+  // A PNG intermediate goes to the host as pixels when it can take them: a
+  // fast lossless write, or no encode at all until something needs the file.
+  const pixels = type === 'image/png' && assets.keepImage ? canvasPixels(canvas) : null;
+  const stored = pixels && assets.keepImage
+    ? await assets.keepImage(pixels, { suggestedName: name }, { signal })
+    : await assets.write(
+      await encodeImage(canvas, { type, ...(options.quality === undefined ? {} : { quality: options.quality }) }),
+      { mediaType: type, suggestedName: name },
+      { signal },
+    );
   return {
     path: stored.path,
     size: [canvas.width, canvas.height],
