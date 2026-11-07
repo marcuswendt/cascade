@@ -50,6 +50,7 @@ Running, sharing, locks and Studio. `cascade --help` has their options; `cascade
 | `cascade parity <graph-file>` | Cook headless twice and through Studio's path; report per-node differences. |
 | `cascade build <graph-file> --out <new-directory>` | A standalone browser player ([WEB_PLAYER.md](WEB_PLAYER.md)). |
 | `cascade export <graph-file> (--plan \| --out <dir>)` | The graph's published editor as a static site ([EDITOR_EXPORT.md](EDITOR_EXPORT.md)). |
+| `cascade share <graph-file \| site-directory> [--name <slug>] [--scope <team>] [--protected]` | One link for the team: export the editor (or take a static directory with an `index.html`), deploy it to the Vercel project `cascade-<slug>` (team `field-io`), print the production URL (`data.url` with `--json`) and record it in the project's `shares.json`. Public unless `--protected` ([EDITOR_EXPORT.md](EDITOR_EXPORT.md#share-as-a-link)). |
 | `cascade publish <graph-file> <node>.<prop>` | Publish a node prop as an editor parameter. |
 | `cascade freeze <graph-file> <node> --fields <a,b>` | Snapshot chosen fields of a live data source for export. |
 | `cascade scene <graph-file> <scene.json> --out <new-graph-file>` | Apply a scene file to a copy of the graph. |

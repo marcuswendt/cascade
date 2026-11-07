@@ -118,7 +118,8 @@ export async function exportEditor(file: string, options: EditorExportOptions = 
   const directory = await buildSite(prepared, options.out);
   const plan = JSON.parse(await fs.readFile(path.join(directory, 'export-manifest.json'), 'utf8')) as ExportPlan;
   let url: string | undefined;
-  if (options.deploy === 'vercel') url = await deployVercel(directory, options.project ?? prepared.plan.editor.id, options.scope, log, options.public === true);
+  if (options.deploy === 'vercel')
+    url = (await deployVercel(directory, { project: options.project ?? prepared.plan.editor.id, scope: options.scope, public: options.public === true, log })).deployment;
   return { plan, directory, ...(url ? { url } : {}) };
 }
 
@@ -362,7 +363,7 @@ async function buildSite(prepared: Prepared, outOption: string): Promise<string>
 }
 
 /** Static hosting settings: no build step, no external connections, not indexed. */
-function vercelConfig() {
+export function vercelConfig() {
   return {
     $schema: 'https://openapi.vercel.sh/vercel.json',
     framework: null,
@@ -429,7 +430,27 @@ async function secretValues(projectRoot: string): Promise<[string, string][]> {
   return [...values];
 }
 
-async function deployVercel(directory: string, projectName: string, scope: string | undefined, log: (line: string) => void, intendedPublic: boolean): Promise<string> {
+export interface DeployOptions {
+  /** Vercel project name. */
+  readonly project: string;
+  /** Vercel team; field-io by default. */
+  readonly scope?: string;
+  /** The site is meant to be readable by anyone (see `EditorExportOptions.public`). */
+  readonly public: boolean;
+  readonly log: (line: string) => void;
+}
+
+export interface Deployed {
+  /** This deployment's own URL. */
+  readonly deployment: string;
+  /** The stable production URL to hand out: the project's alias. */
+  readonly url: string;
+}
+
+/** Deploys a finished static directory to production. `cascade share` takes one, so tests stub the network. */
+export type Deployer = (directory: string, options: DeployOptions) => Promise<Deployed>;
+
+export const deployVercel: Deployer = async (directory, { project: projectName, scope, public: intendedPublic, log }) => {
   const team = scope ?? 'field-io';
   // Link in a scratch directory: `vercel link` also pulls env into .env.local,
   // which must never land in the site being deployed.
@@ -443,17 +464,23 @@ async function deployVercel(directory: string, projectName: string, scope: strin
     await fs.rm(scratch, { recursive: true, force: true });
   }
   log(`Deploying ${directory} to Vercel project ${team}/${projectName}…`);
-  const { stdout } = await run('vercel', ['deploy', '--prod', '--yes', '--scope', team], { cwd: directory, maxBuffer: 16 * 1024 * 1024 });
-  const url = stdout.trim().split('\n').reverse().find((line) => /^https:\/\//.test(line.trim()))?.trim();
-  if (!url) throw new Error(`Vercel did not report a deployment URL:\n${stdout}`);
+  const { stdout, stderr } = await run('vercel', ['deploy', '--prod', '--yes', '--scope', team], { cwd: directory, maxBuffer: 16 * 1024 * 1024 });
+  const deployment = stdout.trim().split('\n').reverse().find((line) => /^https:\/\//.test(line.trim()))?.trim();
+  if (!deployment) throw new Error(`Vercel did not report a deployment URL:\n${stdout}`);
+  const url = productionAlias(`${stdout}\n${stderr}`) ?? `https://${projectName}.vercel.app`;
   // Vercel Authentication must be on, unless public was asked for: an
   // anonymous request must not get the page by accident.
-  const response = await fetch(`https://${projectName}.vercel.app/`, { redirect: 'manual' });
+  const response = await fetch(`${url}/`, { redirect: 'manual' });
   const verdict = publicVerdict(response.status, intendedPublic);
-  if (verdict === 'public-as-intended') log(`Public, as intended (--public): https://${projectName}.vercel.app`);
+  if (verdict === 'public-as-intended') log(`Public, as intended: ${url}`);
   else if (verdict === 'public-by-accident')
-    throw new Error(`Deployed, but https://${projectName}.vercel.app is publicly readable. Turn on Vercel Authentication (Settings → Deployment Protection) for ${team}/${projectName}.`);
-  return url;
+    throw new Error(`Deployed, but ${url} is publicly readable. Turn on Vercel Authentication (Settings → Deployment Protection) for ${team}/${projectName}.`);
+  return { deployment, url };
+};
+
+/** The production alias `vercel deploy --prod` reports ("Aliased: https://….vercel.app"). */
+export function productionAlias(output: string): string | undefined {
+  return /Aliased:?\s+(https:\/\/[^\s[\]]+)/.exec(output)?.[1]?.replace(/\/$/, '');
 }
 
 /** What an anonymous request's status means for a deploy. */

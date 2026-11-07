@@ -23,6 +23,16 @@ Notable changes to Cascade. Newest first.
   "Picked: … (pick:<id>:<n>)", runs `cascade pick <id> <n>` and replies with
   the locked image. At most 8 variants, refused before cooking. The loop is in
   AGENTS.md, `doc/CLI_REFERENCE.md` and the `cascade new` template.
+- **`cascade share`: output reaches people as a link.** `cascade share
+  <graph | site-directory> [--name <slug>]` exports the editor (or takes a
+  static directory with an `index.html`) into a scratch directory, with the
+  export allowlist and leak scan, deploys it to the Vercel project
+  `cascade-<slug>` and prints the production URL (`data.url` with `--json`).
+  Each share is recorded in the project's `shares.json`. Public unless
+  `--protected`. Also the MCP tool `share`. The deploy step is a `Deployer`
+  (`deployVercel` in `editorExport.ts`), which tests stub; `cascade export
+  --deploy vercel` uses the same one and now checks the production alias
+  Vercel reports rather than assuming `<project>.vercel.app`.
 
 ## 0.11.0 — 2026-11-07
 

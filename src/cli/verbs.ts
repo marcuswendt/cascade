@@ -197,6 +197,30 @@ export const VERBS: readonly Verb[] = [
       call: { kind: 'cli', argv: (args, resolve) => ['export', resolve(args.graph), ...(args.out ? ['--out', resolve(args.out)] : ['--plan'])] },
     }],
   },
+  {
+    ...editorVerb, name: 'share', json: 'keep', usage: '<graph-file | site-directory> [--name <slug>] [--scope <team>] [--protected]',
+    summary: 'Export and deploy to Vercel as cascade-<slug>; print the link and record it in shares.json',
+    mcp: [{
+      name: 'share',
+      description: 'Share a graph\'s editor, or a static directory with an index.html, as one link (cascade share): export, deploy to the Vercel project cascade-<name> and return `url`, recorded in the project\'s shares.json. Public unless `protected`.',
+      inputSchema: object({
+        graph: { type: 'string', description: 'The .cascade file or site directory, relative to the project directory' },
+        name: { type: 'string', description: 'Slug; the Vercel project is cascade-<name> (default: the editor id or directory name)' },
+        scope: { type: 'string', description: 'Vercel team (default field-io)' },
+        protected: { type: 'boolean', description: 'Require Vercel Authentication instead of a public link' },
+      }, ['graph']),
+      call: {
+        kind: 'cli',
+        argv: (args, resolve) => [
+          'share', resolve(args.graph),
+          ...(args.name ? ['--name', String(args.name)] : []),
+          ...(args.scope ? ['--scope', String(args.scope)] : []),
+          ...(args.protected ? ['--protected'] : []),
+        ],
+        timeoutMs: () => 10 * 60_000,
+      },
+    }],
+  },
   { ...editorVerb, name: 'publish', usage: '<graph-file> <node>.<prop> [--label ...]', summary: 'Publish a node prop as an editor parameter' },
   { ...editorVerb, name: 'freeze', usage: '<graph-file> <node> --fields <a,b>', summary: 'Snapshot chosen fields of a live data source for export' },
   { ...editorVerb, name: 'scene', usage: '<graph-file> <scene.json> --out <new-graph-file>', summary: 'Apply a scene file to a copy of the graph' },
