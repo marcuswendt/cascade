@@ -80,8 +80,9 @@ Studio-only project extensions use the type-only `cascade/studio/panel` contract
 The packed root tarball contains compiled contracts, runtime, declarations, and a self-contained CLI. It must install and type-resolve from an empty project without workspace links or development dependencies. Additional packages require a concrete independent publication/versioning need.
 
 The repository requires Node.js 22.13 or newer and builds with TypeScript 6,
-Vite 8, and the Svelte Vite plugin 7. TypeScript 7 remains deferred while it is
-a preview rather than a stable compiler target.
+Vite 8, and the Svelte Vite plugin 7. TypeScript 7 runs the plain-tsc gates in
+`scripts/verify.mjs` only; the build, the CLI's node compiler and svelte-check
+stay on 6, which has the JS API they use.
 
 Model providers are deliberately outside Cascade. Projects own provider SDKs,
 credentials, model selection, retries, and result normalization, using the same

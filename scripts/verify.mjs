@@ -20,7 +20,13 @@ const fast = process.argv.includes('--fast');
 const node = process.execPath;
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const bin = (...parts) => path.join(root, 'node_modules', ...parts);
-const tsc = bin('typescript', 'bin', 'tsc');
+/**
+ * The plain-tsc gates run on TypeScript 7 (the `typescript7` alias; Marcus,
+ * round 1 decision 5, built 2026-11-07): src + tests 3.0 -> 0.4 s with the
+ * same errors per file. The `typescript` dependency stays on 6 — the CLI and
+ * server compile project nodes through its JS API, and svelte-check uses it.
+ */
+const tsc = bin('typescript7', 'bin', 'tsc');
 const vitest = bin('vitest', 'vitest.mjs');
 
 const run = (command, args, options = {}) => {
@@ -117,7 +123,17 @@ const steps = [
   },
   { name: 'types: src + tests', run: typecheckSourceAndTests },
   { name: 'types: server', run: () => run(node, [tsc, '-p', 'server/tsconfig.json', '--noEmit']) },
-  { name: 'types: packages', run: () => run(npm, ['run', '--silent', 'check:packages']), skip: fast },
+  {
+    // `npm run check:packages` on tsc 7; the packages build step above has
+    // already built contracts, which the runtime check reads.
+    name: 'types: packages',
+    skip: fast,
+    run: () => {
+      run(node, [tsc, '-p', 'packages/contracts/tsconfig.json', '--noEmit']);
+      run(node, [tsc, '-p', 'packages/contracts/tsconfig.test.json']);
+      run(node, [tsc, '-p', 'packages/runtime/tsconfig.json', '--noEmit']);
+    },
+  },
   { name: 'node reference current', run: () => run(node, ['--import', 'tsx', 'scripts/build-node-reference.mjs', '--check']) },
   { name: 'svelte-check', run: () => run(node, [bin('svelte-check', 'bin', 'svelte-check'), '--tsconfig', './tsconfig.json', '--threshold', 'error', '--output', 'human']), skip: fast },
   { name: 'architecture', run: () => run(node, [vitest, 'run', 'tests/architecture-']), skip: !fast },
@@ -127,7 +143,10 @@ const steps = [
     run: () => {
       const files = changedFiles();
       if (!files.length) return console.log('[verify] nothing changed since HEAD');
-      run(node, [vitest, 'related', '--run', '--passWithNoTests', ...files]);
+      // Nothing Studio-side changed: the `node` project only (vitest.config.ts),
+      // so the Svelte plugin is never set up.
+      const studio = files.some((file) => /\.svelte(\.ts)?$|^src\/(editor|App)|^tests\/(components|workflows)\//.test(file));
+      run(node, [vitest, 'related', '--run', '--passWithNoTests', ...(studio ? [] : ['--project', 'node']), ...files]);
     },
   },
   { name: 'vitest', run: () => run(node, [vitest, 'run']), skip: fast },

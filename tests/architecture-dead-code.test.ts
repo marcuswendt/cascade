@@ -38,7 +38,7 @@ describe('architecture: dead code', () => {
 
   it(`keeps duplicated lines at or under ${DUPLICATED_LINES_CEILING}`, () => {
     const { total, byFile } = duplicatedLines();
-    const worst = Object.entries(byFile).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const worst = Object.entries(byFile as Record<string, number>).sort((a, b) => b[1] - a[1]).slice(0, 8);
     expect(total, `duplicated lines rose; the most copied files: ${JSON.stringify(worst)}`).toBeLessThanOrEqual(DUPLICATED_LINES_CEILING);
   });
 });

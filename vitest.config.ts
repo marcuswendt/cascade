@@ -5,24 +5,51 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/** Component and workflow tests: the ones that compile Svelte components. */
+const STUDIO = ['tests/components/**/*.test.ts', 'tests/workflows/**/*.test.ts'];
+
+/**
+ * Two projects, so a runtime or CLI edit does not pay for Studio's test setup:
+ * `node` (everything else) runs without the Svelte plugin, `studio` with it.
+ * `vitest run --project node` is the runtime loop (1,767 tests in ~10 s
+ * against ~18 s for all, 2026-11-07); plain `vitest run` (and `verify`) runs
+ * both, so the count is unchanged. The environment is node in both and a file
+ * that needs the DOM opts in with a `@vitest-environment jsdom` docblock —
+ * which is what already happened: Vitest 4 dropped the
+ * `environmentMatchGlobs` this config used to carry, so those globs did
+ * nothing.
+ */
 export default defineConfig({
-  plugins: [svelte()],
   test: {
     globals: true,
     environment: 'node',
-    // Use jsdom for component and workflow tests
-    environmentMatchGlobs: [
-      ['tests/components/**', 'jsdom'],
-      ['tests/workflows/**', 'jsdom'],
-    ],
     setupFiles: ['./tests/setup.ts'],
-    include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
       include: ['src/nodes/**/*.ts', 'src/engine/**/*.ts', 'src/editor/**/*.ts'],
       exclude: ['**/*.test.ts', '**/index.ts']
-    }
+    },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'node',
+          environment: 'node',
+          include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+          exclude: ['**/node_modules/**', ...STUDIO],
+        },
+      },
+      {
+        extends: true,
+        plugins: [svelte()],
+        test: {
+          name: 'studio',
+          environment: 'node',
+          include: STUDIO,
+        },
+      },
+    ],
   },
   resolve: {
     // Component tests need Svelte's browser entry even though most of the suite

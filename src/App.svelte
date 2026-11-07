@@ -18,6 +18,7 @@
   import { layoutTopDownGrouped } from '@/utils/groupedAutoLayout';
   import CookStatusStrip from './editor/CookStatusStrip.svelte';
   import type { CookStatus } from '@/nodes/CookScheduler';
+  import { paintViewedFirst, pointerParameterGesture } from './editor/stores/viewedFirstCook';
 
   // Lazy-loaded dialog components
   let SettingsDialog: any = null;
@@ -87,6 +88,8 @@
   let isGraphLoading = true;
   let subscribedGraph: Graph | undefined;
   let unsubscribeCookStatus: (() => void) | undefined;
+  let uninstallViewedFirst: (() => void) | undefined;
+  let parameterGesture: ReturnType<typeof pointerParameterGesture> | undefined;
   let cookStatus: Readonly<CookStatus> = {
     phase: 'idle',
     pass: 0,
@@ -124,9 +127,18 @@
     unsubscribeCookStatus = graph?.scheduler.subscribe(status => {
       cookStatus = status;
     });
+    // The Viewer's node paints before anything downstream of it cooks, and a
+    // held slider cooks only what is on screen (stores/viewedFirstCook.ts).
+    uninstallViewedFirst?.();
+    parameterGesture ??= pointerParameterGesture();
+    uninstallViewedFirst = graph ? paintViewedFirst(graph, { gesture: parameterGesture }) : undefined;
   }
 
-  onDestroy(() => unsubscribeCookStatus?.());
+  onDestroy(() => {
+    unsubscribeCookStatus?.();
+    uninstallViewedFirst?.();
+    parameterGesture?.dispose();
+  });
   let documentName = 'Untitled';
   let currentFilePath: string | null = null;
   // Set when the graph was opened from the `cascade` server (the project's own

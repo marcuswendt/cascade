@@ -225,13 +225,16 @@ type system knows what a `vec2` is; nothing tells it that `offset_x` and
 
 ## Change workflow
 
-Use Node.js 22.13 or newer. Cascade compiles with TypeScript 6; do not move to
-the TypeScript 7 preview until it is stable and the repository gates pass.
+Use Node.js 22.13 or newer. Cascade compiles with TypeScript 6 (the
+`typescript` dependency: the CLI and server use its JS API, and svelte-check
+runs on it). The plain-tsc gates in `scripts/verify.mjs` run on TypeScript 7
+(the `typescript7` devDependency), which reports the same errors about seven
+times faster; keep code clean under both.
 
 1. Add or update a focused regression test.
 2. Make the smallest change at the owning layer.
 3. Prefer deletion or an existing utility over another wrapper.
-4. While iterating, run the focused test or `npm run verify:fast` (types for src, tests and server, the node reference, the architecture ratchets, and `vitest related` for the files you changed). Before you commit, run `npm run verify`: it builds the packages, then runs the typechecks, `check:packages`, svelte-check, the whole vitest suite, the package tests and the Studio bundle budget, stopping at the first failure. It never touches `dist/`. Run `npm run build` and `npm run build:cli` only when you need the built CLI or Studio; both replace `dist/` only on success, so a failed build leaves the previous CLI working.
+4. While iterating, run the focused test or `npm run verify:fast` (types for src, tests and server, the node reference, the architecture ratchets, and `vitest related` for the files you changed). Before you commit, run `npm run verify`: it builds the packages, then runs the typechecks, `check:packages`, svelte-check, the whole vitest suite, the package tests and the Studio bundle budget, stopping at the first failure. It never touches `dist/`. Run `npm run build` and `npm run build:cli` only when you need the built CLI or Studio; both replace `dist/` only on success, so a failed build leaves the previous CLI working. `build:cli` skips the package build when every `packages/*/dist` is newer than its sources (`-- --force` rebuilds them). For a runtime or CLI change, `npx vitest run --project node` runs the suite without the Studio component tests.
 5. For package/public API changes, also test the packed tarball from an empty temporary project.
 6. When a built-in definition or a node library registry changes, regenerate the node reference with `npm run build:node-reference` and commit the result. `verify` fails on a stale one (`npm run check:node-reference`).
 7. The ratchets in `tests/architecture-*.test.ts`, `scripts/bundle-budget.mjs` and the test type-error list in `scripts/verify.mjs` only go down. When one fails, fix the code: split the file, move the shared code down a layer, break the cycle, lazy-load the new Studio code. Never add to a list or raise a number; when your change lowers one, lower the number in the same commit.

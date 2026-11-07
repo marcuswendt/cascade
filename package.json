@@ -183,6 +183,7 @@
     "svelte": "^5.0.0",
     "svelte-check": "^4.7.6",
     "tsx": "^4.23.12",
+    "typescript7": "npm:typescript@^7.0.2",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"
   },

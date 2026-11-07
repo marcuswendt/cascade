@@ -1,16 +1,22 @@
 #!/usr/bin/env node
 /**
  * Fails when the Studio's first-paint bundle (the entry chunk index.html
- * loads, and its CSS) grows past its budget. Builds the Studio into a
- * temporary directory, never into dist/, so it is safe beside running sketches.
+ * loads, every chunk it modulepreloads, and its CSS) grows past its budget.
+ * Builds the Studio into a temporary directory, never into dist/, so it is
+ * safe beside running sketches.
  *
  *   node scripts/bundle-budget.mjs              build, measure, compare
  *   node scripts/bundle-budget.mjs --dir <out>  measure an existing build
  *
- * The budgets are ratchets set at the size on main on 2026-11-06. Lower them
- * when a change makes the entry smaller; do not raise them — move the new
- * code behind a dynamic import instead. The JS budget carries 25 KB of
- * headroom over that size (Marcus, 2026-11-06), so small Studio work lands
+ * The preloaded chunks count because they load before first paint just the
+ * same: once panels went lazy (2026-11-07), Rolldown moved 52 KB the entry
+ * shares with them into preloaded chunks, and an entry-only number would
+ * have called that a saving.
+ *
+ * The budgets are ratchets. Lower them when a change makes first paint
+ * smaller; do not raise them — move the new code behind a dynamic import
+ * instead. Each carries headroom over the size on main (Marcus, 2026-11-06:
+ * 25 KB of JS; 10 KB of CSS since 2026-11-07), so small Studio work lands
  * without a split; spend it on purpose.
  */
 import { execFileSync } from 'node:child_process';
@@ -19,13 +25,15 @@ import os from 'node:os';
 import path from 'node:path';
 
 export const BUDGET = {
-  entryJsBytes: 1071504 + 25 * 1024,
-  // +806 on 2026-11-07 for the scrub number's shared field rules in
-  // theme.css (ruler, limit edge, steppers), net of merging VectorInput's
-  // duplicated button rules; it is on the Inspector's first paint, so it
-  // cannot be split off. Raised by that exact amount, on Marcus's go-ahead.
-  // −19 the same day: CoreValue's vectors joined the shared rules.
-  entryCssBytes: 239427,
+  // 2026-11-07, perf round 2 move 5: Agent (with marked + DOMPurify),
+  // Definition, Node Info and Timeline panels lazy; first-paint JS
+  // 1,135,042 -> 968,597 B (entry 1,078,049 -> 859,801).
+  firstPaintJsBytes: 968597 + 25 * 1024,
+  // Same change: those panels' CSS left the entry, 239,446 -> 223,490 B.
+  // The scrub number's shared field rules in theme.css (+806, then −19,
+  // 2026-11-07, on Marcus's go-ahead) sit on the Inspector's first paint and
+  // come out of this headroom.
+  entryCssBytes: 223490 + 10 * 1024,
 };
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -34,9 +42,11 @@ export function measureEntry(outDir) {
   const html = fs.readFileSync(path.join(outDir, 'index.html'), 'utf8');
   const script = html.match(/<script[^>]*type="module"[^>]*src="\/?([^"]+\.js)"/)?.[1];
   const styles = [...html.matchAll(/<link[^>]*rel="stylesheet"[^>]*href="\/?([^"]+\.css)"/g)].map((match) => match[1]);
+  const preloads = [...html.matchAll(/<link[^>]*rel="modulepreload"[^>]*href="\/?([^"]+\.js)"/g)].map((match) => match[1]);
   if (!script) throw new Error(`no module script in ${outDir}/index.html`);
   const size = (file) => fs.statSync(path.join(outDir, file)).size;
   return {
+    firstPaintJsBytes: [script, ...preloads].reduce((sum, file) => sum + size(file), 0),
     entryJsBytes: size(script),
     entryCssBytes: styles.reduce((sum, file) => sum + size(file), 0),
     script,
