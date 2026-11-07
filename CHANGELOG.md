@@ -76,6 +76,20 @@ Notable changes to Cascade. Newest first.
   interpreter cannot start now fails the call that needs it instead of
   crashing the process. `run --frames` over 30 frames prints one line naming
   `cascade render` for the same range.
+- **Run traces time the frame and the save.** Each run in
+  `.cascade/runs/*.json` has `ms` (the cook), `frameMs` (to outputs on disk)
+  and `saveMs` (the difference), so a slow save shows without a profiler
+  (field-logo now: 747 ms cook, 82 ms save a frame).
+
+### Fixed
+
+- **`run --frames … --mp4` with an absolute `--out`.** ffmpeg was handed the
+  project root joined to the absolute sequence path and found no files; the
+  sequence is now resolved, not joined.
+- **`cascade doctor` fails a project whose stages cannot import numpy.** With
+  no `python` environment declared, a stage source importing numpy and an
+  interpreter without it is a `stage imports` failure naming the file and the
+  fix. cloud-wall and cloud-volumes passed doctor and could not render.
 
 ## 0.11.0 — 2026-11-07
 

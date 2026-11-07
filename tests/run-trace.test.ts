@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { runGraph } from '@/cli/runner';
+import { RunTrace } from '@/cli/runTrace';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -104,3 +105,66 @@ describe('the run trace', () => {
     expect(JSON.parse(written.trim()).seed).toBe(11);
   });
 });
+
+describe('frame and save time', () => {
+  /** Round 2 needed a profiler to see that a PNG encode was half of every frame. */
+  it('records each run\'s cook, its whole frame and the save between them', () => {
+    let listener: (event: any) => void = () => {};
+    let frame = 1;
+    const graph = {
+      inspect: () => ({ nodes: [{ id: 'a', moduleId: 'project.A' }] }),
+      subscribe: (fn: (event: any) => void) => { listener = fn; return () => {}; },
+      getFrame: () => frame,
+    };
+    const now = vi.spyOn(performance, 'now');
+    const trace = new RunTrace('/tmp/g.cascade', '0.0.0', 1);
+    trace.attach(graph as never);
+    for (const [start, end, wall] of [[0, 40, 55], [100, 130, 150]] as const) {
+      now.mockReturnValue(start);
+      listener({ type: 'run:start', runId: `r${frame}` });
+      listener({ type: 'node:start', nodeId: 'a' });
+      now.mockReturnValue(end);
+      listener({ type: 'node:complete', nodeId: 'a' });
+      listener({ type: 'run:complete', result: {} });
+      trace.recordSaved(wall);
+      frame += 1;
+    }
+    const runs = trace.toJSON().runs;
+    expect(runs.map((run) => [run.frame, run.ms, run.frameMs, run.saveMs])).toEqual([[1, 40, 55, 15], [2, 30, 150, 120]]);
+    expect(runs[0]!.nodes[0]!.ms).toBe(40);
+  });
+
+  it('lands in a real run --frames trace', async () => {
+    const { root, file } = project();
+    const result = await runJsonFrames(file, root);
+    const trace = JSON.parse(fs.readFileSync(path.join(root, result.trace), 'utf8'));
+    expect(trace.runs).toHaveLength(2);
+    for (const run of trace.runs) {
+      expect(run.ms).toBeGreaterThanOrEqual(0);
+      expect(run.frameMs).toBeGreaterThanOrEqual(run.ms);
+      expect(run.saveMs).toBe(run.frameMs - run.ms);
+    }
+  });
+});
+
+/** `run --frames 1-2 --json` on a graph with one image output. */
+async function runJsonFrames(file: string, root: string): Promise<any> {
+  fs.mkdirSync(path.join(root, 'nodes', 'Swatch'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'nodes', 'Swatch', 'index.ts'), `
+export const definition = {
+  apiVersion: 1, runsOn: 'portable', capabilities: ['assets'], props: {},
+  outputs: { image: { kind: 'data', type: 'image' } },
+} as const;
+export async function execute(context) {
+  const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  const stored = await context.capabilities.assets.write(png, { suggestedName: 'swatch.png', mediaType: 'image/png' }, { signal: context.signal });
+  context.outputs.image.set({ path: stored.path, size: [1, 1], channels: 'rgba', depth: 'u8', space: 'srgb' });
+}
+`);
+  fs.writeFileSync(file, JSON.stringify({ version: '0.2', nodes: [{ id: 'swatch', module: 'project.Swatch', source: 'project' }], connections: [] }));
+  let written = '';
+  vi.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => { written += String(chunk); return true; });
+  await runGraph({ file, frames: '1-2', out: 'frames', json: true });
+  vi.restoreAllMocks();
+  return JSON.parse(written.trim());
+}

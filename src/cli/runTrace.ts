@@ -47,6 +47,15 @@ export const MAX_LOG_LINE = 2000;
 export interface TracedRun {
   readonly runId: string;
   readonly frame?: number;
+  /** The cook, `run:start` to `run:complete`: every node plus the runtime's own time. */
+  ms?: number;
+  /**
+   * The whole frame, cook to outputs on disk, and of that the part after the
+   * cook (collecting and saving the outputs). Round 2 needed a profiler to
+   * find that a PNG encode was half of every frame; this is where it shows.
+   */
+  frameMs?: number;
+  saveMs?: number;
   readonly nodes: TracedNode[];
 }
 
@@ -85,6 +94,11 @@ export class RunTrace {
     return graph.subscribe((event) => {
       if (event.type === 'run:start') {
         this.runs.push({ runId: event.runId, frame: graph.getFrame(), nodes: [] });
+        this.runStarted = performance.now();
+      } else if (event.type === 'run:complete') {
+        const run = this.runs[this.runs.length - 1];
+        if (run && this.runStarted !== null) run.ms = Math.round(performance.now() - this.runStarted);
+        this.runStarted = null;
       } else if (event.type === 'node:start') {
         const run = this.runs[this.runs.length - 1];
         if (!run) return;
@@ -96,6 +110,20 @@ export class RunTrace {
         this.current = null;
       }
     });
+  }
+
+  private runStarted: number | null = null;
+
+  /**
+   * The latest run's whole frame took `frameMs`, its outputs saved: what is
+   * left after the cook is the save. Called by the frame loop per frame and
+   * once by a still run.
+   */
+  recordSaved(frameMs: number): void {
+    const run = this.runs[this.runs.length - 1];
+    if (!run) return;
+    run.frameMs = Math.round(frameMs);
+    if (run.ms !== undefined) run.saveMs = Math.max(0, run.frameMs - run.ms);
   }
 
   /** Record a stage call against the node cooking now. */

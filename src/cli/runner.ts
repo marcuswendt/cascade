@@ -300,7 +300,11 @@ export async function runGraph(options: RunOptions): Promise<void> {
       ...(options.outNodes?.length ? { outNodes: options.outNodes } : {}),
       ...(verbose ? { verbose } : {}),
       ...(options.fresh ? { fresh: true } : {}),
-      ...(options.worker ? { frameSource: options.worker.frameSource, onFrame: options.worker.onFrame } : {}),
+      ...(options.worker ? { frameSource: options.worker.frameSource } : {}),
+      onFrame: async (frame) => {
+        trace.recordSaved(frame.durationMs);
+        await options.worker?.onFrame(frame);
+      },
       observe,
     });
     if (rendered && options.worker) {
@@ -340,11 +344,15 @@ export async function runGraph(options: RunOptions): Promise<void> {
     const target = options.outNodes?.length || (nodes?.length ?? 0) > 1 ? undefined : nodes?.[0] ?? entryNode;
     const saveImages = async (graph: Parameters<typeof saveStillImages>[0]) => {
       if (!project) return;
+      const saving = performance.now();
       images = await saveStillImages(graph, project, {
         ...(out ? { out } : {}),
         ...(nodes?.length ? { nodes } : entryNode ? { nodes: [entryNode] } : {}),
         ...(options.outNodes?.length ? { extra: options.outNodes } : {}),
       });
+      const runs = trace.toJSON().runs;
+      const cook = runs[runs.length - 1]?.ms;
+      if (cook !== undefined) trace.recordSaved(cook + performance.now() - saving);
     };
     if (await runDeterministicProjectGraph(file, graphData, target, observe, saveImages)) {
       if (verbose) console.log('Graph execution completed');

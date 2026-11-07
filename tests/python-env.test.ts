@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { captureEnvelope } from '@/cli/jsonEnvelope';
 import { runGraph } from '@/cli/runner';
-import { doctor } from '@/cli/doctorCommand';
+import { doctor, importsModule } from '@/cli/doctorCommand';
 import { provisionPythonEnv, pythonEnvStatus, readPythonEnv } from '../server/src/pythonEnv';
 
 const roots: string[] = [];
@@ -100,4 +100,57 @@ describe('cascade.json python', () => {
     expect(pythonEnvStatus(root).state).toBe('current');
     expect(fs.readdirSync(path.join(root, '.cascade-cache', 'python', '_archive'))).toHaveLength(1);
   }, 120_000);
+});
+
+describe('cascade doctor and numpy', () => {
+  /**
+   * cloud-wall and cloud-volumes: stages that import numpy, no declared
+   * environment, an interpreter without it. Doctor said ok; every render failed.
+   * A fake interpreter stands in for the system Python 3.9.
+   */
+  function numpyProject(hasNumpy: boolean) {
+    const { root } = project(undefined);
+    fs.writeFileSync(path.join(root, 'runtime', 'stages.py'), 'import json, sys\nimport numpy as np\nprint(json.dumps({"value": 1}))\n');
+    fs.writeFileSync(path.join(root, 'fakepython'), [
+      '#!/bin/sh',
+      'case "$2" in',
+      `  *numpy*) ${hasNumpy ? 'exit 0' : 'echo "ModuleNotFoundError: No module named numpy" >&2; exit 1'} ;;`,
+      '  *) echo "3.9.6 /usr/bin/python3" ;;',
+      'esac',
+      '',
+    ].join('\n'), { mode: 0o755 });
+    fs.writeFileSync(path.join(root, 'cascade.json'), JSON.stringify({
+      exec: { stages: { entrypoint: 'runtime/stages.py', python: 'fakepython' } },
+    }));
+    return root;
+  }
+
+  it('fails when stages import numpy, no environment is declared and the interpreter has none', async () => {
+    const checks = await doctor(numpyProject(false));
+    const check = checks.find((item) => item.name === 'stage imports');
+    expect(check?.ok).toBe(false);
+    expect(check?.optional).toBeUndefined();
+    expect(check?.detail).toMatch(/runtime\/stages\.py imports numpy/);
+    expect(check?.detail).toMatch(/"python": \{ "requirements": \["numpy"\] \}/);
+  });
+
+  it('passes when the interpreter has numpy', async () => {
+    const check = (await doctor(numpyProject(true))).find((item) => item.name === 'stage imports');
+    expect(check?.ok).toBe(true);
+  });
+
+  it('reads the import forms Python has', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cascade-imports-'));
+    roots.push(root);
+    const check = (source: string) => {
+      const file = path.join(root, 'stage.py');
+      fs.writeFileSync(file, source);
+      return importsModule(file, 'numpy');
+    };
+    expect(check('import numpy as np\n')).toBe(true);
+    expect(check('import os, numpy\n')).toBe(true);
+    expect(check('from numpy import zeros\n')).toBe(true);
+    expect(check('    from numpy.linalg import norm\n')).toBe(true);
+    expect(check('import numpyish\n# numpy\n')).toBe(false);
+  });
 });
