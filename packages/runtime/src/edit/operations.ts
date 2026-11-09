@@ -24,6 +24,14 @@ export type GraphEditOperation =
       readonly comment?: string;
     }
   | { readonly op: "node.remove"; readonly id: string; readonly recursive?: boolean }
+  | {
+      readonly op: "node.move";
+      readonly nodes: readonly string[];
+      /** Subnet id or "root"; omitted keeps the node where it is in the tree. */
+      readonly to?: string | null;
+      /** Canvas position of the first node; the rest keep their offsets. */
+      readonly position?: Point;
+    }
   | { readonly op: "connect"; readonly from: string; readonly to: string; readonly layout?: boolean }
   | { readonly op: "disconnect"; readonly from?: string; readonly to: string }
   | {
@@ -45,6 +53,7 @@ export type GraphEditOperation =
 export const GRAPH_EDIT_OPERATIONS = [
   "node.add",
   "node.remove",
+  "node.move",
   "connect",
   "disconnect",
   "set",
@@ -81,6 +90,11 @@ export function applyOperation(editor: GraphEditor, operation: GraphEditOperatio
         nodes: operation.nodes,
         ...(operation.id ? { id: operation.id } : {}),
         ...(operation.label ? { label: operation.label } : {}),
+      });
+    case "node.move":
+      return editor.relocateNodes(operation.nodes, {
+        ...(operation.to !== undefined ? { to: operation.to === "root" ? null : operation.to } : {}),
+        ...(operation.position ? { at: operation.position } : {}),
       });
     case "subnet.move":
       return editor.moveNodes(operation.nodes, operation.to === "root" ? null : operation.to);

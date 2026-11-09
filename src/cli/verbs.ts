@@ -307,6 +307,26 @@ export const VERBS: readonly Verb[] = [
     }],
   },
   {
+    ...graphVerb, name: 'node move', aliases: ['node mv'], usage: '<graph> <node>... [--to <subnet|root>] [--at x,y]', summary: 'Move nodes into a subnet, out to the top level, or across the canvas; params and wires stay',
+    options: { to: 'value', at: 'value' },
+    operation: (operands, { values }) => ({
+      op: 'node.move', nodes: nonEmpty(operands, 'cascade node move <graph> <node>... [--to <subnet|root>] [--at x,y]'),
+      ...(values.to ? { to: values.to } : {}), ...(values.at ? { position: point(values.at) } : {}),
+    }),
+    mcp: [{
+      name: 'node_move',
+      description: 'Move existing nodes without removing them: `to` a subnet id or "root" (rewires through subnet boundaries), and/or to a canvas `position` (the first node lands there, the rest keep their offsets). Parameters, comments and wires are kept. Nodes must share a subnet.',
+      inputSchema: object({
+        graph, nodes: { type: 'array', items: { type: 'string' } }, to: { type: 'string', description: 'Subnet id, or "root" for the top level' },
+        position: object({ x: { type: 'number' }, y: { type: 'number' } }, ['x', 'y']), dryRun,
+      }, ['graph', 'nodes']),
+      call: edit((args) => ({
+        op: 'node.move', nodes: args.nodes,
+        ...(args.to ? { to: args.to } : {}), ...(args.position ? { position: args.position } : {}),
+      })),
+    }],
+  },
+  {
     ...graphVerb, name: 'connect', usage: '<graph> <node.output> <node.input> [--no-layout]', summary: 'Wire two ports',
     options: { 'no-layout': 'flag' },
     operation: (operands, { flags }) => ({
@@ -420,7 +440,7 @@ export const VERBS: readonly Verb[] = [
     ...graphVerb, name: 'edit', usage: '<graph> <operations.json | ->      apply a batch, all or nothing', summary: 'Apply a batch of operations, all or nothing',
     mcp: [{
       name: 'edit',
-      description: 'Apply several operations at once, all or nothing. Each is { "op": "node.add" | "node.remove" | "connect" | "disconnect" | "set" | "subnet.create" | "subnet.move" | "subnet.dissolve", ... } with the fields of the matching tool (node.add takes `module` and `in`).',
+      description: 'Apply several operations at once, all or nothing. Each is { "op": "node.add" | "node.remove" | "node.move" | "connect" | "disconnect" | "set" | "subnet.create" | "subnet.move" | "subnet.dissolve", ... } with the fields of the matching tool (node.add takes `module` and `in`).',
       inputSchema: object({ graph, operations: { type: 'array', items: { type: 'object' } }, dryRun }, ['graph', 'operations']),
       call: { kind: 'edit', operations: (args) => args.operations },
     }],

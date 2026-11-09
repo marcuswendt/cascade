@@ -334,6 +334,32 @@ export class GraphEditor {
   }
 
   /**
+   * Move sibling nodes in one step: into another subnet (`to`; `null` for the
+   * top level), to a canvas position (`at`), or both. Parameters, comments and
+   * wires stay; a subnet change rewires through the boundaries like
+   * `moveNodes`. With several nodes, `at` places the first and the rest keep
+   * their offsets from it.
+   */
+  relocateNodes(
+    ids: readonly string[],
+    target: { readonly to?: string | null; readonly at?: Point },
+  ): { moved: string[]; to: string | null; placed: NodeSummary[] } {
+    if (target.to === undefined && !target.at) throw new GraphEditError("Say where: a subnet (to), a position (at), or both");
+    const members = this.requireSiblings(ids);
+    // Offsets come from where the nodes stood before, not after any relayout
+    // the subnet step made to keep them off other nodes.
+    const before = members.map(positionOf);
+    const result = target.to === undefined
+      ? { moved: members.map((node) => node.id), to: parentOf(members[0]!), placed: [] as NodeSummary[] }
+      : this.moveNodes(ids, target.to);
+    if (!target.at) return result;
+    const dx = target.at.x - before[0]!.x;
+    const dy = target.at.y - before[0]!.y;
+    members.forEach((node, index) => setPosition(node, { x: before[index]!.x + dx, y: before[index]!.y + dy }));
+    return { ...result, placed: members.map((node) => this.summary(node)) };
+  }
+
+  /**
    * Move sibling nodes to another subnet (`null` for the top level), one level
    * at a time — out to the common ancestor, then in — rewiring through each
    * boundary on the way.

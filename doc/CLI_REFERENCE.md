@@ -18,6 +18,7 @@ Everything an agent needs to build or change a `.cascade` graph without hand-edi
 | `cascade graph list [dir]` | Every `.cascade` under a directory, with node and wire counts. Skips `renders/`, `out/`, `dist/` and `node_modules/` below it. |
 | `cascade node add <graph> <type> [--name <id>] [--in <subnet>] [--set k=v]... [--at x,y] [--comment <text>]` | Add a node. `<type>` is a module id or a short name: `Circle` is `cascade.geo.Circle`, `InkVocabulary` is `project.InkVocabulary`. The id defaults to the type in kebab case (`copy-to-points`, then `copy-to-points-2`). |
 | `cascade node rm <graph> <node> [--recursive]` | Remove a node and its wires. A subnet with children needs `--recursive`. |
+| `cascade node move <graph> <node>... [--to <subnet\|root>] [--at x,y]` | Move existing nodes without remove and re-add: into a subnet or out to the top level (rewired at each boundary), and/or to a canvas position (the first node lands at `x,y`, the rest keep their offsets). Parameters, comments and wires stay. Alias `node mv`. |
 | `cascade connect <graph> <node.output> <node.input> [--no-layout]` | Wire two ports. A port can be left off when the node has one on that side. An input that was fed is rewired, and the old wire is reported. |
 | `cascade disconnect <graph> <node.output> <node.input>` | Remove that wire. With one argument, `<node.input>` removes whatever feeds it, `<node.output>` everything it feeds. |
 | `cascade set <graph> <node.param> <value>` | Store a value, read by the parameter's declared type: `0.5`, `true`, `640,480`, `#f4f1ea`, `"300"`. A value equal to the default is not stored. |
@@ -90,6 +91,7 @@ Every command, not only the editing ones, prints one envelope on stdout and noth
   { "op": "set", "target": "render.strokeWidth", "expression": "1 + $T * 0.1" },
   { "op": "node.remove", "id": "old", "recursive": false },
   { "op": "subnet.create", "nodes": ["a", "b"], "label": "Motif" },
+  { "op": "node.move", "nodes": ["c"], "to": "root", "position": { "x": 400, "y": 120 } },
   { "op": "subnet.move", "nodes": ["c"], "to": "root" },
   { "op": "subnet.dissolve", "id": "motif" }
 ]

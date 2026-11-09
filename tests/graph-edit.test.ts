@@ -139,6 +139,35 @@ describe('diff stability: an edit then its inverse leaves the file byte-identica
     );
   });
 
+  it('node move reparents and repositions in one step, keeping params and wires', async () => {
+    await edit(
+      { op: 'subnet.create', nodes: ['circle', 'transform'], id: 'shapes' },
+      { op: 'node.add', module: 'cascade.geo.Rectangle', id: 'frame', position: { x: 600, y: 40 }, set: { size: [12, 7] } },
+      { op: 'node.add', module: 'cascade.geo.Transform', id: 'lift', position: { x: 600, y: 230 } },
+      { op: 'connect', from: 'frame.geometry', to: 'lift.geometry', layout: false },
+      { op: 'connect', from: 'lift.geometry', to: 'render.scene', layout: false },
+    );
+    const before = await fs.readFile(file, 'utf8');
+    await edit({ op: 'node.move', nodes: ['frame', 'lift'], to: 'shapes', position: { x: 100, y: 500 } });
+    const document = JSON.parse(await fs.readFile(file, 'utf8'));
+    const byId = (id: string) => document.nodes.find((node: { id: string }) => node.id === id);
+    expect(byId('frame').parent).toBe('shapes');
+    expect(byId('lift').parent).toBe('shapes');
+    expect(JSON.stringify(byId('frame'))).toContain('[12,7]');
+    expect(readGraph(document, { in: 'shapes' }).wires).toContain('frame.geometry -> lift.geometry');
+    const at = (id: string) => byId(id).position;
+    const [fx, fy] = Array.isArray(at('frame')) ? at('frame') : [at('frame').x, at('frame').y];
+    const [lx, ly] = Array.isArray(at('lift')) ? at('lift') : [at('lift').x, at('lift').y];
+    expect([fx, fy]).toEqual([100, 500]);
+    expect([lx - fx, ly - fy]).toEqual([0, 190]);
+    await edit({ op: 'node.move', nodes: ['frame', 'lift'], to: 'root', position: { x: 600, y: 40 } });
+    expect(await fs.readFile(file, 'utf8')).toEqual(before);
+  });
+
+  it('node move needs somewhere to go', async () => {
+    await expect(edit({ op: 'node.move', nodes: ['circle'] })).rejects.toThrow(/Say where/);
+  });
+
   it('subnet move keeps the graph equivalent even when ports are reused', async () => {
     await edit(
       { op: 'subnet.create', nodes: ['circle', 'transform'], id: 'shapes' },

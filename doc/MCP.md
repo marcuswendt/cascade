@@ -27,7 +27,7 @@ With a global install (`npm i -g @field/cascade`), use `"command": "cascade", "a
 | Tool | CLI equivalent |
 | --- | --- |
 | `graph_list`, `graph_read`, `graph_create` | `cascade graph list \| read \| create` |
-| `node_add`, `node_remove` | `cascade node add \| rm` |
+| `node_add`, `node_move`, `node_remove` | `cascade node add \| move \| rm` |
 | `connect`, `disconnect` | `cascade connect \| disconnect` |
 | `set` | `cascade set` (value, `expression`, `keys`, `removeKeys`, `interpolation`, `unset`) |
 | `subnet_create`, `subnet_move`, `subnet_dissolve` | `cascade subnet create \| move \| dissolve` |

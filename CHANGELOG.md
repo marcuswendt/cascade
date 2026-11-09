@@ -4,6 +4,15 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+### Added
+
+- **`cascade node move` (alias `node mv`, MCP `node_move`, op `node.move`).**
+  Move existing nodes without removing and re-adding them: `--to <subnet|root>`
+  rewires through subnet boundaries like `subnet move`, `--at x,y` places the
+  first node and keeps the others' offsets, and both work in one step.
+  Parameters, comments and wires stay. Moving between graph files is not
+  covered.
+
 ### Fixed
 
 - **`run --json --timeout` prints one envelope.** The supervising process also

@@ -71,7 +71,7 @@ describe('MCP tools from the verb table', () => {
   it('serves the twenty tools from before the table, plus ladder, pick, node_help, doctor and share', async () => {
     expect(TOOLS.map((tool) => tool.name).sort()).toEqual([
       'check', 'connect', 'cook', 'disconnect', 'doctor', 'edit', 'export', 'graph_create', 'graph_list', 'graph_read',
-      'inspect', 'ladder', 'lock', 'locks', 'node_add', 'node_help', 'node_remove', 'pick', 'render', 'replay', 'set',
+      'inspect', 'ladder', 'lock', 'locks', 'node_add', 'node_help', 'node_move', 'node_remove', 'pick', 'render', 'replay', 'set',
       'share', 'subnet_create', 'subnet_dissolve', 'subnet_move',
     ]);
   });
