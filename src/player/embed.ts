@@ -29,6 +29,8 @@ export async function mountPlayer(
   setQueryOption(url, 'frame', options.frame ?? 1);
   setQueryOption(url, 'fps', options.fps ?? 30);
   url.searchParams.set('autoplay', options.autoplay ? '1' : '0');
+  if (options.chrome === false) url.searchParams.set('chrome', '0');
+  else url.searchParams.delete('chrome');
   if (options.output) {
     url.searchParams.set('outputNode', options.output.nodeId);
     url.searchParams.set('outputPort', options.output.port);

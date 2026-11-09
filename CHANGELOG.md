@@ -4,6 +4,13 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+### Added
+
+- **Browser player without chrome.** `mount(…, { chrome: false })`, or
+  `player.html?chrome=0` in a plain iframe, shows the output alone on a
+  transparent page: no dark frame, Play button or frame field. See
+  `doc/WEB_PLAYER.md`.
+
 ### Fixed
 
 - **The browser player re-cooks only what changed.** `setProp`, `setInput`

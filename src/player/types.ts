@@ -30,4 +30,10 @@ export interface MountPlayerOptions {
   readonly fps?: number;
   readonly autoplay?: boolean;
   readonly output?: PlayerOutputSelection;
+  /**
+   * `false` shows the output alone on a transparent page: no dark frame, Play
+   * button or frame field. Errors still appear. Default `true`; the URL form
+   * is `?chrome=0`.
+   */
+  readonly chrome?: boolean;
 }

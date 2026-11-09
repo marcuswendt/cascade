@@ -35,12 +35,15 @@ export interface StartPlayerOptions {
   readonly registrations: readonly DefinitionNodeRegistration[];
   readonly assets: Readonly<Record<string, string>>;
   readonly root?: HTMLElement;
+  /** `false` hides the dark frame, Play button and frame field; overrides `?chrome=0`. */
+  readonly chrome?: boolean;
 }
 
 interface InitialState {
   readonly frame: number;
   readonly fps: number;
   readonly autoplay: boolean;
+  readonly chrome: boolean;
   readonly output?: PlayerOutputSelection;
 }
 
@@ -53,7 +56,7 @@ export async function startPlayer(options: StartPlayerOptions): Promise<PlayerCo
 
   const view = hostDocument.defaultView;
   const initial = readInitialState(view?.location.href);
-  const ui = createUi(hostDocument, root);
+  const ui = createUi(hostDocument, root, options.chrome ?? initial.chrome);
   let assets: PlayerAssetStore | undefined;
   let disposeIo: (() => void) | undefined;
   let gpu: ReturnType<typeof createBrowserGpuHost>;
@@ -467,10 +470,11 @@ interface PlayerUi {
   readonly output: HTMLElement;
 }
 
-function createUi(hostDocument: Document, root: HTMLElement): PlayerUi {
+function createUi(hostDocument: Document, root: HTMLElement, chrome: boolean): PlayerUi {
   root.replaceChildren();
   root.dataset.cascadePlayer = '';
-  Object.assign(root.style, { display: 'flex', flexDirection: 'column', height: '100%', margin: '0', background: '#141414', color: '#eee', overflow: 'hidden' });
+  Object.assign(root.style, { display: 'flex', flexDirection: 'column', height: '100%', margin: '0', overflow: 'hidden' });
+  if (chrome) Object.assign(root.style, { background: '#141414', color: '#eee' });
   const toolbar = hostDocument.createElement('div');
   toolbar.dataset.cascadeControls = '';
   Object.assign(toolbar.style, { display: 'flex', gap: '8px', padding: '8px', flex: 'none', alignItems: 'center' });
@@ -491,7 +495,9 @@ function createUi(hostDocument: Document, root: HTMLElement): PlayerUi {
   output.dataset.cascadeOutput = '';
   Object.assign(output.style, { display: 'grid', placeItems: 'center', flex: '1', minHeight: '0', minWidth: '0', overflow: 'auto' });
   toolbar.append(play, frame);
-  root.append(toolbar, error, output);
+  // Without chrome the controls stay detached: the controller still drives them.
+  if (chrome) root.append(toolbar);
+  root.append(error, output);
   return { play, frame, error, output };
 }
 
@@ -544,6 +550,7 @@ function readInitialState(href: string | undefined): InitialState {
     frame,
     fps,
     autoplay: query.get('autoplay') === '1',
+    chrome: query.get('chrome') !== '0',
     ...(nodeId && port ? { output: { nodeId, port } } : {}),
   };
 }

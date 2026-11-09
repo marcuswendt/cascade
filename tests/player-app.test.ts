@@ -108,6 +108,33 @@ describe('startPlayer', () => {
     } finally { await player.dispose(); }
   });
 
+  it('hides the frame and controls when chrome is off, by option or by URL', async () => {
+    const shown = document.createElement('main');
+    const withChrome = await startPlayer({ document: graph(), registrations: [registration], assets: {}, root: shown });
+    expect(shown.querySelector('[data-cascade-controls]')).not.toBeNull();
+    expect(shown.style.background).not.toBe('');
+    await withChrome.dispose();
+
+    const bare = document.createElement('main');
+    const player = await startPlayer({ document: graph(), registrations: [registration], assets: {}, root: bare, chrome: false });
+    try {
+      expect(bare.querySelector('[data-cascade-controls]')).toBeNull();
+      expect(bare.querySelector('button, input')).toBeNull();
+      expect(bare.style.background).toBe('');
+      expect(bare.querySelector('[data-cascade-output]')?.textContent).toContain('6');
+      player.play();
+      player.pause();
+    } finally { await player.dispose(); }
+
+    window.history.replaceState(null, '', '?chrome=0');
+    const fromUrl = document.createElement('main');
+    try {
+      const viaQuery = await startPlayer({ document: graph(), registrations: [registration], assets: {}, root: fromUrl });
+      expect(fromUrl.querySelector('[data-cascade-controls]')).toBeNull();
+      await viaQuery.dispose();
+    } finally { window.history.replaceState(null, '', '/'); }
+  });
+
   it('serializes explicit frame cooks', async () => {
     let active = 0;
     let maximum = 0;

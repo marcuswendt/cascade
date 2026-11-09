@@ -43,10 +43,22 @@ describe('mountPlayer', () => {
     expect(Object.fromEntries(url.searchParams)).toMatchObject({
       frame: '12', fps: '24', autoplay: '1', outputNode: 'render', outputPort: 'image',
     });
+    expect(url.searchParams.has('chrome')).toBe(false);
     await controller.dispose();
     await controller.dispose();
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(container.childElementCount).toBe(0);
+    container.remove();
+  });
+
+  it('passes chrome: false as chrome=0', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const mounting = mountPlayer(container, { url: '/exports/demo/player.html?chrome=1', chrome: false });
+    const iframe = container.querySelector('iframe')!;
+    expect(new URL(iframe.src).searchParams.get('chrome')).toBe('0');
+    iframe.dispatchEvent(new Event('load'));
+    await expect(mounting).rejects.toThrow(/cascadePlayerReady/);
     container.remove();
   });
 

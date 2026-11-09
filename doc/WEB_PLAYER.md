@@ -54,6 +54,12 @@ player.play();
 await player.dispose();
 ```
 
+For a neutral preview page, `chrome: false` hides the player's dark frame, Play
+button and frame field, leaving the output alone on a transparent page; the
+controller still plays, seeks and reports errors. The plain-iframe form is
+`player.html?chrome=0`. The other options have URL forms too: `frame`, `fps`,
+`autoplay=1`, `outputNode` with `outputPort`.
+
 The generic `mountPlayer` export from `cascade/player` accepts the same options
 plus `url`, pointing to a built `player.html`. Each mount creates an iframe, so
 two sketches can use the same node IDs and cache filenames without sharing data.
