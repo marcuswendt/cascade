@@ -105,7 +105,7 @@
   <header>
     <h1>Cascade</h1>
     <p class="tagline">An open-source node-graph runtime with a visual Studio, for building generative design systems that move between print, motion, installations, and the web. Built at FIELD.IO and used for our own work.</p>
-    <p class="release">Current release: 0.11.0, on npm as <code>@field/cascade</code>.</p>
+    <p class="release">Current release: 0.12.0, on npm as <code>@field/cascade</code>.</p>
   </header>
 
   <h2>What it is</h2>
@@ -281,6 +281,8 @@ cascade --help                all of it</pre>
   <h2>Versions</h2>
   <p>Notable changes, newest first. Every release, in full, is in the <a href="https://github.com/marcuswendt/cascade/blob/main/CHANGELOG.md">changelog</a> and on <a href="https://github.com/marcuswendt/cascade/releases">GitHub releases</a>.</p>
   <dl class="versions">
+    <dt>0.12.0 <span>9 Nov 2026</span></dt>
+    <dd><ul><li><code>cascade share</code> deploys an editor or a static page as a public link.</li><li><code>cascade ladder --cairn</code> offers variants as a tap-to-pick choice.</li><li>Scrub number fields in the Inspector: drag anywhere, type sums.</li><li>The image nodes are definition-v1; independent nodes cook at once headlessly; values are no longer copied between nodes.</li><li>GPU nodes get the adapter's full limits and may declare <code>gpuLimits</code>.</li></ul></dd>
     <dt>0.11.0 <span>7 Nov 2026</span></dt>
     <dd><ul><li><code>cascade/image</code>: one node body draws, reads and writes images in the browser and headless.</li><li><code>cascade ladder</code>, <code>pick</code> and <code>lock</code>. Cook three to five variants with a contact sheet, pick one, and replay it pixel for pixel.</li><li><code>cascade run --out &lt;dir&gt;</code> writes every image output as a file.</li><li>Assertion nodes (<code>cascade.assert.Range</code>, <code>Equals</code>, <code>True</code>, <code>NotBlank</code>) fail a run when a check does not hold.</li><li><code>cascade help node [&lt;type&gt;]</code> and <code>cascade doctor</code>, with a declared Python environment for stages.</li><li>The CLI starts in 30 ms, not 300, and the stage cache is on by default.</li></ul></dd>
     <dt>0.10.0 <span>12 Oct 2026</span></dt>

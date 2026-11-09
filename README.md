@@ -36,7 +36,7 @@ cascade .                          # reopen it later
 cascade run index.cascade --frames 1 --json   # render headlessly
 ```
 
-The npm package is at 0.11.0 and includes every command below. 0.11 adds `cascade/image`, `ladder`/`pick`, `run --out`, assertion nodes, `help node` and `doctor`; see the [changelog](CHANGELOG.md).
+The npm package is at 0.12.0 and includes every command below. 0.12 adds `cascade share`, `ladder --cairn`, scrub number fields and the full GPU limits; see the [changelog](CHANGELOG.md).
 
 ## New in 0.9: shareable editors
 

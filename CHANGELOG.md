@@ -4,6 +4,8 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+## 0.12.0 — 2026-11-09
+
 ### Added
 
 - **GPU nodes get the whole GPU, and can say what they need.** Studio and
@@ -190,6 +192,12 @@ Notable changes to Cascade. Newest first.
   no `python` environment declared, a stage source importing numpy and an
   interpreter without it is a `stage imports` failure naming the file and the
   fix. cloud-wall and cloud-volumes passed doctor and could not render.
+
+### Known gaps
+
+- **Ramp's stop editor and Image's file picker are not in Studio yet.** The
+  definition-v1 port of the image nodes left them out. Graphs that already
+  set them render unchanged.
 
 ## 0.11.0 — 2026-11-07
 
