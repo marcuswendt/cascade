@@ -4,6 +4,14 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+### Fixed
+
+- **`run --json --timeout` prints one envelope.** The supervising process also
+  wrapped itself and printed a second, empty `{"ok":true,"data":null}` after
+  the run's own. A killed run now prints `{"ok":false}` with the timeout.
+  `node scripts/smoke-package.mjs --dawn` runs the Dawn render check without
+  an environment variable.
+
 ## 0.13.0 — 2026-11-09
 
 ### Added

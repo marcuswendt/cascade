@@ -110,7 +110,9 @@ async function main() {
   // commands) keeps the flag, because it makes them print their own JSON (a
   // manifest with the run trace and stage cache states, a status, a parity
   // report), which becomes the data.
-  if (args.includes('--json')) {
+  // `run --timeout` supervises a child that gets `--json` too and prints the
+  // envelope itself; wrapping the parent as well printed a second, empty one.
+  if (args.includes('--json') && !(verbFor(args)?.name === 'run' && args.includes('--timeout'))) {
     const keepFlag = verbFor(args)?.json === 'keep';
     const commandArgs = keepFlag ? args : args.filter((arg) => arg !== '--json');
     const verb = verbFor(commandArgs);

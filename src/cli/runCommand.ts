@@ -151,7 +151,13 @@ export async function runCommand(args: string[]): Promise<void> {
     const index = args.indexOf('--timeout');
     const childArgs = [...args.slice(0, index), ...args.slice(index + 2)];
     if (childArgs.includes('--timeout')) throw new Error('--timeout may only be specified once');
-    process.exitCode = await superviseProcess(process.execPath, [...process.execArgv, process.argv[1]!, ...childArgs], ms);
+    const code = await superviseProcess(process.execPath, [...process.execArgv, process.argv[1]!, ...childArgs], ms);
+    process.exitCode = code;
+    // The child prints its own `--json` envelope; a killed child printed none.
+    if (options.json && (code === 124 || code === 130)) {
+      const message = code === 124 ? `Render timed out after ${ms} ms` : 'Render cancelled';
+      process.stdout.write(`${JSON.stringify({ ok: false, error: { message }, warnings: [] })}\n`);
+    }
     return;
   }
 

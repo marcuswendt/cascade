@@ -122,15 +122,21 @@ try {
   ], { cwd: linkedConsumerRoot, stdio: 'inherit' });
 
   const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
-  if (process.env.CASCADE_TEST_DAWN === '1') {
+  if (process.env.CASCADE_TEST_DAWN === '1' || process.argv.includes('--dawn')) {
     mkdirSync(join(consumerRoot, 'nodes', 'GpuImage'), { recursive: true });
     writeFileSync(join(consumerRoot, 'cascade.json'), JSON.stringify({ name: 'dawn-package-smoke' }));
     writeFileSync(join(consumerRoot, 'nodes', 'GpuImage', 'index.ts'), readFileSync(join(root, 'tests/fixtures/dawn-image-node.ts.txt')));
     writeFileSync(join(consumerRoot, 'index.cascade'), JSON.stringify({ version: '0.2',
       nodes: [{ id: 'image', module: 'project.GpuImage', source: 'project', position: [0, 0] }], connections: [] }));
-    const result = JSON.parse(execFileSync(process.execPath, [join(packageRoot, 'dist/cli/index.js'),
+    // `--json` prints exactly one `{ ok, data }` envelope; the manifest is its data.
+    const stdout = execFileSync(process.execPath, [join(packageRoot, 'dist/cli/index.js'),
       'run', 'index.cascade', '--frames', '1-2', '--json', '--timeout', '30000'],
-    { cwd: consumerRoot, encoding: 'utf8', timeout: 35_000 }));
+    { cwd: consumerRoot, encoding: 'utf8', timeout: 35_000 });
+    const lines = stdout.trim().split('\n');
+    if (lines.length !== 1) throw new Error(`run --json --timeout printed ${lines.length} lines, expected one envelope`);
+    const envelope = JSON.parse(lines[0]);
+    if (!envelope.ok) throw new Error(`Dawn run failed: ${envelope.error?.message}`);
+    const result = envelope.data;
     if (result.files.length !== 2 || result.gpu?.renderer !== 'dawn') throw new Error('Missing Dawn image manifest');
     const { default: sharp } = await import('sharp');
     for (const [index, file] of result.files.entries()) {
