@@ -10,6 +10,11 @@ Notable changes to Cascade. Newest first.
   `player.html?chrome=0` in a plain iframe, shows the output alone on a
   transparent page: no dark frame, Play button or frame field. See
   `doc/WEB_PLAYER.md`.
+- **Read-only roots outside the project.** `"reads": ["../other/data"]` in
+  `cascade.json` lets file reads (`files`, `cascade/io`, Studio media) resolve
+  into another folder by `..` or a symlink; writes there are still refused,
+  and any other path out of the project still is. See "Reading another
+  project's data" in `doc/PROJECT_AUTHORING.md`.
 
 ### Fixed
 

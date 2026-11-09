@@ -196,6 +196,27 @@ The initiating node ID is captured as `api.sourceNodeId`; `setParam` uses the sa
 }
 ```
 
+### Reading another project's data
+
+File reads stay inside the project: a `..` path or a symlink out of it is
+refused. To read another folder, declare it as a read-only root:
+
+```json
+{
+  "reads": ["../other-sketch/data"]
+}
+```
+
+Each entry is a folder relative to the project (absolute and `~` paths are
+refused). The `files` capability's `read`, `list` and `stat`, `cascade/io`'s
+loaders and Studio's media route may then resolve into it, whether the path
+reaches it with `..` (`../other-sketch/data/points.csv`) or through a symlink in
+the project (`data -> ../other-sketch/data`). What counts is where the file
+really is, so a symlink inside the read root that points elsewhere is still
+refused. Writes into a read root are always refused. The declaration is the
+project's, in `cascade.json`, never the graph's; Studio's Project Settings
+cannot change it.
+
 Read settings without giving nodes write access:
 
 ```ts

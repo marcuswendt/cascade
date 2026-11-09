@@ -6,6 +6,11 @@ export interface ProjectManifest {
   readonly commands: Readonly<Record<string, string>>;
   readonly credentials: readonly string[];
   readonly settings: Readonly<Record<string, unknown>>;
+  /**
+   * Read-only roots outside the project (`"reads": ["../other/data"]`), relative
+   * to the project. File reads may resolve into them; writes there are refused.
+   */
+  readonly reads: readonly string[];
 }
 
 const CREDENTIAL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -48,7 +53,31 @@ function normalizeManifest(raw: Record<string, unknown>): ProjectManifest {
     commands: Object.freeze(stringRecord(raw.commands, 'commands')),
     credentials: Object.freeze(credentialNames(raw.credentials)),
     settings: Object.freeze(settingsRecord(raw.settings)),
+    reads: Object.freeze(relativeFolders(raw.reads, 'reads', true)),
   });
+}
+
+/**
+ * `reads` and `writes`: relative folder paths, normalised with `/` and no
+ * trailing slash. `reads` may leave the project with `..` (that is what it is
+ * for); `writes` may not, and may not name the project root, `.git` or
+ * `nodes`, so a node cannot write over source.
+ */
+function relativeFolders(input: unknown, label: 'reads' | 'writes', mayLeave: boolean): string[] {
+  if (input === undefined) return [];
+  const shape = mayLeave ? '"../other/data"' : '"renders"';
+  if (!Array.isArray(input)) throw new Error(`cascade.json ${label} must be an array of relative folders such as [${shape}]`);
+  const folders = input.map((entry) => {
+    if (typeof entry !== 'string' || !entry.trim() || entry.includes('\0') || path.isAbsolute(entry) || /^~/.test(entry))
+      throw new Error(`cascade.json ${label}: ${JSON.stringify(entry)} is not a relative folder such as ${shape}`);
+    const folder = path.posix.normalize(entry.split('\\').join('/')).replace(/\/+$/, '');
+    const leaves = folder === '..' || folder.startsWith('../');
+    if (!mayLeave && (leaves || folder === '.' || /^(?:\.git|nodes|\.cascade)(?:\/|$)/.test(folder)))
+      throw new Error(`cascade.json writes: ${JSON.stringify(entry)} must be a folder inside the project, not its root, .git, .cascade or nodes`);
+    if (mayLeave && folder === '.') throw new Error('cascade.json reads: "." is the project itself, which is always readable');
+    return folder;
+  });
+  return [...new Set(folders)];
 }
 
 function stringRecord(input: unknown, label: string): Record<string, string> {

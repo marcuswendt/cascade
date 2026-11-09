@@ -164,6 +164,63 @@ describe('writing', () => {
   });
 });
 
+describe('declared read roots (cascade.json "reads")', () => {
+  let parent: string;
+  let project: string;
+  beforeEach(async () => {
+    // <parent>/sketch is the project; <parent>/other/data is another project's data.
+    parent = root;
+    project = path.join(parent, 'sketch');
+    await mkdir(path.join(parent, 'other/data'), { recursive: true });
+    await mkdir(path.join(parent, 'other/private'), { recursive: true });
+    await mkdir(project, { recursive: true });
+    await writeFile(path.join(parent, 'other/data/points.csv'), 'x,y');
+    await writeFile(path.join(parent, 'other/private/secret.txt'), 'secret');
+  });
+  const declare = (reads: unknown) =>
+    writeFile(path.join(project, 'cascade.json'), JSON.stringify({ reads }));
+
+  it('refuses ../ until the project declares the root', async () => {
+    const undeclared = createNodeFileCapability(new ProjectRoot(project));
+    await expect(undeclared.read('../other/data/points.csv', options)).rejects.toThrow(/outside the project is refused/);
+    await declare(['../other/data']);
+    const declared = createNodeFileCapability(new ProjectRoot(project));
+    expect(new TextDecoder().decode(await declared.read('../other/data/points.csv', options))).toBe('x,y');
+    expect(await declared.list('../other/data', options)).toEqual(['points.csv']);
+    expect((await declared.stat('../other/data/points.csv', options))?.size).toBe(3);
+  });
+
+  it('reads through a symlink into the declared root', async () => {
+    await declare(['../other/data']);
+    await symlink(path.join(parent, 'other/data'), path.join(project, 'data'));
+    const declared = createNodeFileCapability(new ProjectRoot(project));
+    expect(new TextDecoder().decode(await declared.read('data/points.csv', options))).toBe('x,y');
+  });
+
+  it('keeps everything else outside refused, including a sibling and a link out of the root', async () => {
+    await declare(['../other/data']);
+    await symlink(path.join(parent, 'other/private'), path.join(parent, 'other/data/leak'));
+    const declared = createNodeFileCapability(new ProjectRoot(project));
+    await expect(declared.read('../other/private/secret.txt', options)).rejects.toThrow(/outside the project is refused/);
+    await expect(declared.read('../other/data/../private/secret.txt', options)).rejects.toThrow(/outside the project is refused/);
+    await expect(declared.read('../other/data/leak/secret.txt', options)).rejects.toThrow(/outside the project is refused/);
+  });
+
+  it('never writes into a read root', async () => {
+    await declare(['../other/data']);
+    const declared = createNodeFileCapability(new ProjectRoot(project));
+    await expect(declared.write('../other/data/points.csv', new Uint8Array([1]), options)).rejects.toThrow();
+    expect(await readFile(path.join(parent, 'other/data/points.csv'), 'utf8')).toBe('x,y');
+  });
+
+  it('validates the declaration', async () => {
+    for (const bad of ['../x', ['/abs'], ['~/data'], [''], ['.'], [3]]) {
+      await declare(bad);
+      expect(() => new ProjectRoot(project).resolveMedia('../other/data/points.csv')).toThrow(/cascade\.json reads/);
+    }
+  });
+});
+
 describe('listing and stat', () => {
   it('lists, marking directories', async () => {
     await mkdir(path.join(root, 'assets'), { recursive: true });

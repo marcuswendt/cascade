@@ -47,6 +47,26 @@ export function resolveWithinRoot(root: string, ...segments: string[]): string {
   return full;
 }
 
+/**
+ * Where `full` really is: the canonical path of its nearest existing ancestor
+ * with the rest appended. The part that does not exist yet cannot be a link.
+ */
+export function canonicalPath(full: string): string {
+  let existing = full;
+  while (!existsIncludingSymlink(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) return full;
+    existing = parent;
+  }
+  return path.join(canonical(existing, `path is not accessible: ${full}`), path.relative(existing, full));
+}
+
+/** Whether `candidate` is `base` or below it. Both absolute. */
+export function isWithin(base: string, candidate: string): boolean {
+  const rel = path.relative(base, candidate);
+  return !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
 function existsIncludingSymlink(candidate: string): boolean {
   try {
     fs.lstatSync(candidate);

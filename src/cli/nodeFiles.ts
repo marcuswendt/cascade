@@ -37,6 +37,10 @@ import type { ProjectRoot } from '../../server/src/project.js';
  * Escaping the project with `..` is refused rather than resolved. A graph is a
  * document that can arrive from anywhere, and a `files` capability that reads
  * outside its project is a worse thing to have than no `files` capability.
+ * The one exception is the project's own declaration: cascade.json `"reads"`
+ * names read-only roots (`["../other/data"]`) that reads may resolve into,
+ * through `..` or a symlink. The declaration lives in the project, not in the
+ * graph, and writes there are still refused.
  */
 export function createNodeFileCapability(project: ProjectRoot): FileCapability {
   /**
@@ -60,7 +64,10 @@ export function createNodeFileCapability(project: ProjectRoot): FileCapability {
    */
   const within = (relative: string, what: string): string => {
     try {
-      return project.resolve(relative.replace(/^\.?\//, ''));
+      // Reads may also reach `shared/` and the read-only roots the project
+      // declares in cascade.json `"reads"`; writes never do.
+      const clean = relative.replace(/^\.?\//, '');
+      return what === 'writing' ? project.resolve(clean) : project.resolveMedia(clean);
     } catch (error) {
       throw new Error(
         `files: ${what} outside the project is refused — ${relative} (${

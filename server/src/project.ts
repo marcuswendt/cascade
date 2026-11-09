@@ -16,7 +16,8 @@
 import fs from 'fs/promises';
 import fssync from 'fs';
 import path from 'path';
-import { resolveWithinRoot, PathSafetyError } from './pathSafety.js';
+import { canonicalPath, isWithin, resolveWithinRoot, PathSafetyError } from './pathSafety.js';
+import { readProjectManifest } from './projectConfig.js';
 import { ShellService } from './shell/service.js';
 import * as ts from 'typescript';
 import { extractNodeDefinition } from '@cascade/runtime/definition/extract';
@@ -131,7 +132,33 @@ export class ProjectRoot {
     if (normalized === 'shared' || normalized.startsWith('shared/')) {
       return this.resolveShared(...normalized.split('/').slice(1));
     }
-    return this.resolve(relativePath);
+    try {
+      return this.resolve(relativePath);
+    } catch (error) {
+      if (!(error instanceof PathSafetyError)) throw error;
+      const declared = this.resolveDeclaredRead(relativePath);
+      if (declared) return declared;
+      throw error;
+    }
+  }
+
+  /**
+   * A read outside the project, allowed only into a root the project declares
+   * in cascade.json `"reads"` (`["../other/data"]`). Reached by `..` or by a
+   * symlink alike: the canonical target must lie under the canonical read
+   * root. Never used for writes — `resolve()` still refuses those.
+   */
+  private resolveDeclaredRead(relativePath: string): string | null {
+    if (path.isAbsolute(relativePath)) return null;
+    const reads = readProjectManifest(this.root).reads;
+    if (!reads.length) return null;
+    const target = canonicalPath(path.resolve(this.root, relativePath));
+    for (const folder of reads) {
+      let base: string;
+      try { base = fssync.realpathSync(path.resolve(this.root, folder)); } catch { continue; }
+      if (isWithin(base, target)) return target;
+    }
+    return null;
   }
 
   /**
