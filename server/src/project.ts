@@ -162,6 +162,19 @@ export class ProjectRoot {
   }
 
   /**
+   * Where a node may write a file under its own name: `.cascade-cache/`, or a
+   * folder the project declares in cascade.json `"writes"` (`["renders"]`).
+   * Returns the folder the normalised path falls in, or null. Containment is
+   * still `resolve()`'s, so a symlink out of a write folder is refused.
+   */
+  writeFolderOf(relativePath: string): string | null {
+    const clean = path.posix.normalize(relativePath.split('\\').join('/').replace(/^\.?\//, ''));
+    for (const folder of ['.cascade-cache', ...readProjectManifest(this.root).writes])
+      if (clean.startsWith(`${folder}/`)) return folder;
+    return null;
+  }
+
+  /**
    * Whether this project is under version control, walking **up** rather than
    * looking only at the root.
    *

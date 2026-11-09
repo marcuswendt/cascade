@@ -11,6 +11,11 @@ export interface ProjectManifest {
    * to the project. File reads may resolve into them; writes there are refused.
    */
   readonly reads: readonly string[];
+  /**
+   * Project folders a node's `files` capability may write stable names into
+   * (`"writes": ["renders"]`), beside `.cascade-cache/`. Inside the project only.
+   */
+  readonly writes: readonly string[];
 }
 
 const CREDENTIAL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -54,6 +59,7 @@ function normalizeManifest(raw: Record<string, unknown>): ProjectManifest {
     credentials: Object.freeze(credentialNames(raw.credentials)),
     settings: Object.freeze(settingsRecord(raw.settings)),
     reads: Object.freeze(relativeFolders(raw.reads, 'reads', true)),
+    writes: Object.freeze(relativeFolders(raw.writes, 'writes', false)),
   });
 }
 

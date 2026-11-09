@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -29,6 +30,14 @@ import type { ProjectRoot } from '../../server/src/project.js';
  * confine them, and for the same reason: a node's output is derived data that a
  * re-cook reproduces, and it does not belong beside the source material.
  *
+ * Two exceptions, both explicit. A project may declare export folders in
+ * cascade.json `"writes"` (`["renders"]`), where a node writes a stably named
+ * file such as a ladder's chosen variant; the declaration is the project's,
+ * not the graph's. And `files.cache` is a keyed cache under
+ * `.cascade-cache/keyed/`: unlike `cascade/io`, whose names carry a content
+ * hash so they can never be looked up again, a key finds its entry on the next
+ * run. Unlike `cascade/io`, `write` never renames a file either.
+ *
  * Relaxing that offline is the tempting mistake. A node must behave identically
  * under both hosts, and a capability that can write anywhere headlessly and
  * nowhere in the page is not one capability — it is two, and the sketch that
@@ -42,6 +51,10 @@ import type { ProjectRoot } from '../../server/src/project.js';
  * through `..` or a symlink. The declaration lives in the project, not in the
  * graph, and writes there are still refused.
  */
+/** Where `files.cache` keeps its entries, by key and never renamed. */
+const KEYED_DIR = '.cascade-cache/keyed';
+const KEY = /^[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/;
+
 export function createNodeFileCapability(project: ProjectRoot): FileCapability {
   /**
    * Containment is `ProjectRoot.resolve`'s job, and it was already doing it.
@@ -77,13 +90,33 @@ export function createNodeFileCapability(project: ProjectRoot): FileCapability {
     }
   };
 
-  const cacheOnly = (relative: string): string => {
+  /**
+   * `.cascade-cache/`, or a folder the project declares in cascade.json
+   * `"writes"` for named exports (`["renders"]`). The path is normalised before
+   * the folder test, so `.cascade-cache/../index.cascade` is not a cache path.
+   */
+  const writable = (relative: string): string => {
     const clean = relative.replace(/^\.?\//, '');
-    if (!clean.startsWith('.cascade-cache/'))
+    const full = within(clean, 'writing');
+    if (!project.writeFolderOf(clean))
       throw new Error(
-        `files: writes are confined to .cascade-cache/ — got ${clean}. A node's output is derived data, and the same rule applies in the browser.`,
+        `files: writes are confined to .cascade-cache/ and the folders cascade.json "writes" declares — got ${clean}. A node's output is derived data; declare an export folder such as "writes": ["renders"] to write named files.`,
       );
-    return within(clean, 'writing');
+    return full;
+  };
+
+  /** Whole or not at all: render workers share the cache. */
+  const writeWhole = async (full: string, data: Uint8Array): Promise<void> => {
+    await fs.mkdir(path.dirname(full), { recursive: true });
+    const staging = `${full}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
+    await fs.writeFile(staging, data);
+    await fs.rename(staging, full);
+  };
+
+  const keyed = (key: string): string => {
+    if (typeof key !== 'string' || key.length > 512 || !KEY.test(key))
+      throw new Error(`files.cache: key ${JSON.stringify(key)} must be letters, digits, ".", "_" and "-" in "/"-separated parts, each starting with a letter or digit`);
+    return within(`${KEYED_DIR}/${key}`, 'writing');
   };
 
   /**
@@ -105,9 +138,23 @@ export function createNodeFileCapability(project: ProjectRoot): FileCapability {
 
     async write(relative, data, options) {
       live(options);
-      const full = cacheOnly(relative);
-      await fs.mkdir(path.dirname(full), { recursive: true });
-      await fs.writeFile(full, data);
+      await writeWhole(writable(relative), data);
+    },
+
+    cache: {
+      async get(key, options) {
+        live(options);
+        try {
+          return new Uint8Array(await fs.readFile(keyed(key)));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+          throw error;
+        }
+      },
+      async put(key, data, options) {
+        live(options);
+        await writeWhole(keyed(key), data);
+      },
     },
 
     async list(relative, options) {

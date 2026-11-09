@@ -21,11 +21,35 @@ export interface ProgressReporter {
     detail?: JsonValue;
   }): void;
 }
+/**
+ * A cache a node finds again by its own key: `put(key, data)` then, on a later
+ * cook or run, `get(key)` returns those bytes (or null). Keys are path-like
+ * (`stage/3fa9c2…`, letters, digits, `.`, `_`, `-`, `/`-separated) and are never
+ * renamed by a content hash. Derive a key from everything the bytes depend on.
+ */
+export interface KeyedCache {
+  get(
+    key: string,
+    options: { signal: CascadeAbortSignal },
+  ): Promise<Uint8Array | null>;
+  put(
+    key: string,
+    data: Uint8Array,
+    options: { signal: CascadeAbortSignal },
+  ): Promise<void>;
+}
+/**
+ * Project files. Reads resolve in the project (and `shared/` and the read-only
+ * roots cascade.json `reads` declares). Writes keep the name given, and go to
+ * `.cascade-cache/` or a folder cascade.json `writes` declares.
+ */
 export interface FileCapability {
   read(
     path: string,
     options: { signal: CascadeAbortSignal },
   ): Promise<Uint8Array>;
+  /** The keyed cache, under `.cascade-cache/keyed/`. */
+  readonly cache: KeyedCache;
   write(
     path: string,
     data: Uint8Array,

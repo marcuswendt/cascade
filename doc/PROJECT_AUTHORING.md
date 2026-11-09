@@ -217,6 +217,44 @@ refused. Writes into a read root are always refused. The declaration is the
 project's, in `cascade.json`, never the graph's; Studio's Project Settings
 cannot change it.
 
+### Named exports and a keyed cache
+
+A node with the `files` capability (`runsOn: 'server'`) writes under the name
+it gives, never renamed by a content hash, but only into `.cascade-cache/`. To
+write a stably named export, such as a ladder's chosen variant, declare the
+folder:
+
+```json
+{
+  "writes": ["renders"]
+}
+```
+
+```ts
+await context.capabilities.files.write('renders/cloud-final.png', bytes, { signal: context.signal });
+```
+
+Each entry is a folder inside the project; `..`, absolute paths, the project
+root, `nodes`, `.git` and `.cascade` are refused, and a symlink out of a write
+folder is refused like any other. `cascade/io`'s `write` and `saveImage` keep
+content-hashed names in `.cascade-cache/`: they are intermediates between
+nodes, and the hash is what stops a fixed name handing on the wrong pixels.
+
+For a cache a node must find again on the next run, by a key it derives from
+everything the bytes depend on, use `files.cache`:
+
+```ts
+const { files } = context.capabilities;
+const key = `stage/${hashOf(inputs, props)}`;
+const hit = await files.cache.get(key, { signal: context.signal });   // Uint8Array | null
+if (!hit) await files.cache.put(key, computed, { signal: context.signal });
+```
+
+Entries live in `.cascade-cache/keyed/<key>`; keys are letters, digits, `.`,
+`_` and `-` in `/`-separated parts, each starting with a letter or digit.
+Writes are atomic, so parallel render workers can share one cache. The cache
+rule above still holds: it may only memoize work from wired inputs and props.
+
 Read settings without giving nodes write access:
 
 ```ts

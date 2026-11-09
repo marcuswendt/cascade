@@ -15,6 +15,13 @@ Notable changes to Cascade. Newest first.
   into another folder by `..` or a symlink; writes there are still refused,
   and any other path out of the project still is. See "Reading another
   project's data" in `doc/PROJECT_AUTHORING.md`.
+- **Named exports and a keyed cache for nodes.** `"writes": ["renders"]` in
+  `cascade.json` lets the `files` capability write stably named files into a
+  declared project folder beside `.cascade-cache/`. `files.cache.get(key)` /
+  `files.cache.put(key, data)` (contract `KeyedCache`) keep entries under
+  `.cascade-cache/keyed/<key>`, found again by key on the next run, where
+  `cascade/io` names carry a content hash. `files.write` is now atomic, and
+  normalises before its folder test, so `.cascade-cache/../x` is refused.
 
 ### Fixed
 

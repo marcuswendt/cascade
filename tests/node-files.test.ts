@@ -221,6 +221,56 @@ describe('declared read roots (cascade.json "reads")', () => {
   });
 });
 
+describe('declared export folders (cascade.json "writes")', () => {
+  const declare = (writes: unknown) => writeFile(path.join(root, 'cascade.json'), JSON.stringify({ writes }));
+
+  it('writes a stable name into a declared folder, and nowhere undeclared', async () => {
+    await expect(files.write('renders/final.png', new Uint8Array([1]), options)).rejects.toThrow(/writes are confined/);
+    await declare(['renders']);
+    await files.write('renders/final.png', new Uint8Array([1, 2]), options);
+    await files.write('renders/final.png', new Uint8Array([1, 2, 3]), options);
+    expect((await readFile(path.join(root, 'renders/final.png'))).byteLength).toBe(3);
+    await expect(files.write('index.cascade', new Uint8Array([1]), options)).rejects.toThrow(/writes are confined/);
+    await expect(files.write('renders/../index.cascade', new Uint8Array([1]), options)).rejects.toThrow(/writes are confined/);
+    await expect(files.write('.cascade-cache/../index.cascade', new Uint8Array([1]), options)).rejects.toThrow(/writes are confined/);
+  });
+
+  it('refuses a symlink out of a declared folder', async () => {
+    const outside = await mkdtemp(path.join(tmpdir(), 'cascade-outside-'));
+    try {
+      await declare(['renders']);
+      await symlink(outside, path.join(root, 'renders'));
+      await expect(files.write('renders/out.png', new Uint8Array([1]), options)).rejects.toThrow(/outside the project is refused/);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses folders outside the project or over its source', async () => {
+    for (const bad of [['../elsewhere'], ['.'], ['nodes'], ['.git/hooks'], ['/abs']]) {
+      await declare(bad);
+      await expect(files.write('renders/x', new Uint8Array([1]), options)).rejects.toThrow(/cascade\.json writes/);
+    }
+  });
+});
+
+describe('keyed cache', () => {
+  it('finds an entry again by its key, under .cascade-cache/keyed/', async () => {
+    expect(await files.cache.get('stage/abc123', options)).toBeNull();
+    await files.cache.put('stage/abc123', new Uint8Array([4, 5]), options);
+    expect([...(await files.cache.get('stage/abc123', options))!]).toEqual([4, 5]);
+    expect((await readFile(path.join(root, '.cascade-cache/keyed/stage/abc123'))).byteLength).toBe(2);
+    // A fresh capability on the same project: the next run finds it too.
+    const next = createNodeFileCapability(new ProjectRoot(root));
+    expect([...(await next.cache.get('stage/abc123', options))!]).toEqual([4, 5]);
+  });
+
+  it('refuses keys that could leave the cache', async () => {
+    for (const key of ['../x', 'a/../../x', '/abs', '.hidden', 'a//b', '', 'a b'])
+      await expect(files.cache.put(key, new Uint8Array([1]), options)).rejects.toThrow(/files\.cache: key/);
+  });
+});
+
 describe('listing and stat', () => {
   it('lists, marking directories', async () => {
     await mkdir(path.join(root, 'assets'), { recursive: true });
