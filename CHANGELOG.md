@@ -22,6 +22,11 @@ Notable changes to Cascade. Newest first.
   `.cascade-cache/keyed/<key>`, found again by key on the next run, where
   `cascade/io` names carry a content hash. `files.write` is now atomic, and
   normalises before its folder test, so `.cascade-cache/../x` is refused.
+- **Node files may hold immutable module-level constants.** Helper functions
+  were already allowed; `architecture/module-state` now also passes `const`s
+  that cannot change (`const TAU = Math.PI * 2`, `[...] as const`,
+  `Object.freeze({...})`, arrow-function helpers). `let`, `new Map()`, a bare
+  array or object, a regex and other calls are still refused.
 
 ### Fixed
 

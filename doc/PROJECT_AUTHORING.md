@@ -300,7 +300,7 @@ Clean graph design is clean code design:
 - **One responsibility per node**, named for what it does (`layout_rings`, not `main`).
 - **Data flows through typed ports**, never through module-level state or files one node writes and another reads behind the graph's back.
 - **What varies is a parameter**; seeds, counts and colours are on the node, not constants in the code.
-- **Shared helpers go in `lib/` or the kit** (`KIT.md`); the node is the unit you compose and reuse.
+- **Shared helpers go in `lib/` or the kit** (`KIT.md`); the node is the unit you compose and reuse. A helper only this node uses may stay in its file: function declarations and immutable `const`s (`const TAU = Math.PI * 2`, `const PALETTE = [...] as const`, `const lerp = (a, b, t) => …`) pass `cascade check`. Anything that can change between cooks (`let`, `new Map()`, a bare array or object, a regex, a call) is module state and is refused (`architecture/module-state`).
 
 Split a node when it does two of load, generate, style, render and export, or when its `execute` grows past about 150 lines. `cascade check` warns on both (`shape/long-execute`, `shape/mixed-jobs`); the warnings are advice and never fail the check. Drawing with noise and colour is one job's worth of calls, so it only flags a module doing four of the five, or loading and exporting in the same node.
 

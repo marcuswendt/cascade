@@ -36,6 +36,17 @@ export function validateNodeModuleArchitecture(
   );
 
   for (const statement of file.statements) {
+    if (
+      ts.isVariableStatement(statement) &&
+      !isDefinition(statement) &&
+      !supersededByDefinition(statement) &&
+      isPureConstant(statement)
+    ) {
+      // A helper: `const TAU = Math.PI * 2`, `const PALETTE = [...] as const`,
+      // `const lerp = (a, b, t) => a + (b - a) * t`. Immutable, so it cannot
+      // carry anything from one cook to the next.
+      continue;
+    }
     if (ts.isVariableStatement(statement) && !isDefinition(statement)) {
       // `icon` and `runsOn` get their own sentence, because the general
       // message sends you looking for the wrong thing. A dynamic node declares
@@ -152,6 +163,93 @@ export function validateNodeModuleArchitecture(
     return declaration.name.text === "icon" || declaration.name.text === "runsOn"
       ? declaration.name.text
       : null;
+  }
+
+  /**
+   * Whether a module-level declaration is an immutable helper rather than
+   * state: `const` only, and every initializer pure (see `isPure`).
+   */
+  function isPureConstant(statement: TypeScript.VariableStatement): boolean {
+    if (!(statement.declarationList.flags & ts.NodeFlags.Const)) return false;
+    return statement.declarationList.declarations.every(
+      (declaration) =>
+        ts.isIdentifier(declaration.name) &&
+        declaration.initializer !== undefined &&
+        isPure(declaration.initializer, false),
+    );
+  }
+
+  /**
+   * An expression that creates no mutable value: literals, arithmetic and
+   * logic over them, references and property reads (`Math.PI`), functions
+   * (they close over nothing mutable, since nothing at module level is), and
+   * array/object literals only when frozen — `as const` or `Object.freeze(…)`.
+   * Calls, `new`, regular expressions (`lastIndex` is state) and a bare
+   * array or object are not.
+   */
+  function isPure(node: TypeScript.Expression, frozen: boolean): boolean {
+    if (
+      ts.isNumericLiteral(node) || ts.isStringLiteral(node) || ts.isBigIntLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword ||
+      node.kind === ts.SyntaxKind.NullKeyword
+    ) return true;
+    if (ts.isIdentifier(node)) return true;
+    if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) return true;
+    if (ts.isParenthesizedExpression(node)) return isPure(node.expression, frozen);
+    if (ts.isAsExpression(node))
+      return isPure(node.expression, frozen || isConstAssertion(node.type));
+    if (ts.isSatisfiesExpression(node) || ts.isNonNullExpression(node) || ts.isTypeAssertionExpression(node))
+      return isPure(node.expression, frozen);
+    if (ts.isPrefixUnaryExpression(node))
+      return node.operator !== ts.SyntaxKind.PlusPlusToken &&
+        node.operator !== ts.SyntaxKind.MinusMinusToken &&
+        isPure(node.operand, false);
+    if (ts.isBinaryExpression(node))
+      return !isAssignment(node.operatorToken.kind) &&
+        isPure(node.left, false) && isPure(node.right, false);
+    if (ts.isConditionalExpression(node))
+      return isPure(node.condition, false) && isPure(node.whenTrue, frozen) && isPure(node.whenFalse, frozen);
+    if (ts.isTemplateExpression(node))
+      return node.templateSpans.every((span) => isPure(span.expression, false));
+    if (ts.isPropertyAccessExpression(node)) return isPure(node.expression, false);
+    if (ts.isElementAccessExpression(node))
+      return isPure(node.expression, false) && isPure(node.argumentExpression, false);
+    if (ts.isArrayLiteralExpression(node))
+      return frozen && node.elements.every((element) => !ts.isSpreadElement(element) && isPure(element, true));
+    if (ts.isObjectLiteralExpression(node))
+      return frozen && node.properties.every((property) =>
+        ts.isPropertyAssignment(property)
+          ? !ts.isComputedPropertyName(property.name) && isPure(property.initializer, true)
+          : ts.isShorthandPropertyAssignment(property));
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === "Object" &&
+      node.expression.name.text === "freeze" &&
+      node.arguments.length === 1
+    ) {
+      const [argument] = node.arguments;
+      // Object.freeze is shallow: a nested array or object needs its own freeze.
+      return ts.isArrayLiteralExpression(argument)
+        ? argument.elements.every((element) => !ts.isSpreadElement(element) && isPure(element, false))
+        : ts.isObjectLiteralExpression(argument)
+          ? argument.properties.every((property) =>
+            ts.isPropertyAssignment(property) &&
+            !ts.isComputedPropertyName(property.name) &&
+            isPure(property.initializer, false))
+          : false;
+    }
+    return false;
+  }
+
+  function isConstAssertion(type: TypeScript.TypeNode): boolean {
+    return ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName) && type.typeName.text === "const";
+  }
+
+  function isAssignment(kind: TypeScript.SyntaxKind): boolean {
+    return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
   }
 
   function isDefinition(statement: TypeScript.VariableStatement): boolean {
