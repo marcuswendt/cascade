@@ -519,6 +519,26 @@ a cache scoped to each node instance for pipelines, samplers, and other
 resources that outlive one cook. The host clears cached resources on host
 disposal or device loss and requests a fresh device on a later cook.
 
+The device is asked for with every limit the adapter allows, not WebGPU's
+defaults: on an M3 Max that is 4 GiB per storage binding (default 128 MiB),
+1,024 invocations per workgroup (256), 32 KiB of workgroup storage (16 KiB) and
+10 storage buffers per stage (8). Read what you got from
+`context.capabilities.gpu.limits` and size buffers and workgroups from it. A
+node that cannot run below some limit declares it, and a smaller GPU then fails
+before the cook with a sentence naming the limit:
+
+```ts
+export const definition = {
+  apiVersion: 1,
+  runsOn: 'portable',
+  capabilities: ['gpu'],
+  gpuLimits: { maxStorageBufferBindingSize: 512 * 2 ** 20 },
+  // ...
+} as const;
+```
+
+`max*` limits are floors; `min*Alignment` limits are ceilings.
+
 Use `runsOn: 'portable'` for shared WebGPU code without browser APIs. Render into
 a texture and use `readTexture` from `cascade/gpu` for explicit RGBA8 pixels,
 then encode through the image/IO host. See [headless GPU rendering](HEADLESS_GPU.md)

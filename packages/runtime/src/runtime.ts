@@ -32,7 +32,7 @@ import {
 } from "./expressions/bundlePaths.js";
 import type { PropBinding } from "./params/index.js";
 import { DEFAULT_FPS, MIN_FRAME } from "./expressions/time.js";
-import { isGpuHost } from "./gpu.js";
+import { gpuLimitShortfall, isGpuHost } from "./gpu.js";
 import { DEFAULT_GRAPH_SEED, graphSeed, nodeSeed, seededRandom } from "./seed.js";
 import type {
   CascadeDocument,
@@ -1185,7 +1185,10 @@ class Graph implements LoadedCascadeGraph {
       const installed = this.host.capabilities[name];
       if (name === "gpu" && isGpuHost(installed)) {
         await installed.ensure();
-        capabilityEntries.push([name, installed.forNode(node.id)]);
+        const gpu = installed.forNode(node.id);
+        const shortfall = gpuLimitShortfall(node.id, node.definition.gpuLimits, gpu);
+        if (shortfall) throw new Error(shortfall);
+        capabilityEntries.push([name, gpu]);
       } else {
         capabilityEntries.push([
           name,

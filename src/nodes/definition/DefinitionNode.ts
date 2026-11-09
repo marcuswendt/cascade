@@ -11,7 +11,7 @@ import type { DataType, ParamOptions } from '../../types/node.types.js';
 import { packagePathToType, registerNodeClasses, registerNodeMetadata, type NodeClass, type NodeFunction } from '../../utils/nodeTypeUtils.js';
 import type { Graph } from '../Graph.js';
 import { Node } from '../Node.js';
-import { isGpuHost } from '../../../packages/runtime/src/gpu.js';
+import { gpuLimitShortfall, isGpuHost } from '../../../packages/runtime/src/gpu.js';
 import { graphSeed, nodeSeed, seededRandom } from '../../../packages/runtime/src/seed.js';
 import { bundleValueProblem, selectBundleFields, type BundleFieldDefinitions } from '../../../packages/contracts/src/bundle.js';
 
@@ -198,7 +198,10 @@ export function attachDefinition(
       : null;
     if (gpuHost) {
       await gpuHost.ensure();
-      nodeCapabilities = { ...capabilities, gpu: gpuHost.forNode(node.id) };
+      const gpu = gpuHost.forNode(node.id);
+      const shortfall = gpuLimitShortfall(node.id, definition.gpuLimits, gpu);
+      if (shortfall) throw new Error(shortfall);
+      nodeCapabilities = { ...capabilities, gpu };
     }
 
     const seed = nodeSeed(graphSeed({ seed: node.documentSeed }), node.id);

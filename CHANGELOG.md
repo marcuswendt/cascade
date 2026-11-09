@@ -6,6 +6,15 @@ Notable changes to Cascade. Newest first.
 
 ### Added
 
+- **GPU nodes get the whole GPU, and can say what they need.** Studio and
+  the headless host now ask for every limit the adapter allows instead of
+  WebGPU's defaults: on an M3 Max, 4 GiB per storage binding instead of
+  128 MiB, 1,024 workgroup invocations instead of 256, 32 KiB workgroup
+  storage instead of 16, 10 storage buffers per stage instead of 8. A node
+  may declare `gpuLimits` (`{ maxStorageBufferBindingSize: 512 * 2 ** 20 }`);
+  on a GPU below it the node fails before cooking, naming the limit and what
+  the GPU gives. An adapter that refuses its own ceiling still gets a device
+  with the defaults.
 - **Scrub number in the Inspector.** Every number field and each vector
   component drags anywhere on the field (at `scrub.ts`'s rates, Shift ×10,
   Cmd ÷10), with a tick ruler that slides under the pointer and stops at a

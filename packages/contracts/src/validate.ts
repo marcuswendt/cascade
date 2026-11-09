@@ -35,7 +35,7 @@ export const CAPABILITIES_BY_ENVIRONMENT: Record<
 const ALLOWED = CAPABILITIES_BY_ENVIRONMENT;
 const fields = (names: string) => new Set(names.split(" "));
 const TOP_FIELDS = fields(
-  "apiVersion runsOn container capabilities source label description icon inputs outputs props",
+  "apiVersion runsOn container capabilities gpuLimits source label description icon inputs outputs props",
 );
 const DATA_FIELDS = fields(
   "kind type default description variadic min max step accept control options schema fields",
@@ -154,6 +154,17 @@ export function validateNodeDefinition(value: unknown): readonly Diagnostic[] {
     if (seen.has(capability))
       add("duplicate-capability", `${String(capability)} is duplicated`, path);
     seen.add(capability);
+  }
+
+  if (value.gpuLimits !== undefined) {
+    if (!seen.has("gpu"))
+      add("gpu-limits-without-gpu", "gpuLimits needs the gpu capability", "gpuLimits");
+    if (!isRecord(value.gpuLimits))
+      add("invalid-gpu-limits", "gpuLimits must be an object of WebGPU limit names to numbers", "gpuLimits");
+    else
+      for (const [name, limit] of Object.entries(value.gpuLimits))
+        if (typeof limit !== "number" || !Number.isFinite(limit) || limit < 0)
+          add("invalid-gpu-limits", `gpuLimits.${name} must be a non-negative number`, `gpuLimits.${name}`);
   }
 
   // Two namespaces, not one. An output is addressed in the other direction from

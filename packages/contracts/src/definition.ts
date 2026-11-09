@@ -237,6 +237,16 @@ export interface NodeDefinitionForEnvironment<E extends RuntimeEnvironment> {
   readonly container?: "subnet" | "feedback";
   readonly capabilities?: readonly CapabilityForEnvironment<E>[];
   /**
+   * GPU limits this node cannot run without, by WebGPU name, for a node that
+   * declares `gpu`: `{ maxStorageBufferBindingSize: 512 * 2 ** 20 }`. The host
+   * already asks for everything the adapter allows; this makes a GPU that
+   * allows less fail before the cook, naming the limit, instead of with a
+   * validation error from inside it. `max*` limits are minimums to reach,
+   * `min*Alignment` ones maximums. Read `context.capabilities.gpu.limits` for
+   * what the device actually gives.
+   */
+  readonly gpuLimits?: Readonly<Record<string, number>>;
+  /**
    * `live` marks a node that reads data from outside the graph — an archive,
    * a CLI, a cache, body data, the filesystem or a network. `cascade export`
    * never ships one: the author freezes it into a snapshot of chosen values or

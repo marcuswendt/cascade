@@ -2,6 +2,7 @@
 import type { GpuCapability } from '@cascade/contracts';
 import {
   createGpuHost,
+  requestDeviceWithAdapterLimits,
   type GpuHost,
 } from '../../packages/runtime/src/gpu.js';
 
@@ -17,7 +18,7 @@ export function createBrowserGpuHost(): GpuHost | undefined {
           'No WebGPU adapter is available — the browser reports WebGPU but the system offers no GPU to render on.',
         );
       }
-      const device = await adapter.requestDevice();
+      const device = await requestDeviceWithAdapterLimits(adapter);
       const info = (adapter as unknown as {
         info?: Partial<GpuCapability['adapterInfo']>;
       }).info;

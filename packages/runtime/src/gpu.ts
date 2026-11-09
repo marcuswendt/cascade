@@ -249,6 +249,53 @@ export function createGpuHost(options: GpuHostOptions): GpuHost {
   return host;
 }
 
+interface LimitedAdapter {
+  readonly limits: unknown;
+  requestDevice(descriptor?: { requiredLimits?: Record<string, number> }): Promise<GpuCapability["device"]>;
+}
+
+/**
+ * The host's one device, asked for with everything the adapter allows.
+ *
+ * A bare `requestDevice()` gets WebGPU's defaults (128 MiB per storage binding,
+ * 256 invocations, 16 KiB workgroup storage, 8 storage buffers per stage)
+ * whatever the hardware is, and the device is shared, so a node cannot ask for
+ * more later. Brand + Design chunked a ribbon into four accumulator buffers on
+ * an M3 Max for that reason (3 Nov 2026). Should an adapter refuse its own
+ * ceiling, the defaults are better than no device; a node that needs more
+ * says so with `gpuLimits` and gets {@link gpuLimitShortfall}'s message.
+ */
+export async function requestDeviceWithAdapterLimits(adapter: LimitedAdapter): Promise<GpuCapability["device"]> {
+  const requiredLimits = readGpuLimits(adapter.limits);
+  try {
+    return await adapter.requestDevice({ requiredLimits });
+  } catch {
+    return adapter.requestDevice();
+  }
+}
+
+/**
+ * What a node's declared `gpuLimits` asks for that this device does not give,
+ * as one sentence, or null when it all fits. `max*` limits must reach the
+ * value; `min*Alignment` limits must be at most it (smaller is better there).
+ */
+export function gpuLimitShortfall(
+  label: string,
+  required: Readonly<Record<string, number>> | undefined,
+  gpu: Pick<GpuCapability, "limits" | "adapterInfo">,
+): string | null {
+  if (!required) return null;
+  const short: string[] = [];
+  for (const [name, wanted] of Object.entries(required)) {
+    const have = gpu.limits[name];
+    const fits = have !== undefined && (name.startsWith("min") ? have <= wanted : have >= wanted);
+    if (!fits) short.push(`${name} ${wanted} (this GPU: ${have ?? "not reported"})`);
+  }
+  if (!short.length) return null;
+  const adapter = gpu.adapterInfo.description || gpu.adapterInfo.device || gpu.adapterInfo.vendor || "this adapter";
+  return `${label} needs GPU limits ${adapter} does not allow: ${short.join(", ")}.`;
+}
+
 /** Getter-backed supported-limits objects cannot be normalized with spread. */
 export function readGpuLimits(source: unknown): Record<string, number> {
   if (!source || typeof source !== "object") return {};

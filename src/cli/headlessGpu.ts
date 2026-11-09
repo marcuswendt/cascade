@@ -1,4 +1,4 @@
-import { createGpuHost } from '../../packages/runtime/src/gpu.js';
+import { createGpuHost, requestDeviceWithAdapterLimits } from '../../packages/runtime/src/gpu.js';
 
 export const MISSING_GPU_MESSAGE = 'Cascade cannot load the optional Dawn WebGPU renderer. Install "webgpu@0.6.0" on a supported platform and run again.';
 
@@ -19,7 +19,7 @@ export function createDawnGpuHost() {
       try {
         const adapter = await gpu.requestAdapter();
         if (!adapter) throw new Error('Dawn found no WebGPU adapter. Check GPU drivers and backend availability; headless rendering still needs a hardware or explicitly configured software adapter.');
-        device = await adapter.requestDevice();
+        device = await requestDeviceWithAdapterLimits(adapter);
         const info = adapter.info;
         return { device, info: {
           vendor: info.vendor, architecture: info.architecture,

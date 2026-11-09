@@ -108,6 +108,7 @@ export const nodeDefinitionSchema = {
         items: { type: "string" },
         uniqueItems: true,
       },
+      gpuLimits: record({ type: "number", minimum: 0 }),
       label: description,
       description,
       icon: description,
