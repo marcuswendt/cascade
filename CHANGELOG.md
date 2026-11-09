@@ -4,6 +4,8 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+## 0.13.0 — 2026-11-09
+
 ### Added
 
 - **Browser player without chrome.** `mount(…, { chrome: false })`, or
@@ -38,6 +40,19 @@ Notable changes to Cascade. Newest first.
   whose node saved the same drawing land on one content-named cache file
   (`.cascade-cache/<node>.<hash>.png`); that is the same bytes, not a
   clobber, so the fixed-path probe no longer refuses it.
+
+### Changed
+
+- **`FileCapability` has a required `cache: KeyedCache` member.** A custom
+  host that implements the `files` capability itself must now provide
+  `cache.get(key)` and `cache.put(key, data)`; it no longer type-checks
+  without them. Studio and the headless host already do.
+
+### Known gaps
+
+- **Ramp's stop editor and Image's file picker are not in Studio yet.** The
+  definition-v1 port of the image nodes left them out. Graphs that already
+  set them render unchanged.
 
 ## 0.12.0 — 2026-11-09
 

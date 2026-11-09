@@ -105,7 +105,7 @@
   <header>
     <h1>Cascade</h1>
     <p class="tagline">An open-source node-graph runtime with a visual Studio, for building generative design systems that move between print, motion, installations, and the web. Built at FIELD.IO and used for our own work.</p>
-    <p class="release">Current release: 0.12.0, on npm as <code>@field/cascade</code>.</p>
+    <p class="release">Current release: 0.13.0, on npm as <code>@field/cascade</code>.</p>
   </header>
 
   <h2>What it is</h2>
@@ -281,6 +281,8 @@ cascade --help                all of it</pre>
   <h2>Versions</h2>
   <p>Notable changes, newest first. Every release, in full, is in the <a href="https://github.com/marcuswendt/cascade/blob/main/CHANGELOG.md">changelog</a> and on <a href="https://github.com/marcuswendt/cascade/releases">GitHub releases</a>.</p>
   <dl class="versions">
+    <dt>0.13.0 <span>9 Nov 2026</span></dt>
+    <dd><ul><li>The browser player can drop its chrome: <code>chrome: false</code> or <code>?chrome=0</code> shows the output alone.</li><li>The player re-cooks only the changed node and what lies downstream.</li><li><code>cascade.json</code> declares read-only roots outside the project (<code>reads</code>) and folders nodes may write named files into (<code>writes</code>).</li><li>A keyed node cache, <code>files.cache.get</code>/<code>put</code>; <code>files.write</code> is atomic. Custom hosts must now provide <code>cache</code>.</li><li>Node files may hold immutable module-level constants.</li><li><code>cascade render --workers</code> accepts frames that share one content-named file.</li></ul></dd>
     <dt>0.12.0 <span>9 Nov 2026</span></dt>
     <dd><ul><li><code>cascade share</code> deploys an editor or a static page as a public link.</li><li><code>cascade ladder --cairn</code> offers variants as a tap-to-pick choice.</li><li>Scrub number fields in the Inspector: drag anywhere, type sums.</li><li>The image nodes are definition-v1; independent nodes cook at once headlessly; values are no longer copied between nodes.</li><li>GPU nodes get the adapter's full limits and may declare <code>gpuLimits</code>.</li></ul></dd>
     <dt>0.11.0 <span>7 Nov 2026</span></dt>
