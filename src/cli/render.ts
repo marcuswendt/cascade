@@ -187,15 +187,27 @@ type FromWorker =
  * The outputs a node wrote to the same file on two different frames: the
  * fixed-work-path signature that makes a parallel render copy one worker's
  * frame under another's number.
+ *
+ * A content-named cache file (`.cascade-cache/<name>.<hash>.png`, what
+ * `saveImage(…, cachePath(…))` writes) is not one: the same name means the same
+ * bytes, so two frames sharing it are two identical drawings — a piece
+ * animated on twos — and no worker can overwrite the other's frame.
  */
 export function sharedOutputPaths(a: RenderedFrame, b: RenderedFrame): { nodeId: string; source: string }[] {
   const shared: { nodeId: string; source: string }[] = [];
   for (const output of a.outputs) {
+    if (isContentNamed(output.source)) continue;
     if (b.outputs.some((other) => other.nodeId === output.nodeId && other.source === output.source)) {
       shared.push({ nodeId: output.nodeId, source: output.source });
     }
   }
   return shared;
+}
+
+/** A path `contentAddressed`/`pixelAddressed` (./headlessIo.ts) made: `<stem>.<12 hex>[.<ext>]` under `.cascade-cache/`. */
+function isContentNamed(source: string): boolean {
+  const clean = source.split('\\').join('/');
+  return /(?:^|\/)\.cascade-cache\//.test(clean) && /^[^.]*\.[0-9a-f]{12}(?:\.[^/]*)?$/.test(path.posix.basename(clean));
 }
 
 export function fixedPathMessage(shared: { nodeId: string; source: string }[], a: number, b: number): string {

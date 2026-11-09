@@ -22,6 +22,10 @@ Notable changes to Cascade. Newest first.
   and each frame now cook the changed node and what lies downstream of it;
   an unchanged upstream node keeps its outputs (`reuse: "strict"`), so a
   paint prop no longer re-runs a slow data node above it.
+- **`cascade render --workers` accepts a piece animated on twos.** Two frames
+  whose node saved the same drawing land on one content-named cache file
+  (`.cascade-cache/<node>.<hash>.png`); that is the same bytes, not a
+  clobber, so the fixed-path probe no longer refuses it.
 
 ## 0.12.0 — 2026-11-09
 

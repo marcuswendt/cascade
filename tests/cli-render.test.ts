@@ -128,6 +128,14 @@ describe('cascade render arguments', () => {
     expect(sharedOutputPaths(frame(1, 'w/n.png'), frame(2, 'w/n.png'))).toEqual([{ nodeId: 'n', source: 'w/n.png' }]);
     expect(sharedOutputPaths(frame(1, 'w/n.1.png'), frame(2, 'w/n.2.png'))).toEqual([]);
   });
+
+  it('lets two frames share a content-named cache file: same name, same bytes (a piece on twos)', () => {
+    const frame = (frame: number, source: string) => ({ frame, durationMs: 1, outputs: [{ nodeId: 'n', source, file: `r/n.${frame}.png` }] });
+    expect(sharedOutputPaths(frame(0, '.cascade-cache/ripple.0123456789ab.png'), frame(1, '.cascade-cache/ripple.0123456789ab.png'))).toEqual([]);
+    // A fixed name in the cache, or a hash-looking name outside it, is still a clobber.
+    expect(sharedOutputPaths(frame(0, '.cascade-cache/ripple.png'), frame(1, '.cascade-cache/ripple.png'))).toHaveLength(1);
+    expect(sharedOutputPaths(frame(0, 'out/ripple.0123456789ab.png'), frame(1, 'out/ripple.0123456789ab.png'))).toHaveLength(1);
+  });
 });
 
 describe('cascade render across workers', () => {
