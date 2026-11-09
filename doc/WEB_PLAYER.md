@@ -70,7 +70,9 @@ serialized and playback coalesces requests instead of building a catch-up queue.
 
 - `play()`, `pause()`, `seek(frame)`.
 - `setInput(nodeId, name, value)` and `setProp(nodeId, name, value)`, which await
-  the resulting cook.
+  the resulting cook. Every cook re-runs only the nodes whose inputs or props
+  changed and everything downstream of them; an unchanged upstream node keeps
+  its outputs (`run({ reuse: "strict" })`).
 - `selectOutput(nodeId, port)` and `getOutput(nodeId, port)`.
 - `downloadOutput()`, returning the selected output as a `Blob`.
 - `resize(width, height)` for the display, without changing authored resolution.

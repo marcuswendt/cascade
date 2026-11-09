@@ -324,7 +324,10 @@ class BrowserPlayer implements PlayerController {
     this.assertActive();
     let result: RunResult;
     try {
-      result = await this.context.graph.run({ frame, fps: this.context.graph.getFps() });
+      // Re-cook only what changed: a node whose inputs and props are as they
+      // were keeps its outputs, and "strict" still cooks everything below one
+      // that ran. A paint prop must not re-run a slow data node upstream of it.
+      result = await this.context.graph.run({ frame, fps: this.context.graph.getFps(), reuse: 'strict' });
       this.settledRoots = outputValues(result);
       if (result.status !== 'completed') throw resultError(result);
       if (!this.selected) this.selected = preferredOutput(result);

@@ -4,6 +4,13 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+### Fixed
+
+- **The browser player re-cooks only what changed.** `setProp`, `setInput`
+  and each frame now cook the changed node and what lies downstream of it;
+  an unchanged upstream node keeps its outputs (`reuse: "strict"`), so a
+  paint prop no longer re-runs a slow data node above it.
+
 ## 0.12.0 — 2026-11-09
 
 ### Added

@@ -23,6 +23,21 @@ const registration = {
   },
 } satisfies DefinitionNodeRegistration<typeof definition>;
 
+/** A node that reads the frame through a prop, so every new frame cooks it. */
+const framedDefinition = {
+  ...definition,
+  props: { frame: { type: 'float', default: 0, expression: '$F' } },
+} as const satisfies NodeDefinition;
+
+function framed(moduleId: string, execute: () => Promise<number> | number): DefinitionNodeRegistration<typeof framedDefinition> {
+  return {
+    kind: 'definition-v1',
+    moduleId,
+    definition: framedDefinition,
+    loadExecute: async () => async (context) => { context.outputs.result.set(await execute()); },
+  };
+}
+
 function graph() {
   return {
     version: '0.2',
@@ -59,22 +74,52 @@ describe('startPlayer', () => {
     expect(root.childElementCount).toBe(0);
   });
 
+  it('re-cooks only the changed node and what lies downstream of it', async () => {
+    const cooks: string[] = [];
+    const counting = (moduleId: string) => ({
+      ...registration,
+      moduleId,
+      loadExecute: async () => async (context) => {
+        cooks.push(moduleId);
+        context.outputs.result.set(context.inputs.value * context.props.factor);
+      },
+    } satisfies DefinitionNodeRegistration<typeof definition>);
+    const data = counting('project.Data');
+    const paint = counting('project.Paint');
+    const source = {
+      version: '0.2',
+      nodes: [{ id: 'data', module: data.moduleId }, { id: 'paint', module: paint.moduleId }],
+      connections: [{ source: { nodeId: 'data', outputName: 'result' }, target: { nodeId: 'paint', inputName: 'value' } }],
+    } as never;
+    const player = await startPlayer({ document: source, registrations: [data, paint], assets: {}, root: document.createElement('main') });
+    try {
+      expect(cooks).toEqual(['project.Data', 'project.Paint']);
+      cooks.length = 0;
+      await player.setProp('paint', 'factor', 10);
+      expect(cooks).toEqual(['project.Paint']);
+      expect(player.getOutput('paint', 'result')).toBe(60);
+      cooks.length = 0;
+      await player.setProp('data', 'factor', 4);
+      expect(cooks).toEqual(['project.Data', 'project.Paint']);
+      expect(player.getOutput('paint', 'result')).toBe(80);
+      cooks.length = 0;
+      await player.seek(5);
+      expect(cooks).toEqual([]);
+    } finally { await player.dispose(); }
+  });
+
   it('serializes explicit frame cooks', async () => {
     let active = 0;
     let maximum = 0;
     let executions = 0;
-    const slow = {
-      ...registration,
-      moduleId: 'project.Slow',
-      loadExecute: async () => async (context) => {
-        active += 1;
-        executions += 1;
-        maximum = Math.max(maximum, active);
-        await new Promise((resolve) => setTimeout(resolve, 2));
-        context.outputs.result.set(executions);
-        active -= 1;
-      },
-    } satisfies DefinitionNodeRegistration<typeof definition>;
+    const slow = framed('project.Slow', async () => {
+      active += 1;
+      executions += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      active -= 1;
+      return executions;
+    });
     const source = graph();
     source.nodes[0].module = slow.moduleId;
     const root = document.createElement('main');
@@ -121,18 +166,14 @@ describe('startPlayer', () => {
     let executions = 0;
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });
-    const slow = {
-      ...registration,
-      moduleId: 'project.PlaybackGate',
-      loadExecute: async () => async (context) => {
-        active += 1;
-        executions += 1;
-        maximum = Math.max(maximum, active);
-        if (executions > 1) await held;
-        context.outputs.result.set(executions);
-        active -= 1;
-      },
-    } satisfies DefinitionNodeRegistration<typeof definition>;
+    const slow = framed('project.PlaybackGate', async () => {
+      active += 1;
+      executions += 1;
+      maximum = Math.max(maximum, active);
+      if (executions > 1) await held;
+      active -= 1;
+      return executions;
+    });
     const source = graph();
     source.nodes[0].module = slow.moduleId;
     const player = await startPlayer({ document: source, registrations: [slow], assets: {}, root: document.createElement('main') });
