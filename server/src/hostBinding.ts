@@ -169,6 +169,23 @@ function listen(server: Server, port: number, host: string): Promise<void> {
   });
 }
 
+/**
+ * The first port from `start` that `host` can bind, trying `tries` in a row.
+ * Only for the default port: an explicit `--port` that is taken stays an
+ * error, because silently moving it would break whatever expects it there.
+ */
+export async function firstFreePort(host: string, start: number, tries = 20): Promise<number> {
+  for (let port = start; port < start + tries && port <= 65_535; port++) {
+    try {
+      await probe(host, port);
+      return port;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
+    }
+  }
+  throw new Error(`ports ${start}–${start + tries - 1} are all in use on ${host}; pass --port`);
+}
+
 /** Bind and release a throwaway socket, to learn whether `host:port` is usable. */
 function probe(host: string, port: number): Promise<void> {
   return new Promise((resolve, reject) => {

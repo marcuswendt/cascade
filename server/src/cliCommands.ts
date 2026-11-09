@@ -3,7 +3,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { loadConfig, saveConfig, configPath } from './config.js';
 import { startServer } from './index.js';
-import { isHostUnavailable } from './hostBinding.js';
+import { firstFreePort, isHostUnavailable } from './hostBinding.js';
 import { ProjectRoot } from './project.js';
 import { createNode, createProject } from './projectTemplate.js';
 import { authority, isLoopbackHost, isWildcardHost, trustedAuthority } from './security.js';
@@ -125,9 +125,10 @@ export async function runStudioCli(args: readonly string[]): Promise<void> {
 
   const project = ProjectRoot.fromArg(resolveProjectTarget(positional[0] ?? '.'));
   const envFallbacks = (process.env.CASCADE_FALLBACK_HOSTS ?? '').split(',').map((value) => value.trim()).filter(Boolean);
+  const studioPort = await defaultStudioPort(host, port);
   const server = startServer(project, {
     host,
-    port,
+    port: studioPort,
     trustedHosts,
     ...(fallbackHosts || envFallbacks.length ? { fallbackHosts: fallbackHosts ?? envFallbacks } : {}),
   });
@@ -186,6 +187,23 @@ export async function runStudioCli(args: readonly string[]): Promise<void> {
       });
     }
   }, () => { /* reported by the 'error' handler above */ });
+}
+
+export const DEFAULT_STUDIO_PORT = 3030;
+
+/**
+ * The port Studio binds. An explicit `--port` or `PORT` is kept as given (a
+ * taken one is still an error). The default moves up from 3030 when another
+ * Studio or dev server already holds it, so `cascade new` and `cascade .` in
+ * a second project open instead of failing on a busy port (UI Improvements,
+ * 9 Nov). Only for a loopback bind: a remote bind is a configured address.
+ */
+export async function defaultStudioPort(host: string | undefined, port: number | undefined): Promise<number | undefined> {
+  if (port !== undefined || process.env.PORT) return port;
+  if (host && !isLoopbackHost(host)) return undefined;
+  const chosen = await firstFreePort(host ?? '127.0.0.1', DEFAULT_STUDIO_PORT);
+  if (chosen !== DEFAULT_STUDIO_PORT) console.log(`[cascade] port ${DEFAULT_STUDIO_PORT} is in use; Studio is on ${chosen}`);
+  return chosen;
 }
 
 /** A path, or a bare project name under the configured projects root. */

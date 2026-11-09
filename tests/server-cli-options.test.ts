@@ -1,5 +1,7 @@
+import net from 'node:net';
 import { describe, expect, it } from 'vitest';
-import { parseStudioArgs } from '../server/src/cliCommands.js';
+import { defaultStudioPort, parseStudioArgs } from '../server/src/cliCommands.js';
+import { firstFreePort } from '../server/src/hostBinding.js';
 
 describe('Studio CLI options', () => {
   it('parses explicit bind, port, trusted host, and browser options', () => {
@@ -48,5 +50,19 @@ describe('Studio CLI options', () => {
     // see below. A malformed one is still refused.
     expect(() => parseStudioArgs(['.', '--host', 'KURO', '--trusted-host', 'kuro:0'])).toThrow('Invalid trusted host port');
     expect(() => parseStudioArgs(['.', '--host', 'KURO', '--trusted-host', 'kuro:notaport'])).toThrow('Invalid trusted host');
+  });
+
+  it('moves the default port past a taken one, but keeps an explicit port as given', async () => {
+    const held = net.createServer();
+    await new Promise<void>((resolve) => held.listen(0, '127.0.0.1', resolve));
+    const taken = (held.address() as net.AddressInfo).port;
+    try {
+      const chosen = await firstFreePort('127.0.0.1', taken, 5);
+      expect(chosen).toBeGreaterThan(taken);
+      await expect(defaultStudioPort('127.0.0.1', taken)).resolves.toBe(taken);
+      await expect(defaultStudioPort('KURO', undefined)).resolves.toBeUndefined();
+    } finally {
+      await new Promise<void>((resolve) => held.close(() => resolve()));
+    }
   });
 });
