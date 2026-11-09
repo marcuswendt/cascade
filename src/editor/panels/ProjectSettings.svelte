@@ -3,7 +3,12 @@
   import type { Graph } from '@/nodes/Graph';
   import type { ProjectPackage } from '@/types/node.types';
   import Icon from '../Icon.svelte';
-  import { X, Plus, Trash2, FolderOpen, Package, AlertCircle } from '@lucide/svelte';
+  import X from '@lucide/svelte/icons/x';
+  import Plus from '@lucide/svelte/icons/plus';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
+  import FolderOpen from '@lucide/svelte/icons/folder-open';
+  import Package from '@lucide/svelte/icons/package';
+  import AlertCircle from '@lucide/svelte/icons/circle-alert';
   import { loadProjectSettings, saveProjectSettings, type ProjectSettingsDto } from '../projectSettingsApi';
 
   export let open = false;

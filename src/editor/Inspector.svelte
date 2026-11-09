@@ -19,7 +19,7 @@
   import { deleteKeyAtPlayhead, isKeyable, keyState, setKeyAtPlayhead, toggleKeyAtPlayhead } from './keyframeGesture';
   import { requestTimelineFocus } from './stores/timelineFocus';
   import { dockviewStore } from './dockview/dockview-store.svelte';
-  import { Diamond } from '@lucide/svelte';
+  import Diamond from '@lucide/svelte/icons/diamond';
   import { propUpdateCounters } from './stores/propUpdateStore';
   import { normalizeColor, colorToHex } from '@/utils/colorUtils';
   import { setStudioParameter } from './StudioParameterController';

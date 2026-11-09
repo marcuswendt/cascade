@@ -3,7 +3,9 @@
   import { currentFrame } from '../stores/frameStore';
   import type { Node } from '@/nodes/Node';
   import type { Graph } from '@/nodes/Graph';
-  import { Sigma, AlertCircle, X } from '@lucide/svelte';
+  import Sigma from '@lucide/svelte/icons/sigma';
+  import AlertCircle from '@lucide/svelte/icons/circle-alert';
+  import X from '@lucide/svelte/icons/x';
   import { onMount } from 'svelte';
 
   export let prop: Prop;

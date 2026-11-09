@@ -61,6 +61,14 @@ describe('architecture: layers', () => {
     expect(cycles.length).toBeLessThanOrEqual(KNOWN_CYCLES.length);
   });
 
+  it('imports Lucide icons one by one, never the whole library', () => {
+    // The `@lucide/svelte` barrel loads every icon: ~4.8 s per Studio test file
+    // and per dev-server cold start (2026-11-09). Import `@lucide/svelte/icons/<name>`.
+    const barrel = [...graph].filter(([, { bare }]) => bare.some(({ spec }: { spec: string }) => spec === '@lucide/svelte' || spec === '@lucide/svelte/icons'))
+      .map(([file]) => file);
+    expect(barrel, 'import @lucide/svelte/icons/<name> instead').toEqual([]);
+  });
+
   it('lists only cycles that still exist', () => {
     const gone = KNOWN_CYCLES.filter((known) => !cycles.some((group) => group.some((file) => known.includes(file))));
     expect(gone, 'broken: delete these from KNOWN_CYCLES').toEqual([]);

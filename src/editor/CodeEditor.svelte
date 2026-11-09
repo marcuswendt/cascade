@@ -8,7 +8,14 @@
   import PackageSearch from './PackageSearch.svelte';
   import type { PackageManager } from '@/engine/PackageManager';
   import Icon from './Icon.svelte';
-  import { Clock, Check, XCircle, Copy, FileOutput, History, Lock, FolderOpen } from '@lucide/svelte';
+  import Clock from '@lucide/svelte/icons/clock';
+  import Check from '@lucide/svelte/icons/check';
+  import XCircle from '@lucide/svelte/icons/circle-x';
+  import Copy from '@lucide/svelte/icons/copy';
+  import FileOutput from '@lucide/svelte/icons/file-output';
+  import History from '@lucide/svelte/icons/rotate-ccw-clock';
+  import Lock from '@lucide/svelte/icons/lock';
+  import FolderOpen from '@lucide/svelte/icons/folder-open';
   import { isStandardLibraryNode, typeToPackagePath, getNodeClass, getNodeSource } from '@/utils/nodeTypeUtils';
   import type { NodeSource, FileStatus } from '@/types/node.types';
   import { settingsStore } from './stores/settingsStore';

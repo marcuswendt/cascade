@@ -51,6 +51,12 @@ Notable changes to Cascade. Newest first.
 
 ### Changed
 
+- **The test suite runs in about 13 s, down from 18 s.** Studio imported
+  Lucide through its `@lucide/svelte` barrel, which loads every icon: 4.8 s
+  of module loading in each component test file and on every dev-server
+  cold start. Icons are now imported one by one
+  (`@lucide/svelte/icons/<name>`), and an architecture test fails if the
+  barrel comes back. The Studio bundle stays inside its budget.
 - **Independent nodes cook at once in a headless run.** A project with a
   warm stage worker gets a small pool of them (2–4, sized from cores and
   memory; `exec.stages.workers` or `CASCADE_STAGE_WORKERS` sets it, a

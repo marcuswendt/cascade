@@ -23,7 +23,7 @@
    * project existed. It is the second option rather than the only one.
    */
   import { createEventDispatcher } from 'svelte';
-  import { X } from '@lucide/svelte';
+  import X from '@lucide/svelte/icons/x';
 
   export let open = false;
   /** The graph currently open, so the list can mark it. */
