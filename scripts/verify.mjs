@@ -4,19 +4,26 @@
  * `npm run verify -- --fast` (or `npm run verify:fast`): the type gate, the
  * generated-file and architecture checks, and the tests related to files
  * changed since HEAD — the loop to run while iterating.
+ * `node scripts/verify.mjs --push -- <files>`: what the pre-push hook
+ * (`.githooks/pre-push` -> scripts/pre-push.mjs) runs: the fast gate plus
+ * svelte-check, with the related tests taken from the files in the commits
+ * being pushed rather than the working tree. Under 20 s.
  *
  * Full: packages build -> types (src + tests, server) -> package types ->
  * node reference -> svelte-check -> vitest -> package tests -> Studio bundle
  * budget. Prints each step's time and the load average, since timings on a
  * shared machine mean little without it.
  */
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
-const fast = process.argv.includes('--fast');
+const push = process.argv.includes('--push');
+const fast = push || process.argv.includes('--fast');
+/** Files named after `--` (the pre-push hook passes the pushed commits' files). */
+const givenFiles = process.argv.includes('--') ? process.argv.slice(process.argv.indexOf('--') + 1) : null;
 const node = process.execPath;
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const bin = (...parts) => path.join(root, 'node_modules', ...parts);
@@ -100,6 +107,7 @@ function typecheckSourceAndTests() {
 }
 
 function changedFiles() {
+  if (givenFiles) return givenFiles.filter((file) => /\.(ts|svelte|mjs)$/.test(file) && fs.existsSync(path.join(root, file)));
   try {
     const listed = execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: root, encoding: 'utf8' });
     return listed.split('\n').map((line) => line.slice(3).split(' -> ').pop()?.trim()).filter((file) => file && /\.(ts|svelte|mjs)$/.test(file) && fs.existsSync(path.join(root, file)));
@@ -107,6 +115,10 @@ function changedFiles() {
     return [];
   }
 }
+
+const svelteCheckArgs = [bin('svelte-check', 'bin', 'svelte-check'), '--tsconfig', './tsconfig.json', '--threshold', 'error', '--output', 'human'];
+/** Push mode's background svelte-check: resolves to { status, output }. */
+let svelteCheck = null;
 
 const packagesBuilt = ['contracts', 'runtime', 'kit'].every((name) => fs.existsSync(path.join(root, 'packages', name, 'dist')));
 
@@ -135,18 +147,39 @@ const steps = [
     },
   },
   { name: 'node reference current', run: () => run(node, ['--import', 'tsx', 'scripts/build-node-reference.mjs', '--check']) },
-  { name: 'svelte-check', run: () => run(node, [bin('svelte-check', 'bin', 'svelte-check'), '--tsconfig', './tsconfig.json', '--threshold', 'error', '--output', 'human']), skip: fast },
+  { name: 'svelte-check', run: () => run(node, svelteCheckArgs), skip: fast },
+  {
+    // Push mode starts svelte-check beside the tests (they share nothing) and
+    // waits for it in the last step (a Graph.ts push: 20.9 s at load 24
+    // serial, 13.8 s at load 51 alongside).
+    name: 'svelte-check (started)',
+    skip: !push,
+    run: () => {
+      svelteCheck = new Promise((resolve) => {
+        let output = '';
+        const child = spawn(node, svelteCheckArgs, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+        child.stdout.on('data', (chunk) => { output += chunk; });
+        child.stderr.on('data', (chunk) => { output += chunk; });
+        child.on('close', (status) => resolve({ status, output }));
+      });
+    },
+  },
   { name: 'architecture', run: () => run(node, [vitest, 'run', 'tests/architecture-']), skip: !fast },
   {
     name: 'related tests',
     skip: !fast,
     run: () => {
       const files = changedFiles();
-      if (!files.length) return console.log('[verify] nothing changed since HEAD');
+      if (!files.length) return console.log(`[verify] no code changed ${givenFiles ? 'in the pushed commits' : 'since HEAD'}`);
       // Nothing Studio-side changed: the `node` project only (vitest.config.ts),
       // so the Svelte plugin is never set up.
       const studio = files.some((file) => /\.svelte(\.ts)?$|^src\/(editor|App)|^tests\/(components|workflows)\//.test(file));
-      run(node, [vitest, 'related', '--run', '--passWithNoTests', ...(studio ? [] : ['--project', 'node']), ...files]);
+      // Push mode leaves out the timing assertions in tests/performance: they
+      // fail when another session loads the machine (a Graph.ts push failed one
+      // at load 52, 2026-11-09), and a push gate must not depend on load. Full
+      // verify still runs them.
+      const env = push ? { ...process.env, CASCADE_SKIP_PERF: '1' } : process.env;
+      run(node, [vitest, 'related', '--run', '--passWithNoTests', ...(studio ? [] : ['--project', 'node']), ...files], { env });
     },
   },
   { name: 'vitest', run: () => run(node, [vitest, 'run']), skip: fast },
@@ -158,13 +191,22 @@ const steps = [
     },
   },
   { name: 'Studio bundle budget', run: () => run(node, ['scripts/bundle-budget.mjs']), skip: fast },
+  {
+    name: 'svelte-check (finished)',
+    skip: !push,
+    run: async () => {
+      const { status, output } = await svelteCheck;
+      process.stdout.write(output);
+      if (status !== 0) throw new Error(`svelte-check exited ${status}`);
+    },
+  },
 ];
 
 const load = () => os.loadavg().map((value) => value.toFixed(1)).join(' ');
 const timings = [];
 const started = Date.now();
 let failed = null;
-console.log(`[verify] ${fast ? 'fast' : 'full'}; load ${load()}`);
+console.log(`[verify] ${push ? 'push' : fast ? 'fast' : 'full'}; load ${load()}`);
 for (const step of steps) {
   if (step.skip) continue;
   const t0 = Date.now();

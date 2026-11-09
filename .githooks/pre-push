@@ -1,0 +1,3 @@
+#!/bin/sh
+# Pre-push gate: see scripts/pre-push.mjs. Skip once with `git push --no-verify`.
+exec node "$(git rev-parse --show-toplevel)/scripts/pre-push.mjs"

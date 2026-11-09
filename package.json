@@ -147,6 +147,8 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "verify": "node scripts/verify.mjs",
     "verify:fast": "node scripts/verify.mjs --fast",
+    "verify:push": "node scripts/verify.mjs --push",
+    "prepare": "node scripts/install-hooks.mjs",
     "check:architecture": "vitest run tests/architecture-",
     "check:bundle": "node scripts/bundle-budget.mjs",
     "check:node-reference": "tsx scripts/build-node-reference.mjs --check",

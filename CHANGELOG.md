@@ -51,6 +51,13 @@ Notable changes to Cascade. Newest first.
 
 ### Changed
 
+- **`git push` runs a pre-push gate.** `npm install` points the checkout's
+  hooks at `.githooks/`; a push whose commits touch code runs
+  `verify --push`: types, node reference, architecture, svelte-check in
+  parallel, and the tests related to the pushed files, without the
+  load-sensitive `tests/performance/` timings. 10.8 s for a Studio change,
+  10–14 s for a `Graph.ts` change on a loaded machine. A push of docs alone
+  skips it; `--no-verify` skips it once.
 - **The test suite runs in about 13 s, down from 18 s.** Studio imported
   Lucide through its `@lucide/svelte` barrel, which loads every icon: 4.8 s
   of module loading in each component test file and on every dev-server

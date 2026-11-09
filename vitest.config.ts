@@ -37,7 +37,10 @@ export default defineConfig({
           name: 'node',
           environment: 'node',
           include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
-          exclude: ['**/node_modules/**', ...STUDIO],
+          // CASCADE_SKIP_PERF=1 (set by `verify --push`) drops the timing
+          // assertions, which fail on a loaded machine. The CLI's --exclude
+          // does not reach a project's own exclude list, hence the variable.
+          exclude: ['**/node_modules/**', ...STUDIO, ...(process.env.CASCADE_SKIP_PERF ? ['tests/performance/**'] : [])],
         },
       },
       {
