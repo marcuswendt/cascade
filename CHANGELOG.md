@@ -4,6 +4,8 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+## 0.14.0 — 2026-11-16
+
 ### Added
 
 - **GPU nodes write images in one call.** `cascade/gpu` adds
@@ -27,6 +29,12 @@ Notable changes to Cascade. Newest first.
   the run's own. A killed run now prints `{"ok":false}` with the timeout.
   `node scripts/smoke-package.mjs --dawn` runs the Dawn render check without
   an environment variable.
+
+### Changed
+
+- **Studio's default port moves past a taken 3030.** `cascade` without
+  `--port` tries the next free port; an explicit `--port` that is taken still
+  errors.
 
 ## 0.13.0 — 2026-11-09
 
