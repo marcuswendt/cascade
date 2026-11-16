@@ -105,7 +105,7 @@
   <header>
     <h1>Cascade</h1>
     <p class="tagline">An open-source node-graph runtime with a visual Studio, for building generative design systems that move between print, motion, installations, and the web. Built at FIELD.IO and used for our own work.</p>
-    <p class="release">Current release: 0.14.0, on npm as <code>@field/cascade</code>.</p>
+    <p class="release">Current release: 0.15.0, on npm as <code>@field/cascade</code>.</p>
   </header>
 
   <h2>What it is</h2>
@@ -281,6 +281,8 @@ cascade --help                all of it</pre>
   <h2>Versions</h2>
   <p>Notable changes, newest first. Every release, in full, is in the <a href="https://github.com/marcuswendt/cascade/blob/main/CHANGELOG.md">changelog</a> and on <a href="https://github.com/marcuswendt/cascade/releases">GitHub releases</a>.</p>
   <dl class="versions">
+    <dt>0.15.0 <span>16 Nov 2026</span></dt>
+    <dd><ul><li>Exported editors can play: <code>editor.playback { fps, frames }</code> adds Play/Pause, stepping the frame <code>cascade run --frames</code> steps and skipping frames rather than queueing.</li><li>Studio's Viewer shows a finished cook at once.</li></ul></dd>
     <dt>0.14.0 <span>16 Nov 2026</span></dt>
     <dd><ul><li>GPU nodes write images in one call: <code>renderTarget</code> and <code>writeTexture</code> in <code>cascade/gpu</code>, the same in Studio and headless through Dawn.</li><li><code>cascade node move</code> reparents and repositions nodes, wires kept.</li><li><code>run --json --timeout</code> prints one envelope.</li><li>Studio moves past a taken port 3030.</li></ul></dd>
     <dt>0.13.0 <span>9 Nov 2026</span></dt>

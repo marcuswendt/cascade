@@ -4,6 +4,8 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+## 0.15.0 — 2026-11-16
+
 ### Added
 
 - **Play/Pause in exported editors.** An editor section may declare
@@ -16,6 +18,12 @@ Notable changes to Cascade. Newest first.
   current frame, and so do exports. `fps` must be a positive number and
   `frames` a positive whole number, or the export stops and says which.
   Without `playback`, the editor is unchanged.
+
+### Fixed
+
+- **Studio's Viewer shows a cook as soon as it finishes.** It no longer waits
+  for the next 100 ms check, so a slider drag updates the view about twice as
+  often.
 
 ## 0.14.0 — 2026-11-16
 

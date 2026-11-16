@@ -36,7 +36,7 @@ cascade .                          # reopen it later
 cascade run index.cascade --frames 1 --json   # render headlessly
 ```
 
-The npm package is at 0.14.0 and includes every command below. 0.14 adds `renderTarget` and `writeTexture` in `cascade/gpu`, `cascade node move` and a single `run --json --timeout` envelope; see the [changelog](CHANGELOG.md).
+The npm package is at 0.15.0 and includes every command below. 0.15 adds Play/Pause in exported editors (`editor.playback`); 0.14 added `renderTarget` and `writeTexture` in `cascade/gpu` and `cascade node move`; see the [changelog](CHANGELOG.md).
 
 ## New in 0.9: shareable editors
 
