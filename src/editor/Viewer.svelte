@@ -1143,8 +1143,10 @@
   function stopTimers() {
     if (checkTimer !== null) clearTimeout(checkTimer);
     if (idleTimer !== null) clearTimeout(idleTimer);
+    if (probeTimer !== null) clearTimeout(probeTimer);
     checkTimer = null;
     idleTimer = null;
+    probeTimer = null;
   }
 
   // Cook-state transitions are the change signal. Re-subscribe if the graph
@@ -1155,7 +1157,35 @@
     unsubscribeScheduler?.();
     unsubscribeScheduler = null;
     subscribedGraph = graph;
-    if (graph?.scheduler) unsubscribeScheduler = graph.scheduler.subscribe(() => scheduleCheck());
+    if (graph?.scheduler) unsubscribeScheduler = graph.scheduler.subscribe(onCookEvent);
+  }
+
+  /**
+   * A finished cook of the viewed node skips the throttle. Every scheduler
+   * event used to wait out CHECK_INTERVAL, so a slider drag on field-logo's
+   * hue showed a frame every ~105 ms while hue cooked every ~50: the Viewer,
+   * not the cook, set the cadence.
+   *
+   * The signal is the node's cook count, not a transition to `clean`: during a
+   * drag nearly every cook is superseded by the next input, so it ends `stale`
+   * (already set by the invalidation, so no transition is emitted) yet has
+   * still rewritten its file. The count moves synchronously after the state
+   * change, hence the probe on the next task. One probe per burst of events,
+   * and no frame loop: idle emits nothing, so this costs nothing.
+   */
+  let probeTimer: ReturnType<typeof setTimeout> | null = null;
+  let seenNode: Node | null = null;
+  let seenCooks = -1;
+  function onCookEvent() {
+    if (probeTimer !== null || !canCheck()) return;
+    probeTimer = setTimeout(() => {
+      probeTimer = null;
+      const cooks = displayNode?.cookInfo?.cookCount ?? -1;
+      const landed = displayNode !== null && displayNode === seenNode && cooks !== seenCooks;
+      seenNode = displayNode;
+      seenCooks = cooks;
+      scheduleCheck(landed);
+    }, 0);
   }
 
   // React to displayNode changes - trigger evaluation when selection changes
