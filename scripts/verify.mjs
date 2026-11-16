@@ -64,7 +64,7 @@ const KNOWN_TEST_TYPE_ERRORS = {
   'tests/core-nodes.test.ts': 1,
   'tests/definition-node-studio.test.ts': 21,
   'tests/e2e/cli-render.e2e.test.ts': 2,
-  'tests/editor-export.test.ts': 5,
+  'tests/editor-export.test.ts': 1,
   'tests/expression-math-functions.test.ts': 1,
   'tests/expression-time-variables.test.ts': 2,
   'tests/expressions.test.ts': 6,

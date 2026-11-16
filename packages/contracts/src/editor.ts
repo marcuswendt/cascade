@@ -61,6 +61,20 @@ export interface EditorDeclaration {
    * the real values cook again on release.
    */
   readonly draft?: Readonly<Record<string, JsonValue>>;
+  /**
+   * Opt-in Play/Pause. Playing steps the frame `cascade run --frames` steps,
+   * from 1 to `frames` and round again, at `fps`; a frame that comes due while
+   * the previous one is still cooking is skipped, never queued. Without it the
+   * editor shows one frame and has no transport.
+   */
+  readonly playback?: EditorPlayback;
+}
+
+export interface EditorPlayback {
+  /** Frames per second: the tick rate and the run's `fps` (`$T`, `$FPS`). */
+  readonly fps: number;
+  /** Loop length: frames 1 to `frames`, like `cascade run --frames 1-<frames>`. */
+  readonly frames: number;
 }
 
 export interface EditorFont {

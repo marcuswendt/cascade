@@ -18,6 +18,9 @@ import {
   type VisibleWhen,
 } from "@cascade/contracts";
 
+/** The first frame, where `editor.playback` starts its loop: the runtime's own lower bound. */
+export { MIN_FRAME } from "../expressions/time.js";
+
 export interface EditorDiagnostic {
   readonly severity: "error" | "warning";
   readonly code: string;
@@ -103,7 +106,25 @@ export function validateEditor(document: CascadeDocument): EditorDiagnostic[] {
     if (!ids.has(id)) warn("editor/draft-parameter", `draft sets unknown parameter ${id}`);
   for (const frozen of editor.freeze ?? [])
     if (!nodes.has(frozen.node)) error("editor/freeze-node", `Frozen source ${frozen.node} is not in the graph`);
+  if (editor.playback !== undefined) {
+    const playback = editor.playback as { fps?: unknown; frames?: unknown } | null;
+    const fps = playback?.fps;
+    const frames = playback?.frames;
+    if (typeof playback !== "object" || playback === null)
+      error("editor/playback", `editor.playback must be { "fps": number, "frames": number }, got ${JSON.stringify(playback)}`);
+    else {
+      if (typeof fps !== "number" || !Number.isFinite(fps) || fps <= 0)
+        error("editor/playback-fps", `editor.playback.fps must be a positive number of frames per second, got ${shown(fps)}`);
+      if (typeof frames !== "number" || !Number.isInteger(frames) || frames <= 0)
+        error("editor/playback-frames", `editor.playback.frames must be a positive whole number of frames to loop, got ${shown(frames)}`);
+    }
+  }
   return out;
+}
+
+/** A value for an error message: numbers as written (`NaN`, `-1`), the rest as JSON. */
+function shown(value: unknown): string {
+  return typeof value === "number" ? String(value) : JSON.stringify(value) ?? "nothing";
 }
 
 /**

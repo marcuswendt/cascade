@@ -34,7 +34,7 @@ export interface EngineRun {
 export interface EditorEngine {
   nodes(): Promise<readonly EngineNode[]>;
   setProps(writes: readonly (readonly [node: string, prop: string, value: unknown])[]): Promise<void>;
-  run(options?: Pick<RunOptions, 'target' | 'reuse'>): Promise<EngineRun>;
+  run(options?: Pick<RunOptions, 'target' | 'reuse' | 'frame' | 'fps'>): Promise<EngineRun>;
   output(node: string, port: string): Promise<unknown>;
   /** Every node's outputs, for the inspect view. */
   outputs(): Promise<ReadonlyMap<string, ReadonlyMap<string, unknown>>>;
@@ -98,7 +98,7 @@ export class LocalEngine implements EditorEngine {
     for (const [node, prop, value] of writes) await this.graph.setProp(node, prop, value);
   }
 
-  async run(options: Pick<RunOptions, 'target' | 'reuse'> = {}): Promise<EngineRun> {
+  async run(options: Pick<RunOptions, 'target' | 'reuse' | 'frame' | 'fps'> = {}): Promise<EngineRun> {
     const result = await this.graph.run(options);
     this.collect();
     return { status: result.status, messages: result.diagnostics.map((item) => item.message) };

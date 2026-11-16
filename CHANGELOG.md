@@ -4,6 +4,19 @@ Notable changes to Cascade. Newest first.
 
 ## Unreleased
 
+### Added
+
+- **Play/Pause in exported editors.** An editor section may declare
+  `"playback": { "fps": 25, "frames": 100 }`. The exported editor then shows
+  a Play/Pause button and a frame readout above the parameters. Playing steps
+  the frame `cascade run --frames` steps, from 1 to `frames` and round again,
+  at `fps`, and each frame cooks in the engine worker. When a cook is still
+  running as the next frame comes due, the frames in between are skipped and
+  never queued. It opens paused on frame 1. Parameter edits cook at the
+  current frame, and so do exports. `fps` must be a positive number and
+  `frames` a positive whole number, or the export stops and says which.
+  Without `playback`, the editor is unchanged.
+
 ## 0.14.0 — 2026-11-16
 
 ### Added

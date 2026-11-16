@@ -76,6 +76,21 @@ describe('editor subgraph and version', () => {
     const broken = { ...document, editor: { ...document.editor!, outputs: [{ id: 'x', node: 'missing', port: 'p', format: 'png' }] } } as CascadeDocument;
     expect(validateEditor(broken).map((item) => item.code)).toContain('editor/output-node');
   });
+
+  it('accepts a playback loop and refuses one that cannot play', () => {
+    const document = graph();
+    const withPlayback = (playback: unknown) =>
+      validateEditor({ ...document, editor: { ...document.editor!, playback } } as CascadeDocument).filter((item) => item.severity === 'error');
+    expect(withPlayback({ fps: 25, frames: 100 })).toEqual([]);
+    expect(withPlayback({ fps: 23.976, frames: 1 })).toEqual([]);
+    for (const fps of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, '25', undefined])
+      expect(withPlayback({ fps, frames: 100 }).map((item) => item.code)).toEqual(['editor/playback-fps']);
+    for (const frames of [0, -5, 2.5, Number.NaN, Number.POSITIVE_INFINITY, null])
+      expect(withPlayback({ fps: 25, frames }).map((item) => item.code)).toEqual(['editor/playback-frames']);
+    expect(withPlayback({ fps: -1, frames: 0 })[0]!.message).toBe('editor.playback.fps must be a positive number of frames per second, got -1');
+    expect(withPlayback(null).map((item) => item.code)).toEqual(['editor/playback']);
+    expect(withPlayback(25).map((item) => item.code)).toEqual(['editor/playback']);
+  });
 });
 
 describe('scenes', () => {
@@ -198,7 +213,7 @@ export const definition = {
 export function execute(context) { context.outputs.svg.set('<svg/>'); }
 `;
 
-function exportGraph(extra: Partial<CascadeDocument> & { editor?: object } = {}) {
+function exportGraph(extra: Omit<Partial<CascadeDocument>, 'editor'> & { editor?: object } = {}) {
   return JSON.stringify({
     version: '0.2',
     nodes: [{ id: 'live', module: 'project.Live' }, { id: 'shape', module: 'project.Shape' }, { id: 'other', module: 'project.Shape' }],
@@ -258,6 +273,20 @@ describe('cascade export boundary', () => {
     // A phone lays the page out at its width and never scales it; only the preview zooms.
     expect(fs.readFileSync(path.join(out, 'index.html'), 'utf8')).toContain('content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1"');
     for (const bundle of ['editor.js', 'editor-worker.js']) expect(fs.readFileSync(path.join(out, bundle), 'utf8')).toContain('FontFace');
+  }, 60_000);
+
+  it('ships editor.playback into the built editor, and nothing when it is absent', async () => {
+    const root = project({ 'nodes/Live/index.ts': shape(), 'nodes/Shape/index.ts': shape(), 'g.cascade': exportGraph({ editor: { playback: { fps: 25, frames: 100 } } }) });
+    const prepared = await prepareExport(path.join(root, 'g.cascade'));
+    expect(prepared.document.editor!.playback).toEqual({ fps: 25, frames: 100 });
+    const out = path.join(root, '..', `${path.basename(root)}-site`);
+    roots.push(out);
+    await exportEditor(path.join(root, 'g.cascade'), { out, log: () => {} });
+    expect(fs.readFileSync(path.join(out, 'editor.js'), 'utf8')).toMatch(/playback:\{fps:25,frames:100\}/);
+    const plain = project({ 'nodes/Live/index.ts': shape(), 'nodes/Shape/index.ts': shape(), 'g.cascade': exportGraph() });
+    expect((await prepareExport(path.join(plain, 'g.cascade'))).document.editor).not.toHaveProperty('playback');
+    const broken = project({ 'nodes/Live/index.ts': shape(), 'nodes/Shape/index.ts': shape(), 'g.cascade': exportGraph({ editor: { playback: { fps: 0, frames: 100 } } }) });
+    await expect(prepareExport(path.join(broken, 'g.cascade'))).rejects.toThrow(/editor.playback.fps must be a positive number/);
   }, 60_000);
 
   it('refuses a font that is not OFL or sits under licensed/', async () => {

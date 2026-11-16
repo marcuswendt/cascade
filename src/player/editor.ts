@@ -43,6 +43,7 @@ import {
 } from './app.js';
 import { mediaTypeForName } from './assets.js';
 import { createWorkerEngine, LocalEngine, type EditorEngine } from './editorEngine.js';
+import { PlaybackClock } from './editorPlayback.js';
 import { attachSheet, attachZoom, notch, shareFile, stepOf, stepValue, tick } from './editorTouch.js';
 
 /** What a project panel receives. Framework-free, so a Svelte `mount` fits it directly. */
@@ -120,6 +121,8 @@ button.primary{background:var(--accent);color:var(--bg);border-color:var(--accen
 .ce-stage img,.ce-stage canvas{width:100%;height:140px;object-fit:contain;background:var(--field);display:block}
 .ce-stage pre{margin:0;max-height:140px;overflow:auto;font-size:11px;background:var(--field);padding:6px}
 .ce-indent{margin-left:12px}
+.ce-play{display:flex;gap:8px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line)}
+.ce-play button{display:inline-grid;place-items:center;min-width:32px}
 
 /* Phones (.m, set from a media query): the preview on top, controls in a bottom sheet, one-row header. */
 .ce-grip,.ce-more,.ce-menu,.ce-busy,.ce-step,.ce-toast{display:none}
@@ -194,6 +197,9 @@ html.ce-phone,html.ce-phone body{overflow-x:hidden;max-width:100%;overscroll-beh
 const PHONE = '(max-width: 760px), (pointer: coarse) and (max-height: 540px)';
 /** The page is laid out at the device width and never scaled; only the preview zooms. */
 export const VIEWPORT = 'width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1';
+/** Transport glyphs as SVG in the text colour: a ▶ character turns into a coloured emoji on iOS. */
+const PLAY_ICON = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1l9 5-9 5z" fill="currentColor"/></svg>';
+const PAUSE_ICON = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1h3v10H2zM7 1h3v10H7z" fill="currentColor"/></svg>';
 
 /** Start the editor in its own document. Resolves once the first view is drawn. */
 export async function startEditor(options: StartEditorOptions): Promise<EditorController> {
@@ -247,6 +253,8 @@ export class EditorController {
   private drafting?: string;
   private draftWritten = false;
   private toastTimer?: ReturnType<typeof setTimeout>;
+  /** Play/Pause, when the editor declares `playback`; every cook runs at its frame. */
+  private readonly clock?: PlaybackClock;
 
   constructor(
     private readonly document: CascadeDocument,
@@ -260,6 +268,7 @@ export class EditorController {
     this.values = { ...this.defaults };
     this.view = (editor.outputs ?? []).find((output) => output.view) ?? editor.outputs?.[0];
     this.storageKey = `cascade-editor:${editor.id}:${editorGraphVersion(document)}`;
+    if (editor.playback) this.clock = new PlaybackClock(editor.playback, () => this.cook());
   }
 
   async start(panel?: EditorPanelModule): Promise<void> {
@@ -332,6 +341,7 @@ export class EditorController {
   }
 
   async dispose(): Promise<void> {
+    this.clock?.pause();
     this.viewRelease?.();
     this.panelDispose?.();
     await this.engine.dispose();
@@ -442,7 +452,25 @@ export class EditorController {
     grip.setAttribute('aria-hidden', 'true');
     const messages = el(d, 'div');
     const peek = el(d, 'div', 'ce-peek');
-    head.append(grip, messages, peek);
+    head.append(grip, messages);
+    // Play/Pause beside the parameters, only when the editor declares playback.
+    const frameText = el(d, 'span', 'ce-status');
+    if (this.clock) {
+      const clock = this.clock;
+      const transport = el(d, 'div', 'ce-play');
+      const toggle = button(d, '');
+      const draw = () => {
+        toggle.innerHTML = clock.playing ? PAUSE_ICON : PLAY_ICON;
+        toggle.setAttribute('aria-label', clock.playing ? 'Pause' : 'Play');
+        toggle.setAttribute('aria-pressed', String(clock.playing));
+      };
+      toggle.addEventListener('click', () => { clock.toggle(); draw(); });
+      draw();
+      frameText.textContent = `Frame ${clock.frame} / ${this.editor.playback!.frames}`;
+      transport.append(toggle, frameText);
+      head.append(transport);
+    }
+    head.append(peek);
     const body = el(d, 'div', 'ce-body');
     const panelSlot = el(d, 'div');
     const groups = el(d, 'div');
@@ -473,7 +501,7 @@ export class EditorController {
       const file = event.dataTransfer?.files?.[0];
       if (file) void this.dropAnywhere(file).catch((error) => this.report(asError(error).message, 'bad'));
     });
-    return { shell, status, output, surface, viewer, inspect, inspectToggle, messages, panelSlot, groups, bar, side, head, peek, menuInspect, menuStatus, toast, toastText, toastAction };
+    return { shell, status, output, surface, viewer, inspect, inspectToggle, messages, panelSlot, groups, bar, side, head, peek, menuInspect, menuStatus, toast, toastText, toastAction, frameText };
   }
 
   private renderParameters(): void {
@@ -925,13 +953,15 @@ export class EditorController {
     const run = this.exclusive(async () => {
       this.queued = false;
       const started = performance.now();
+      const time = this.time();
       try {
         if (this.inspecting) {
-          const result = await this.engine.run({ reuse: true });
+          const result = await this.engine.run({ reuse: true, ...time });
           if (result.status !== 'completed') throw new Error(result.messages.join('\n') || result.status);
-        } else if (this.view) await this.runTarget(this.view);
+        } else if (this.view) await this.runTarget(this.view, time);
         if (this.view) await this.show(await this.engine.output(this.view.node, this.view.port));
         if (this.inspecting) await this.renderInspect();
+        if (time.frame !== undefined) this.ui.frameText.textContent = `Frame ${time.frame} / ${this.editor.playback!.frames}`;
         const took = Math.round(performance.now() - started);
         this.ui.status.textContent = `${took} ms`;
         this.ui.menuStatus.textContent = `Last cook ${took} ms`;
@@ -946,9 +976,14 @@ export class EditorController {
     return run;
   }
 
-  private async runTarget(output: PublishedOutput): Promise<void> {
-    const result = await this.engine.run({ target: { kind: 'output', nodeId: output.node, outputName: output.port }, reuse: true });
+  private async runTarget(output: PublishedOutput, time = this.time()): Promise<void> {
+    const result = await this.engine.run({ target: { kind: 'output', nodeId: output.node, outputName: output.port }, reuse: true, ...time });
     if (result.status !== 'completed') throw new Error(result.messages.join('\n') || `Cook ${result.status}`);
+  }
+
+  /** The frame and rate a cook runs at with playback, as `cascade run --frames` passes them; nothing without. */
+  private time(): { frame?: number; fps?: number } {
+    return this.clock ? { frame: this.clock.frame, fps: this.editor.playback!.fps } : {};
   }
 
   private async show(value: unknown): Promise<void> {

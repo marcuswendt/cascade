@@ -225,6 +225,7 @@ export async function prepareExport(file: string): Promise<Prepared> {
     ...(editor.inspect === false ? { inspect: false } : {}),
     ...(editor.peek ? { peek: editor.peek } : {}),
     ...(editor.draft ? { draft: editor.draft } : {}),
+    ...(editor.playback ? { playback: { fps: editor.playback.fps, frames: editor.playback.frames } } : {}),
     ...(editor.fonts?.length ? { fonts: editor.fonts } : {}),
   };
   const document: CascadeDocument = {

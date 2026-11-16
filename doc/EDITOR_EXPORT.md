@@ -151,7 +151,8 @@ Studio keeps it verbatim when it saves. The types are in
   "fonts": [{ "family": "DM Mono", "file": "assets/fonts/DMMono-Regular.woff2", "license": "OFL-1.1", "weight": 400 }],
   "freeze": [{ "node": "moment", "output": "moment", "snapshot": "frozen/moment.json" }],
   "panel": { "module": "editor/panel.ts", "placement": "extend" },
-  "inspect": true
+  "inspect": true,
+  "playback": { "fps": 25, "frames": 100 }
 }
 ```
 
@@ -185,6 +186,15 @@ anything else, or a file under `licensed/`, is refused.
   phone, such as `{ "density": 0.5 }`. The preview is quicker during the drag,
   and the real values cook again on release. Draft values never reach a scene
   or an export.
+- **`playback`** adds a Play/Pause button for a graph that animates over
+  frames, such as `{ "fps": 25, "frames": 100 }`. Playing steps the same frame
+  as `cascade run --frames 1-<frames>`, at `fps`, and loops back to 1. The run
+  gets `fps` as well, so `$T` matches `cascade run --fps`. If a frame is still
+  cooking when the next one is due, the frames in between are skipped, so a
+  slow graph plays at the speed it can cook. The editor opens paused on frame 1.
+  Pausing keeps the current frame, and parameter edits and exports cook at
+  that frame. `fps` must be a positive number and `frames` a positive whole
+  number. Without `playback`, the editor shows one frame and has no transport.
 
 ## On a phone
 
