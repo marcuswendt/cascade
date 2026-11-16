@@ -53,7 +53,7 @@ const KNOWN_TEST_TYPE_ERRORS = {
   'tests/bundle-ports.test.ts': 3,
   'tests/camera.test.ts': 1,
   'tests/cli-project-runtime.test.ts': 2,
-  'tests/cli-render.test.ts': 3,
+  'tests/cli-render.test.ts': 1,
   'tests/components/agent-draft.test.ts': 1,
   'tests/components/agent-panel-draft.test.ts': 2,
   'tests/components/inspector-multi-select.test.ts': 2,
@@ -63,6 +63,7 @@ const KNOWN_TEST_TYPE_ERRORS = {
   'tests/cook-scheduler.test.ts': 1,
   'tests/core-nodes.test.ts': 1,
   'tests/definition-node-studio.test.ts': 21,
+  'tests/e2e/cli-render.e2e.test.ts': 2,
   'tests/editor-export.test.ts': 5,
   'tests/expression-math-functions.test.ts': 1,
   'tests/expression-time-variables.test.ts': 2,
@@ -174,12 +175,15 @@ const steps = [
       // Nothing Studio-side changed: the `node` project only (vitest.config.ts),
       // so the Svelte plugin is never set up.
       const studio = files.some((file) => /\.svelte(\.ts)?$|^src\/(editor|App)|^tests\/(components|workflows)\//.test(file));
+      // The `e2e` project (real CLI renders) only when the CLI or an e2e test
+      // changed; vitest.config.ts applies the same rule when no project is named.
+      const cli = files.some((file) => /^(src\/cli|tests\/e2e)\//.test(file));
       // Push mode leaves out the timing assertions in tests/performance: they
       // fail when another session loads the machine (a Graph.ts push failed one
       // at load 52, 2026-11-09), and a push gate must not depend on load. Full
       // verify still runs them.
       const env = push ? { ...process.env, CASCADE_SKIP_PERF: '1' } : process.env;
-      run(node, [vitest, 'related', '--run', '--passWithNoTests', ...(studio ? [] : ['--project', 'node']), ...files], { env });
+      run(node, [vitest, 'related', '--run', '--passWithNoTests', ...(studio ? [] : ['--project', 'node', ...(cli ? ['--project', 'e2e'] : [])]), ...files], { env });
     },
   },
   { name: 'vitest', run: () => run(node, [vitest, 'run']), skip: fast },
