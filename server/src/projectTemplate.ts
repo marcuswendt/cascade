@@ -239,7 +239,7 @@ Definition-v1 image nodes can use \`saveImage(canvas, cachePath(context.nodeId, 
 
 Use \`browser\` only for code that genuinely needs the page, such as the DOM or WebGL. Prefer \`new OffscreenCanvas(width, height)\` to \`document.createElement('canvas')\` when both hosts can run the same node.
 
-WebGPU nodes declare \`capabilities: ['gpu']\` and use \`context.capabilities.gpu\` for the shared device and per-node cache. Portable GPU nodes run in Studio or the optional Dawn CLI host. Import usage constants and explicit RGBA8 \`readTexture\` from \`cascade/gpu\`, then encode through the image/IO host. Graph texture exchange remains future work. For agent image feedback use \`cascade run index.cascade --frames 1 --json --timeout 60000\`; see \`node_modules/cascade/doc/HEADLESS_GPU.md\` for limitations.
+WebGPU nodes declare \`capabilities: ['gpu']\` and use \`context.capabilities.gpu\` for the shared device and per-node cache. Portable GPU nodes run in Studio or the optional Dawn CLI host. With \`capabilities: ['gpu', 'assets']\`, \`renderTarget(context, w, h)\` from \`cascade/gpu\` gives a cached rgba8unorm texture and \`await writeTexture(context, texture)\` returns the image ref for an \`image\` output; \`readTexture\` gives raw RGBA8 bytes. Graph texture exchange remains future work. For agent image feedback use \`cascade run index.cascade --frames 1 --json --timeout 60000\`; see \`node_modules/cascade/doc/HEADLESS_GPU.md\` for limitations.
 
 ## Finding out what exists
 

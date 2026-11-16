@@ -6,6 +6,13 @@ Notable changes to Cascade. Newest first.
 
 ### Added
 
+- **GPU nodes write images in one call.** `cascade/gpu` adds
+  `renderTarget(context, w, h)`, a node-cached `rgba8unorm` texture replaced
+  when its size changes, and `writeTexture(context, texture)`, which reads it
+  back and returns the `ImageRef` for an `image` output (needs
+  `capabilities: ['gpu', 'assets']`). The same node renders in Studio and
+  headless through Dawn. `cascade doctor` now checks headless WebGPU and names
+  the adapter.
 - **`cascade node move` (alias `node mv`, MCP `node_move`, op `node.move`).**
   Move existing nodes without removing and re-adding them: `--to <subnet|root>`
   rewires through subnet boundaries like `subnet move`, `--at x,y` places the

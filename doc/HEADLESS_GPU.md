@@ -93,7 +93,24 @@ Use `createRenderPipelineAsync` to surface shader/pipeline validation failures.
 GPU commands issued before it need their own error scopes or async validation;
 run-aware routing of all uncaptured device errors is not implemented yet.
 
-Render into a single-sample `rgba8unorm` 2D texture with
+The short path, with `capabilities: ['gpu', 'assets']`:
+
+```ts
+import { renderTarget, writeTexture } from 'cascade/gpu';
+
+const target = renderTarget(context, width, height); // cached; replaced when the size changes
+// ... encode passes drawing into target.createView() and submit ...
+context.outputs.image.set(await writeTexture(context, target));
+```
+
+`renderTarget` makes a single-sample `rgba8unorm` 2D texture with
+`RENDER_ATTACHMENT | TEXTURE_BINDING | COPY_SRC` (pass `{ key }` for a second
+target, `{ usage }` to change the flags; `COPY_SRC` is always kept).
+`writeTexture` stores the pixels through `assets` like `cascade/image`'s
+`writeImage` and returns the `ImageRef`. `cascade doctor` acquires Dawn once
+and prints the adapter, or the reason it cannot.
+
+For raw pixels, render into a single-sample `rgba8unorm` 2D texture with
 `TextureUsage.RENDER_ATTACHMENT | TextureUsage.COPY_SRC`. Then:
 
 ```ts

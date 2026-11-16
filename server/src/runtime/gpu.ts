@@ -21,6 +21,8 @@
  * — the numbers below were verified against Chrome rather than recalled.
  */
 
+import { createCanvas, writeImage, type ImageAssets, type ImageRef } from './image.js';
+
 /** `GPUBufferUsage`. */
 export const BufferUsage = {
   MAP_READ: 0x0001,
@@ -144,4 +146,89 @@ export async function readTexture(
     if (mapped) buffer?.unmap();
     buffer?.destroy();
   }
+}
+
+/**
+ * The slice of a definition-v1 `NodeExecutionContext` the helpers below use.
+ * Loose for the same reason as `cascade/image`'s: a node that forgot to
+ * declare `gpu` or `assets` gets a sentence naming it at run time.
+ */
+export interface GpuNodeContext {
+  readonly nodeId?: string;
+  readonly capabilities: object;
+  readonly signal?: unknown;
+}
+
+interface NodeGpu {
+  readonly device: GPUDevice;
+  cache<T>(key: string, create: (device: GPUDevice) => T, destroy?: (value: T) => void): T;
+}
+
+function gpuOf(context: GpuNodeContext): NodeGpu {
+  const gpu = (context.capabilities as { gpu?: NodeGpu }).gpu;
+  if (!gpu?.device) throw new Error(`${context.nodeId ?? 'node'}: no gpu capability. Declare capabilities: ['gpu'] (headless runs need the optional "webgpu" package; cascade doctor checks it)`);
+  return gpu;
+}
+
+type ReadbackSignal = NonNullable<Parameters<typeof readTexture>[2]>['signal'];
+
+/** What `renderTarget` makes unless told otherwise: drawable, sampleable, readable. */
+export const RENDER_TARGET_USAGE = TextureUsage.RENDER_ATTACHMENT | TextureUsage.TEXTURE_BINDING | TextureUsage.COPY_SRC;
+
+/**
+ * `surface()` for the GPU: a node-owned `rgba8unorm` 2D texture of whole
+ * pixels, kept between cooks and replaced (the old one destroyed) when the
+ * size changes. `key` keeps two targets of one node apart. Pass it to
+ * `writeTexture` to publish it as an `image` output.
+ */
+export function renderTarget(
+  context: GpuNodeContext,
+  width: number,
+  height: number,
+  options: { key?: string; usage?: number; label?: string } = {},
+): GPUTexture {
+  const gpu = gpuOf(context);
+  const w = Math.max(1, Math.round(width));
+  const h = Math.max(1, Math.round(height));
+  const usage = (options.usage ?? RENDER_TARGET_USAGE) | TextureUsage.COPY_SRC;
+  const slot = gpu.cache(`cascade.renderTarget:${options.key ?? 'default'}`, () => ({ texture: null as GPUTexture | null }),
+    (held) => held.texture?.destroy());
+  const held = slot.texture;
+  if (held && held.width === w && held.height === h && held.usage === usage) return held;
+  held?.destroy();
+  slot.texture = gpu.device.createTexture({
+    label: options.label ?? `${context.nodeId ?? 'cascade'} ${options.key ?? 'target'}`,
+    size: [w, h], format: 'rgba8unorm', usage,
+  });
+  return slot.texture;
+}
+
+/**
+ * `writeImage` for the GPU: read an `rgba8unorm` texture back, store it
+ * through the `assets` capability and return the `ImageRef` to set on an
+ * `image` output. Needs `capabilities: ['gpu', 'assets']`. Bytes are written
+ * as they are; `space` only labels them (default `srgb`).
+ */
+export async function writeTexture(
+  context: GpuNodeContext,
+  texture: GPUTexture,
+  name?: string,
+  options: { type?: 'image/png' | 'image/webp' | 'image/jpeg'; quality?: number; space?: 'srgb' | 'linear' } = {},
+): Promise<ImageRef> {
+  const gpu = gpuOf(context);
+  const assets = (context.capabilities as { assets?: ImageAssets }).assets;
+  if (!assets) throw new Error(`${context.nodeId ?? 'node'}: writeTexture stores through the assets capability. Declare capabilities: ['gpu', 'assets']`);
+  const signal = context.signal as ReadbackSignal | undefined;
+  const pixels = await readTexture(gpu.device, texture, signal ? { signal } : {});
+  const suggestedName = name ?? `${context.nodeId ?? 'gpu'}.png`;
+  const data = new Uint8ClampedArray(pixels.data.buffer, pixels.data.byteOffset, pixels.data.byteLength);
+  if ((options.type ?? 'image/png') === 'image/png' && assets.keepImage) {
+    const stored = await assets.keepImage({ width: pixels.width, height: pixels.height, data }, { suggestedName }, { signal: context.signal });
+    return { path: stored.path, size: [pixels.width, pixels.height], channels: 'rgba', depth: 'u8', space: options.space ?? 'srgb' };
+  }
+  const canvas = createCanvas(pixels.width, pixels.height);
+  const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | null;
+  if (!ctx) throw new Error('cascade/gpu: the canvas has no 2D context to encode the texture');
+  ctx.putImageData(new ImageData(data, pixels.width, pixels.height), 0, 0);
+  return writeImage(context, canvas, suggestedName, options);
 }

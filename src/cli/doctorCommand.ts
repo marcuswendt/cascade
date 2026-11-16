@@ -5,8 +5,8 @@
  * - the declared Python environment (cascade.json "python"): there and
  *   current, or with `--fix` created/updated in `.cascade-cache/python/venv`;
  * - the interpreter stages will run under, and that it starts;
- * - ffmpeg (videos) and the headless canvas (drawing nodes), which are
- *   optional and so only warnings.
+ * - ffmpeg (videos), the headless canvas (drawing nodes) and headless WebGPU
+ *   (Dawn, for `gpu` nodes), which are optional and so only warnings.
  *
  * Exits 1 when something the project declares is not ready.
  */
@@ -103,7 +103,26 @@ export async function doctor(root: string, options: { fix?: boolean; log?: (line
     ? { name: 'headless canvas', ok: true, detail: CANVAS_PACKAGE }
     : { name: 'headless canvas', ok: false, optional: true, detail: `${CANVAS_PACKAGE} is not installed: drawing nodes cannot run headlessly (npm install ${CANVAS_PACKAGE})` });
 
+  checks.push(await webgpuCheck());
+
   return checks;
+}
+
+/** Acquire Dawn's device once, as a GPU node's first cook would, and say who renders. */
+async function webgpuCheck(): Promise<DoctorCheck> {
+  const { createDawnGpuHost } = await import('./headlessGpu.js');
+  const host = createDawnGpuHost();
+  try {
+    await host.ensure();
+    const { vendor, architecture, description } = host.adapterInfo;
+    const adapter = [vendor, architecture].filter(Boolean).join(' ') || 'unnamed adapter';
+    return { name: 'headless WebGPU', ok: true, detail: `Dawn (webgpu), ${adapter}${description ? `, ${description}` : ''}` };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { name: 'headless WebGPU', ok: false, optional: true, detail: `${message} GPU nodes (capabilities: ['gpu']) cannot run headlessly` };
+  } finally {
+    await host.dispose().catch(() => {});
+  }
 }
 
 function hasStages(root: string): boolean {

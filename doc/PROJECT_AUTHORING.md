@@ -598,10 +598,15 @@ export const definition = {
 
 `max*` limits are floors; `min*Alignment` limits are ceilings.
 
-Use `runsOn: 'portable'` for shared WebGPU code without browser APIs. Render into
-a texture and use `readTexture` from `cascade/gpu` for explicit RGBA8 pixels,
-then encode through the image/IO host. See [headless GPU rendering](HEADLESS_GPU.md)
-for CLI/agent commands, restrictions and tests.
+Use `runsOn: 'portable'` for shared WebGPU code without browser APIs. With
+`capabilities: ['gpu', 'assets']`, `renderTarget(context, w, h)` from
+`cascade/gpu` gives a cached `rgba8unorm` texture (the GPU's `surface()`), and
+`writeTexture(context, texture)` reads it back and returns the image ref to set
+on an `image` output (the GPU's `writeImage`). `readTexture` remains for raw
+RGBA8 pixels. The same node runs in Studio (browser WebGPU) and headless
+`cascade run` (Dawn); `cascade doctor` says whether Dawn found an adapter. See
+[headless GPU rendering](HEADLESS_GPU.md) for CLI/agent commands, restrictions
+and tests.
 
 This is the first GPU capability stage. Texture connections are not available:
 GPU nodes still publish images, so an image must be encoded or read back before
