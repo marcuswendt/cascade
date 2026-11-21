@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Install server
+        run: npm --prefix server ci
+      - name: Build workspace packages
+        run: npm run build:packages
+      - name: Typecheck (svelte-check)
+        run: npm run check
+      - name: Typecheck packages
+        run: npm run check:packages
+      - name: Test
+        run: npm run test:run
